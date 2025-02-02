@@ -54,7 +54,7 @@ export default function SimpleChat() {
           messages: [
             {
               role: "system",
-              content: "You are a friendly assistant for elderly users. Use simple language, short sentences, and clear explanations."
+              content: "Ti si prijateljski pravni asistent za starije korisnike na hrvatskom jeziku. Koristi jednostavan jezik, kratke rečenice i jasna objašnjenja. Uživaj!"
             },
             { role: "user", content: inputText }
           ]

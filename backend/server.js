@@ -34,7 +34,7 @@ app.post('/api/chat', async (req, res) => {
     const { messages } = req.body;
     
     const stream = await groq.chat.completions.create({
-      model: "mixtral-8x7b-32768", // Groq model name
+      model: "deepseek-r1-distill-llama-70b", // Groq model name
       messages,
       temperature: 0.7,
       max_tokens: 1024,
