@@ -3,23 +3,22 @@ const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
-const { OpenAI } = require('openai');
+const { Groq } = require('groq-sdk');  // Changed import syntax
 
 const app = express();
 const port = process.env.PORT || 3001;
 
+// Initialize Groq client
+const groq = new Groq({
+  apiKey: process.env.GROQ_API_KEY
+});
+
 // Security middleware
 app.use(helmet());
 app.use(rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100 // Limit each IP to 100 requests per windowMs
+  windowMs: 15 * 60 * 1000,
+  max: 100
 }));
-
-// Configure OpenAI
-const openai = new OpenAI({
-  baseURL: "https://openrouter.ai/api/v1",
-  apiKey: process.env.OPENAI_API_KEY
-});
 
 // Middleware
 app.use(cors({
@@ -29,17 +28,17 @@ app.use(cors({
 }));
 app.use(express.json());
 
-// Streaming endpoint with better error handling
+// Streaming endpoint for Groq
 app.post('/api/chat', async (req, res) => {
   try {
     const { messages } = req.body;
     
-    const stream = await openai.chat.completions.create({
-      model: "gpt-3.5-turbo",
+    const stream = await groq.chat.completions.create({
+      model: "mixtral-8x7b-32768", // Groq model name
       messages,
-      stream: true,
       temperature: 0.7,
-      max_tokens: 500
+      max_tokens: 1024,
+      stream: true
     });
 
     res.setHeader('Content-Type', 'text/event-stream');
@@ -53,7 +52,7 @@ app.post('/api/chat', async (req, res) => {
 
     res.end();
   } catch (error) {
-    console.error('AI Error:', error);
+    console.error('Groq Error:', error);
     res.write('data: {"error":"AI service unavailable"}\n\n');
     res.end();
   }
@@ -65,5 +64,5 @@ app.get('/health', (req, res) => {
 });
 
 app.listen(port, () => {
-  console.log(`Server running on port ${port}`);
+  console.log(`Groq server running on port ${port}`);
 });
