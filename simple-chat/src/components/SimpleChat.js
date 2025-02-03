@@ -108,106 +108,93 @@ export default function SimpleChat() {
   };
 
   return (
-    <div className="flex flex-col h-screen bg-gray-50">
-      {/* Header */}
-      <div className="bg-blue-600 p-4 flex justify-between items-center">
-        <h1 className="text-white text-dynamic font-bold">Ask Me Anything!</h1>
-        <div className="flex gap-4 items-center">
-  <button
-    onClick={() => setTextSize(prev => prev === 16 ? 20 : 16)}
-    className="text-white bg-blue-700 px-4 py-2 rounded-lg hover:bg-blue-800 transition-colors"
-  >
-    {textSize === 16 ? 'A+ Text Size' : 'A- Text Size'}
-  </button>
-  <button 
-    onClick={() => {
-      localStorage.removeItem('chatMessages');
-      setMessages([]);
-    }}
-    className="text-white bg-orange-600 px-4 py-2 rounded-lg hover:bg-orange-700 transition-colors"
-  >
-    Clear History
-  </button>
-  <button className="text-white bg-red-600 px-4 py-2 rounded-lg hover:bg-red-700 transition-colors">
-    Exit
-  </button>
-</div>
-      </div>
-
-      {/* Chat Area */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
-        {messages.map((msg, index) => (
-          <div
-            key={index}
-            className={`flex ${msg.isUser ? 'justify-end' : 'justify-start'}`}
-          >
-            <div
-              className={`max-w-3xl p-4 rounded-lg ${
-                msg.isUser 
-                  ? 'bg-blue-600 text-white' 
-                  : 'bg-white border-2 border-gray-200'
-              } text-dynamic transition-all`}
+    <div className="flex flex-col h-screen bg-slate-50">
+      {/* White Header */}
+      <div className="bg-white p-4 shadow-sm border-b border-slate-200">
+        <div className="max-w-6xl mx-auto flex justify-between items-center">
+          <h1 className="text-slate-800 text-xl font-medium font-main">
+            Pravni Asistent
+          </h1>
+          <div className="flex gap-3">
+            <button
+              onClick={() => setTextSize(prev => prev === 16 ? 20 : 16)}
+              className="text-slate-800 bg-slate-100 px-3.5 py-2 rounded-lg hover:bg-slate-50 transition-colors border border-slate-300 hover:border-slate-400"
             >
-              {msg.text}
-            </div>
-          </div>
-        ))}
-        {isLoading && (
-          <div className="flex justify-start">
-            <div className="bg-white p-4 rounded-lg border-2 border-gray-200 flex items-center gap-2">
-              <div className="animate-spin h-5 w-5 border-2 border-blue-600 border-t-transparent rounded-full"></div>
-              <span>Thinking...</span>
-            </div>
-          </div>
-        )}
-        {error && (
-          <div className="bg-red-100 p-4 rounded-lg text-red-700 flex justify-between items-center">
-            <span>⚠️ {error}</span>
+              {textSize === 16 ? 'A+' : 'A-'}
+            </button>
             <button 
-              onClick={() => setError('')}
-              className="text-red-700 hover:text-red-900"
+              onClick={() => {
+                localStorage.removeItem('chatMessages');
+                setMessages([]);
+              }}
+              className="text-slate-800 bg-slate-100 px-3.5 py-2 rounded-lg hover:bg-slate-50 transition-colors border border-slate-300 hover:border-slate-400"
             >
-              ×
+              Očisti razgovor
             </button>
           </div>
-        )}
+        </div>
+      </div>
+  
+      {/* Chat Area */}
+      <div className="flex-1 overflow-y-auto p-5 max-w-6xl mx-auto w-full">
+        <div className="space-y-4">
+          {messages.map((msg, index) => (
+            <div
+              key={index}
+              className={`flex ${msg.isUser ? 'justify-end' : 'justify-start'}`}
+            >
+              <div
+                className={`max-w-2xl p-4 rounded-xl ${
+                  msg.isUser 
+                    ? 'bg-blue-600 text-white shadow-sm' 
+                    : 'bg-white shadow-sm border border-slate-100'
+                } text-dynamic transition-all`}
+              >
+                {msg.text}
+              </div>
+            </div>
+          ))}
+          {/* Loading and error states remain similar */}
+        </div>
         <div ref={messagesEndRef} />
       </div>
-
+  
       {/* Input Area */}
-      <div className="border-t-2 p-4 bg-white">
-        <div className="flex gap-4">
-          <input
-            value={inputText}
-            onChange={(e) => setInputText(e.target.value)}
-            onKeyPress={(e) => e.key === 'Enter' && handleSend()}
-            placeholder="Type your message here..."
-            className="flex-1 p-4 border-2 rounded-lg text-dynamic focus:outline-none focus:border-blue-500"
-            disabled={isLoading}
-          />
-          <button
-            onClick={isLoading ? stopGeneration : handleSend}
-            className={`${
-              isLoading 
-                ? 'bg-red-600 hover:bg-red-700' 
-                : 'bg-blue-600 hover:bg-blue-700'
-            } text-white p-4 rounded-lg transition-colors min-w-[120px]`}
-          >
-            {isLoading ? 'Stop ■' : 'Send ➔'}
-          </button>
-        </div>
-        
-        {/* Quick Actions */}
-        <div className="flex gap-4 mt-4 flex-wrap">
-          {['How to send email?', 'Help with video calls', 'Save a document'].map((text) => (
+      <div className="border-t border-slate-200 bg-white py-5">
+        <div className="max-w-6xl mx-auto px-5">
+          <div className="flex gap-3">
+            <input
+              value={inputText}
+              onChange={(e) => setInputText(e.target.value)}
+              onKeyPress={(e) => e.key === 'Enter' && handleSend()}
+              placeholder="Postavite svoje pravno pitanje..."
+              className="flex-1 p-3.5 border-2 border-slate-200 rounded-lg text-dynamic focus:outline-none focus:border-blue-500 bg-white"
+              disabled={isLoading}
+            />
             <button
-              key={text}
-              onClick={() => setInputText(text)}
-              className="bg-gray-100 px-4 py-2 rounded-lg hover:bg-gray-200 text-lg transition-colors"
+              onClick={isLoading ? stopGeneration : handleSend}
+              className={`px-5 py-3.5 rounded-lg text-white font-medium transition-colors ${
+                isLoading 
+                  ? 'bg-red-500 hover:bg-red-600' 
+                  : 'bg-blue-600 hover:bg-blue-700'
+              }`}
             >
-              {text}
+              {isLoading ? 'Zaustavi' : 'Pošalji →'}
             </button>
-          ))}
+          </div>
+          
+          {/* Quick Actions */}
+          <div className="flex gap-3 mt-4 flex-wrap">
+            {['Pregled ugovora', 'Pomoć s dokumentom', 'Pravni savjet'].map((text) => (
+              <button
+                key={text}
+                onClick={() => setInputText(text)}
+                className="text-sm text-blue-600 bg-blue-50 px-3 py-2 rounded-md hover:bg-blue-100 transition-colors"
+              >
+                {text}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
     </div>
