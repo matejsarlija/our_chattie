@@ -38,7 +38,8 @@ app.post('/api/chat', async (req, res) => {
       messages,
       temperature: 0.7,
       max_tokens: 1024,
-      stream: true
+      stream: true,
+      reasoning_format: "hidden"
     });
 
     res.setHeader('Content-Type', 'text/event-stream');
