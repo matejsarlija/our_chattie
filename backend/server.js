@@ -8,18 +8,26 @@ const { GoogleGenerativeAI } = require('@google/generative-ai');
 const app = express();
 const port = process.env.PORT || 3001;
 
-// Initialize Google Gemini client
-const genai = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY);
-const model = genai.getGenerativeModel({ model: "gemini-1.5-pro" }); // You can change to other Gemini models like "gemini-1.0-pro"
+const generationConfig = {
+  temperature: 1,
+  topP: 0.95,
+  topK: 40,
+  maxOutputTokens: 8192
+};
 
-// Security middleware
+const genai = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY);
+const model = genai.getGenerativeModel({ 
+  model: "gemini-2.0-flash",
+  systemInstruction: "You are a helpful legal assistant that excels at being factual, while also being kind and formal. You frequently work with the elderly in need of free legal advice. You only provide answers in Croatian.",
+  generationConfig: generationConfig
+});
+
 app.use(helmet());
 app.use(rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 100
 }));
 
-// Middleware
 app.use(cors({
   origin: process.env.NODE_ENV === 'production' 
     ? 'https://your-production-domain.com' 
@@ -27,28 +35,43 @@ app.use(cors({
 }));
 app.use(express.json());
 
-// Streaming endpoint for Gemini
 app.post('/api/chat', async (req, res) => {
   try {
     const { messages } = req.body;
-    
-    // Convert messages to Gemini format (it expects a different structure)
+
+    if (!messages || !Array.isArray(messages) || messages.length === 0) {
+      throw new Error("No messages provided");
+    }
+
     const geminiMessages = messages.map(msg => ({
       role: msg.role === 'user' ? 'user' : 'model',
-      parts: [{ text: msg.content }]
+      parts: [{ text: msg.content || '' }]
     }));
 
+    if (geminiMessages.length === 0 || geminiMessages[0].role !== 'user') {
+      throw new Error("Conversation must start with a user message");
+    }
+
+    let history = [];
+    let currentMessage = '';
+
+    if (geminiMessages.length > 1) {
+      history = geminiMessages.slice(0, -1);
+      currentMessage = geminiMessages[geminiMessages.length - 1].parts[0].text;
+    } else {
+      currentMessage = geminiMessages[0].parts[0].text;
+    }
+
+    if (!currentMessage || currentMessage.trim() === '') {
+      console.error('Empty currentMessage:', geminiMessages);
+      throw new Error("Current message cannot be empty");
+    }
+
     const chat = model.startChat({
-      history: geminiMessages.slice(0, -1), // All but the last message as history
+      history: history,
     });
 
-    const lastMessage = geminiMessages[geminiMessages.length - 1].parts[0].text;
-
-    // Gemini streaming response
-    const result = await chat.sendMessageStream(lastMessage, {
-      temperature: 0.7,
-      maxOutputTokens: 1024,
-    });
+    const result = await chat.sendMessageStream(currentMessage);
 
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
@@ -61,13 +84,12 @@ app.post('/api/chat', async (req, res) => {
 
     res.end();
   } catch (error) {
-    console.error('Gemini Error:', error);
-    res.write('data: {"error":"AI service unavailable"}\n\n');
+    console.error('Gemini Error:', error.message);
+    res.write(`data: {"error":"${error.message || 'AI service unavailable'}"}\n\n`);
     res.end();
   }
 });
 
-// Health check endpoint
 app.get('/health', (req, res) => {
   res.status(200).json({ status: 'ok' });
 });
