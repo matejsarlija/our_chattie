@@ -1,3 +1,4 @@
+import ReactMarkdown from 'react-markdown';
 import { useState, useRef, useEffect } from 'react';
 
 export default function SimpleChat() {
@@ -41,7 +42,7 @@ export default function SimpleChat() {
 
       controllerRef.current = new AbortController();
 
-      const chatMessages = messages.slice(0, -1).map(msg => ({
+      const chatMessages = [...messages, userMessage].map(msg => ({
         role: msg.isUser ? 'user' : 'assistant',
         content: msg.text
       })).filter(msg => msg.content.trim() !== '');
@@ -118,7 +119,7 @@ export default function SimpleChat() {
             <button
               onClick={() => {
                 localStorage.removeItem('chatMessages');
-                setMessages([]); 
+                setMessages([]);
               }}
               className="text-slate-800 bg-slate-100 px-3.5 py-2 rounded-lg hover:bg-slate-50 transition-colors border border-slate-300 hover:border-slate-400"
             >
@@ -136,12 +137,16 @@ export default function SimpleChat() {
               className={msg.isUser ? 'flex justify-end' : 'flex justify-start'}
             >
               <div
-                className={msg.isUser ? 
-                  'max-w-2xl p-4 rounded-xl bg-blue-600 text-white shadow-sm text-dynamic' : 
+                className={msg.isUser ?
+                  'max-w-2xl p-4 rounded-xl bg-blue-600 text-white shadow-sm text-dynamic' :
                   'max-w-2xl p-4 rounded-xl bg-white shadow-sm border border-slate-100 text-dynamic'
                 }
               >
-                {msg.text}
+                {msg.isUser ? (
+                  <div>{msg.text}</div>
+                ) : (
+                  <ReactMarkdown>{msg.text}</ReactMarkdown>
+                )}
               </div>
             </div>
           ))}
@@ -165,8 +170,8 @@ export default function SimpleChat() {
             />
             <button
               onClick={isLoading ? stopGeneration : handleSend}
-              className={isLoading ? 
-                'bg-red-500 hover:bg-red-600 text-white font-medium px-5 py-3.5 rounded-lg' : 
+              className={isLoading ?
+                'bg-red-500 hover:bg-red-600 text-white font-medium px-5 py-3.5 rounded-lg' :
                 'bg-blue-600 hover:bg-blue-700 text-white font-medium px-5 py-3.5 rounded-lg'
               }
             >
