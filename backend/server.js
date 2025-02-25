@@ -3,15 +3,14 @@ const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
-const { Groq } = require('groq-sdk');  // Changed import syntax
+const { GoogleGenerativeAI } = require('@google/generative-ai');
 
 const app = express();
 const port = process.env.PORT || 3001;
 
-// Initialize Groq client
-const groq = new Groq({
-  apiKey: process.env.GROQ_API_KEY
-});
+// Initialize Google Gemini client
+const genai = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY);
+const model = genai.getGenerativeModel({ model: "gemini-1.5-pro" }); // You can change to other Gemini models like "gemini-1.0-pro"
 
 // Security middleware
 app.use(helmet());
@@ -28,32 +27,41 @@ app.use(cors({
 }));
 app.use(express.json());
 
-// Streaming endpoint for Groq
+// Streaming endpoint for Gemini
 app.post('/api/chat', async (req, res) => {
   try {
     const { messages } = req.body;
     
-    const stream = await groq.chat.completions.create({
-      model: "deepseek-r1-distill-llama-70b", // Groq model name
-      messages,
+    // Convert messages to Gemini format (it expects a different structure)
+    const geminiMessages = messages.map(msg => ({
+      role: msg.role === 'user' ? 'user' : 'model',
+      parts: [{ text: msg.content }]
+    }));
+
+    const chat = model.startChat({
+      history: geminiMessages.slice(0, -1), // All but the last message as history
+    });
+
+    const lastMessage = geminiMessages[geminiMessages.length - 1].parts[0].text;
+
+    // Gemini streaming response
+    const result = await chat.sendMessageStream(lastMessage, {
       temperature: 0.7,
-      max_tokens: 1024,
-      stream: true,
-      reasoning_format: "hidden"
+      maxOutputTokens: 1024,
     });
 
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
 
-    for await (const chunk of stream) {
-      const content = chunk.choices[0]?.delta?.content || '';
+    for await (const chunk of result.stream) {
+      const content = chunk.text();
       res.write(`data: ${JSON.stringify({ content })}\n\n`);
     }
 
     res.end();
   } catch (error) {
-    console.error('Groq Error:', error);
+    console.error('Gemini Error:', error);
     res.write('data: {"error":"AI service unavailable"}\n\n');
     res.end();
   }
@@ -65,5 +73,5 @@ app.get('/health', (req, res) => {
 });
 
 app.listen(port, () => {
-  console.log(`Groq server running on port ${port}`);
+  console.log(`Gemini server running on port ${port}`);
 });
