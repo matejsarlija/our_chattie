@@ -25,3 +25,23 @@ body {
 code {
   font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New', monospace;
 }
+
+
+/* Responsive breakpoint for mobile devices */
+@media (max-width: 1024px) {
+  .w-1/6 { /* Targets the left/right columns */
+    display: none;
+  }
+  .flex-1 { /* Main content area */
+    width: 100% !important;
+  }
+  
+  /* Optional: Adjust padding in mobile view */
+  .p-4 {
+    padding: 1rem;
+  }
+  
+  .max-w-4xl {
+    max-width: 100% !important;
+  }
+}
