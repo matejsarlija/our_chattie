@@ -1,7 +1,7 @@
 import ReactMarkdown from 'react-markdown';
 import { useState, useRef, useEffect } from 'react';
 
-export default function SimpleChat() {
+export default function AltChat() {
     const [messages, setMessages] = useState(() => {
         try {
             const saved = localStorage.getItem('chatMessages');
@@ -76,8 +76,11 @@ export default function SimpleChat() {
                 role: msg.isUser ? 'user' : 'assistant',
                 content: msg.text
             })).filter(msg => msg.content.trim() !== '');
+
+            const API_URL = process.env.REACT_APP_API_URL || '/api/chat';
+
             
-            const response = await fetch('http://localhost:3001/api/chat', {
+            const response = await fetch(API_URL, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
