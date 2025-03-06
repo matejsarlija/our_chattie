@@ -23,9 +23,19 @@ const model = genai.getGenerativeModel({
 });
 
 app.use(helmet());
-app.use(rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 100
+
+// Combined rate limiter for your single route
+app.use('/api/chat', rateLimit({
+  windowMs: 60 * 1000, // 1 minute window
+  max: 15, // 15 requests per minute
+  message: "Previše zahtjeva. Molimo pokušajte ponovno za 1 minutu."
+}));
+
+// Apply a daily limit to the same route
+app.use('/api/chat', rateLimit({
+  windowMs: 24 * 60 * 60 * 1000, // 24 hour window
+  max: 1500, // 1500 requests per day
+  message: "Dosegnuli ste dnevno ograničenje. Molimo pokušajte ponovno sutra."
 }));
 
 app.use(cors({
