@@ -27,7 +27,7 @@ export default function AltChat() {
     const [showClearConfirm, setShowClearConfirm] = useState(false);
     const messagesEndRef = useRef(null);
     const controllerRef = useRef(null);
-    
+
     // Save messages to localStorage when they change
     useEffect(() => {
         try {
@@ -39,7 +39,7 @@ export default function AltChat() {
             setError('Failed to save conversation history. Storage may be full.');
         }
     }, [messages]);
-    
+
     // Save text size preference
     useEffect(() => {
         try {
@@ -48,31 +48,31 @@ export default function AltChat() {
             console.error('Failed to save text size preference', error);
         }
     }, [textSize]);
-    
+
     // Scroll to bottom when messages change
     useEffect(() => {
         scrollToBottom();
     }, [messages]);
-    
+
     const scrollToBottom = () => {
         messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
     };
-    
+
     const handleSend = async () => {
         if (!inputText.trim() || isLoading) return;
-        
+
         const userMessage = { text: inputText, isUser: true, timestamp: new Date().toISOString() };
         setMessages(prev => [...prev, userMessage]);
         setInputText('');
         setIsLoading(true);
         setError('');
-        
+
         try {
             const aiMessage = { text: '', isUser: false, timestamp: new Date().toISOString() };
             setMessages(prev => [...prev, aiMessage]);
-            
+
             controllerRef.current = new AbortController();
-            
+
             const chatMessages = [...messages, userMessage].map(msg => ({
                 role: msg.isUser ? 'user' : 'assistant',
                 content: msg.text
@@ -80,7 +80,7 @@ export default function AltChat() {
 
             const API_URL = process.env.REACT_APP_API_URL || '/api/chat';
 
-            
+
             const response = await fetch(API_URL, {
                 method: 'POST',
                 headers: {
@@ -89,32 +89,32 @@ export default function AltChat() {
                 body: JSON.stringify({ messages: chatMessages }),
                 signal: controllerRef.current.signal
             });
-            
+
             if (!response.ok) {
                 throw new Error(`Server responded with status: ${response.status}`);
             }
-            
+
             const reader = response.body.getReader();
             const decoder = new TextDecoder();
             let accumulatedResponse = '';
-            
+
             while (true) {
                 const { done, value } = await reader.read();
                 if (done) break;
-                
+
                 const chunk = decoder.decode(value);
                 const lines = chunk.split('\n\n').filter(line => line.trim());
-                
+
                 for (const line of lines) {
                     if (!line.startsWith('data: ')) continue;
-                    
+
                     try {
                         const data = JSON.parse(line.replace('data: ', ''));
                         if (data.content) {
                             // Fixed: Use a local variable instead of referring to the outer variable
                             const updatedResponse = accumulatedResponse + data.content;
                             accumulatedResponse = updatedResponse;
-                            
+
                             setMessages(prev => {
                                 const newMessages = [...prev];
                                 newMessages[newMessages.length - 1].text = updatedResponse;
@@ -139,26 +139,26 @@ export default function AltChat() {
             controllerRef.current = null;
         }
     };
-    
+
     const stopGeneration = () => {
         if (controllerRef.current) {
             controllerRef.current.abort();
             setIsLoading(false);
         }
     };
-    
+
     const handleClearChat = () => {
         localStorage.removeItem('chatMessages');
         setMessages([]);
         setShowClearConfirm(false);
     };
-    
+
     const handleSuggestionClick = (text) => {
         setInputText(text);
         // Focus the input field after setting the text
         document.querySelector('input[type="text"]')?.focus();
     };
-    
+
     return (
         <div className="flex flex-col h-screen bg-slate-50">
             {/* White Header */}
@@ -168,9 +168,9 @@ export default function AltChat() {
                         Pravni Asistent
                     </h1>
                     <div className="flex gap-6">
-                    <Link to="/pravila-privatnosti" className="text-slate-600 hover:text-slate-800 transition-colors">
-    Pravila privatnosti
-</Link>
+                        <Link to="/pravila-privatnosti" className="text-slate-600 hover:text-slate-800 transition-colors">
+                            Pravila privatnosti
+                        </Link>
                     </div>
                 </div>
             </div>
@@ -192,7 +192,7 @@ export default function AltChat() {
                                 <div className="text-center text-slate-500 py-10">
                                     <h2 className="text-xl mb-3">Dobrodošli na Alimentacija.info | Pravni asistent</h2>
                                     <p>Postavite pitanje i dobijte opći pregled sa informacijama koji vam može pomoći u daljnjem usmjeravanju!</p>
-                                    <p>Ova usluga pruža opće pravne informacije i ne predstavlja pravni savjet. Ne postoji odvjetničko-klijentski odnos između korisnika i pružatelja usluge.</p> 
+                                    <p>Ova usluga pruža opće pravne informacije i ne predstavlja pravni savjet. Ne postoji odvjetničko-klijentski odnos između korisnika i pružatelja usluge.</p>
                                     <p>Za konkretne pravne probleme i savjete prilagođene vašoj situaciji, obratite se kvalificiranom pravnom stručnjaku ili odvjetniku.</p>
                                     <p>Korištenjem ove usluge korisnik prihvaća navedene uvjete i razumije da pružene informacije nisu pravno obvezujuće.</p>
                                     <p>Asistent *može pogriješiti*. Provjerite važne informacije.</p>
@@ -235,15 +235,21 @@ export default function AltChat() {
                     <div className="border-t border-slate-200 bg-white py-4 md:py-5">
                         <div className="max-w-4xl mx-auto px-4 md:px-5 w-full">
                             <div className="flex gap-2 md:gap-3">
-                                <input
-                                    type="text"
+                                <textarea
                                     value={inputText}
                                     onChange={e => setInputText(e.target.value)}
-                                    onKeyPress={e => e.key === 'Enter' && handleSend()}
+                                    onKeyPress={e => {
+                                        if (e.key === 'Enter' && !e.shiftKey) {
+                                            e.preventDefault(); // Prevent default to avoid new line
+                                            handleSend();
+                                        }
+                                        // Pressing Shift+Enter will create a new line
+                                    }}
                                     placeholder="Postavite svoje pravno pitanje..."
-                                    className="flex-1 p-3 md:p-3.5 border-2 border-slate-200 rounded-lg focus:outline-none focus:border-blue-500 bg-white"
+                                    className="flex-1 p-3 md:p-3.5 border-2 border-slate-200 rounded-lg focus:outline-none focus:border-blue-500 bg-white resize-none"
+                                    rows="2"  // Start with 2 rows
                                     disabled={isLoading}
-                                />
+                                ></textarea>
                                 <button
                                     onClick={isLoading ? stopGeneration : handleSend}
                                     className={isLoading ?
@@ -254,7 +260,7 @@ export default function AltChat() {
                                     {isLoading ? 'Zaustavi' : 'Pošalji →'}
                                 </button>
                             </div>
-                            
+
                             <div className="flex gap-2 md:gap-3 mt-3 md:mt-4 flex-wrap">
                                 {['Nisam u stanju otplatiti trenutnu ratu kredita, što da radim?', 'Koji zakon pokriva ovaj dopis', 'Supružnik ne plaća alimentaciju'].map(text => (
                                     <button
@@ -291,7 +297,7 @@ export default function AltChat() {
                                 </button>
                             </div>
                         </div>
-                        
+
                         {/* Clear conversation button */}
                         <button
                             onClick={() => setShowClearConfirm(true)}
@@ -306,7 +312,7 @@ export default function AltChat() {
                         </div>
                     </div>
                 </div>
-                
+
                 {/* Mobile Controls - Only shown on small screens */}
                 <div className="lg:hidden fixed bottom-24 right-4 z-10 flex flex-col gap-2">
                     <button
@@ -322,7 +328,7 @@ export default function AltChat() {
                         {textSize === 16 ? 'A+' : 'A'}
                     </button>
                 </div>
-                
+
                 {/* Confirmation Modal */}
                 {showClearConfirm && (
                     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
@@ -330,13 +336,13 @@ export default function AltChat() {
                             <h3 className="text-lg font-medium mb-3">Očisti razgovor</h3>
                             <p className="text-slate-600 mb-4">Jeste li sigurni da želite očistiti cijeli razgovor?</p>
                             <div className="flex gap-3 justify-end">
-                                <button 
+                                <button
                                     onClick={() => setShowClearConfirm(false)}
                                     className="px-4 py-2 border border-slate-300 rounded-md text-slate-700 hover:bg-slate-50"
                                 >
                                     Odustani
                                 </button>
-                                <button 
+                                <button
                                     onClick={handleClearChat}
                                     className="px-4 py-2 bg-red-500 text-white rounded-md hover:bg-red-600"
                                 >

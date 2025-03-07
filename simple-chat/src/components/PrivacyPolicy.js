@@ -25,7 +25,7 @@ export default function PrivacyPolicy() {
           <section className="mb-8">
             <h2 className="text-xl font-semibold mb-3">1. Uvod</h2>
             <p className="mb-3">
-              Dobrodošli na Pravila privatnosti za Pravni Asistent i web-stranicu alimentacija.info. Ova pravila opisuju kako prikupljamo, koristimo i štitimo vaše osobne podatke prilikom korištenja naše usluge.
+              Dobrodošli na Pravila privatnosti za pravnog asistenta i web-stranicu alimentacija.info. Ova pravila opisuju kako prikupljamo, koristimo i štitimo vaše osobne podatke prilikom korištenja naše usluge.
             </p>
             <p>
               Korištenjem Pravnog Asistenta pristajete na prikupljanje i korištenje informacija u skladu s ovim pravilima privatnosti.
