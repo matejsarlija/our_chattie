@@ -1,5 +1,6 @@
 import ReactMarkdown from 'react-markdown';
 import { useState, useRef, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 
 export default function AltChat() {
     const [messages, setMessages] = useState(() => {
@@ -167,9 +168,9 @@ export default function AltChat() {
                         Pravni Asistent
                     </h1>
                     <div className="flex gap-6">
-                        <a href="/pravila-privatnosti" className="text-slate-600 hover:text-slate-800 transition-colors">
-                            Pravila privatnosti
-                        </a>
+                    <Link to="/pravila-privatnosti" className="text-slate-600 hover:text-slate-800 transition-colors">
+    Pravila privatnosti
+</Link>
                     </div>
                 </div>
             </div>
@@ -255,7 +256,7 @@ export default function AltChat() {
                             </div>
                             
                             <div className="flex gap-2 md:gap-3 mt-3 md:mt-4 flex-wrap">
-                                {['Nisam u stanju otplatiti trenutnu ratu kredita, što da radim?', 'Treba mi pomoć sa dokumentom', 'Supružnik ne plaća alimentaciju'].map(text => (
+                                {['Nisam u stanju otplatiti trenutnu ratu kredita, što da radim?', 'Koji zakon pokriva ovaj dopis', 'Supružnik ne plaća alimentaciju'].map(text => (
                                     <button
                                         key={text}
                                         onClick={() => handleSuggestionClick(text)}
