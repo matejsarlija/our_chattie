@@ -40,7 +40,7 @@ app.use('/api/chat', rateLimit({
 
 app.use(cors({
   origin: process.env.NODE_ENV === 'production' 
-    ? 'https://our-chattie-front.onrender.com'
+    ? ['https://our-chattie-front.onrender.com', 'https://alimentacija.info/', 'https://www.alimentacija.info/']
     : 'http://localhost:3000',
     
 }));
