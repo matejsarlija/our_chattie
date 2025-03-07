@@ -189,8 +189,12 @@ export default function AltChat() {
                         <div className="max-w-4xl mx-auto p-4 md:p-5 w-full" style={{ fontSize: `${textSize}px` }}>
                             {messages.length === 0 ? (
                                 <div className="text-center text-slate-500 py-10">
-                                    <h2 className="text-xl mb-3">Dobrodošli u Pravni Asistent</h2>
-                                    <p>Postavite pitanje i dobite pravni savjet.</p>
+                                    <h2 className="text-xl mb-3">Dobrodošli na Alimentacija.info | Pravni asistent</h2>
+                                    <p>Postavite pitanje i dobijte opći pregled sa informacijama koji vam može pomoći u daljnjem usmjeravanju!</p>
+                                    <p>Ova usluga pruža opće pravne informacije i ne predstavlja pravni savjet. Ne postoji odvjetničko-klijentski odnos između korisnika i pružatelja usluge.</p> 
+                                    <p>Za konkretne pravne probleme i savjete prilagođene vašoj situaciji, obratite se kvalificiranom pravnom stručnjaku ili odvjetniku.</p>
+                                    <p>Korištenjem ove usluge korisnik prihvaća navedene uvjete i razumije da pružene informacije nisu pravno obvezujuće.</p>
+                                    <p>Asistent *može pogriješiti*. Provjerite važne informacije.</p>
                                 </div>
                             ) : (
                                 <div className="space-y-4">
@@ -251,7 +255,7 @@ export default function AltChat() {
                             </div>
                             
                             <div className="flex gap-2 md:gap-3 mt-3 md:mt-4 flex-wrap">
-                                {['Pregled ugovora', 'Pomoć s dokumentom', 'Pravni savjet'].map(text => (
+                                {['Nisam u stanju otplatiti trenutnu ratu kredita, što da radim?', 'Treba mi pomoć sa dokumentom', 'Supružnik ne plaća alimentaciju'].map(text => (
                                     <button
                                         key={text}
                                         onClick={() => handleSuggestionClick(text)}
