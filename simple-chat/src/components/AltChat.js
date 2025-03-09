@@ -29,7 +29,17 @@ export default function AltChat() {
     const messagesEndRef = useRef(null);
     const controllerRef = useRef(null);
 
-    // [All other existing functions remain the same]
+    // Load AdSense script and initialize ads
+    useEffect(() => {
+        try {
+            if (window.adsbygoogle && !window.adsbygoogle.loaded) {
+                window.adsbygoogle = window.adsbygoogle || [];
+                window.adsbygoogle.push({});
+            }
+        } catch (e) {
+            console.error('AdSense initialization error:', e);
+        }
+    }, []); // Empty dependency array ensures it runs once on mount
 
     // Save messages to localStorage when they change
     useEffect(() => {
@@ -195,7 +205,14 @@ export default function AltChat() {
                 <div className="hidden md:block w-1/6 lg:w-1/5 bg-white border-r border-slate-200 p-4">
                     <div className="sticky top-4">
                         {/* Google Adsense Left Column Code */}
-                        <div className="ad-container-left h-96 lg:h-[600px] bg-slate-100 rounded-lg"></div>
+                        <div className="ad-container-left h-96 lg:h-[600px] bg-slate-100 rounded-lg">
+                            <ins className="adsbygoogle"
+                                style={{ display: "block" }}
+                                data-ad-client="ca-pub-4611047163958988"
+                                data-ad-slot="6802702755"
+                                data-ad-format="auto"
+                                data-full-width-responsive="true"></ins>
+                        </div>
                     </div>
                 </div>
 
