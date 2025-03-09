@@ -3,6 +3,7 @@ import { useState, useRef, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 
 export default function AltChat() {
+    // [All the existing state variables and functions remain the same]
     const [messages, setMessages] = useState(() => {
         try {
             const saved = localStorage.getItem('chatMessages');
@@ -27,6 +28,8 @@ export default function AltChat() {
     const [showClearConfirm, setShowClearConfirm] = useState(false);
     const messagesEndRef = useRef(null);
     const controllerRef = useRef(null);
+
+    // [All other existing functions remain the same]
 
     // Save messages to localStorage when they change
     useEffect(() => {
@@ -156,7 +159,19 @@ export default function AltChat() {
     const handleSuggestionClick = (text) => {
         setInputText(text);
         // Focus the input field after setting the text
-        document.querySelector('input[type="text"]')?.focus();
+        document.querySelector('textarea')?.focus();
+    };
+
+    const adjustTextareaHeight = (e) => {
+        const textarea = e.target;
+        setInputText(textarea.value);
+
+        // Reset height to calculate properly
+        textarea.style.height = 'auto';
+
+        // Get new height (with a max of 150px)
+        const newHeight = Math.min(textarea.scrollHeight, 150);
+        textarea.style.height = `${newHeight}px`;
     };
 
     return (
@@ -231,46 +246,43 @@ export default function AltChat() {
                         </div>
                     </div>
 
-                    {/* Input Area */}
+                    {/* Input Area with Button Outside Textarea */}
                     <div className="border-t border-slate-200 bg-white py-4 md:py-5">
                         <div className="max-w-4xl mx-auto px-4 md:px-5 w-full">
-                            <div className="flex gap-2 md:gap-3">
+                            <div className="relative flex items-end"> {/* Added items-end to align items to bottom */}
                                 <textarea
                                     value={inputText}
-                                    onChange={e => setInputText(e.target.value)}
+                                    onChange={adjustTextareaHeight}
                                     onKeyPress={e => {
                                         if (e.key === 'Enter' && !e.shiftKey) {
-                                            e.preventDefault(); // Prevent default to avoid new line
+                                            e.preventDefault();
                                             handleSend();
                                         }
-                                        // Pressing Shift+Enter will create a new line
                                     }}
                                     placeholder="Postavite svoje pravno pitanje..."
                                     className="flex-1 p-3 md:p-3.5 border-2 border-slate-200 rounded-lg focus:outline-none focus:border-blue-500 bg-white resize-none"
-                                    rows="2"  // Start with 2 rows
+                                    style={{ height: 'auto', minHeight: '50px' }}
                                     disabled={isLoading}
                                 ></textarea>
+
+                                {/* Button positioned outside textarea, aligned to bottom */}
                                 <button
                                     onClick={isLoading ? stopGeneration : handleSend}
-                                    className={isLoading ?
-                                        'bg-red-500 hover:bg-red-600 text-white font-medium px-4 md:px-5 py-3 md:py-3.5 rounded-lg whitespace-nowrap' :
-                                        'bg-blue-600 hover:bg-blue-700 text-white font-medium px-4 md:px-5 py-3 md:py-3.5 rounded-lg whitespace-nowrap'
-                                    }
+                                    className={`ml-2 h-10 w-10 flex items-center justify-center rounded-md ${isLoading ? 'bg-red-500 hover:bg-red-600' : 'bg-blue-600 hover:bg-blue-700'
+                                        } text-white`}
+                                    aria-label={isLoading ? "Zaustavi" : "Pošalji"}
                                 >
-                                    {isLoading ? 'Zaustavi' : 'Pošalji →'}
+                                    {isLoading ? (
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                            <rect x="4" y="4" width="16" height="16" rx="2" ry="2" />
+                                        </svg>
+                                    ) : (
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                            <line x1="5" y1="12" x2="19" y2="12" />
+                                            <polyline points="12 5 19 12 12 19" />
+                                        </svg>
+                                    )}
                                 </button>
-                            </div>
-
-                            <div className="flex gap-2 md:gap-3 mt-3 md:mt-4 flex-wrap">
-                                {['Nisam u stanju otplatiti trenutnu ratu kredita, što da radim?', 'Koji zakon pokriva ovaj dopis', 'Supružnik ne plaća alimentaciju'].map(text => (
-                                    <button
-                                        key={text}
-                                        onClick={() => handleSuggestionClick(text)}
-                                        className="text-sm text-blue-600 bg-blue-50 px-3 py-2 rounded-md hover:bg-blue-100 transition-colors"
-                                    >
-                                        {text}
-                                    </button>
-                                ))}
                             </div>
                         </div>
                     </div>
