@@ -268,12 +268,12 @@ export default function AltChat() {
                                 {/* Button positioned outside textarea, aligned to bottom */}
                                 <button
                                     onClick={isLoading ? stopGeneration : handleSend}
-                                    className={`ml-2 h-10 w-10 flex items-center justify-center rounded-md ${isLoading ? 'bg-red-500 hover:bg-red-600' : 'bg-blue-600 hover:bg-blue-700'
+                                    className={`ml-2 h-10 w-12 flex items-center justify-center rounded-md ${isLoading ? 'bg-red-500 hover:bg-red-600' : 'bg-blue-600 hover:bg-blue-700'
                                         } text-white`}
                                     aria-label={isLoading ? "Zaustavi" : "Pošalji"}
                                 >
                                     {isLoading ? (
-                                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="white" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                                             <rect x="4" y="4" width="16" height="16" rx="2" ry="2" />
                                         </svg>
                                     ) : (
