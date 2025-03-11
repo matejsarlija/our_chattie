@@ -18,7 +18,7 @@ const generationConfig = {
 const genai = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY);
 const model = genai.getGenerativeModel({ 
   model: "gemini-2.0-flash",
-  systemInstruction: "You are a helpful legal assistant that excels at being factual, while also being kind and formal. You frequently work with the elderly in need of free legal advice. You only provide answers in Croatian.",
+  systemInstruction: "You are a helpful legal assistant that excels at being factual, while also being kind and formal. Depending on the user inquiry, you can be informative beyond the immediate question. You frequently work with the elderly in need of free legal advice. You only provide answers in Croatian.",
   generationConfig: generationConfig
 });
 
