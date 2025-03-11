@@ -1,4 +1,5 @@
 import React from 'react';
+import { Link } from 'react-router-dom';
 
 export default function PrivacyPolicy() {
   return (
@@ -7,12 +8,14 @@ export default function PrivacyPolicy() {
       <div className="bg-white p-4 shadow-sm border-b border-slate-200">
         <div className="max-w-6xl mx-auto flex justify-between items-center">
           <h1 className="text-slate-800 text-xl font-medium font-main">
-            Pravni Asistent
+          <Link to="/">
+                        Pravni Asistent
+                        </Link>
           </h1>
           <div className="flex gap-6">
-            <a href="/" className="text-slate-600 hover:text-slate-800 transition-colors">
+          <Link to="/" className="text-slate-600 hover:text-slate-800 transition-colors">
               Povratak na chat
-            </a>
+            </Link>
           </div>
         </div>
       </div>
@@ -28,7 +31,7 @@ export default function PrivacyPolicy() {
               Dobrodošli na Pravila privatnosti za pravnog asistenta i web-stranicu alimentacija.info. Ova pravila opisuju kako prikupljamo, koristimo i štitimo vaše osobne podatke prilikom korištenja naše usluge.
             </p>
             <p>
-              Korištenjem Pravnog Asistenta pristajete na prikupljanje i korištenje informacija u skladu s ovim pravilima privatnosti.
+              Korištenjem pravnog asistenta pristajete na prikupljanje i korištenje informacija u skladu s ovim pravilima privatnosti.
             </p>
           </section>
           
@@ -38,7 +41,7 @@ export default function PrivacyPolicy() {
               Prikupljamo sljedeće vrste podataka:
             </p>
             <ul className="list-disc pl-6 mb-3 space-y-2">
-              <li>Tekstualni sadržaj vaših razgovora s Pravnim Asistentom</li>
+              <li>Tekstualni sadržaj vaših razgovora s pravnim asistentom</li>
               <li>Postavke korisničkog sučelja (kao što je veličina teksta)</li>
               <li>Osnovne podatke o korištenju usluge</li>
             </ul>
@@ -103,6 +106,15 @@ export default function PrivacyPolicy() {
           </section>
         </div>
       </div>
+      {/* Footer */}
+      <footer className="bg-white p-4 border-t border-slate-200 mt-auto">
+        <div className="max-w-4xl mx-auto text-center text-slate-600 text-sm">
+          <p>© {new Date().getFullYear()} Alimentacija.info | Pravni Asistent</p>
+          <p className="mt-1">
+            Sve informacije pružene putem ove usluge su informativne prirode i ne predstavljaju pravni savjet.
+          </p>
+        </div>
+      </footer>
     </div>
   );
 }

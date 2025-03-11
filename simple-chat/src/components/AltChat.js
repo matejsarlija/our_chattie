@@ -190,11 +190,16 @@ export default function AltChat() {
             <div className="bg-white p-4 shadow-sm border-b border-slate-200">
                 <div className="max-w-6xl mx-auto flex justify-between items-center">
                     <h1 className="text-slate-800 text-xl font-medium font-main">
+                        <Link to="/">
                         Pravni Asistent
+                        </Link>
                     </h1>
                     <div className="flex gap-6">
                         <Link to="/pravila-privatnosti" className="text-slate-600 hover:text-slate-800 transition-colors">
                             Pravila privatnosti
+                        </Link>
+                        <Link to="/o-nama" className="text-slate-600 hover:text-slate-800 transition-colors">
+                            O nama
                         </Link>
                     </div>
                 </div>
@@ -303,6 +308,16 @@ export default function AltChat() {
                             </div>
                         </div>
                     </div>
+
+                    {/* Footer - New addition */}
+                    <footer className="bg-white p-4 border-t border-slate-200 mt-auto">
+                        <div className="max-w-4xl mx-auto text-center text-slate-600 text-sm">
+                            <p>© {new Date().getFullYear()} Alimentacija.info | Pravni Asistent</p>
+                            <p className="mt-1">
+                                Sve informacije pružene putem ove usluge su informativne prirode i ne predstavljaju pravni savjet.
+                            </p>
+                        </div>
+                    </footer>
                 </div>
 
                 {/* Right Controls Column - Hidden on mobile and small screens */}
