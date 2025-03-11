@@ -31,7 +31,7 @@ export default function AboutUs() {
           <section className="mb-8">
             <h2 className="text-xl font-semibold mb-3">Tko smo mi</h2>
             <p className="mb-3">
-              Alimentacija.info je besplatna usluga koja svima pruža pristup osnovnim pravnim informacijama i smjernicama vezanim uz obiteljsko, kazneno, radno i sva ostala prava definirana na području Republike Hrvatske. Pokrivamo teme od skrbništva, alimentacije i privatnih tužbi do radnih odnosa, poreza, nekretnina i poslovnih transakcija. i sva druga pitanja koja utječu na svakodnevan život.
+              Alimentacija.info je besplatna usluga koja svima pruža pristup osnovnim pravnim informacijama i smjernicama vezanim uz obiteljsko, kazneno i sva ostala prava definirana na području RH. Upiti za skrbništvo, alimentaciju i privatne tužbe - do radnih odnosa, poreza, nekretnina i poslovnih transakcija, i sva druga pitanja koja utječu na svakodnevan život su dobrodošla.
             </p>
             <p className="mb-3">
               Vjerujemo da svatko zaslužuje pristup pravnim informacijama na jasan, razumljiv i pristupačan način, bez obzira na njihovu financijsku situaciju.
