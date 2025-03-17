@@ -8,7 +8,7 @@ const WelcomeModal = ({ isOpen, onClose }) => {
       <div className="bg-white rounded-lg p-6 max-w-md w-full shadow-xl">
         <h3 className="text-xl font-medium mb-3">Dobrodošli na Alimentacija.info</h3>
         <p className="text-slate-600 mb-4">
-          Alimentacija.info je besplatna usluga koja svima pruža pristup osnovnim pravnim informacijama i smjernicama vezanim uz razna pravna područja.
+          Alimentacija.info je besplatna usluga koja omogućava pristup osnovnim pravnim informacijama i smjernicama vezanim uz razna pravna područja.
         </p>
         <p className="text-red-600 mb-4">
           S obzirom na besplatnu narav i tehnička ograničenja usluge moguće je čekanje od 30 sekundi na prvi odgovor asistenta.
