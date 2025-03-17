@@ -1,6 +1,8 @@
 import ReactMarkdown from 'react-markdown';
 import { useState, useRef, useEffect } from 'react';
 import { Link } from 'react-router-dom';
+import WelcomeModal from './WelcomeModal';
+import {useFirstVisit} from '../hooks/useFirstVisit';
 
 export default function AltChat() {
     // [All the existing state variables and functions remain the same]
@@ -182,6 +184,20 @@ export default function AltChat() {
         // Get new height (with a max of 150px)
         const newHeight = Math.min(textarea.scrollHeight, 150);
         textarea.style.height = `${newHeight}px`;
+    };
+
+    const { isFirstVisit, loading } = useFirstVisit();
+    const [showWelcomeModal, setShowWelcomeModal] = useState(false);
+    
+    // Show the modal when we determine it's a first visit
+    useEffect(() => {
+        if (!loading && isFirstVisit) {
+            setShowWelcomeModal(true);
+        }
+    }, [isFirstVisit, loading]);
+    
+    const closeWelcomeModal = () => {
+        setShowWelcomeModal(false);
     };
 
     return (
@@ -397,6 +413,10 @@ export default function AltChat() {
                     </div>
                 )}
             </div>
+            <WelcomeModal 
+                isOpen={showWelcomeModal} 
+                onClose={closeWelcomeModal} 
+            />
         </div>
     );
 }
