@@ -374,7 +374,7 @@ export default function AltChat() {
                 </div>
 
                 {/* Mobile Controls - Only shown on small screens */}
-                <div className="lg:hidden fixed bottom-24 right-4 z-10 flex flex-col gap-2">
+                <div className="lg:hidden fixed bottom-40 right-4 z-10 flex flex-col gap-2">
                     <button
                         onClick={() => setShowClearConfirm(true)}
                         className="w-12 h-12 flex items-center justify-center rounded-full bg-white shadow-md border border-slate-200 text-slate-600"
