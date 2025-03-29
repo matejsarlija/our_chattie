@@ -91,11 +91,14 @@ async function uploadFileToGoogleAI(filePath, originalFilename) {
       ? 'application/pdf' 
       : `image/${path.extname(filePath).substring(1).toLowerCase()}`;
     
-    const fileBuffer = fs.readFileSync(filePath);
-    const fileBlob = fileBuffer
+      const fileData = {
+        data: fs.readFileSync(filePath),
+        mimeType: mimeType,
+        name: originalFilename || path.basename(filePath)
+      };
     
-    const uploadResult = await fileManager.uploadFile(fileBlob, {
-      mimeType: mimeType,
+    const uploadResult = await fileManager.uploadFile(fileData.data, {
+      mimeType: fileData.mimeType,
       displayName: originalFilename || path.basename(filePath)
     });
 
