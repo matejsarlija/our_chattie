@@ -405,7 +405,7 @@ export default function AltChat() {
                                 ></textarea>
 
                                 {/* Attachment button row - positioned absolutely at bottom */}
-                                <div className="absolute bottom-2 left-2 flex items-center">
+                                <div className="absolute bottom-2 left-2 hidden md:flex items-center">
                                     <button
                                         onClick={triggerFileInput}
                                         disabled={isLoading || !!selectedFile}
@@ -441,16 +441,16 @@ export default function AltChat() {
                                 Možete priložiti PDF ili sliku (max. 5MB)
                             </div>
                             <div className="hidden md:flex gap-2 md:gap-3 mt-3 md:mt-4 flex-wrap">
-                                 {['Nisam u stanju otplatiti ratu kredita, što da radim?', 'Koji zakon pokriva sljedeći dopis -', 'Supružnik ne plaća alimentaciju...'].map(text => (
-                                     <button
-                                         key={text}
-                                         onClick={() => handleSuggestionClick(text)}
-                                         className="text-sm text-blue-600 bg-blue-50 px-3 py-2 rounded-md hover:bg-blue-100 transition-colors"
-                                     >
-                                         {text}
-                                     </button>
-                                 ))}
-                             </div>
+                                {['Nisam u stanju otplatiti ratu kredita, što da radim?', 'Koji zakon pokriva sljedeći dopis -', 'Supružnik ne plaća alimentaciju...'].map(text => (
+                                    <button
+                                        key={text}
+                                        onClick={() => handleSuggestionClick(text)}
+                                        className="text-sm text-blue-600 bg-blue-50 px-3 py-2 rounded-md hover:bg-blue-100 transition-colors"
+                                    >
+                                        {text}
+                                    </button>
+                                ))}
+                            </div>
                         </div>
                     </div>
 
@@ -515,6 +515,15 @@ export default function AltChat() {
                         className="w-12 h-12 flex items-center justify-center rounded-full bg-white shadow-md border border-slate-200 text-slate-600"
                     >
                         {textSize === 16 ? 'A+' : 'A'}
+                    </button>
+                    <button
+                        onClick={triggerFileInput}
+                        disabled={isLoading || !!selectedFile}
+                        className={`w-12 h-12 flex items-center justify-center rounded-full bg-white shadow-md border border-slate-200 text-slate-600 ${(isLoading || !!selectedFile) ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    >
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48" />
+                        </svg>
                     </button>
                 </div>
 
