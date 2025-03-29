@@ -2,10 +2,9 @@ import ReactMarkdown from 'react-markdown';
 import { useState, useRef, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import WelcomeModal from './WelcomeModal';
-import {useFirstVisit} from '../hooks/useFirstVisit';
+import { useFirstVisit } from '../hooks/useFirstVisit';
 
 export default function AltChat() {
-    // [All the existing state variables and functions remain the same]
     const [messages, setMessages] = useState(() => {
         try {
             const saved = localStorage.getItem('chatMessages');
@@ -28,8 +27,10 @@ export default function AltChat() {
     });
     const [error, setError] = useState('');
     const [showClearConfirm, setShowClearConfirm] = useState(false);
+    const [selectedFile, setSelectedFile] = useState(null);
     const messagesEndRef = useRef(null);
     const controllerRef = useRef(null);
+    const fileInputRef = useRef(null);
 
     // Load AdSense script and initialize ads
     useEffect(() => {
@@ -73,10 +74,40 @@ export default function AltChat() {
         messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
     };
 
-    const handleSend = async () => {
-        if (!inputText.trim() || isLoading) return;
+    const handleFileSelect = (e) => {
+        const file = e.target.files[0];
+        if (file) {
+            // Check file type
+            const allowedTypes = ['application/pdf', 'image/jpeg', 'image/png', 'image/gif'];
+            if (!allowedTypes.includes(file.type)) {
+                setError('Nepodržani format datoteke. Dozvoljeni su samo PDF, JPEG, PNG i GIF.');
+                e.target.value = '';
+                return;
+            }
 
-        const userMessage = { text: inputText, isUser: true, timestamp: new Date().toISOString() };
+            // Check file size (10MB limit)
+            if (file.size > 5 * 1024 * 1024) {
+                setError('Datoteka je prevelika. Maksimalna veličina je 10MB.');
+                e.target.value = '';
+                return;
+            }
+
+            setSelectedFile(file);
+            setError('');
+        }
+    };
+
+    const handleSend = async () => {
+        if ((!inputText.trim() && !selectedFile) || isLoading) return;
+
+        const userMessage = {
+            text: inputText,
+            isUser: true,
+            timestamp: new Date().toISOString(),
+            hasAttachment: !!selectedFile,
+            attachmentName: selectedFile ? selectedFile.name : null
+        };
+
         setMessages(prev => [...prev, userMessage]);
         setInputText('');
         setIsLoading(true);
@@ -91,17 +122,24 @@ export default function AltChat() {
             const chatMessages = [...messages, userMessage].map(msg => ({
                 role: msg.isUser ? 'user' : 'assistant',
                 content: msg.text
-            })).filter(msg => msg.content.trim() !== '');
+            })).filter(msg => msg.content.trim() !== '' || msg.hasAttachment);
 
             const API_URL = process.env.REACT_APP_API_URL || '/api/chat';
 
+            // Use FormData for file uploads
+            const formData = new FormData();
+
+            // Add the messages as JSON string
+            formData.append('messages', JSON.stringify(chatMessages));
+
+            // Add the file if one is selected
+            if (selectedFile) {
+                formData.append('file', selectedFile);
+            }
 
             const response = await fetch(API_URL, {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({ messages: chatMessages }),
+                body: formData,
                 signal: controllerRef.current.signal
             });
 
@@ -152,6 +190,10 @@ export default function AltChat() {
         } finally {
             setIsLoading(false);
             controllerRef.current = null;
+            setSelectedFile(null);
+            if (fileInputRef.current) {
+                fileInputRef.current.value = '';
+            }
         }
     };
 
@@ -166,6 +208,13 @@ export default function AltChat() {
         localStorage.removeItem('chatMessages');
         setMessages([]);
         setShowClearConfirm(false);
+    };
+
+    const handleRemoveFile = () => {
+        setSelectedFile(null);
+        if (fileInputRef.current) {
+            fileInputRef.current.value = '';
+        }
     };
 
     const handleSuggestionClick = (text) => {
@@ -188,16 +237,20 @@ export default function AltChat() {
 
     const { isFirstVisit, loading } = useFirstVisit();
     const [showWelcomeModal, setShowWelcomeModal] = useState(false);
-    
+
     // Show the modal when we determine it's a first visit
     useEffect(() => {
         if (!loading && isFirstVisit) {
             setShowWelcomeModal(true);
         }
     }, [isFirstVisit, loading]);
-    
+
     const closeWelcomeModal = () => {
         setShowWelcomeModal(false);
+    };
+
+    const triggerFileInput = () => {
+        fileInputRef.current?.click();
     };
 
     return (
@@ -207,7 +260,7 @@ export default function AltChat() {
                 <div className="max-w-6xl mx-auto flex justify-between items-center">
                     <h1 className="text-slate-800 text-xl font-medium font-main">
                         <Link to="/">
-                        Pravni Asistent
+                            Pravni Asistent
                         </Link>
                     </h1>
                     <div className="flex gap-6">
@@ -263,13 +316,25 @@ export default function AltChat() {
                                                     'max-w-xs sm:max-w-md md:max-w-2xl p-3 md:p-4 rounded-xl bg-white shadow-sm border border-slate-100'
                                                 }
                                             >
-                                                {msg.isUser ? (
-                                                    <div>{msg.text}</div>
-                                                ) : (
-                                                    <div className="prose prose-slate max-w-none">
-                                                        <ReactMarkdown>{msg.text}</ReactMarkdown>
-                                                    </div>
-                                                )}
+                                                <div>
+                                                    {msg.isUser ? (
+                                                        <>
+                                                            <div>{msg.text}</div>
+                                                            {msg.hasAttachment && (
+                                                                <div className="mt-2 flex items-center text-white text-sm">
+                                                                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-1">
+                                                                        <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48" />
+                                                                    </svg>
+                                                                    <span className="truncate max-w-[200px]">{msg.attachmentName}</span>
+                                                                </div>
+                                                            )}
+                                                        </>
+                                                    ) : (
+                                                        <div className="prose prose-slate max-w-none">
+                                                            <ReactMarkdown>{msg.text}</ReactMarkdown>
+                                                        </div>
+                                                    )}
+                                                </div>
                                             </div>
                                         </div>
                                     ))}
@@ -284,10 +349,41 @@ export default function AltChat() {
                         </div>
                     </div>
 
-                    {/* Input Area with Button Outside Textarea */}
+                    {/* Input Area with Button and File Attachment */}
                     <div className="border-t border-slate-200 bg-white py-4 md:py-5">
                         <div className="max-w-4xl mx-auto px-4 md:px-5 w-full">
-                            <div className="relative flex items-end"> {/* Added items-end to align items to bottom */}
+                            {/* File attachment preview */}
+                            {selectedFile && (
+                                <div className="mb-2 p-2 bg-blue-50 rounded-lg flex items-center justify-between">
+                                    <div className="flex items-center text-sm text-blue-600">
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-2">
+                                            <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48" />
+                                        </svg>
+                                        <span className="truncate max-w-[200px]">{selectedFile.name}</span>
+                                    </div>
+                                    <button
+                                        onClick={handleRemoveFile}
+                                        className="text-slate-500 hover:text-slate-700"
+                                    >
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                            <line x1="18" y1="6" x2="6" y2="18" />
+                                            <line x1="6" y1="6" x2="18" y2="18" />
+                                        </svg>
+                                    </button>
+                                </div>
+                            )}
+
+                            <div className="relative flex items-end">
+                                {/* Hidden file input */}
+                                <input
+                                    type="file"
+                                    ref={fileInputRef}
+                                    onChange={handleFileSelect}
+                                    accept=".pdf,image/jpeg,image/png,image/gif"
+                                    className="hidden"
+                                />
+
+                                {/* Textarea with bottom padding for the button */}
                                 <textarea
                                     value={inputText}
                                     onChange={adjustTextareaHeight}
@@ -299,15 +395,32 @@ export default function AltChat() {
                                     }}
                                     placeholder="Postavite svoje pravno pitanje..."
                                     className="flex-1 p-3 md:p-3.5 border-2 border-slate-200 rounded-lg focus:outline-none focus:border-blue-500 bg-white resize-none"
-                                    style={{ height: 'auto', minHeight: '50px' }}
+                                    style={{
+                                        height: 'auto',
+                                        minHeight: '50px',
+                                        paddingLeft: '1.55rem', // Make room for the button
+                                        paddingBottom: '0.5rem' // Add space at bottom for the button row
+                                    }}
                                     disabled={isLoading}
                                 ></textarea>
 
-                                {/* Button positioned outside textarea, aligned to bottom */}
+                                {/* Attachment button row - positioned absolutely at bottom */}
+                                <div className="absolute bottom-2 left-2 flex items-center">
+                                    <button
+                                        onClick={triggerFileInput}
+                                        disabled={isLoading || !!selectedFile}
+                                        className={`text-slate-400 hover:text-slate-600 ${(isLoading || !!selectedFile) ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                    >
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                            <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48" />
+                                        </svg>
+                                    </button>
+                                </div>
+
+                                {/* Send button */}
                                 <button
                                     onClick={isLoading ? stopGeneration : handleSend}
-                                    className={`ml-2 h-10 w-12 flex items-center justify-center rounded-md ${isLoading ? 'bg-red-500 hover:bg-red-600' : 'bg-blue-600 hover:bg-blue-700'
-                                        } text-white`}
+                                    className={`ml-2 h-10 w-12 flex items-center justify-center rounded-md ${isLoading ? 'bg-red-500 hover:bg-red-600' : 'bg-blue-600 hover:bg-blue-700'} text-white`}
                                     aria-label={isLoading ? "Zaustavi" : "Pošalji"}
                                 >
                                     {isLoading ? (
@@ -321,6 +434,11 @@ export default function AltChat() {
                                         </svg>
                                     )}
                                 </button>
+                            </div>
+
+                            {/* File upload hint */}
+                            <div className="mt-2 text-xs text-slate-500 text-center">
+                                Možete priložiti PDF ili sliku (max. 5MB)
                             </div>
                         </div>
                     </div>
@@ -374,7 +492,7 @@ export default function AltChat() {
                 </div>
 
                 {/* Mobile Controls - Only shown on small screens */}
-                <div className="lg:hidden fixed bottom-40 right-4 z-10 flex flex-col gap-2">
+                <div className="lg:hidden fixed bottom-60 right-4 z-10 flex flex-col gap-2">
                     <button
                         onClick={() => setShowClearConfirm(true)}
                         className="w-12 h-12 flex items-center justify-center rounded-full bg-white shadow-md border border-slate-200 text-slate-600"
@@ -413,9 +531,9 @@ export default function AltChat() {
                     </div>
                 )}
             </div>
-            <WelcomeModal 
-                isOpen={showWelcomeModal} 
-                onClose={closeWelcomeModal} 
+            <WelcomeModal
+                isOpen={showWelcomeModal}
+                onClose={closeWelcomeModal}
             />
         </div>
     );
