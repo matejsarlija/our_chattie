@@ -37,7 +37,7 @@ const fileFilter = (req, file, cb) => {
   }
 };
 
-const upload = multer({ 
+const upload = multer({
   storage: storage,
   fileFilter: fileFilter,
   limits: {
@@ -54,7 +54,7 @@ const generationConfig = {
 
 const genai = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY);
 const fileManager = new GoogleAIFileManager(process.env.GOOGLE_API_KEY);
-const model = genai.getGenerativeModel({ 
+const model = genai.getGenerativeModel({
   model: "gemini-2.0-flash",
   systemInstruction: "You are a helpful legal assistant that excels at being factual, while also being kind and formal. Depending on the user inquiry, you can be informative beyond the immediate question. You frequently work with the elderly in need of free legal advice. You only provide answers in Croatian.",
   generationConfig: generationConfig
@@ -77,7 +77,7 @@ app.use('/api/chat', rateLimit({
 
 // CORS settings
 app.use(cors({
-  origin: process.env.NODE_ENV === 'production' 
+  origin: process.env.NODE_ENV === 'production'
     ? ['https://our-chattie-front.onrender.com', 'https://alimentacija.info', 'https://www.alimentacija.info']
     : 'http://localhost:3000',
 }));
@@ -87,42 +87,35 @@ app.use(express.json());
 // Helper function to upload file to Google AI File Manager
 async function uploadFileToGoogleAI(filePath, originalFilename) {
   try {
-    const mimeType = path.extname(filePath).toLowerCase() === '.pdf' 
-      ? 'application/pdf' 
+    const mimeType = path.extname(filePath).toLowerCase() === '.pdf'
+      ? 'application/pdf'
       : `image/${path.extname(filePath).substring(1).toLowerCase()}`;
-    
-      const fileData = {
-        data: fs.readFileSync(filePath),
-        mimeType: mimeType,
-        name: originalFilename || path.basename(filePath)
-      };
-    
-    const uploadResult = await fileManager.uploadFile(fileData.data, {
-      mimeType: fileData.mimeType,
+
+    // Use the file path directly instead of reading it into a buffer
+    const uploadResult = await fileManager.uploadFile(filePath, {
+      mimeType: mimeType,
       displayName: originalFilename || path.basename(filePath)
     });
 
     console.log(`Uploaded file ${uploadResult.file.displayName} as: ${uploadResult.file.uri}`);
-    
-    // Poll to check if file processing is complete
+
+    // Rest of the function for polling...
     let file = await fileManager.getFile(uploadResult.file.name);
-    
+
     // Initially wait for processing to start
     await new Promise(resolve => setTimeout(resolve, 2000));
-    
+
     // Check processing status
     while (file.state === 'PROCESSING') {
       process.stdout.write(".");
-      // Sleep for 3 seconds
       await new Promise(resolve => setTimeout(resolve, 3000));
-      // Fetch the file from the API again
       file = await fileManager.getFile(uploadResult.file.name);
     }
-    
+
     if (file.state === 'FAILED') {
       throw new Error("File processing failed.");
     }
-    
+
     return {
       fileUri: uploadResult.file.uri,
       mimeType: uploadResult.file.mimeType
@@ -136,10 +129,10 @@ async function uploadFileToGoogleAI(filePath, originalFilename) {
 // Modified chat endpoint to handle file uploads
 app.post('/api/chat', upload.single('file'), async (req, res) => {
   let uploadedFilePath = null;
-  
+
   try {
     let { messages } = req.body;
-    
+
     // Parse messages if they come as a string (from form data)
     if (typeof messages === 'string') {
       messages = JSON.parse(messages);
@@ -175,18 +168,18 @@ app.post('/api/chat', upload.single('file'), async (req, res) => {
 
     // Create parts array for the message
     let messageParts = [{ text: currentMessage }];
-    
+
     // Handle uploaded file if present
     if (req.file) {
       uploadedFilePath = req.file.path;
       const fileType = req.file.mimetype.includes('pdf') ? 'PDF' : 'image';
-      
+
       // Upload file to Google AI File Manager
       const { fileUri, mimeType } = await uploadFileToGoogleAI(
-        req.file.path, 
+        req.file.path,
         req.file.originalname
       );
-      
+
       // Add file to message parts
       messageParts.push({
         fileData: {
@@ -194,7 +187,7 @@ app.post('/api/chat', upload.single('file'), async (req, res) => {
           mimeType: mimeType
         }
       });
-      
+
       // Update text to include reference to the file
       messageParts[0].text += `\n\n(Attached ${fileType}: ${req.file.originalname})`;
     }
@@ -226,14 +219,14 @@ app.post('/api/chat', upload.single('file'), async (req, res) => {
     res.end();
   } catch (error) {
     console.error('Gemini Error:', error.message);
-    
+
     // Clean up the uploaded file in case of error
     if (uploadedFilePath) {
       fs.unlink(uploadedFilePath, (err) => {
         if (err) console.error('Error deleting file:', err);
       });
     }
-    
+
     res.write(`data: ${JSON.stringify({ error: error.message || 'AI service unavailable' })}\n\n`);
     res.end();
   }
