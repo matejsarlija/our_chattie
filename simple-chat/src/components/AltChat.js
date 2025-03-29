@@ -440,6 +440,17 @@ export default function AltChat() {
                             <div className="mt-2 text-xs text-slate-500 text-center">
                                 Možete priložiti PDF ili sliku (max. 5MB)
                             </div>
+                            <div className="hidden md:flex gap-2 md:gap-3 mt-3 md:mt-4 flex-wrap">
+                                 {['Nisam u stanju otplatiti ratu kredita, što da radim?', 'Koji zakon pokriva sljedeći dopis -', 'Supružnik ne plaća alimentaciju...'].map(text => (
+                                     <button
+                                         key={text}
+                                         onClick={() => handleSuggestionClick(text)}
+                                         className="text-sm text-blue-600 bg-blue-50 px-3 py-2 rounded-md hover:bg-blue-100 transition-colors"
+                                     >
+                                         {text}
+                                     </button>
+                                 ))}
+                             </div>
                         </div>
                     </div>
 
