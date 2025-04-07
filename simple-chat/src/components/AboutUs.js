@@ -31,10 +31,21 @@ export default function AboutUs() {
           <section className="mb-8">
             <h2 className="text-xl font-semibold mb-3">Tko smo mi</h2>
             <p className="mb-3">
-              Alimentacija.info je besplatna usluga koja svima pruža pristup osnovnim pravnim informacijama i smjernicama vezanim uz obiteljsko, kazneno i sva ostala prava definirana na području RH. Upiti za skrbništvo, alimentaciju i privatne tužbe - do radnih odnosa, poreza, nekretnina i poslovnih transakcija, i sva druga pitanja koja utječu na svakodnevan život su dobrodošla.
+              Alimentacija.info je usluga koja svima pruža pristup osnovnim pravnim informacijama i smjernicama vezanim uz obiteljsko, kazneno, porezno, radno i sva ostala prava definirana na području RH. 
+            </p>
+
+            <p className="mb-3">
+              Dobili ste prometnu kaznu ili poziv na sud? Razmatrate privatnu tužbu ili vas čeka ostavinski postupak? Traže da potpišete sporazumni otkaz? Radite prekovremeno bez dodatne naknade? Želite se razvesti ili imate pitanja oko skrbništva nad djecom? 
+            </p>
+
+            <p className="mb-3">
+              Niste sigurni kako napisati žalbu ili prigovor? Na koji način odgovoriti na dopis? Kako se ponašati na sudu? Doznajte koji je zakon trenutno važeći za dopis koji ste primili. Naša usluga može vam pomoći da dobijete osnovne informacije i smjernice kako dalje.
             </p>
             <p className="mb-3">
-              Vjerujemo da svatko zaslužuje pristup pravnim informacijama na jasan, razumljiv i pristupačan način, bez obzira na njihovu financijsku situaciju.
+            Zastupanje od strane odvjetnika, javni bilježnici, alimentacija, ugovori za nekretnine,  poslovne transakcije i ostalo su teme koje ćemo rado pojasniti.
+            </p>
+            <p className="mb-3">
+              Vjerujemo da svatko zaslužuje pristup pravnim informacijama na jasan, razumljiv i pristupačan način.
             </p>
           </section>
           
@@ -55,6 +66,7 @@ export default function AboutUs() {
             </p>
             <ul className="list-disc pl-6 mb-3 space-y-2">
               <li>Postavite svoje pitanje u chat prozoru</li>
+              <li>Ako je potrebno, priložite dokument ili sliku</li>
               <li>Dobijte trenutni odgovor s relevantnim pravnim informacijama</li>
               <li>Dodatno istražite temu postavljanjem potpitanja</li>
               <li>Razgovor se automatski pohranjuje lokalno u vašem pregledniku dok ga ne izbrišete</li>
@@ -67,7 +79,7 @@ export default function AboutUs() {
           <section className="mb-8">
             <h2 className="text-xl font-semibold mb-3">Vrijednost naše usluge</h2>
             <p className="mb-3">
-              Iako je pravni asistent potpuno besplatan za korištenje, važno je napomenuti da iza njega stoji rad i tehnologija. Naš cilj je održavati ovu uslugu besplatnom kroz prihode od oglasa, te omogućiti svima pristup bez financijskih prepreka.
+              Pravni asistent je potpuno besplatan za korištenje, no važno je napomenuti da iza njega stoji rad i tehnologija. Naš cilj je održavati ovu uslugu besplatnom kroz prihode od oglasa, te omogućiti svima pristup bez financijskih prepreka.
             </p>
             <p className="mb-3">
               Tipična konzultacija s odvjetnikom može koštati između 50€ i 100€ po satu. Budući da naš asistent ne može zamijeniti osobni savjet odvjetnika ili pravni odnos, pokušati će vam pomoći u sljedećem:
@@ -109,10 +121,10 @@ export default function AboutUs() {
               Imate prijedlog za poboljšanje? Uočili ste pogrešku? Želite nam poslati pohvalu?
             </p>
             <p className="mb-3">
-              Kontaktirajte nas putem email adrese: <span className="text-blue-600">admin@alimentacija.info</span>
+              Kontaktirajte nas putem email adrese: <span className="text-blue-600"><a href='mailto:admin@alimentacija.info'>admin@alimentacija.info</a></span>
             </p>
             <p>
-              Cijenimo sve vaše povratne informacije jer nam pomažu da unaprijedimo našu uslugu i učinimo je još korisnijim alatom za sve građane.
+              Cijenimo sve vaše povratne informacije jer nam pomažu da unaprijedimo našu uslugu i učinimo je još korisnijim alatom.
             </p>
           </section>
         </div>
