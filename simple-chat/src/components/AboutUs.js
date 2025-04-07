@@ -31,7 +31,7 @@ export default function AboutUs() {
           <section className="mb-8">
             <h2 className="text-xl font-semibold mb-3">Tko smo mi</h2>
             <p className="mb-3">
-              Alimentacija.info je usluga koja svima pruža pristup osnovnim pravnim informacijama i smjernicama vezanim uz obiteljsko, kazneno, porezno, radno i sva ostala prava definirana na području RH. 
+              Alimentacija.info je usluga koja vam pruža pristup osnovnim pravnim informacijama i smjernicama vezanim uz obiteljsko, kazneno, porezno, radno i sva ostala prava definirana na području RH. 
             </p>
 
             <p className="mb-3">
