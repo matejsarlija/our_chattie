@@ -29,7 +29,7 @@ const storage = multer.diskStorage({
 
 // File filter to allow only PDFs and images
 const fileFilter = (req, file, cb) => {
-  const allowedTypes = ['application/pdf', 'image/jpeg', 'image/png', 'image/gif'];
+  const allowedTypes = ['application/pdf', 'image/jpeg', 'image/png'];
   if (allowedTypes.includes(file.mimetype)) {
     cb(null, true);
   } else {
@@ -41,7 +41,7 @@ const upload = multer({
   storage: storage,
   fileFilter: fileFilter,
   limits: {
-    fileSize: 5 * 1024 * 1024 // Limit file size to 10MB
+    fileSize: 2 * 1024 * 1024 // Limit file size to 2MB
   }
 });
 

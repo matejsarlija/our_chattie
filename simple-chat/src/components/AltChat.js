@@ -78,16 +78,16 @@ export default function AltChat() {
         const file = e.target.files[0];
         if (file) {
             // Check file type
-            const allowedTypes = ['application/pdf', 'image/jpeg', 'image/png', 'image/gif'];
+            const allowedTypes = ['application/pdf', 'image/jpeg', 'image/png'];
             if (!allowedTypes.includes(file.type)) {
-                setError('Nepodržani format datoteke. Dozvoljeni su samo PDF, JPEG, PNG i GIF.');
+                setError('Nepodržani format datoteke. Dozvoljeni su samo PDF, JPEG i PNG.');
                 e.target.value = '';
                 return;
             }
 
-            // Check file size (10MB limit)
-            if (file.size > 5 * 1024 * 1024) {
-                setError('Datoteka je prevelika. Maksimalna veličina je 10MB.');
+            // Check file size (2MB limit)
+            if (file.size > 2 * 1024 * 1024) {
+                setError('Datoteka je prevelika. Maksimalna veličina je 2MB.');
                 e.target.value = '';
                 return;
             }
@@ -438,7 +438,7 @@ export default function AltChat() {
 
                             {/* File upload hint */}
                             <div className="mt-2 text-xs text-slate-500 text-center">
-                                Možete priložiti PDF ili sliku (max. 5MB)
+                                Možete priložiti PDF ili sliku (max. 2MB)
                             </div>
                             <div className="hidden md:flex gap-2 md:gap-3 mt-3 md:mt-4 flex-wrap">
                                 {['Nisam u stanju otplatiti ratu kredita, što da radim?', 'Koji zakon pokriva sljedeći dopis -', 'Supružnik ne plaća alimentaciju...'].map(text => (
