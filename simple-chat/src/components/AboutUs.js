@@ -35,18 +35,16 @@ export default function AboutUs() {
             </p>
 
             <p className="mb-3">
-              Dobili ste prometnu kaznu ili poziv na sud? Razmatrate privatnu tužbu ili vas čeka ostavinski postupak? Traže da potpišete sporazumni otkaz? Radite prekovremeno bez dodatne naknade? Želite se razvesti ili imate pitanja oko skrbništva nad djecom? 
+              Dobili ste prometnu kaznu ili poziv na sud? Razmatrate privatnu tužbu ili čekate ostavinski postupak? Traže da potpišete sporazumni otkaz? Radite prekovremeno bez dodatne naknade? Želite se razvesti ili imate pitanja oko skrbništva? 
             </p>
 
             <p className="mb-3">
-              Niste sigurni kako napisati žalbu ili prigovor? Na koji način odgovoriti na dopis? Kako se ponašati na sudu? Doznajte koji je zakon trenutno važeći za dopis koji ste primili. Naša usluga može vam pomoći da dobijete osnovne informacije i smjernice kako dalje.
+              Niste sigurni kako napisati žalbu ili prigovor? Na koji način odgovoriti na dopis? Kako se ponašati na sudu? Doznajte koji je zakon trenutno važeći za dopis koji ste primili. Naša usluga može vam pomoći da dobijete osnovne informacije i smjernice za dalje.
             </p>
             <p className="mb-3">
-            Zastupanje od strane odvjetnika, javni bilježnici, alimentacija, ugovori za nekretnine,  poslovne transakcije i ostalo su teme koje ćemo rado pojasniti.
+            Zastupanje od strane odvjetnika, javni bilježnici, alimentacija, ugovori za nekretnine, i ostalo su teme koje ćemo rado pojasniti.
             </p>
-            <p className="mb-3">
-              Vjerujemo da svatko zaslužuje pristup pravnim informacijama na jasan, razumljiv i pristupačan način.
-            </p>
+            
           </section>
           
           <section className="mb-8">
@@ -57,6 +55,9 @@ export default function AboutUs() {
             <p className="mb-3">
               Želimo premostiti jaz između složenog pravnog sustava i svakodnevnih potreba građana, nudeći pristupačan alat koji može odgovoriti na osnovna pravna pitanja i pružiti smjernice za daljnje djelovanje.
             </p>
+            <p className="mb-3">
+              Vjerujemo da svatko zaslužuje pristup pravnim informacijama na jasan, razumljiv i pristupačan način.
+            </p>
           </section>
           
           <section className="mb-8">
@@ -64,7 +65,7 @@ export default function AboutUs() {
             <p className="mb-3">
               Naš pravni asistent je intuitivno i jednostavno sučelje dizajnirano za brzo dobivanje informacija kroz razgovor. Na jednostavan način:
             </p>
-            <ul className="list-disc pl-6 mb-3 space-y-2">
+            <ul className="pl-6 mb-3 space-y-2 list-items">
               <li>Postavite svoje pitanje u chat prozoru</li>
               <li>Ako je potrebno, priložite dokument ili sliku</li>
               <li>Dobijte trenutni odgovor s relevantnim pravnim informacijama</li>
@@ -77,14 +78,14 @@ export default function AboutUs() {
           </section>
           
           <section className="mb-8">
-            <h2 className="text-xl font-semibold mb-3">Vrijednost naše usluge</h2>
+            <h2 className="text-xl font-semibold mb-3">Vrijednost ove usluge</h2>
             <p className="mb-3">
               Pravni asistent je potpuno besplatan za korištenje, no važno je napomenuti da iza njega stoji rad i tehnologija. Naš cilj je održavati ovu uslugu besplatnom kroz prihode od oglasa, te omogućiti svima pristup bez financijskih prepreka.
             </p>
             <p className="mb-3">
               Tipična konzultacija s odvjetnikom može koštati između 50€ i 100€ po satu. Budući da naš asistent ne može zamijeniti osobni savjet odvjetnika ili pravni odnos, pokušati će vam pomoći u sljedećem:
             </p>
-            <ul className="list-disc pl-6 mb-3 space-y-2">
+            <ul className="pl-6 mb-3 space-y-2 list-items-alt">
               <li>Bolje razumjeti svoje pravno pitanje prije traženja profesionalne pomoći</li>
               <li>Upoznati se s relevantnim zakonima i propisima</li>
               <li>Pripremiti se za razgovor s odvjetnikom, čime možete uštedjeti vrijeme i novac</li>
