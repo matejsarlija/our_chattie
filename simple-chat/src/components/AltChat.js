@@ -296,7 +296,7 @@ export default function AltChat() {
                         <div className="max-w-4xl mx-auto p-4 md:p-5 w-full" style={{ fontSize: `${textSize}px` }}>
                             {messages.length === 0 ? (
                                 <div className="text-center text-slate-500 py-10">
-                                    <h2 className="text-xl mb-3">Dobrodošli na Alimentacija.info | Pravni asistent</h2>
+                                    <h2 className="text-xl mb-3">Dobrodošli na Alimentacija.info</h2>
                                     <p>Postavite pitanje i dobijte opći pregled sa informacijama koji vam može pomoći u daljnjem usmjeravanju!</p>
                                     <p>Ova usluga pruža opće pravne informacije i ne predstavlja pravni savjet. Ne postoji odvjetničko-klijentski odnos između korisnika i pružatelja usluge.</p>
                                     <p>Za konkretne pravne probleme i savjete prilagođene vašoj situaciji, obratite se kvalificiranom pravnom stručnjaku ili odvjetniku.</p>
