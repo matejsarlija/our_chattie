@@ -297,7 +297,7 @@ export default function AltChat() {
                             {messages.length === 0 ? (
                                 <div className="text-center text-slate-500 py-10">
                                     <h2 className="text-xl mb-3">Dobrodošli na Alimentacija.info</h2>
-                                    <p>Postavite pitanje kroz chat i odmah dobijte opći pregled sa informacijama koji vam može pomoći u daljnjem usmjeravanju!</p>
+                                    <p>Postavite pitanje kroz chat i odmah dobijte odgovor sa informacijama koji vam može pomoći u daljnjem usmjeravanju!</p>
                                     <p>Ova usluga pruža opće pravne informacije i ne predstavlja pravni savjet. Ne postoji odvjetničko-klijentski odnos između korisnika i pružatelja usluge.</p>
                                     <p>Za konkretne pravne probleme i savjete prilagođene vašoj situaciji, obratite se kvalificiranom pravnom stručnjaku ili odvjetniku.</p>
                                     <p>Korištenjem ove usluge korisnik prihvaća navedene uvjete i razumije da pružene informacije nisu pravno obvezujuće.</p>
