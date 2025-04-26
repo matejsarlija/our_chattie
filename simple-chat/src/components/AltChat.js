@@ -297,7 +297,7 @@ export default function AltChat() {
                             {messages.length === 0 ? (
                                 <div className="text-center text-slate-500 py-10">
                                     <h2 className="text-xl mb-3">Dobrodošli na Alimentacija.info</h2>
-                                    <p>Postavite pitanje i dobijte opći pregled sa informacijama koji vam može pomoći u daljnjem usmjeravanju!</p>
+                                    <p>Postavite pitanje kroz chat i odmah dobijte opći pregled sa informacijama koji vam može pomoći u daljnjem usmjeravanju!</p>
                                     <p>Ova usluga pruža opće pravne informacije i ne predstavlja pravni savjet. Ne postoji odvjetničko-klijentski odnos između korisnika i pružatelja usluge.</p>
                                     <p>Za konkretne pravne probleme i savjete prilagođene vašoj situaciji, obratite se kvalificiranom pravnom stručnjaku ili odvjetniku.</p>
                                     <p>Korištenjem ove usluge korisnik prihvaća navedene uvjete i razumije da pružene informacije nisu pravno obvezujuće.</p>
@@ -437,9 +437,28 @@ export default function AltChat() {
                             </div>
 
                             {/* File upload hint */}
-                            <div className="mt-2 text-xs text-slate-500 text-center">
-                                Možete priložiti PDF ili sliku (max. 2MB)
+                            <div className="mt-2 flex justify-center">
+                                <div className="text-xs text-slate-500 flex items-center">
+                                    <span>Možete priložiti PDF ili sliku (max.
+                                        <span className="relative">
+                                            <label htmlFor="upgrade-toggle" className="text-indigo-500 font-medium border-b border-dotted border-indigo-300 cursor-pointer active:bg-indigo-100 rounded px-0.5">
+                                                  2MB
+                                            </label>
+                                            <input type="checkbox" id="upgrade-toggle" className="hidden peer" />
+
+                                            {/* Popup only shows when checkbox is checked (clicked) */}
+                                            <span className="hidden peer-checked:block absolute left-1/2 bottom-full transform -translate-x-1/2 -translate-y-1 w-40 bg-white shadow-lg rounded-md p-2 text-xs border border-slate-200 z-10">
+                                                <p className="font-medium text-slate-800">Povećajte na 15MB</p>
+                                                <p className="text-slate-600 text-xs">Nadogradite za veći limit</p>
+                                                <a href="mailto:admin@alimentacija.info?subject=Želim omogućiti upload većih dokumenata" className="mt-1 block text-center bg-indigo-600 text-white rounded py-1 text-xs">Kupi</a>
+                                                <span className="absolute bottom-0 left-1/2 transform -translate-x-1/2 translate-y-1/2 rotate-45 w-2 h-2 bg-white border-r border-b border-slate-200"></span>
+                                                <label htmlFor="upgrade-toggle" className="absolute top-1 right-1 text-slate-500 cursor-pointer">×</label>
+                                            </span>
+                                        </span>)
+                                    </span>
+                                </div>
                             </div>
+
                             <div className="hidden md:flex gap-2 md:gap-3 mt-3 md:mt-4 flex-wrap">
                                 {['Nisam u stanju otplatiti ratu kredita, što da radim?', 'Koji zakon pokriva sljedeći dopis -', 'Supružnik ne plaća alimentaciju...'].map(text => (
                                     <button
