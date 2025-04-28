@@ -38,8 +38,10 @@ export default function AboutUs() {
               Dobili ste prometnu kaznu ili poziv na sud? Razmatrate privatnu tužbu ili čekate ostavinski postupak? Traže da potpišete sporazumni otkaz? Radite prekovremeno bez dodatne naknade? Želite se razvesti ili imate pitanja oko skrbništva? 
             </p>
 
+            <p className="mb-3">Naša usluga može vam pomoći da dobijete osnovne informacije i smjernice za dalje.</p>
+
             <p className="mb-3">
-              Niste sigurni kako napisati žalbu ili prigovor? Na koji način odgovoriti na dopis? Kako se ponašati na sudu? Doznajte koji je zakon trenutno važeći za dopis koji ste primili. Naša usluga može vam pomoći da dobijete osnovne informacije i smjernice za dalje.
+              Niste sigurni kako napisati žalbu ili prigovor? Na koji način odgovoriti na dopis? Kako se ponašati na sudu? Doznajte koji je zakon trenutno važeći za dopis koji ste primili. 
             </p>
             <p className="mb-3">
             Zastupanje od strane odvjetnika, javni bilježnici, alimentacija, ugovori za nekretnine, i ostalo su teme koje ćemo rado pojasniti.
