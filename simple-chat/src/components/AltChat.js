@@ -2,6 +2,7 @@ import ReactMarkdown from 'react-markdown';
 import { useState, useRef, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import WelcomeModal from './WelcomeModal';
+import MobileHeaderDropdown from './MobileHeaderDropdown';
 import { useFirstVisit } from '../hooks/useFirstVisit';
 
 export default function AltChat() {
@@ -263,13 +264,20 @@ export default function AltChat() {
                             Pravni Asistent
                         </Link>
                     </h1>
-                    <div className="flex gap-6">
+                    
+                    {/* Desktop navigation links - shown only on large screens */}
+                    <div className="hidden lg:flex gap-6">
                         <Link to="/pravila-privatnosti" className="text-slate-600 hover:text-slate-800 transition-colors">
                             Pravila privatnosti
                         </Link>
                         <Link to="/o-nama" className="text-slate-600 hover:text-slate-800 transition-colors">
                             O nama
                         </Link>
+                    </div>
+                    
+                    {/* Mobile hamburger menu - hidden on large screens */}
+                    <div className="lg:hidden ml-auto">
+                        <MobileHeaderDropdown />
                     </div>
                 </div>
             </div>
@@ -312,8 +320,8 @@ export default function AltChat() {
                                         >
                                             <div
                                                 className={msg.isUser ?
-                                                    'max-w-xs sm:max-w-md md:max-w-2xl p-3 md:p-4 rounded-xl bg-blue-600 text-white shadow-sm' :
-                                                    'max-w-xs sm:max-w-md md:max-w-2xl p-3 md:p-4 rounded-xl bg-white shadow-sm border border-slate-100'
+                                                    'max-w-xs sm:max-w-md md:max-w-2xl p-3 md:p-4 rounded-xl shadow-sm bg-blue-600 text-white ring ring-blue-600' :
+                                                    'max-w-xs sm:max-w-md md:max-w-2xl p-3 md:p-4 rounded-xl shadow-sm bg-white ring ring-slate-100'
                                                 }
                                             >
                                                 <div>
@@ -442,15 +450,15 @@ export default function AltChat() {
                                     <span>Možete priložiti PDF ili sliku (max.
                                         <span className="relative">
                                             <label htmlFor="upgrade-toggle" className="text-indigo-500 font-medium border-b border-dotted border-indigo-300 cursor-pointer active:bg-indigo-100 rounded px-0.5">
-                                                  2MB
+                                                2MB
                                             </label>
                                             <input type="checkbox" id="upgrade-toggle" className="hidden peer" />
 
                                             {/* Popup only shows when checkbox is checked (clicked) */}
-                                            <span className="hidden peer-checked:block absolute left-1/2 bottom-full transform -translate-x-1/2 -translate-y-1 w-40 bg-white shadow-lg rounded-md p-2 text-xs border border-slate-200 z-10">
+                                            <span className="hidden peer-checked:block absolute left-1/2 bottom-full transform -translate-x-1/2 -translate-y-1 w-40 bg-white shadow-lg rounded-md p-2 text-xs border border-slate-200 z-10 transition duration-800 hover:scale-110 hover:box-shadow-lg">
                                                 <p className="font-medium text-slate-800">Povećajte na 15MB</p>
                                                 <p className="text-slate-600 text-xs">Nadogradite za veći limit</p>
-                                                <a href="mailto:admin@alimentacija.info?subject=Želim omogućiti upload većih dokumenata" className="mt-1 block text-center bg-indigo-600 text-white rounded py-1 text-xs">Kupi</a>
+                                                <a href="mailto:admin@alimentacija.info?subject=Želim omogućen upload većih dokumenata" className="mt-1 block text-center bg-indigo-600 text-white rounded py-1 text-xs">Kontaktirajte nas</a>
                                                 <span className="absolute bottom-0 left-1/2 transform -translate-x-1/2 translate-y-1/2 rotate-45 w-2 h-2 bg-white border-r border-b border-slate-200"></span>
                                                 <label htmlFor="upgrade-toggle" className="absolute top-1 right-1 text-slate-500 cursor-pointer">×</label>
                                             </span>
@@ -487,7 +495,8 @@ export default function AltChat() {
                 {/* Right Controls Column - Hidden on mobile and small screens */}
                 <div className="hidden lg:block w-1/6 lg:w-1/5 bg-white border-l border-slate-200 p-4" style={{ overflowY: 'auto' }}>
                     <div className="sticky top-4 space-y-4">
-                        {/* Text size toggle - Simplified */}
+
+                        {/* Text size toggle - Existing */}
                         <div className="border border-slate-200 rounded-lg p-3 shadow-sm bg-white">
                             <p className="text-sm text-slate-600 mb-2">Veličina teksta</p>
                             <div className="flex items-center justify-center gap-4">

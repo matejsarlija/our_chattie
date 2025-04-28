@@ -125,7 +125,7 @@ export default function AboutUs() {
               Kontaktirajte nas putem email adrese: <span className="text-blue-600"><a href='mailto:admin@alimentacija.info'>admin@alimentacija.info</a></span>
             </p>
             <p>
-              Cijenimo sve vaše povratne informacije jer nam pomažu da unaprijedimo našu uslugu i učinimo je još korisnijim alatom.
+              Cijenimo sve vaše povratne informacije jer nam pomažu da unaprijedimo našu uslugu.
             </p>
           </section>
         </div>
