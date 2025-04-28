@@ -118,17 +118,20 @@ export default function AboutUs() {
             </p>
           </section>
           
-          <section>
-            <h2 className="text-xl font-semibold mb-3">Kontaktirajte nas</h2>
-            <p className="mb-3">
-              Imate prijedlog za poboljšanje? Uočili ste pogrešku? Želite nam poslati pohvalu?
-            </p>
-            <p className="mb-3">
-              Kontaktirajte nas putem email adrese: <span className="text-blue-600"><a href='mailto:admin@alimentacija.info'>admin@alimentacija.info</a></span>
-            </p>
-            <p>
-              Cijenimo sve vaše povratne informacije jer nam pomažu da unaprijedimo našu uslugu.
-            </p>
+          <section className="mb-8">
+            
+            <div className="bg-slate-100 p-6 rounded-lg shadow-md border border-slate-200">
+            <h4 className="text-xl font-semibold mb-3 text-end">? ?</h4>
+              <p className="mb-3">
+                Imate prijedlog za poboljšanje? Uočili ste pogrešku? Želite nam poslati pohvalu?
+              </p>
+              <p className="mb-3">
+                Kontaktirajte nas putem e-mail adrese: <a href="mailto:admin@alimentacija.info" className="text-blue-600 hover:underline">admin@alimentacija.info</a>
+              </p>
+              <p>
+                Cijenimo sve vaše povratne informacije jer nam pomažu da unaprijedimo uslugu.
+              </p>
+            </div>
           </section>
         </div>
       </div>
