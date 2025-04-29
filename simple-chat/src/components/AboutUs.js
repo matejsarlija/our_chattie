@@ -126,10 +126,13 @@ export default function AboutUs() {
                 Imate prijedlog za poboljšanje? Uočili ste pogrešku? Želite nam poslati pohvalu?
               </p>
               <p className="mb-3">
+                Želite uvesti pametnog asistenta u vlastito poslovanje?
+              </p>
+              <p className="mb-3">
                 Kontaktirajte nas putem e-mail adrese: <a href="mailto:admin@alimentacija.info" className="text-blue-600 hover:underline">admin@alimentacija.info</a>
               </p>
               <p>
-                Cijenimo sve vaše povratne informacije jer nam pomažu da unaprijedimo uslugu.
+                Cijenimo vaše povratne informacije jer nam pomažu da unaprijedimo uslugu.
               </p>
             </div>
           </section>
