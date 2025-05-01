@@ -16,6 +16,9 @@ export default function PrivacyPolicy() {
           <Link to="/" className="text-slate-600 hover:text-slate-800 transition-colors">
               Povratak na chat
             </Link>
+            <Link to="/o-nama" className="text-slate-600 hover:text-slate-800 transition-colors">
+                            O nama
+                        </Link>
           </div>
         </div>
       </div>
