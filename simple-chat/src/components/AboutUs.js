@@ -119,7 +119,7 @@ export default function AboutUs() {
               Alimentacija.info planiramo održavati zahvaljujući oglasima. Omogućavanjem oglasa u vašem pregledniku pomažete nam da nastavimo pružati ovu uslugu.
             </p>
             <p className="mb-3">
-              Najbolji način da podržite naš rad je da podijelite Alimentacija.info s prijateljima, obitelji, i svima ostalima kojima bi ova usluga mogla koristiti.
+              Najbolji način da podržite naš rad je da podijelite Alimentacija.info s prijateljima, obitelji i kolegama kojima bi ova usluga mogla koristiti.
             </p>
           </section>
           
