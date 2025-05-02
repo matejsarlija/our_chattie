@@ -35,16 +35,12 @@ export default function AboutUs() {
             </p>
 
             <p className="mb-3">
-              Dobili ste prometnu kaznu ili poziv na sud? Razmatrate privatnu tužbu ili čekate ostavinski postupak? Traže da potpišete sporazumni otkaz? Radite prekovremeno bez dodatne naknade? Želite se razvesti ili imate pitanja oko skrbništva? 
+              Dobili ste prometnu kaznu ili poziv na sud? Razmatrate privatnu tužbu ili čekate ostavinski postupak? Traže da potpišete sporazumni otkaz? Radite prekovremeno bez dodatne naknade? Prolazite kroz razvod ili imate pitanja oko skrbništva? 
             </p>
 
             <p className="mb-3">Naša usluga može vam pomoći da dobijete osnovne informacije i smjernice za dalje.</p>
-
             <p className="mb-3">
-              Niste sigurni kako napisati žalbu ili prigovor? Na koji način odgovoriti na dopis? Kako se ponašati na sudu? Doznajte koji je zakon trenutno važeći za dopis koji ste primili. 
-            </p>
-            <p className="mb-3">
-            Zastupanje od strane odvjetnika, javni bilježnici, alimentacija, ugovori za nekretnine, i ostalo su teme koje ćemo rado pojasniti.
+            Zastupanje od strane odvjetnika, javni bilježnici, alimentacija i ugovori za nekretnine su teme koje ćemo rado pojasniti.
             </p>
             
           </section>
@@ -77,6 +73,15 @@ export default function AboutUs() {
             <p className="mb-3">
               Usluga je potpuno besplatna i dostupna 24/7, bez potrebe za registracijom ili ostavljanjem osobnih podataka.
             </p>
+          </section>
+
+          <section className="mb-8">
+            
+            <div className="bg-indigo-100 p-6 rounded-lg shadow-md ring ring-indigo-100">
+            <h2 className="font-semibold mb-3">Za pravne profesionalce <span className="text-2xl">👩‍⚖️👨‍⚖️</span></h2>
+            <p className="mb-3">
+            Niste sigurni kako započeti žalbu ili prigovor? Na koji način odgovoriti na dopis? Kako se ponašati na sudu? Doznajte koji su zakoni i podzakonski akti trenutno važeći za dokument koji ste primili.</p>
+            </div>
           </section>
           
           <section className="mb-8">
@@ -120,13 +125,16 @@ export default function AboutUs() {
           
           <section className="mb-8">
             
-            <div className="bg-slate-100 p-6 rounded-lg shadow-md border border-slate-200">
-            <h4 className="text-xl font-semibold mb-3 text-end">? ?</h4>
+            <div className="bg-indigo-100 p-6 rounded-lg shadow-md ring ring-indigo-100">
+            <h4 className="text-xl font-semibold mb-3 text-end"><i class="fa-solid fa-circle-question"></i></h4>
               <p className="mb-3">
-                Imate prijedlog za poboljšanje? Uočili ste pogrešku? Želite nam poslati pohvalu?
+                Imate prijedlog za poboljšanje? Uočili ste pogrešku?
               </p>
               <p className="mb-3">
-                Želite uvesti pametnog asistenta u vlastito poslovanje?
+                Želite uvesti pametnog asistenta u vlastito poslovanje na GDPR sukladan način?
+              </p>
+              <p className="mb-3">
+                Potrebna vam je analiza i obrada velike količine dokumenata sa povjerljivim informacijama?
               </p>
               <p className="mb-3">
                 Kontaktirajte nas putem e-mail adrese: <a href="mailto:admin@alimentacija.info" className="text-blue-600 hover:underline">admin@alimentacija.info</a>
