@@ -8,9 +8,9 @@ export default function AboutUs() {
       <div className="bg-white p-4 shadow-sm border-b border-slate-200">
         <div className="max-w-6xl mx-auto flex justify-between items-center">
           <h1 className="text-slate-800 text-xl font-medium font-main">
-          <Link to="/">
-                        Pravni Asistent
-                        </Link>
+            <Link to="/">
+              Pravni Asistent
+            </Link>
           </h1>
           <div className="flex gap-6">
             <Link to="/" className="text-slate-600 hover:text-slate-800 transition-colors">
@@ -27,24 +27,24 @@ export default function AboutUs() {
       <div className="flex-1">
         <div className="max-w-4xl mx-auto p-6 my-8 bg-white rounded-lg shadow-sm border border-slate-100">
           <h1 className="text-2xl font-bold mb-6">O nama</h1>
-          
+
           <section className="mb-8">
             <h2 className="text-xl font-semibold mb-3">Tko smo mi</h2>
             <p className="mb-3">
-              Alimentacija.info je usluga koja vam pruža pristup osnovnim pravnim informacijama i smjernicama vezanim uz obiteljsko, kazneno, porezno, radno i sva ostala prava definirana na području RH. 
+              Alimentacija.info je usluga koja vam pruža pristup osnovnim pravnim informacijama i smjernicama vezanim uz obiteljsko, kazneno, porezno, radno i sva ostala prava definirana na području RH.
             </p>
 
             <p className="mb-3">
-              Dobili ste prometnu kaznu ili poziv na sud? Razmatrate privatnu tužbu ili čekate ostavinski postupak? Traže da potpišete sporazumni otkaz? Radite prekovremeno bez dodatne naknade? Prolazite kroz razvod ili imate pitanja oko skrbništva? 
+              Dobili ste prometnu kaznu ili poziv na sud? Razmatrate privatnu tužbu ili čekate ostavinski postupak? Traže da potpišete sporazumni otkaz? Radite prekovremeno bez dodatne naknade? Prolazite kroz razvod ili imate pitanja oko skrbništva?
             </p>
 
             <p className="mb-3">Naša usluga može vam pomoći da dobijete osnovne informacije i smjernice za dalje.</p>
             <p className="mb-3">
-            Zastupanje od strane odvjetnika, javni bilježnici, alimentacija i ugovori za nekretnine su teme koje ćemo rado pojasniti.
+              Zastupanje od strane odvjetnika, javni bilježnici, alimentacija i ugovori za nekretnine su teme koje ćemo rado pojasniti.
             </p>
-            
+
           </section>
-          
+
           <section className="mb-8">
             <h2 className="text-xl font-semibold mb-3">Naša misija</h2>
             <p className="mb-3">
@@ -57,7 +57,7 @@ export default function AboutUs() {
               Vjerujemo da svatko zaslužuje pristup pravnim informacijama na jasan, razumljiv i pristupačan način.
             </p>
           </section>
-          
+
           <section className="mb-8">
             <h2 className="text-xl font-semibold mb-3">Kako koristiti pravnog asistenta</h2>
             <p className="mb-3">
@@ -76,14 +76,17 @@ export default function AboutUs() {
           </section>
 
           <section className="mb-8">
-            
+
             <div className="bg-indigo-100 p-6 rounded-lg shadow-md ring ring-indigo-100">
-            <h2 className="font-semibold mb-3">Za pravne profesionalce <span className="text-2xl">👩‍⚖️👨‍⚖️</span></h2>
-            <p className="mb-3">
-            Niste sigurni kako započeti žalbu ili prigovor? Na koji način odgovoriti na dopis? Kako se ponašati na sudu? Doznajte koji su zakoni i podzakonski akti trenutno važeći za dokument koji ste primili.</p>
+              <h2 className="font-semibold mb-3">Za pravne profesionalce <span className="text-2xl">👩‍⚖️👨‍⚖️</span></h2>
+              <p className="mb-3">
+                Niste sigurni kako započeti žalbu ili prigovor? Na koji način odgovoriti na dopis? Kako se ponašati na sudu? Doznajte koji su zakoni i podzakonski akti trenutno važeći za dokument koji ste primili.</p>
+                <p className="mb-3">
+                <i>*Usluga trenutno <b>nije</b> predviđena za obradu povjerljivih podataka. <a href="mailto:admin@alimentacija.info" className="text-blue-600 hover:underline">Kontaktirajte nas</a> za dodatne mogućnosti.</i></p>
             </div>
+
           </section>
-          
+
           <section className="mb-8">
             <h2 className="text-xl font-semibold mb-3">Vrijednost ove usluge</h2>
             <p className="mb-3">
@@ -99,7 +102,7 @@ export default function AboutUs() {
               <li>Razjasniti osnovne pravne pojmove i procedure</li>
             </ul>
           </section>
-          
+
           <section className="mb-8">
             <h2 className="text-xl font-semibold mb-3">Ograničenja i odgovornost</h2>
             <p className="mb-3">
@@ -112,7 +115,7 @@ export default function AboutUs() {
               Naš asistent se neprestano usavršava, ali može pogriješiti. Uvijek provjerite važne informacije iz vjerodostojnih izvora.
             </p>
           </section>
-          
+
           <section className="mb-8">
             <h2 className="text-xl font-semibold mb-3">Podržite naš rad</h2>
             <p className="mb-3">
@@ -122,11 +125,11 @@ export default function AboutUs() {
               Najbolji način da podržite naš rad je da podijelite Alimentacija.info s prijateljima, obitelji i kolegama kojima bi ova usluga mogla koristiti.
             </p>
           </section>
-          
+
           <section className="mb-8">
-            
+
             <div className="bg-indigo-100 p-6 rounded-lg shadow-md ring ring-indigo-100">
-            <h4 className="text-xl font-semibold mb-3 text-end"><i class="fa-solid fa-circle-question"></i></h4>
+              <h4 className="text-xl font-semibold mb-3 text-end"><i class="fa-solid fa-circle-question"></i></h4>
               <p className="mb-3">
                 Imate prijedlog za poboljšanje? Uočili ste pogrešku?
               </p>
