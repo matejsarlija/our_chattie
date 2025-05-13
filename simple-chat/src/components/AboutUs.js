@@ -35,7 +35,7 @@ export default function AboutUs() {
             </p>
 
             <p className="mb-3">
-              Dobili ste prometnu kaznu ili poziv na sud? Razmatrate privatnu tužbu ili čekate ostavinski postupak? Traže da potpišete sporazumni otkaz? Radite prekovremeno bez dodatne naknade? Prolazite kroz razvod ili imate pitanja oko skrbništva?
+              Dobili ste prometnu kaznu ili poziv na sud? Razmatrate privatnu tužbu ili čekate ostavinski postupak? Radite prekovremeno bez dodatne naknade? Prolazite kroz razvod ili imate pitanja oko skrbništva?
             </p>
 
             <p className="mb-3">Naša usluga može vam pomoći da dobijete osnovne informacije i smjernice za dalje.</p>
@@ -80,7 +80,7 @@ export default function AboutUs() {
             <div className="bg-indigo-100 p-6 rounded-lg shadow-md ring ring-indigo-100">
               <h2 className="font-semibold mb-3">Za pravne profesionalce <span className="text-2xl">👩‍⚖️👨‍⚖️</span></h2>
               <p className="mb-3">
-                Niste sigurni kako započeti žalbu ili prigovor? Na koji način odgovoriti na dopis? Kako se ponašati na sudu? Doznajte koji su zakoni i podzakonski akti trenutno važeći za dokument koji ste primili.</p>
+                Niste sigurni kako započeti žalbu ili prigovor? Na koji način odgovoriti na dopis? Doznajte koji su zakoni i podzakonski akti trenutno važeći za dokument koji ste primili.</p>
                 <p className="mb-3">
                 <i>*Usluga trenutno <b>nije</b> predviđena za obradu povjerljivih podataka. <a href="mailto:admin@alimentacija.info" className="text-blue-600 hover:underline">Kontaktirajte nas</a> za dodatne mogućnosti.</i></p>
             </div>
