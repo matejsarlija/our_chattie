@@ -3,16 +3,15 @@ const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
-const { GoogleGenerativeAI } = require('@google/generative-ai');
-const { GoogleAIFileManager } = require('@google/generative-ai/server');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
+const { handleChatMessage } = require('./chatAgent'); // Import the chat service
 
 const app = express();
 const port = process.env.PORT || 3001;
 
-// Configure multer for file uploads
+// Configure multer for file uploads (same as working version)
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
     const uploadDir = path.join(__dirname, 'uploads');
@@ -45,21 +44,7 @@ const upload = multer({
   }
 });
 
-const generationConfig = {
-  temperature: 1,
-  topP: 0.95,
-  topK: 40,
-  maxOutputTokens: 8192
-};
-
-const genai = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY);
-const fileManager = new GoogleAIFileManager(process.env.GOOGLE_API_KEY);
-const model = genai.getGenerativeModel({
-  model: "gemini-2.0-flash",
-  systemInstruction: "You are a helpful legal assistant that excels at being factual, while also being kind and formal. Depending on the user inquiry, you can be informative beyond the immediate question. You frequently work with the elderly in need of free legal advice. You only provide answers in Croatian.",
-  generationConfig: generationConfig
-});
-
+// Middleware (same as working version)
 app.use(helmet());
 
 // Rate limiters
@@ -84,49 +69,7 @@ app.use(cors({
 
 app.use(express.json());
 
-// Helper function to upload file to Google AI File Manager
-async function uploadFileToGoogleAI(filePath, originalFilename) {
-  try {
-    const mimeType = path.extname(filePath).toLowerCase() === '.pdf'
-      ? 'application/pdf'
-      : `image/${path.extname(filePath).substring(1).toLowerCase()}`;
-
-    // Use the file path directly instead of reading it into a buffer
-    const uploadResult = await fileManager.uploadFile(filePath, {
-      mimeType: mimeType,
-      displayName: originalFilename || path.basename(filePath)
-    });
-
-    console.log(`Uploaded file ${uploadResult.file.displayName} as: ${uploadResult.file.uri}`);
-
-    // Rest of the function for polling...
-    let file = await fileManager.getFile(uploadResult.file.name);
-
-    // Initially wait for processing to start
-    await new Promise(resolve => setTimeout(resolve, 2000));
-
-    // Check processing status
-    while (file.state === 'PROCESSING') {
-      process.stdout.write(".");
-      await new Promise(resolve => setTimeout(resolve, 3000));
-      file = await fileManager.getFile(uploadResult.file.name);
-    }
-
-    if (file.state === 'FAILED') {
-      throw new Error("File processing failed.");
-    }
-
-    return {
-      fileUri: uploadResult.file.uri,
-      mimeType: uploadResult.file.mimeType
-    };
-  } catch (error) {
-    console.error('Error uploading file to Google AI:', error);
-    throw error;
-  }
-}
-
-// Modified chat endpoint to handle file uploads
+// Chat endpoint with proper streaming format
 app.post('/api/chat', upload.single('file'), async (req, res) => {
   let uploadedFilePath = null;
 
@@ -142,70 +85,41 @@ app.post('/api/chat', upload.single('file'), async (req, res) => {
       throw new Error("No messages provided");
     }
 
-    const geminiMessages = messages.map(msg => ({
-      role: msg.role === 'user' ? 'user' : 'model',
-      parts: [{ text: msg.content || '' }]
-    }));
+    // Store file info for cleanup
+    uploadedFilePath = req.file?.path;
 
-    if (geminiMessages.length === 0 || geminiMessages[0].role !== 'user') {
-      throw new Error("Conversation must start with a user message");
-    }
-
-    let history = [];
-    let currentMessage = '';
-
-    if (geminiMessages.length > 1) {
-      history = geminiMessages.slice(0, -1);
-      currentMessage = geminiMessages[geminiMessages.length - 1].parts[0].text;
-    } else {
-      currentMessage = geminiMessages[0].parts[0].text;
-    }
-
-    if (!currentMessage || currentMessage.trim() === '') {
-      console.error('Empty currentMessage:', geminiMessages);
-      throw new Error("Current message cannot be empty");
-    }
-
-    // Create parts array for the message
-    let messageParts = [{ text: currentMessage }];
-
-    // Handle uploaded file if present
-    if (req.file) {
-      uploadedFilePath = req.file.path;
-      const fileType = req.file.mimetype.includes('pdf') ? 'PDF' : 'image';
-
-      // Upload file to Google AI File Manager
-      const { fileUri, mimeType } = await uploadFileToGoogleAI(
-        req.file.path,
-        req.file.originalname
-      );
-
-      // Add file to message parts
-      messageParts.push({
-        fileData: {
-          fileUri: fileUri,
-          mimeType: mimeType
-        }
-      });
-
-      // Update text to include reference to the file
-      messageParts[0].text += `\n\n(Attached ${fileType}: ${req.file.originalname})`;
-    }
-
-    const chat = model.startChat({
-      history: history,
+    console.log('Chat request:', { 
+      messageCount: messages?.length, 
+      hasFile: !!uploadedFilePath,
+      messagesType: typeof messages,
+      firstMessage: messages?.[0]
     });
 
-    // Send message with parts (text and file if present)
-    const result = await chat.sendMessageStream(messageParts);
+    // Call the LangChain chat handler
+    const result = await handleChatMessage({
+      messages: messages,
+      filePath: uploadedFilePath,
+      originalFilename: req.file?.originalname
+    });
 
+    // Set up streaming response headers (same format as working version)
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
 
-    for await (const chunk of result.stream) {
-      const content = chunk.text();
-      res.write(`data: ${JSON.stringify({ content })}\n\n`);
+    // Stream the response in the expected format
+    try {
+      for await (const chunk of result.stream) {
+        // LangChain streams return the content directly
+        const content = chunk.content || chunk.text || chunk;
+        if (content) {
+          // Format as Server-Sent Events like the working version
+          res.write(`data: ${JSON.stringify({ content })}\n\n`);
+        }
+      }
+    } catch (streamError) {
+      console.error('Streaming error:', streamError);
+      res.write(`data: ${JSON.stringify({ error: 'Streaming failed' })}\n\n`);
     }
 
     // Clean up the uploaded file after processing
@@ -217,8 +131,9 @@ app.post('/api/chat', upload.single('file'), async (req, res) => {
     }
 
     res.end();
+
   } catch (error) {
-    console.error('Gemini Error:', error.message);
+    console.error('Chat error:', error);
 
     // Clean up the uploaded file in case of error
     if (uploadedFilePath) {
@@ -227,11 +142,13 @@ app.post('/api/chat', upload.single('file'), async (req, res) => {
       });
     }
 
+    // Send error in the same format as working version
     res.write(`data: ${JSON.stringify({ error: error.message || 'AI service unavailable' })}\n\n`);
     res.end();
   }
 });
 
+// Health check endpoint
 app.get('/health', (req, res) => {
   res.status(200).json({ status: 'ok' });
 });
