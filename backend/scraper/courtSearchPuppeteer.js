@@ -1,10 +1,4 @@
 require('dotenv').config();
-let puppeteer;
-if (process.env.BROWSERLESS_TOKEN) {
-    puppeteer = require('puppeteer-core');
-} else {
-    puppeteer = require('puppeteer');
-}
 
 class CourtSearchPuppeteer {
     constructor() {
@@ -15,17 +9,34 @@ class CourtSearchPuppeteer {
 
     async init() {
         try {
+            // Always use puppeteer-core for production deployments
+            // Install only puppeteer-core as dependency
+            const puppeteer = require('puppeteer-core');
+            
             if (process.env.BROWSERLESS_TOKEN) {
+                // Production: Use browserless.io
                 this.browser = await puppeteer.connect({
                     browserWSEndpoint: `wss://chrome.browserless.io?token=${process.env.BROWSERLESS_TOKEN}`
                 });
             } else {
+                // Development: You'll need to have Chrome/Chromium installed locally
+                // and specify the path
                 this.browser = await puppeteer.launch({
                     headless: true,
-                    args: ['--no-sandbox', '--disable-setuid-sandbox']
-                    // No executablePath needed for full puppeteer
+                    executablePath: process.env.CHROME_PATH || '/usr/bin/chromium-browser',
+                    args: [
+                        '--no-sandbox', 
+                        '--disable-setuid-sandbox',
+                        '--disable-dev-shm-usage',
+                        '--disable-accelerated-2d-canvas',
+                        '--no-first-run',
+                        '--no-zygote',
+                        '--single-process',
+                        '--disable-gpu'
+                    ]
                 });
             }
+            
             this.page = await this.browser.newPage();
             await this.page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36');
             await this.page.setViewport({ width: 1366, height: 768 });
@@ -95,10 +106,14 @@ class CourtSearchPuppeteer {
             
             // Take a screenshot for debugging
             if (this.page) {
-                await this.page.screenshot({ 
-                    path: `error-${Date.now()}.png`,
-                    fullPage: true 
-                });
+                try {
+                    await this.page.screenshot({ 
+                        path: `error-${Date.now()}.png`,
+                        fullPage: true 
+                    });
+                } catch (screenshotError) {
+                    console.error('Could not take screenshot:', screenshotError.message);
+                }
             }
             
             throw error;
