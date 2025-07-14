@@ -9,9 +9,13 @@ class CourtSearchPuppeteer {
 
     async init() {
         try {
-            // Always use puppeteer-core for production deployments
-            // Install only puppeteer-core as dependency
-            const puppeteer = require('puppeteer-core');
+            // Move the require inside the condition to avoid loading puppeteer when not needed
+            let puppeteer;
+            if (process.env.BROWSERLESS_TOKEN) {
+                puppeteer = require('puppeteer-core');
+            } else {
+                puppeteer = require('puppeteer');  // Only loads if no browserless token
+            }
             
             if (process.env.BROWSERLESS_TOKEN) {
                 // Production: Use browserless.io
@@ -19,11 +23,9 @@ class CourtSearchPuppeteer {
                     browserWSEndpoint: `wss://chrome.browserless.io?token=${process.env.BROWSERLESS_TOKEN}`
                 });
             } else {
-                // Development: You'll need to have Chrome/Chromium installed locally
-                // and specify the path
+                // Development: Use local puppeteer
                 this.browser = await puppeteer.launch({
                     headless: true,
-                    executablePath: process.env.CHROME_PATH || '/usr/bin/chromium-browser',
                     args: [
                         '--no-sandbox', 
                         '--disable-setuid-sandbox',
