@@ -9,7 +9,7 @@ const API_KEY = process.env.GOOGLE_API_KEY;
 if (!API_KEY) {
   throw new Error('GOOGLE_API_KEY environment variable is not set');
 }
-console.log('API Key loaded successfully, length:', API_KEY.length);
+//console.log('API Key loaded successfully, length:', API_KEY.length);
 
 const fileManager = new GoogleAIFileManager(API_KEY);
 

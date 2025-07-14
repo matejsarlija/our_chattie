@@ -7,9 +7,14 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const { handleChatMessage } = require('./chatAgent'); // Import the chat service
+const { CourtSearchPuppeteer } = require('./scraper/courtSearchPuppeteer');
+const rateLimiter = require('./court-analysis/utils/rateLimiter');
+const { runCourtAnalysis } = require('./court-analysis/pipeline');
+const PQueue = require('p-queue');
 
 const app = express();
 const port = process.env.PORT || 3001;
+const courtAnalysisQueue = new PQueue({ concurrency: 5 }); // Adjust concurrency as needed
 
 // Configure multer for file uploads (same as working version)
 const storage = multer.diskStorage({
@@ -145,6 +150,56 @@ app.post('/api/chat', upload.single('file'), async (req, res) => {
     // Send error in the same format as working version
     res.write(`data: ${JSON.stringify({ error: error.message || 'AI service unavailable' })}\n\n`);
     res.end();
+  }
+});
+
+app.post('/api/court-search', async (req, res) => {
+    try {
+        const { searchTerm, searchType = 'oib' } = req.body;
+        
+        // Your existing scraper logic here
+        const automator = new CourtSearchPuppeteer();
+        await automator.init();
+        
+        const results = await automator.performSearch(searchTerm);
+        
+        // Get most recent case per case number (first one since sorted newest→oldest)
+        const latestCases = getLatestCases(results.results);
+        
+        // Download and analyze files
+        const analyzedCases = await analyzeCourtCases(latestCases);
+        
+        await automator.close();
+        
+        res.json({
+            success: true,
+            cases: analyzedCases,
+            totalFound: results.results.length,
+            processedCases: analyzedCases.length
+        });
+        
+    } catch (error) {
+        console.error('Court search error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Add rate limiter for court analysis endpoint
+app.use('/api/court-analysis', rateLimiter);
+
+// Concurrency-limited court analysis endpoint
+app.post('/api/court-analysis', async (req, res) => {
+  try {
+    const { searchTerm } = req.body;
+    await courtAnalysisQueue.add(async () => {
+      // You can add progressCallback logic here if needed
+      const result = await runCourtAnalysis(searchTerm, progress => {
+        // Optionally stream progress via SSE or log
+      });
+      res.json(result);
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
   }
 });
 
