@@ -1,4 +1,18 @@
 require('dotenv').config();
+let puppeteer;
+
+// Fix 1: Only require puppeteer-core in production
+if (process.env.NODE_ENV === 'production' || process.env.BROWSERLESS_TOKEN) {
+    puppeteer = require('puppeteer-core');
+} else {
+    // Only require puppeteer in development
+    try {
+        puppeteer = require('puppeteer');
+    } catch (err) {
+        console.error('Puppeteer not found. Install it with: npm install puppeteer');
+        throw err;
+    }
+}
 
 class CourtSearchPuppeteer {
     constructor() {
@@ -9,15 +23,7 @@ class CourtSearchPuppeteer {
 
     async init() {
         try {
-            // Move the require inside the condition to avoid loading puppeteer when not needed
-            let puppeteer;
-            if (process.env.BROWSERLESS_TOKEN) {
-                puppeteer = require('puppeteer-core');
-            } else {
-                puppeteer = require('puppeteer');  // Only loads if no browserless token
-            }
-            
-            if (process.env.BROWSERLESS_TOKEN) {
+            if (process.env.NODE_ENV === 'production' || process.env.BROWSERLESS_TOKEN) {
                 // Production: Use browserless.io
                 this.browser = await puppeteer.connect({
                     browserWSEndpoint: `wss://chrome.browserless.io?token=${process.env.BROWSERLESS_TOKEN}`
@@ -26,19 +32,9 @@ class CourtSearchPuppeteer {
                 // Development: Use local puppeteer
                 this.browser = await puppeteer.launch({
                     headless: true,
-                    args: [
-                        '--no-sandbox', 
-                        '--disable-setuid-sandbox',
-                        '--disable-dev-shm-usage',
-                        '--disable-accelerated-2d-canvas',
-                        '--no-first-run',
-                        '--no-zygote',
-                        '--single-process',
-                        '--disable-gpu'
-                    ]
+                    args: ['--no-sandbox', '--disable-setuid-sandbox']
                 });
             }
-            
             this.page = await this.browser.newPage();
             await this.page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36');
             await this.page.setViewport({ width: 1366, height: 768 });
@@ -108,14 +104,10 @@ class CourtSearchPuppeteer {
             
             // Take a screenshot for debugging
             if (this.page) {
-                try {
-                    await this.page.screenshot({ 
-                        path: `error-${Date.now()}.png`,
-                        fullPage: true 
-                    });
-                } catch (screenshotError) {
-                    console.error('Could not take screenshot:', screenshotError.message);
-                }
+                await this.page.screenshot({ 
+                    path: `error-${Date.now()}.png`,
+                    fullPage: true 
+                });
             }
             
             throw error;
