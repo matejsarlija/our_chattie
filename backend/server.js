@@ -10,7 +10,7 @@ const { handleChatMessage } = require('./chatAgent'); // Import the chat service
 const { CourtSearchPuppeteer } = require('./scraper/courtSearchPuppeteer');
 const rateLimiter = require('./court-analysis/utils/rateLimiter');
 const { runCourtAnalysis } = require('./court-analysis/pipeline');
-const PQueue = require('p-queue');
+const PQueue = require('p-queue').default;
 
 const app = express();
 const port = process.env.PORT || 3001;
