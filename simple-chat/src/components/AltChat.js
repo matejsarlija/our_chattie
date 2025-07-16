@@ -33,6 +33,11 @@ export default function AltChat() {
     const controllerRef = useRef(null);
     const fileInputRef = useRef(null);
 
+    // court analysis state variables
+    const [caseNumber, setCaseNumber] = useState('');
+    const [courtAnalysisLoading, setCourtAnalysisLoading] = useState(false);
+    const [courtAnalysisError, setCourtAnalysisError] = useState('');
+
     // Load AdSense script and initialize ads
     useEffect(() => {
         try {
@@ -254,6 +259,41 @@ export default function AltChat() {
         fileInputRef.current?.click();
     };
 
+    const handleCourtAnalysis = async () => {
+        if (!caseNumber.trim()) {
+            setCourtAnalysisError('Molimo unesite broj predmeta');
+            return;
+        }
+
+        setCourtAnalysisError('');
+        setCourtAnalysisLoading(true);
+
+        try {
+            const response = await fetch('http://localhost:3001/api/court-analysis', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ searchTerm: caseNumber.trim() })
+            });
+
+            const result = await response.json();
+
+            if (!response.ok) {
+                throw new Error(result.error || 'Greška pri pretraživanju');
+            }
+
+            // Handle successful result - this is where you'll show your success component
+            console.log('Court analysis result:', result);
+            // TODO: Open success modal/component here
+
+        } catch (error) {
+            setCourtAnalysisError(error.message || 'Greška pri pretraživanju. Molimo pokušajte ponovno.');
+        } finally {
+            setCourtAnalysisLoading(false);
+        }
+    };
+
     return (
         <div className="flex flex-col h-screen bg-slate-50">
             {/* White Header */}
@@ -264,7 +304,7 @@ export default function AltChat() {
                             Pravni Asistent
                         </Link>
                     </h1>
-                    
+
                     {/* Desktop navigation links - shown only on large screens */}
                     <div className="hidden lg:flex gap-6">
                         <Link to="/pravila-privatnosti" className="text-slate-600 hover:text-slate-800 transition-colors">
@@ -274,7 +314,7 @@ export default function AltChat() {
                             O nama
                         </Link>
                     </div>
-                    
+
                     {/* Mobile hamburger menu - hidden on large screens */}
                     <div className="lg:hidden ml-auto">
                         <MobileHeaderDropdown />
@@ -516,12 +556,56 @@ export default function AltChat() {
                         </div>
 
                         {/* Clear conversation button */}
-                        <button
-                            onClick={() => setShowClearConfirm(true)}
-                            className="w-full text-slate-800 bg-slate-100 px-3.5 py-2 rounded-lg hover:bg-slate-200 transition-colors border border-slate-300"
-                        >
-                            Očisti razgovor
-                        </button>
+                        <div className="border border-slate-200 rounded-lg p-3 shadow-sm bg-white">
+                            <button
+                                onClick={() => setShowClearConfirm(true)}
+                                className="w-full text-slate-800 bg-slate-100 px-3.5 py-2 rounded-lg hover:bg-slate-200 transition-colors border border-slate-300"
+                            >
+                                Očisti razgovor
+                            </button>
+                        </div>
+
+                        <div className="border border-slate-200 rounded-lg p-3 shadow-sm bg-white">
+                            <p className="text-sm text-slate-600 mb-2">Unesite broj predmeta ili OIB</p>
+                            <div className="space-y-2">
+                                <input
+                                    type="text"
+                                    value={caseNumber}
+                                    onChange={(e) => setCaseNumber(e.target.value)}
+                                    onKeyPress={(e) => e.key === 'Enter' && handleCourtAnalysis()}
+                                    placeholder="Npr. 12345"
+                                    className="w-full px-3 py-2 text-sm border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                    disabled={courtAnalysisLoading}
+                                />
+
+                                {courtAnalysisError && (
+                                    <div className="text-red-600 text-xs">
+                                        {courtAnalysisError}
+                                    </div>
+                                )}
+
+                                <button
+                                    onClick={handleCourtAnalysis}
+                                    disabled={courtAnalysisLoading || !caseNumber.trim()}
+                                    className={`w-full py-2 px-3 text-sm rounded-md font-medium transition-colors ${courtAnalysisLoading || !caseNumber.trim()
+                                        ? 'bg-slate-300 text-slate-500 cursor-not-allowed'
+                                        : 'bg-blue-600 text-white hover:bg-blue-700'
+                                        }`}
+                                >
+                                    {courtAnalysisLoading ? (
+                                        <div className="flex items-center justify-center">
+                                            <svg className="animate-spin -ml-1 mr-1 h-3 w-3 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                            </svg>
+                                            Analiziram...
+                                        </div>
+                                    ) : (
+                                        'Pretraži e-Oglasnu ploču sudova'
+                                    )}
+                                </button>
+                            </div>
+                        </div>
 
                         {/* Right Ad Container */}
                         <div className="mt-8">

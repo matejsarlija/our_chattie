@@ -26,7 +26,7 @@ class CourtSearchPuppeteer {
             if (process.env.NODE_ENV === 'production' || process.env.BROWSERLESS_TOKEN) {
                 // Production: Use browserless.io
                 this.browser = await puppeteer.connect({
-                    browserWSEndpoint: `wss://chrome.browserless.io?token=${process.env.BROWSERLESS_TOKEN}`
+                    browserWSEndpoint: `wss://production-ams.browserless.io/?token=${process.env.BROWSERLESS_TOKEN}`
                 });
             } else {
                 // Development: Use local puppeteer
@@ -40,6 +40,7 @@ class CourtSearchPuppeteer {
             await this.page.setViewport({ width: 1366, height: 768 });
         } catch (err) {
             console.error('Failed to initialize Puppeteer:', err.message);
+            console.error('Full error:', err);
             throw err;
         }
     }
