@@ -269,7 +269,7 @@ export default function AltChat() {
         setCourtAnalysisLoading(true);
 
         try {
-            const response = await fetch('http://localhost:3001/api/court-analysis', {
+            const response = await fetch('/api/court-analysis', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
