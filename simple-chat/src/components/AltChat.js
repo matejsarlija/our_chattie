@@ -260,6 +260,8 @@ export default function AltChat() {
     };
 
     const handleCourtAnalysis = async () => {
+
+        const COURT_ANALYSIS_URL = process.env.COURT_ANALYSIS_URL || '/api/court-analysis';
         if (!caseNumber.trim()) {
             setCourtAnalysisError('Molimo unesite broj predmeta');
             return;
@@ -269,7 +271,7 @@ export default function AltChat() {
         setCourtAnalysisLoading(true);
 
         try {
-            const response = await fetch('/api/court-analysis', {
+            const response = await fetch(COURT_ANALYSIS_URL, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
