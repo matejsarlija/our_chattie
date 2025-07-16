@@ -261,7 +261,8 @@ export default function AltChat() {
 
     const handleCourtAnalysis = async () => {
 
-        const COURT_ANALYSIS_URL = process.env.COURT_ANALYSIS_URL || '/api/court-analysis';
+        const COURT_ANALYSIS_URL = process.env.REACT_APP_COURT_ANALYSIS_URL || '/api/court-analysis';
+
         if (!caseNumber.trim()) {
             setCourtAnalysisError('Molimo unesite broj predmeta');
             return;
