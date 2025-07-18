@@ -18,7 +18,7 @@ const { runCourtAnalysis } = require('./court-analysis/pipeline');
 
 // ========= CHANGE 2: WRAP THE ENTIRE SERVER LOGIC IN AN ASYNC FUNCTION =========
 async function startServer() {
-  
+
   // ========= CHANGE 3: DYNAMICALLY IMPORT P-QUEUE HERE =========
   // We use await to pause execution until the module is loaded.
   // We use { default: PQueue } because p-queue uses a default export.
@@ -106,8 +106,8 @@ async function startServer() {
 
       uploadedFilePath = req.file?.path;
 
-      console.log('Chat request:', { 
-        messageCount: messages?.length, 
+      console.log('Chat request:', {
+        messageCount: messages?.length,
         hasFile: !!uploadedFilePath,
         messagesType: typeof messages,
         firstMessage: messages?.[0]
@@ -159,48 +159,121 @@ async function startServer() {
   });
 
   app.post('/api/court-search', async (req, res) => {
-      try {
-          const { searchTerm, searchType = 'oib' } = req.body;
-          
-          const automator = new CourtSearchPuppeteer();
-          await automator.init();
-          
-          const results = await automator.performSearch(searchTerm);
-          
-          // This function needs to be defined or imported
-          // const latestCases = getLatestCases(results.results); 
-          
-          // This function needs to be defined or imported
-          // const analyzedCases = await analyzeCourtCases(latestCases); 
-          
-          await automator.close();
-          
-          res.json({
-              success: true,
-              // cases: analyzedCases, // Using placeholder
-              totalFound: results.results.length,
-              // processedCases: analyzedCases.length // Using placeholder
-          });
-          
-      } catch (error) {
-          console.error('Court search error:', error);
-          res.status(500).json({ error: error.message });
-      }
+    try {
+      const { searchTerm, searchType = 'oib' } = req.body;
+
+      const automator = new CourtSearchPuppeteer();
+      await automator.init();
+
+      const results = await automator.performSearch(searchTerm);
+
+      // This function needs to be defined or imported
+      // const latestCases = getLatestCases(results.results); 
+
+      // This function needs to be defined or imported
+      // const analyzedCases = await analyzeCourtCases(latestCases); 
+
+      await automator.close();
+
+      res.json({
+        success: true,
+        // cases: analyzedCases, // Using placeholder
+        totalFound: results.results.length,
+        // processedCases: analyzedCases.length // Using placeholder
+      });
+
+    } catch (error) {
+      console.error('Court search error:', error);
+      res.status(500).json({ error: error.message });
+    }
   });
 
   app.use('/api/court-analysis', rateLimiter);
 
-  app.post('/api/court-analysis', async (req, res) => {
-    try {
-      const { searchTerm } = req.body;
-      // courtAnalysisQueue is now available here because it's in the same scope
-      await courtAnalysisQueue.add(async () => {
-        const result = await runCourtAnalysis(searchTerm, progress => {});
-        res.json(result);
-      });
-    } catch (error) {
-      res.status(500).json({ error: error.message });
+  app.post('/api/court-analysis', (req, res) => {
+    const { searchTerm } = req.body;
+
+    if (!searchTerm) {
+      return res.status(400).json({ error: 'Search term is required' });
     }
+
+    // --- Step 1: Immediately set up the streaming connection for the user ---
+    // This tells the browser to keep the connection open and wait for events.
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.flushHeaders(); // Send these headers now to establish the connection.
+
+    // --- Step 2: Add the heavy task to the queue to protect the server ---
+    // The code inside add() will only run when it's this request's turn.
+    courtAnalysisQueue.add(async () => {
+
+      // Define the progress callback INSIDE the queued job.
+      // This is crucial because it gives the job access to this specific user's `res` object.
+      const progressCallback = (data) => {
+        // Safety check: Don't try to write to a connection that the user has already closed.
+        if (!res.writableEnded) {
+          res.write(`data: ${JSON.stringify(data)}\n\n`);
+        }
+      };
+
+      try {
+        // Let the user know their job has moved from "waiting" to "processing".
+        progressCallback({ step: 'starting', progress: 5, message: 'Vaš zahtjev je započeo s obradom...' });
+
+        // Run the main, resource-intensive pipeline.
+        const finalResult = await runCourtAnalysis(searchTerm, progressCallback);
+
+        // --- Step 3: Create a smaller, optimized payload for the final event ---
+        // This prevents the "Unterminated string in JSON" error by removing the huge, unused 'content' field.
+        const finalPayload = {
+          caseResult: {
+            title: finalResult.caseResult.title,
+            caseNumber: finalResult.caseResult.caseNumber,
+            court: finalResult.caseResult.court,
+            date: finalResult.caseResult.date,
+            link: finalResult.caseResult.link,
+            documentLinks: finalResult.caseResult.documentLinks,
+            hasDocuments: finalResult.caseResult.hasDocuments
+            // We are deliberately OMITTING the huge `finalResult.caseResult.content` field.
+          },
+          // Send back only essential file info, not the local server path.
+          files: finalResult.files.map(f => ({ url: f.url, text: f.text })),
+          analysis: finalResult.analysis
+        };
+
+        // Send the final, successful result to the user.
+        progressCallback({
+          step: 'complete',
+          progress: 100,
+          message: 'Analiza je završena!',
+          data: finalPayload // Send the optimized payload.
+        });
+
+      } catch (error) {
+        console.error('[Court Analysis Queue] Pipeline error:', error);
+        // If the pipeline fails, send a structured error message to the user.
+        progressCallback({
+          step: 'error',
+          progress: 100,
+          message: error.message || 'Došlo je do greške u obradi.'
+        });
+      } finally {
+        // --- Step 4: Close the connection for this user ---
+        // This runs whether the job succeeded or failed, ensuring the connection is always closed.
+        if (!res.writableEnded) {
+          res.end();
+        }
+        console.log(`[Court Analysis Queue] Stream closed for search term: ${searchTerm}`);
+      }
+    });
+
+    // --- Optional but Recommended: Handle user disconnection ---
+    // If the user closes their browser tab while their request is waiting in the queue,
+    // this will log it. The `writableEnded` check above prevents errors.
+    req.on('close', () => {
+      console.log(`[Court Analysis Queue] Client disconnected while waiting or processing term: ${searchTerm}`);
+    });
   });
 
   app.get('/health', (req, res) => {

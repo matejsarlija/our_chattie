@@ -1,6 +1,7 @@
 import ReactMarkdown from 'react-markdown';
 import { useState, useRef, useEffect } from 'react';
 import { Link } from 'react-router-dom';
+import CourtAnalysisModal from './CourtAnalysisModal';
 import WelcomeModal from './WelcomeModal';
 import MobileHeaderDropdown from './MobileHeaderDropdown';
 import { useFirstVisit } from '../hooks/useFirstVisit';
@@ -37,6 +38,9 @@ export default function AltChat() {
     const [caseNumber, setCaseNumber] = useState('');
     const [courtAnalysisLoading, setCourtAnalysisLoading] = useState(false);
     const [courtAnalysisError, setCourtAnalysisError] = useState('');
+    const [analysisProgress, setAnalysisProgress] = useState(0); // Just a simple percentage
+    const [isAnalysisModalOpen, setIsAnalysisModalOpen] = useState(false);
+    const [analysisResult, setAnalysisResult] = useState(null);
 
     // Load AdSense script and initialize ads
     useEffect(() => {
@@ -260,40 +264,92 @@ export default function AltChat() {
     };
 
     const handleCourtAnalysis = async () => {
-
         const COURT_ANALYSIS_URL = process.env.REACT_APP_COURT_ANALYSIS_URL || '/api/court-analysis';
 
         if (!caseNumber.trim()) {
-            setCourtAnalysisError('Molimo unesite broj predmeta');
+            setCourtAnalysisError('Molimo unesite broj predmeta.');
             return;
         }
 
         setCourtAnalysisError('');
         setCourtAnalysisLoading(true);
+        setAnalysisProgress(0);
 
         try {
             const response = await fetch(COURT_ANALYSIS_URL, {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ searchTerm: caseNumber.trim() })
             });
 
-            const result = await response.json();
-
-            if (!response.ok) {
-                throw new Error(result.error || 'Greška pri pretraživanju');
+            if (!response.ok || !response.body) {
+                const errData = await response.json().catch(() => ({}));
+                throw new Error(errData.error || `Server error: ${response.status}`);
             }
 
-            // Handle successful result - this is where you'll show your success component
-            console.log('Court analysis result:', result);
-            // TODO: Open success modal/component here
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            let messageBuffer = '';
+
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) {
+                    // Process any remaining data
+                    if (messageBuffer.trim().startsWith('data:')) {
+                        try {
+                            const finalJsonData = messageBuffer.replace('data: ', '');
+                            const finalProgressData = JSON.parse(finalJsonData);
+                            setAnalysisProgress(finalProgressData.progress || 100);
+
+                            // Handle the complete result - open modal when done
+                            if (finalProgressData.step === 'complete' && finalProgressData.data) {
+                                setAnalysisResult(finalProgressData.data);
+                                setIsAnalysisModalOpen(true);
+                            }
+                        } catch (e) {
+                            console.error('Error parsing final buffered data:', e);
+                        }
+                    }
+                    break;
+                }
+
+                messageBuffer += decoder.decode(value, { stream: true });
+
+                let boundaryIndex;
+                while ((boundaryIndex = messageBuffer.indexOf('\n\n')) >= 0) {
+                    const completeMessage = messageBuffer.substring(0, boundaryIndex);
+                    messageBuffer = messageBuffer.substring(boundaryIndex + 2);
+
+                    if (completeMessage.trim().startsWith('data:')) {
+                        try {
+                            const jsonData = completeMessage.replace('data: ', '');
+                            const progressData = JSON.parse(jsonData);
+
+                            // Update progress percentage
+                            setAnalysisProgress(progressData.progress || 0);
+
+                            // Handle completion - open modal when done
+                            if (progressData.step === 'complete' && progressData.data) {
+                                setAnalysisResult(progressData.data);
+                                setIsAnalysisModalOpen(true);
+                            }
+
+                            if (progressData.step === 'error') {
+                                setCourtAnalysisError(progressData.message);
+                            }
+
+                        } catch (e) {
+                            console.error('Error parsing progress update:', e);
+                        }
+                    }
+                }
+            }
 
         } catch (error) {
-            setCourtAnalysisError(error.message || 'Greška pri pretraživanju. Molimo pokušajte ponovno.');
+            setCourtAnalysisError(error.message || 'Greška pri spajanju. Molimo pokušajte ponovno.');
         } finally {
             setCourtAnalysisLoading(false);
+            setAnalysisProgress(0); // Reset progress
         }
     };
 
@@ -590,22 +646,33 @@ export default function AltChat() {
                                 <button
                                     onClick={handleCourtAnalysis}
                                     disabled={courtAnalysisLoading || !caseNumber.trim()}
-                                    className={`w-full py-2 px-3 text-sm rounded-md font-medium transition-colors ${courtAnalysisLoading || !caseNumber.trim()
-                                        ? 'bg-slate-300 text-slate-500 cursor-not-allowed'
-                                        : 'bg-blue-600 text-white hover:bg-blue-700'
+                                    className={`w-full py-2 px-3 text-sm rounded-md font-medium transition-colors relative overflow-hidden ${courtAnalysisLoading || !caseNumber.trim()
+                                            ? 'bg-slate-300 text-slate-500 cursor-not-allowed'
+                                            : 'bg-blue-600 text-white hover:bg-blue-700'
                                         }`}
                                 >
-                                    {courtAnalysisLoading ? (
-                                        <div className="flex items-center justify-center">
-                                            <svg className="animate-spin -ml-1 mr-1 h-3 w-3 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                            </svg>
-                                            Analiziram...
-                                        </div>
-                                    ) : (
-                                        'Pretraži e-Oglasnu ploču sudova'
+                                    {/* Progress bar background */}
+                                    {courtAnalysisLoading && (
+                                        <div
+                                            className="absolute inset-0 bg-blue-400 transition-all duration-300 ease-out"
+                                            style={{ width: `${analysisProgress}%` }}
+                                        />
                                     )}
+
+                                    {/* Button content */}
+                                    <div className="relative z-10 flex items-center justify-center">
+                                        {courtAnalysisLoading ? (
+                                            <>
+                                                <svg className="animate-spin -ml-1 mr-1 h-3 w-3 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                                </svg>
+                                                Analiza u tijeku... {analysisProgress}%
+                                            </>
+                                        ) : (
+                                            'Pretraži e-Oglasnu ploču sudova'
+                                        )}
+                                    </div>
                                 </button>
                             </div>
                         </div>
@@ -666,6 +733,12 @@ export default function AltChat() {
                     </div>
                 )}
             </div>
+            <CourtAnalysisModal
+                isOpen={isAnalysisModalOpen}
+                onClose={() => setIsAnalysisModalOpen(false)}
+                progress={analysisProgress}
+                result={analysisResult}
+            />
             <WelcomeModal
                 isOpen={showWelcomeModal}
                 onClose={closeWelcomeModal}

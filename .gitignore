@@ -21,6 +21,7 @@ node_modules/
 *.png
 *.pdf
 *.bin
+*.zip
 build/
 .idea/
 

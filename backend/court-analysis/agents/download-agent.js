@@ -41,14 +41,26 @@ class DownloadDocumentsTool extends Tool {
         let completed = 0;
         for (const link of documentLinks) {
             try {
-                const ext = path.extname(link.url).split('?')[0] || '.bin';
+                // --- IMPROVED EXTENSION LOGIC ---
+                let ext = path.extname(link.url).split('?')[0];
+                // If the URL has no extension, check the link text for "ZIP".
+                if (!ext && link.text && link.text.toLowerCase().includes('zip')) {
+                    ext = '.zip';
+                }
+                // Fallback for any other case.
+                ext = ext || '.bin';
+                // --- END OF IMPROVEMENT ---
+
                 const safeName = (link.text || 'document').replace(/[^a-zA-Z0-9-_]/g, '_').slice(0, 40);
                 const filename = `${Date.now()}_${safeName}${ext}`;
                 const filePath = await downloadFile(link.url, filename);
+                
                 downloaded.push({ filePath, url: link.url, text: link.text });
+
                 completed++;
                 progressCallback && progressCallback({ step: 'downloading', progress: 50 + Math.round((completed / documentLinks.length) * 30), message: `Downloaded: ${link.text}` });
             } catch (err) {
+                console.error(`Failed to download ${link.text}:`, err);
                 progressCallback && progressCallback({ step: 'downloading', progress: 50 + Math.round((completed / documentLinks.length) * 30), message: `Failed to download: ${link.text}` });
             }
         }
