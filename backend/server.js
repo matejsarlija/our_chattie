@@ -242,6 +242,8 @@ async function startServer() {
           analysis: finalResult.analysis
         };
 
+        //console.log('Final payload prepared:', finalPayload);
+
         // Send the final, successful result to the user.
         progressCallback({
           step: 'complete',

@@ -84,6 +84,9 @@ async function runCourtAnalysis(searchTerm, progressCallback) {
 
         progressCallback && progressCallback({ step: 'complete', progress: 100, message: 'Analysis complete!' });
 
+        //console.log('Case Information:', caseInfo);
+        //console.log('Analysis Information:', analysis);
+
         // Return the original downloadedFiles, not the extracted ones
         return { caseResult: caseInfo, files: downloadedFiles, analysis };
 

@@ -48,8 +48,10 @@ class AnalyzeDocumentsTool extends Tool {
                 if (!text) {
                     throw new Error('Could not extract text from file.');
                 }
-                
-                const prompt = `From the court document text below, extract key information as a JSON object with the following keys: "caseNumber", "parties" (an array of strings), "decisionDate", and "summary" (a brief paragraph). Text:\n\n${text.slice(0, 8000)}`;
+
+                //console.log(`Analyzing text from file: ${file.filePath}, the text length is: ${text.length}`);
+                // alt prompt: a medium-sized paragraph, two at most, ...
+                const prompt = `From the court document text below, extract key information as a JSON object with the following keys: "caseNumber", "parties" (an array of strings), "decisionDate", and "summary" (a medium-sized paragraph, nicely formatted, to be in Croatian please, as that is what our customers speak). Text:\n\n${text.slice(0, 25000)}`;
                 
                 const response = await gemini.invoke(prompt);
                 
@@ -63,6 +65,9 @@ class AnalyzeDocumentsTool extends Tool {
                 // 3. Parse the CLEANED string.
                 const aiResult = JSON.parse(cleanedContent);
                 // --- END OF FIX ---
+
+                // added by a human
+                console.log(`Analyzed file ${file.filePath}, AI result:`, aiResult);
 
                 progressCallback && progressCallback({ step: 'analyzing', message: `Analyzed: ${file.text}` });
                 return { ...file, aiResult };
@@ -78,6 +83,8 @@ class AnalyzeDocumentsTool extends Tool {
 
         return settledResults.map(result => {
             if (result.status === 'fulfilled') {
+
+                console.log(`Successfully analyzed files - results - `, result.value);
                 return result.value;
             } else {
                 return { error: 'An unexpected error occurred during analysis.', ...result.reason };

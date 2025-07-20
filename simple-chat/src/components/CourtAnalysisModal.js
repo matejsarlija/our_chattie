@@ -17,10 +17,10 @@ const DocumentAnalysis = ({ fileAnalysis, index }) => (
                             <span className="font-medium">Greška:</span> {fileAnalysis.error}
                         </p>
                     </div>
-                ) : fileAnalysis.aiResult?.content ? (
+                ) : fileAnalysis.aiResult?.summary ? (
                     <div className="mt-2 p-3 bg-white border border-slate-200 rounded-md">
                         <div className="text-sm text-slate-700 whitespace-pre-wrap">
-                            {fileAnalysis.aiResult.content}
+                            {fileAnalysis.aiResult.summary}
                         </div>
                     </div>
                 ) : (
