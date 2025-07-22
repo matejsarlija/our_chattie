@@ -26,7 +26,7 @@ async function runCourtAnalysis(searchTerm, progressCallback) {
         await automator.close();
 
         if (!caseData || !caseData.documentLinks || caseData.documentLinks.length === 0) {
-            throw new Error('Could not find a case with downloadable documents for this search term.');
+            throw new Error('Nije pronađen nijedan predmet s dostupnim dokumentima za traženi pojam.');
         }
 
         const { caseInfo, documentLinks } = caseData;

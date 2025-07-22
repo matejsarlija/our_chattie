@@ -583,7 +583,7 @@ export default function AltChat() {
                     {/* Footer - New addition */}
                     <footer className="bg-white p-4 border-t border-slate-200 mt-auto">
                         <div className="max-w-4xl mx-auto text-center text-slate-600 text-sm">
-                            <p>© {new Date().getFullYear()} Alimentacija.info | Pravni Asistent</p>
+                            <p>© {new Date().getFullYear()} Alimentacija.info</p>
                             <p className="mt-1">
                                 Sve informacije pružene putem ove usluge su informativne prirode i ne predstavljaju pravni savjet.
                             </p>
