@@ -41,7 +41,7 @@ class AnalyzeDocumentsTool extends Tool {
 
     async _call(input) {
         const { files, progressCallback } = input;
-        
+
         const analysisPromises = files.map(async (file) => {
             try {
                 const text = await extractTextFromFile(file.filePath);
@@ -52,9 +52,9 @@ class AnalyzeDocumentsTool extends Tool {
                 //console.log(`Analyzing text from file: ${file.filePath}, the text length is: ${text.length}`);
                 // alt prompt: a medium-sized paragraph, two at most, ...
                 const prompt = `From the court document text below, extract key information as a JSON object with the following keys: "caseNumber", "parties" (an array of strings), "decisionDate", and "summary" (a medium-sized paragraph, nicely formatted, to be in Croatian please, as that is what our customers speak). Text:\n\n${text.slice(0, 25000)}`;
-                
+
                 const response = await gemini.invoke(prompt);
-                
+
                 // --- THIS IS THE FIX ---
                 // 1. Get the raw content from the AI.
                 const rawContent = response.content;
@@ -81,15 +81,38 @@ class AnalyzeDocumentsTool extends Tool {
 
         const settledResults = await Promise.allSettled(analysisPromises);
 
-        return settledResults.map(result => {
+        const individualAnalyses = settledResults.map(result => {
             if (result.status === 'fulfilled') {
-
-                console.log(`Successfully analyzed files - results - `, result.value);
                 return result.value;
             } else {
                 return { error: 'An unexpected error occurred during analysis.', ...result.reason };
             }
-        });
+        }
+        );
+
+        let finalSummary = "Analiza dokumenata nije uspješno izvršena."
+
+        const successfulSummaries = individualAnalyses
+            .filter(file => file.aiResult && file.aiResult.summary)
+            .map(file => file.aiResult.summary)
+            .join('\n\n---\n\n');
+
+        if (successfulSummaries) {
+            try {
+                const finalSummaryPrompt = `Synthesize the following summaries into a coherent overview (in Croatian):\n\n${successfulSummaries}. Try to extrapolate what might happen next in the case going forward, and what the next steps are for the parties involved.`;
+                const finalResponse = await gemini.invoke(finalSummaryPrompt);
+                finalSummary = finalResponse.content;
+                console.log("Successfully generated final combined summary.");
+            } catch (err) {
+                console.error("Failed to generate combined summary:", err);
+                finalSummary = "Error during final summary generation.";
+            }
+        }
+
+        return {
+            individualAnalyses: individualAnalyses,
+            finalSummary: finalSummary,
+        };
     }
 }
 

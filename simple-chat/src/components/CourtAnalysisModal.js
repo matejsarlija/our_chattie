@@ -1,13 +1,68 @@
 import React from 'react';
+import ReactMarkdown from 'react-markdown';
+
+// Helper function to download markdown file
+const downloadMarkdown = (fileAnalysis, index) => {
+    const fileName = fileAnalysis.text || `Document_${index + 1}`;
+    const content = fileAnalysis.aiResult?.summary || 'No analysis available';
+
+    // Create markdown content
+    const markdownContent = `# ${fileName}\n\n${content}`;
+
+    // Create blob and download
+    const blob = new Blob([markdownContent], { type: 'text/markdown' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${fileName.replace(/[^a-zA-Z0-9]/g, '_')}.md`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+};
+
+// Helper function to download final summary
+const downloadFinalSummary = (finalSummary, caseNumber) => {
+    const fileName = caseNumber ? `Zaključak_${caseNumber}` : 'Zaključak_Analize';
+    const markdownContent = `# Zaključak Analize\n\n${finalSummary}`;
+
+    const blob = new Blob([markdownContent], { type: 'text/markdown' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${fileName.replace(/[^a-zA-Z0-9]/g, '_')}.md`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+};
 
 // Helper component to render individual document analysis
 const DocumentAnalysis = ({ fileAnalysis, index }) => (
     <div key={index} className="bg-slate-50 border border-slate-200 rounded-lg p-4">
         <div className="flex items-start gap-3">
             <div className="flex-shrink-0 w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
-                <svg className="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                </svg>
+                <div className="relative group">
+                    <svg
+                        onClick={() => downloadMarkdown(fileAnalysis, index)}
+                        className="w-8 h-8 p-2 rounded-full bg-blue-100 text-blue-600 hover:bg-blue-200 hover:text-blue-800 transition-colors cursor-pointer"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                    >
+                        <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                        />
+                    </svg>
+
+                    {/* Custom tooltip */}
+                    <span className="absolute left-1/2 -translate-x-1/2 mt-2 px-2 py-1 text-xs text-white bg-gray-800 rounded opacity-0 group-hover:opacity-100 transition">
+                        Kliknite ikonu za preuzimanje kao .md datoteku
+                    </span>
+                </div>
             </div>
             <div className="flex-1 min-w-0">
                 <h4 className="font-medium text-slate-800 truncate">{fileAnalysis.text}</h4>
@@ -35,9 +90,10 @@ const DocumentAnalysis = ({ fileAnalysis, index }) => (
 export default function CourtAnalysisModal({ isOpen, onClose, result }) {
     if (!isOpen) return null;
 
-    const hasResult = result && result.analysis && result.analysis.length > 0;
+    const hasResult = result && result.analysis.individualAnalyses && result.analysis.individualAnalyses.length > 0;
     const caseInfo = result?.caseResult;
-    const documents = result?.analysis || [];
+    const documents = result?.analysis.individualAnalyses || [];
+    const finalSummary = result?.analysis.finalSummary;
 
     return (
         <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-4">
@@ -50,8 +106,8 @@ export default function CourtAnalysisModal({ isOpen, onClose, result }) {
                             <p className="text-sm text-slate-600 mt-1">Predmet: {caseInfo.caseNumber}</p>
                         )}
                     </div>
-                    <button 
-                        onClick={onClose} 
+                    <button
+                        onClick={onClose}
                         className="text-slate-400 hover:text-slate-600 transition-colors"
                     >
                         <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -97,10 +153,10 @@ export default function CourtAnalysisModal({ isOpen, onClose, result }) {
                                 {documents.length > 0 ? (
                                     <div className="space-y-4">
                                         {documents.map((doc, index) => (
-                                            <DocumentAnalysis 
-                                                key={index} 
-                                                fileAnalysis={doc} 
-                                                index={index} 
+                                            <DocumentAnalysis
+                                                key={index}
+                                                fileAnalysis={doc}
+                                                index={index}
                                             />
                                         ))}
                                     </div>
@@ -113,6 +169,29 @@ export default function CourtAnalysisModal({ isOpen, onClose, result }) {
                                     </div>
                                 )}
                             </div>
+
+                            {/* Final Summary */}
+                            {finalSummary && (
+  <div className="bg-slate-50 border-l-4 border-slate-300 rounded-md p-4">
+    <h4 className="font-semibold text-slate-900 flex items-center gap-2 mb-2">
+      <svg className="w-5 h-5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+      </svg>
+      Zaključak
+    </h4>
+    <div className="text-sm text-slate-700 whitespace-pre-wrap leading-relaxed">
+      <ReactMarkdown>{finalSummary}</ReactMarkdown>
+    </div>
+    <div className="mt-3 text-right">
+      <button
+        onClick={() => downloadFinalSummary(finalSummary, caseInfo?.caseNumber)}
+        className="text-slate-600 text-sm hover:underline"
+      >
+        ⬇ Preuzmi zaključak kao .md datoteku
+      </button>
+    </div>
+  </div>
+)}
                         </div>
                     ) : (
                         <div className="text-center py-12">
