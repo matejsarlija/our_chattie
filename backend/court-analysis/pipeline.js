@@ -26,7 +26,7 @@ async function runCourtAnalysis(searchTerm, progressCallback) {
         await automator.close();
 
         if (!caseData || !caseData.documentLinks || caseData.documentLinks.length === 0) {
-            throw new Error('Nije pronađen nijedan predmet s dostupnim dokumentima za traženi pojam.');
+            throw new Error('Nije pronađen predmet s dostupnim dokumentima za traženi pojam.');
         }
 
         const { caseInfo, documentLinks } = caseData;
@@ -84,7 +84,7 @@ async function runCourtAnalysis(searchTerm, progressCallback) {
 
         progressCallback && progressCallback({ step: 'complete', progress: 100, message: 'Analysis complete!' });
 
-        //console.log('Case Information:', caseInfo);
+        //console.log('File information:', downloadedFiles);
         //console.log('Analysis Information:', analysis);
 
         // Return the original downloadedFiles, not the extracted ones

@@ -84,7 +84,14 @@ class CourtSearchPuppeteer {
                     if (!titleEl) return; // Skip if there's no main title/link
 
                     const caseEl = element.querySelector('a[href*="text="]');
-                    const courtEl = element.querySelector('a[href*="/objave-sudova/"]');
+                    let courtEl = null;
+                    const courtDivs = element.querySelectorAll('div small');
+                    for (const small of courtDivs) {
+                        if (small.textContent.trim() === 'Sud') {
+                            courtEl = small.parentElement.querySelector('a span');
+                            break;
+                        }
+                    }
                     const dateEl = element.querySelector('.m-date');
                     
                     // --- THIS IS THE KEY CHANGE BASED ON YOUR FINDING ---

@@ -263,6 +263,8 @@ export default function AltChat() {
         fileInputRef.current?.click();
     };
 
+    const isValidInput = caseNumber.trim().length >= 8;
+
     const handleCourtAnalysis = async () => {
         const COURT_ANALYSIS_URL = process.env.REACT_APP_COURT_ANALYSIS_URL || '/api/court-analysis';
 
@@ -631,22 +633,33 @@ export default function AltChat() {
                                     type="text"
                                     value={caseNumber}
                                     onChange={(e) => setCaseNumber(e.target.value)}
-                                    onKeyPress={(e) => e.key === 'Enter' && handleCourtAnalysis()}
-                                    placeholder="Npr. 12345"
-                                    className="w-full px-3 py-2 text-sm border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                    onKeyPress={(e) => e.key === 'Enter' && isValidInput && handleCourtAnalysis()}
+                                    placeholder="Npr. 12345678 (min. 8 znakova)"
+                                    minLength={3}
+                                    className={`w-full px-3 py-2 text-sm border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent ${caseNumber.trim().length > 0 && caseNumber.trim().length < 3
+                                            ? 'border-red-300 bg-red-50'
+                                            : 'border-slate-300'
+                                        }`}
                                     disabled={courtAnalysisLoading}
                                 />
 
+                                {/* Add validation message */}
+                                {caseNumber.trim().length > 0 && caseNumber.trim().length < 8 && (
+                                    <div className="text-blue-600 text-xs mt-1">
+                                        Minimalno 8 znakova potrebno
+                                    </div>
+                                )}
+
                                 {courtAnalysisError && (
-                                    <div className="text-red-600 text-xs">
+                                    <div className="text-amber-600 text-sm">
                                         {courtAnalysisError}
                                     </div>
                                 )}
 
                                 <button
                                     onClick={handleCourtAnalysis}
-                                    disabled={courtAnalysisLoading || !caseNumber.trim()}
-                                    className={`w-full py-2 px-3 text-sm rounded-md font-medium transition-colors relative overflow-hidden ${courtAnalysisLoading || !caseNumber.trim()
+                                    disabled={courtAnalysisLoading || !isValidInput}  // Update this line
+                                    className={`w-full py-2 px-3 text-sm rounded-md font-medium transition-colors relative overflow-hidden ${courtAnalysisLoading || !isValidInput  // Update this line
                                             ? 'bg-slate-300 text-slate-500 cursor-not-allowed'
                                             : 'bg-blue-600 text-white hover:bg-blue-700'
                                         }`}
