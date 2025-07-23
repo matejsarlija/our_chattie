@@ -88,7 +88,7 @@ export default function AboutUs() {
                 Nakon što unesete naziv pravnog subjekta, OIB ili oznaku sudskog postupka, naš sustav će automatski:
               </p>
               <ul className="pl-6 mb-3 space-y-2 list-items">
-                <li>Pronaći najnoviju objavu vezane uz postupak na stranicama e-Oglasne ploče</li>
+                <li>Pronaći najnoviju objavu vezanu uz postupak na stranicama e-Oglasne ploče</li>
                 <li>Preuzeti i analizirati sve dokumente iz objave</li>
                 <li>Identificirati ključne informacije</li>
                 <li>Pružiti vam jasan sažetak o trenutnom statusu postupka i što možete očekivati dalje</li>
