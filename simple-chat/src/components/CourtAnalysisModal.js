@@ -176,7 +176,9 @@ export default function CourtAnalysisModal({ isOpen, onClose, result }) {
                             {finalSummary && (
                                 <>
                                     {/* Final summary text with left border */}
-                                    <div className="bg-slate-50 border-l-4 border-slate-300 rounded-md p-4">
+                                    <div className="relative bg-slate-50 rounded-md p-4 overflow-hidden">
+                                        <div className="absolute left-0 top-0 w-1 h-full bg-slate-300"></div>
+                                        <div className="absolute left-0 top-0 w-1 h-full bg-gradient-to-b from-blue-400 via-blue-200 to-blue-400 animate-[scrollBorder_3s_linear_infinite]"></div>
                                         <h4 className="font-semibold text-slate-900 flex items-center gap-2 mb-2">
                                             <svg className="w-5 h-5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                 <path
