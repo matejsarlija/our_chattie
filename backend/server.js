@@ -224,6 +224,8 @@ async function startServer() {
         // Run the main, resource-intensive pipeline.
         const finalResult = await runCourtAnalysis(searchTerm, progressCallback);
 
+        const firstDownloadedFile = finalResult.files?.[0];
+
         // --- Step 3: Create a smaller, optimized payload for the final event ---
         // This prevents the "Unterminated string in JSON" error by removing the huge, unused 'content' field.
         const finalPayload = {
@@ -238,11 +240,12 @@ async function startServer() {
             // We are deliberately OMITTING the huge `finalResult.caseResult.content` field.
           },
           // Send back only essential file info, not the local server path.
-          files: finalResult.files.map(f => ({ url: f.url, text: f.text })),
+          //files: finalResult.files.map(f => ({ url: f.url, text: f.text })),
+          originalFile: firstDownloadedFile ? { url: firstDownloadedFile.url, text: firstDownloadedFile.text } : null,
           analysis: finalResult.analysis
         };
 
-        //console.log('Final payload prepared:', finalPayload);
+        console.log('Final payload prepared:', finalPayload);
 
         // Send the final, successful result to the user.
         progressCallback({

@@ -93,6 +93,8 @@ export default function CourtAnalysisModal({ isOpen, onClose, result }) {
     const hasResult = result && result.analysis.individualAnalyses && result.analysis.individualAnalyses.length > 0;
     const caseInfo = result?.caseResult;
     const documents = result?.analysis.individualAnalyses || [];
+    const originalFileUrl = result?.originalFile?.url || '';
+    const originalFileText = result?.originalFile?.text || 'Izvorni dokument';
     const finalSummary = result?.analysis.finalSummary;
 
     return (
@@ -122,7 +124,7 @@ export default function CourtAnalysisModal({ isOpen, onClose, result }) {
                         <div className="space-y-6">
                             {/* Case Summary */}
                             {caseInfo && (
-                                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                                <div className="bg-blue-50 ring ring-blue-200 rounded-md p-4">
                                     <h4 className="font-semibold text-blue-900 mb-3">Informacije o predmetu</h4>
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
                                         <div>
@@ -172,26 +174,47 @@ export default function CourtAnalysisModal({ isOpen, onClose, result }) {
 
                             {/* Final Summary */}
                             {finalSummary && (
-  <div className="bg-slate-50 border-l-4 border-slate-300 rounded-md p-4">
-    <h4 className="font-semibold text-slate-900 flex items-center gap-2 mb-2">
-      <svg className="w-5 h-5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-      </svg>
-      Zaključak
-    </h4>
-    <div className="text-sm text-slate-700 whitespace-pre-wrap leading-relaxed">
-      <ReactMarkdown>{finalSummary}</ReactMarkdown>
-    </div>
-    <div className="mt-3 text-right">
-      <button
-        onClick={() => downloadFinalSummary(finalSummary, caseInfo?.caseNumber)}
-        className="text-slate-600 text-sm hover:underline"
-      >
-        ⬇ Preuzmi zaključak kao .md datoteku
-      </button>
-    </div>
-  </div>
-)}
+                                <>
+                                    {/* Final summary text with left border */}
+                                    <div className="bg-slate-50 border-l-4 border-slate-300 rounded-md p-4">
+                                        <h4 className="font-semibold text-slate-900 flex items-center gap-2 mb-2">
+                                            <svg className="w-5 h-5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path
+                                                    strokeLinecap="round"
+                                                    strokeLinejoin="round"
+                                                    strokeWidth={2}
+                                                    d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
+                                                />
+                                            </svg>
+                                            Zaključak
+                                        </h4>
+                                        <div className="text-sm text-slate-700 whitespace-pre-wrap leading-relaxed">
+                                            <ReactMarkdown>{finalSummary}</ReactMarkdown>
+                                        </div>
+                                    </div>
+
+                                    {/* Buttons BELOW the summary block */}
+                                    <div className="mt-3 flex justify-end gap-4">
+                                        {originalFileUrl && (
+                                            <a
+                                                href={originalFileUrl}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                className="text-slate-600 text-sm hover:underline"
+                                            >
+                                                ⬇ Preuzmi izvorne datoteke – {originalFileText}
+                                            </a>
+                                        )}
+
+                                        <button
+                                            onClick={() => downloadFinalSummary(finalSummary, caseInfo?.caseNumber)}
+                                            className="text-blue-600 text-sm hover:underline"
+                                        >
+                                            ⬇ Preuzmi zaključak kao .md datoteku
+                                        </button>
+                                    </div>
+                                </>
+                            )}
                         </div>
                     ) : (
                         <div className="text-center py-12">
