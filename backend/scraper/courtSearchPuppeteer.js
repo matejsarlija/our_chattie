@@ -93,10 +93,49 @@ class CourtSearchPuppeteer {
                         }
                     }
                     const dateEl = element.querySelector('.m-date');
-                    
+
                     // --- THIS IS THE KEY CHANGE BASED ON YOUR FINDING ---
                     // Find the direct document download link on the search result item itself.
-                    const docLinkEl = element.querySelector('a[href*="/dokumenti/preuzimanje"]');
+                    //const docLinkEl = element.querySelector('a[href*="/dokumenti/preuzimanje"]');
+
+                    // was brittle, new version is more robust
+                    const docLinkEl = element.querySelector('a[href$="/preuzimanje"]');
+
+
+                    // --- START: Participant Extraction Logic (NEW) ---
+                    const participants = [];
+                    // Find the container for participants. Based on the HTML, it's a div with a child <small> tag 'Sudionici'.
+                    // Then we find all 'd-block' divs inside which represent each participant.
+                    let participantContainer = null;
+                    element.querySelectorAll('small.text-muted.d-block').forEach(small => {
+                        if (small.textContent.trim() === 'Sudionici') {
+                            participantContainer = small.parentElement;
+                        }
+                    });
+
+                    if (participantContainer) {
+                        participantContainer.querySelectorAll('.d-block').forEach(block => {
+                            const nameEl = block.querySelector('span:not(.badge)'); // The name is in a span without a badge class
+                            if (nameEl && nameEl.textContent.trim()) {
+                                // Based on the HTML, data-original-title is a reliable selector
+                                const oibEl = block.querySelector('small[data-original-title="OIB"]');
+                                const addressEl = block.querySelector('small[data-original-title="Adresa"]');
+                                const roleEl = block.querySelector('span.badge-info'); // Role seems to be in a 'badge-info' span
+
+                                // Clean the text, removing the superscript labels like 'OIB' and 'ADRESA'
+                                const oibText = oibEl ? oibEl.textContent.replace('OIB', '').trim() : 'N/A';
+                                const addressText = addressEl ? addressEl.textContent.replace('ADRESA', '').trim() : 'N/A';
+
+                                participants.push({
+                                    name: nameEl.textContent.trim(),
+                                    oib: oibText,
+                                    address: addressText,
+                                    role: roleEl ? roleEl.textContent.trim() : 'N/A'
+                                });
+                            }
+                        });
+                    }
+                    // --- END: Participant Extraction Logic ---
 
                     items.push({
                         title: titleEl.textContent.trim(),
@@ -105,7 +144,8 @@ class CourtSearchPuppeteer {
                         court: courtEl ? courtEl.textContent.trim() : 'N/A',
                         date: dateEl ? dateEl.textContent.trim() : 'N/A',
                         // Add the direct link if it exists, otherwise null.
-                        documentDownloadLink: docLinkEl ? new URL(docLinkEl.href, window.location.origin).href : null
+                        documentDownloadLink: docLinkEl ? new URL(docLinkEl.href, window.location.origin).href : null,
+                        participants: participants // Add the new participants array
                     });
                 });
                 return items;

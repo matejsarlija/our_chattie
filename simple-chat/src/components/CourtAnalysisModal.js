@@ -124,7 +124,7 @@ export default function CourtAnalysisModal({ isOpen, onClose, result }) {
                         <div className="space-y-6">
                             {/* Case Summary */}
                             {caseInfo && (
-                                <div className="bg-blue-50 ring ring-blue-200 rounded-md p-4">
+                                <div className="bg-blue-50 ring-blue-200 rounded-md p-4">
                                     <h4 className="font-semibold text-blue-900 mb-3">Informacije o predmetu</h4>
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
                                         <div>
@@ -204,7 +204,7 @@ export default function CourtAnalysisModal({ isOpen, onClose, result }) {
                                                 rel="noopener noreferrer"
                                                 className="text-slate-600 text-sm hover:underline"
                                             >
-                                                ⬇ Preuzmi izvorne datoteke – {originalFileText}
+                                                ⬇ {originalFileText}
                                             </a>
                                         )}
 

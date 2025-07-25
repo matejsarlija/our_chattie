@@ -236,7 +236,8 @@ async function startServer() {
             date: finalResult.caseResult.date,
             link: finalResult.caseResult.link,
             documentLinks: finalResult.caseResult.documentLinks,
-            hasDocuments: finalResult.caseResult.hasDocuments
+            hasDocuments: finalResult.caseResult.hasDocuments,
+            participants: finalResult.caseResult.participants, // Include participants
             // We are deliberately OMITTING the huge `finalResult.caseResult.content` field.
           },
           // Send back only essential file info, not the local server path.
@@ -245,7 +246,8 @@ async function startServer() {
           analysis: finalResult.analysis
         };
 
-        console.log('Final payload prepared:', finalPayload);
+        //console.log('Final payload prepared:', finalPayload);
+        //console.log('Participants included:', finalPayload.caseResult.participants);
 
         // Send the final, successful result to the user.
         progressCallback({
