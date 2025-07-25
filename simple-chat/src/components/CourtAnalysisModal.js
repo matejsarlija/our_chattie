@@ -1,5 +1,7 @@
 import React from 'react';
 import ReactMarkdown from 'react-markdown';
+import { ArrowDownTrayIcon, DocumentArrowDownIcon } from '@heroicons/react/24/outline'
+
 
 // Helper function to download markdown file
 const downloadMarkdown = (fileAnalysis, index) => {
@@ -204,7 +206,8 @@ export default function CourtAnalysisModal({ isOpen, onClose, result }) {
                                                 rel="noopener noreferrer"
                                                 className="text-slate-600 text-sm hover:underline"
                                             >
-                                                ⬇ {originalFileText}
+                                                <ArrowDownTrayIcon className="inline-block w-5 h-5 mr-1" />
+                                                Izvorni {originalFileText}
                                             </a>
                                         )}
 
@@ -212,7 +215,9 @@ export default function CourtAnalysisModal({ isOpen, onClose, result }) {
                                             onClick={() => downloadFinalSummary(finalSummary, caseInfo?.caseNumber)}
                                             className="text-blue-600 text-sm hover:underline"
                                         >
-                                            ⬇ Preuzmi zaključak kao .md datoteku
+                                            <DocumentArrowDownIcon className="inline-block w-5 h-5 mr-1" />
+
+                                            Preuzmi zaključak kao .md datoteku
                                         </button>
                                     </div>
                                 </>
