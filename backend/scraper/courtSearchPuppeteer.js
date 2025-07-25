@@ -145,6 +145,8 @@ class CourtSearchPuppeteer {
                         date: dateEl ? dateEl.textContent.trim() : 'N/A',
                         // Add the direct link if it exists, otherwise null.
                         documentDownloadLink: docLinkEl ? new URL(docLinkEl.href, window.location.origin).href : null,
+                        // *** THE KEY FIX: Get the ACTUAL link text ***
+                        documentLinkText: docLinkEl ? docLinkEl.textContent.trim() : null,
                         participants: participants // Add the new participants array
                     });
                 });
@@ -188,7 +190,7 @@ class CourtSearchPuppeteer {
                 caseInfo: firstWithDocs,
                 documentLinks: [{
                     url: firstWithDocs.documentDownloadLink,
-                    text: 'Dokumenti objave (ZIP)'
+                    text: firstWithDocs.documentLinkText || 'Preuzimanje dokumenta'
                 }]
             };
         }

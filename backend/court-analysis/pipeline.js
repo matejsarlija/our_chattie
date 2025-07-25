@@ -47,6 +47,8 @@ async function runCourtAnalysis(searchTerm, progressCallback) {
             // Add the zip file itself to the cleanup list
             extractedFilePaths.push(file.filePath);
 
+            //console.log('Filed found was:', file);
+
             if (file.filePath.endsWith('.zip')) {
                 console.log(`Extracting from ZIP file: ${file.filePath}`);
                 const zip = new AdmZip(file.filePath);
