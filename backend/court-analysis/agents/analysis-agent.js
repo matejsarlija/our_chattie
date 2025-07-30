@@ -35,8 +35,8 @@ async function extractTextFromFile(filePath) {
 class AnalyzeDocumentsTool extends Tool {
     constructor() {
         super();
-        this.name = 'analyze_documents';
-        this.description = 'Analyze court documents in parallel using Gemini and extract structured info.';
+        this.name = 'analyze_documents_for_one_case';
+        this.description = 'Analyzes a set of documents related to a single court case entry and returns structured info for each.';
     }
 
     async _call(input) {
@@ -90,30 +90,90 @@ class AnalyzeDocumentsTool extends Tool {
         }
         );
 
-        let finalSummary = "Analiza dokumenata nije uspješno izvršena."
-
-        const successfulSummaries = individualAnalyses
-            .filter(file => file.aiResult && file.aiResult.summary)
-            .map(file => file.aiResult.summary)
-            .join('\n\n---\n\n');
-
-        if (successfulSummaries) {
-            try {
-                const finalSummaryPrompt = `Synthesize the following summaries into a coherent overview (in Croatian):\n\n${successfulSummaries}. Try to extrapolate what might happen next in the case going forward, and what the next steps are for the parties involved.`;
-                const finalResponse = await gemini.invoke(finalSummaryPrompt);
-                finalSummary = finalResponse.content;
-                console.log("Successfully generated final combined summary.");
-            } catch (err) {
-                console.error("Failed to generate combined summary:", err);
-                finalSummary = "Error during final summary generation.";
-            }
-        }
-
-        return {
+         return {
             individualAnalyses: individualAnalyses,
-            finalSummary: finalSummary,
         };
     }
 }
 
-module.exports = { AnalyzeDocumentsTool };
+// --- NEW FUNCTION FOR THE FINAL STEP ---
+
+/**
+ * Generates a high-level comparative analysis or a detailed summary.
+ * @param {Array<object>} allProcessedCases - The array of fully processed cases from the pipeline.
+ * @returns {Promise<string>} The final comparative analysis text.
+ */
+async function generateComparativeAnalysis(allProcessedCases) {
+    if (!allProcessedCases || allProcessedCases.length === 0) {
+        return "Nema dostupnih podataka za generiranje analize.";
+    }
+
+    // --- SCENARIO 1: Only ONE case entry was processed ---
+    if (allProcessedCases.length === 1) {
+        const singleCase = allProcessedCases[0];
+        const successfulSummaries = singleCase.analysis.individualAnalyses
+            .filter(f => f.aiResult && f.aiResult.summary)
+            .map(f => f.aiResult.summary)
+            .join('\n\n---\n\n');
+
+        if (!successfulSummaries) {
+            return "Analiza dokumenata nije uspješno izvršena za jedinu pronađenu objavu.";
+        }
+
+        // Old prompt was:
+        const prompt = `Synthesize the following summaries into a coherent overview (in Croatian):\n\n${successfulSummaries}. Try to extrapolate what might happen next in the case going forward, and what the next steps are for the parties involved.`;
+
+        // The prompt is slightly different: it asks for a deep dive and next steps, not a comparison.
+        //const prompt = `This is the only recent court entry found. Synthesize the following document summaries into a single, coherent, and detailed overview IN CROATIAN. Explain the significance of this entry in the context of the case. Based on the information, what are the likely next steps for the parties involved?\n\nSUMMARIES:\n${successfulSummaries}`;
+        
+        try {
+            const response = await gemini.invoke(prompt);
+            return response.content;
+        } catch (err) {
+            console.error("Failed to generate summary for single case:", err);
+            return "Greška pri generiranju završnog sažetka.";
+        }
+    }
+
+    // --- SCENARIO 2: MULTIPLE case entries were processed ---
+    // This is where the real comparison happens.
+    let comparativeContext = "";
+    allProcessedCases.forEach((processedCase, index) => {
+        const caseInfo = processedCase.caseResult;
+        const summaries = processedCase.analysis.individualAnalyses
+            .filter(f => f.aiResult && f.aiResult.summary)
+            .map(f => f.aiResult.summary)
+            .join('\n');
+        
+        comparativeContext += `--- Case Entry ${index + 1} ---\n`;
+        comparativeContext += `Title: ${caseInfo.title}\n`;
+        comparativeContext += `Date: ${caseInfo.date}\n`;
+        comparativeContext += `Summary of Documents:\n${summaries}\n\n`;
+    });
+
+    // const prompt = `You are a legal analyst assistant. Below are summaries from documents of ${allProcessedCases.length} different court entries for the same case. Please provide a comparative analysis IN CROATIAN.
+    // Your analysis should:
+    // 1.  Start by focusing on the most recent entry, explaining its significance.
+    // 2.  Compare it to the previous entry/entries, highlighting what has changed or progressed.
+    // 3.  Synthesize the information into a single, overarching narrative of what has happened.
+    // 4.  Based on the entire history, predict the most likely next steps or future developments in the case.
+
+    // Here is the data:
+    // ${comparativeContext}`;
+
+    const prompt = `Synthesize the following ${allProcessedCases.length} summaries into a coherent overview, in Croatian. Try to predict the most likely developments in the case, as well as the next steps are for the parties involved.
+    Here is the data:\n${comparativeContext}`;
+
+    //console.log("Comparative context contains the following data:", comparativeContext);
+
+    try {
+        const response = await gemini.invoke(prompt);
+        return response.content;
+    } catch (err) {
+        console.error("Failed to generate comparative analysis:", err);
+        return "Greška pri generiranju usporedne analize.";
+    }
+}
+
+
+module.exports = { AnalyzeDocumentsTool, generateComparativeAnalysis };

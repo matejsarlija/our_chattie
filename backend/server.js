@@ -218,43 +218,46 @@ async function startServer() {
       };
 
       try {
-        // Let the user know their job has moved from "waiting" to "processing".
         progressCallback({ step: 'starting', progress: 5, message: 'Vaš zahtjev je započeo s obradom...' });
 
-        // Run the main, resource-intensive pipeline.
-        const finalResult = await runCourtAnalysis(searchTerm, progressCallback);
+        // The call to the pipeline is the same, but it will return a different structure.
+        const finalResult = await runCourtAnalysis(searchTerm, 2, progressCallback); // We can make `2` a parameter later
 
-        const firstDownloadedFile = finalResult.files?.[0];
-
-        // --- Step 3: Create a smaller, optimized payload for the final event ---
-        // This prevents the "Unterminated string in JSON" error by removing the huge, unused 'content' field.
+        // --- NEW: Construct the optimized final payload ---
         const finalPayload = {
-          caseResult: {
-            title: finalResult.caseResult.title,
-            caseNumber: finalResult.caseResult.caseNumber,
-            court: finalResult.caseResult.court,
-            date: finalResult.caseResult.date,
-            link: finalResult.caseResult.link,
-            documentLinks: finalResult.caseResult.documentLinks,
-            hasDocuments: finalResult.caseResult.hasDocuments,
-            participants: finalResult.caseResult.participants, // Include participants
-            // We are deliberately OMITTING the huge `finalResult.caseResult.content` field.
-          },
-          // Send back only essential file info, not the local server path.
-          //files: finalResult.files.map(f => ({ url: f.url, text: f.text })),
-          originalFile: firstDownloadedFile ? { url: firstDownloadedFile.url, text: firstDownloadedFile.text } : null,
-          analysis: finalResult.analysis
+          // We now have an array of processed cases
+          processedCases: finalResult.processedCases.map(pCase => ({
+            caseResult: { // Keep case info lean
+              title: pCase.caseResult.title,
+              caseNumber: pCase.caseResult.caseNumber,
+              court: pCase.caseResult.court,
+              date: pCase.caseResult.date,
+              detailLink: pCase.caseResult.detailLink,
+              participants: pCase.caseResult.participants,
+            },
+            // Send back simplified file info, including the main download link
+            files: pCase.files.map(f => ({ url: f.url, text: f.text })),
+            // The individual analyses for this specific case entry
+            analysis: {
+              individualAnalyses: pCase.analysis.individualAnalyses.map(indAn => ({
+                fileName: indAn.text,
+                aiResult: indAn.aiResult,
+                error: indAn.error
+              }))
+            }
+          })),
+          // The new top-level comparative analysis
+          comparativeAnalysis: finalResult.comparativeAnalysis
         };
 
-        //console.log('Final payload prepared:', finalPayload);
-        //console.log('Participants included:', finalPayload.caseResult.participants);
+        //console.log('Final payload constructed:', finalPayload);
+        //console.log('Participants:', finalPayload.processedCases.map(p => p.caseResult.participants));
 
-        // Send the final, successful result to the user.
         progressCallback({
           step: 'complete',
           progress: 100,
           message: 'Analiza je završena!',
-          data: finalPayload // Send the optimized payload.
+          data: finalPayload // Send the new payload structure.
         });
 
       } catch (error) {

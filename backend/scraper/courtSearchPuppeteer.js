@@ -164,8 +164,7 @@ class CourtSearchPuppeteer {
     // --- HIGH-LEVEL ORCHESTRATOR FOR YOUR PIPELINE ---
 
     /**
-     * The primary method for your analysis pipeline. It efficiently finds the first search
-     * result that has a direct document download link and returns it.
+     * This method efficiently finds the first searchresult that has a direct document download link and returns it.
      * @param {string} searchTerm
      * @returns {Promise<{caseInfo: object, documentLinks: Array<object>} | null>}
      */
@@ -197,6 +196,47 @@ class CourtSearchPuppeteer {
 
         console.warn('Searched all results, but none had a direct document download button.');
         return null;
+    }
+
+    /**
+     * The new primary method for the analysis pipeline. It finds the latest N cases
+     * that have direct document download links.
+     * @param {string} searchTerm
+     * @param {number} limit - The number of cases to return.
+     * @returns {Promise<Array<{caseInfo: object, documentLinks: Array<object>}>>}
+     */
+    async searchAndGetLatestCasesWithDocuments(searchTerm, limit = 2) {
+        await this.performSearch(searchTerm);
+        const allResults = await this.parseSearchResults();
+
+        if (allResults.length === 0) {
+            console.warn('Search yielded no results.');
+            return [];
+        }
+
+        // Filter for results that actually have a download link
+        const resultsWithDocs = allResults.filter(r => r.documentDownloadLink);
+
+        if (resultsWithDocs.length === 0) {
+            console.warn('Searched all results, but none had a direct document download button.');
+            return [];
+        }
+
+        console.log(`Success! Found ${resultsWithDocs.length} case(s) with direct download links.`);
+
+        // Take the most recent ones from the top of the list, up to the limit
+        const limitedResults = resultsWithDocs.slice(0, limit);
+        console.log(`Processing the latest ${limitedResults.length} case(s).`);
+
+        // Map them to the format your pipeline expects
+        return limitedResults.map(caseInfo => ({
+            caseInfo,
+            documentLinks: [{
+                url: caseInfo.documentDownloadLink,
+                // Make the text more descriptive for the user
+                text: caseInfo.documentLinkText || `Dokumenti za ${caseInfo.caseNumber}`
+            }]
+        }));
     }
 }
 
