@@ -1,15 +1,21 @@
-// cron/run-daily-checks.js
+// cron/run_daily_checks.js
 require('dotenv').config(); // Load environment variables
 const db = require('../db'); // Reuse your DB connection logic
 const CourtSearchPuppeteer = require('../scraper/courtSearchPuppeteer');
-const { runCourtAnalysis } = require('../court-analysis/pipeline');
+const { runCourtAnalysisWithExistingAutomator } = require('../court-analysis/pipeline');
 // You'll need an email service. Let's create a placeholder for it.
 const { sendUpdateEmail } = require('../services/email-service');
 
 async function main() {
     console.log('Cron job started: Checking for court case updates...');
+    
+    // Create ONE automator instance for the entire cron job
+    const automator = new CourtSearchPuppeteer();
 
     try {
+        // Initialize the automator once
+        await automator.init();
+        
         // 1. Get all active subscriptions from the database
         const { rows: subscriptions } = await db.query(
             'SELECT * FROM subscriptions WHERE is_active = TRUE'
@@ -25,10 +31,9 @@ async function main() {
         // 2. Loop through each subscription and check for updates
         for (const sub of subscriptions) {
             console.log(`\n--- Checking for: "${sub.search_term}" for user ${sub.email} ---`);
-            const automator = new CourtSearchPuppeteer();
+            
             try {
-                await automator.init();
-                // We only care about the single MOST RECENT case
+                // Reuse the existing automator instance
                 const latestCases = await automator.searchAndGetLatestCasesWithDocuments(sub.search_term, 1);
 
                 if (!latestCases || latestCases.length === 0) {
@@ -48,19 +53,23 @@ async function main() {
 
                 console.log(`NEW UPDATE FOUND! Old: "${sub.last_seen_case_identifier}", New: "${currentCaseIdentifier}"`);
 
-                // 4. We found a new case! Analyze it.
-                // Note: runCourtAnalysis is designed for multiple cases, but works fine for one.
-                const analysisResult = await runCourtAnalysis(sub.search_term, 1, (progress) => {
-                    // The cron job can log progress, but there's no user to send it to.
-                    console.log(`[Analysis Progress for ${sub.search_term}]: ${progress.message}`);
-                });
+                // 4. We found a new case! Analyze it using the existing automator
+                // Create a modified version of runCourtAnalysis that accepts an existing automator
+                const analysisResult = await runCourtAnalysisWithExistingAutomator(
+                    sub.search_term, 
+                    1, 
+                    automator, // Pass the existing automator
+                    (progress) => {
+                        console.log(`[Analysis Progress for ${sub.search_term}]: ${progress.message}`);
+                    }
+                );
 
                 // 5. Send the notification email
                 await sendUpdateEmail({
                     to: sub.email,
                     searchTerm: sub.search_term,
                     caseInfo: analysisResult.processedCases[0].caseResult,
-                    analysis: analysisResult.comparativeAnalysis, // This will be the detailed summary for the single case
+                    analysis: analysisResult.comparativeAnalysis,
                     unsubscribeToken: sub.unsubscribe_token
                 });
                 
@@ -76,13 +85,13 @@ async function main() {
             } catch (error) {
                 console.error(`Error processing subscription ID ${sub.id} for term "${sub.search_term}":`, error.message);
                 // Continue to the next subscription even if one fails
-            } finally {
-                await automator.close();
             }
         }
     } catch (err) {
         console.error('FATAL CRON JOB ERROR:', err);
     } finally {
+        // Close the automator once at the end
+        await automator.close();
         // Ensure the script exits so the cron job container can shut down.
         process.exit();
     }
