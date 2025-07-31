@@ -2,20 +2,20 @@
 require('dotenv').config(); // Load environment variables
 const db = require('../db'); // Reuse your DB connection logic
 const CourtSearchPuppeteer = require('../scraper/courtSearchPuppeteer');
-const { runCourtAnalysisWithExistingAutomator } = require('../court-analysis/pipeline');
+const { runCourtAnalysisWithExistingAutomator, processScrapedCases } = require('../court-analysis/pipeline');
 // You'll need an email service. Let's create a placeholder for it.
 const { sendUpdateEmail } = require('../services/email-service');
 
 async function main() {
     console.log('Cron job started: Checking for court case updates...');
-    
+
     // Create ONE automator instance for the entire cron job
     const automator = new CourtSearchPuppeteer();
 
     try {
         // Initialize the automator once
         await automator.init();
-        
+
         // 1. Get all active subscriptions from the database
         const { rows: subscriptions } = await db.query(
             'SELECT * FROM subscriptions WHERE is_active = TRUE'
@@ -31,7 +31,7 @@ async function main() {
         // 2. Loop through each subscription and check for updates
         for (const sub of subscriptions) {
             console.log(`\n--- Checking for: "${sub.search_term}" for user ${sub.email} ---`);
-            
+
             try {
                 // Reuse the existing automator instance
                 const latestCases = await automator.searchAndGetLatestCasesWithDocuments(sub.search_term, 1);
@@ -55,10 +55,8 @@ async function main() {
 
                 // 4. We found a new case! Analyze it using the existing automator
                 // Create a modified version of runCourtAnalysis that accepts an existing automator
-                const analysisResult = await runCourtAnalysisWithExistingAutomator(
-                    sub.search_term, 
-                    1, 
-                    automator, // Pass the existing automator
+                const analysisResult = await processScrapedCases(
+                    latestCases, // Pass the data you already have
                     (progress) => {
                         console.log(`[Analysis Progress for ${sub.search_term}]: ${progress.message}`);
                     }
@@ -72,7 +70,7 @@ async function main() {
                     analysis: analysisResult.comparativeAnalysis,
                     unsubscribeToken: sub.unsubscribe_token
                 });
-                
+
                 console.log(`Email sent successfully to ${sub.email}.`);
 
                 // 6. IMPORTANT: Update the database with the new identifier
