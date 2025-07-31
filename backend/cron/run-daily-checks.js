@@ -36,7 +36,7 @@ async function main() {
                     continue;
                 }
 
-                const latestCase = latestCases[0].caseResult;
+                const latestCase = latestCases[0].caseInfo;
                 // Create a unique identifier for the found case
                 const currentCaseIdentifier = `${latestCase.caseNumber} - ${latestCase.date}`;
 
