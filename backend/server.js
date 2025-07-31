@@ -27,6 +27,8 @@ async function startServer() {
 
   // ========= CHANGE 4: THE REST OF YOUR CODE MOVES INSIDE THIS FUNCTION =========
   // Now that PQueue is defined, we can create the app and the queue.
+  const db = require('./db'); // Import our database module
+
   const app = express();
   const port = process.env.PORT || 3001;
   const courtAnalysisQueue = new PQueue({ concurrency: 1 }); // This should work now
@@ -284,6 +286,42 @@ async function startServer() {
     req.on('close', () => {
       console.log(`[Court Analysis Queue] Client disconnected while waiting or processing term: ${searchTerm}`);
     });
+  });
+
+  app.post('/api/subscribe', async (req, res) => {
+    const { email, searchTerm } = req.body;
+
+    if (!email || !searchTerm) {
+      return res.status(400).json({ error: 'Email and search term are required.' });
+    }
+
+    try {
+      // The UNIQUE constraint in the DB will handle duplicates
+      const result = await db.query(
+        'INSERT INTO subscriptions (email, search_term) VALUES ($1, $2) RETURNING id',
+        [email, searchTerm]
+      );
+      res.status(201).json({ success: true, message: 'Successfully subscribed!', subscriptionId: result.rows[0].id });
+    } catch (error) {
+      if (error.code === '23505') { // Unique violation
+        return res.status(409).json({ error: 'This email is already subscribed to this search term.' });
+      }
+      console.error('Subscription error:', error);
+      res.status(500).json({ error: 'Failed to subscribe.' });
+    }
+  });
+
+  // Add an unsubscribe endpoint for good measure (and legal compliance!)
+  app.get('/api/unsubscribe/:token', async (req, res) => {
+    const { token } = req.params;
+    try {
+      await db.query('UPDATE subscriptions SET is_active = FALSE WHERE unsubscribe_token = $1', [token]);
+      // You'd probably want to serve a nice HTML page here
+      res.send('You have been successfully unsubscribed.');
+    } catch (error) {
+      console.error('Unsubscribe error:', error);
+      res.status(500).send('Could not process unsubscribe request.');
+    }
   });
 
   app.get('/health', (req, res) => {
