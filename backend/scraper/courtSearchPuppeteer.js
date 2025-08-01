@@ -117,8 +117,14 @@ class CourtSearchPuppeteer {
             await this.page.click('#mainSearchInput', { clickCount: 3 }); // Select all
             await this.page.type('#mainSearchInput', searchTerm);
 
-            console.log('[performSearch] Clicking submit button...');
-            await this.page.click('button[type="submit"]');
+            console.log('[performSearch] Clicking submit button and waiting for navigation...');
+            await Promise.all([
+                this.page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 60000 }),
+                this.page.click('button[type="submit"]')
+            ]);
+
+            // Optional: short delay for dynamic content
+            await this.page.waitForTimeout(1000);
 
             console.log('[performSearch] Waiting for results to appear...');
             await this.page.waitForSelector('li.item.row', { timeout: 60000 });
