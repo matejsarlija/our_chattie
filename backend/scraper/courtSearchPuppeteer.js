@@ -24,18 +24,41 @@ class CourtSearchPuppeteer {
         try {
             const launchOptions = {
                 headless: process.env.NODE_ENV === 'production',
-                args: ['--no-sandbox', '--disable-setuid-sandbox']
+                args: [
+                    '--no-sandbox',
+                    '--disable-setuid-sandbox',
+                    '--disable-dev-shm-usage',
+                    '--disable-gpu'
+                ]
             };
+
             if (process.env.NODE_ENV === 'production' || process.env.BROWSERLESS_TOKEN) {
                 this.browser = await puppeteer.connect({
-                    browserWSEndpoint: `wss://production-ams.browserless.io/?token=${process.env.BROWSERLESS_TOKEN}`
+                    browserWSEndpoint: `wss://production-ams.browserless.io/?token=${process.env.BROWSERLESS_TOKEN}`,
+                    ignoreHTTPSErrors: true
                 });
             } else {
                 this.browser = await puppeteer.launch(launchOptions);
             }
+
             this.page = await this.browser.newPage();
-            await this.page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36');
+
+            // Only log requests in development
+            if (process.env.NODE_ENV !== 'production') {
+                await this.page.setRequestInterception(true);
+                this.page.on('request', (request) => {
+                    console.log('Request:', request.url());
+                    request.continue();
+                });
+
+                this.page.on('requestfailed', (request) => {
+                    console.error('Request failed:', request.url(), request.failure()?.errorText);
+                });
+            }
+
+            await this.page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
             await this.page.setViewport({ width: 1366, height: 768 });
+
         } catch (err) {
             console.error('Failed to initialize Puppeteer:', err);
             throw err;
@@ -53,18 +76,64 @@ class CourtSearchPuppeteer {
     async performSearch(searchTerm) {
         if (!searchTerm) throw new Error('No search term provided');
         console.log(`Performing search for: ${searchTerm}`);
+
+        const maxRetries = 3;
+        let lastError;
+
+        // First, test basic connectivity
         try {
-            await this.page.goto(this.baseUrl, { waitUntil: 'networkidle2', timeout: 30000 });
-            await this.page.waitForSelector('#mainSearchInput', { timeout: 10000 });
-            await this.page.type('#mainSearchInput', searchTerm);
-            await Promise.all([
-                this.page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 45000 }),
-                this.page.click('button[type="submit"]')
-            ]);
-            console.log('Search submitted. Results page should be loaded.');
+            console.log('Testing connectivity to target site...');
+            const response = await this.page.goto(this.baseUrl, {
+                waitUntil: 'domcontentloaded',
+                timeout: 90000
+            });
+            console.log(`Site loaded successfully. Status: ${response.status()}`);
         } catch (error) {
-            console.error(`Failed during performSearch for "${searchTerm}":`, error.message);
-            await this.page.screenshot({ path: `error-performSearch-${Date.now()}.png` });
+            console.error('Initial navigation failed:', error.message);
+
+            // Try with even more lenient settings
+            try {
+                console.log('Retrying with minimal wait conditions...');
+                await this.page.goto(this.baseUrl, {
+                    waitUntil: 'commit',  // Most lenient option
+                    timeout: 120000
+                });
+                // Give it extra time to load
+                await this.page.waitForTimeout(5000);
+            } catch (retryError) {
+                console.error('All navigation attempts failed');
+                throw new Error(`Cannot reach ${this.baseUrl}: ${retryError.message}`);
+            }
+        }
+
+        try {
+            console.log('Waiting for search input...');
+            await this.page.waitForSelector('#mainSearchInput', { timeout: 15000 });
+
+            console.log('Clearing and typing search term...');
+            await this.page.click('#mainSearchInput', { clickCount: 3 }); // Select all
+            await this.page.type('#mainSearchInput', searchTerm);
+
+            console.log('Clicking submit button...');
+            await this.page.click('button[type="submit"]');
+
+            console.log('Waiting for results to appear...');
+            await this.page.waitForSelector('li.item.row', { timeout: 60000 });
+
+            console.log('Search results have appeared. Page is loaded.');
+
+        } catch (error) {
+            console.error(`Failed during search process for "${searchTerm}":`, error.message);
+            console.error('Current URL:', this.page.url());
+
+            // Take screenshot for debugging
+            try {
+                await this.page.screenshot({ path: `error-search-${Date.now()}.png` });
+                console.log('Debug screenshot saved');
+            } catch (screenshotError) {
+                console.error('Could not save screenshot:', screenshotError.message);
+            }
+
             throw error;
         }
     }
