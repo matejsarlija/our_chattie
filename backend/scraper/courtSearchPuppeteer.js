@@ -123,8 +123,8 @@ class CourtSearchPuppeteer {
                 this.page.click('button[type="submit"]')
             ]);
 
-            // Optional: short delay for dynamic content
-            await this.page.waitForTimeout(1000);
+            // this.page.waitForTimeot IS NOT A FUNCTION
+            //await this.page.waitForTimeout(1000);
 
             console.log('[performSearch] Waiting for results to appear...');
             await this.page.waitForSelector('li.item.row', { timeout: 60000 });
