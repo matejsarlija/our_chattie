@@ -57,6 +57,9 @@ class CourtSearchPuppeteer {
             }
 
             await this.page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+            await this.page.setExtraHTTPHeaders({
+                'Accept-Language': 'en-US,en;q=0.9,hr;q=0.8'
+            });
             await this.page.setViewport({ width: 1366, height: 768 });
 
         } catch (err) {
@@ -75,25 +78,25 @@ class CourtSearchPuppeteer {
 
     async performSearch(searchTerm) {
         if (!searchTerm) throw new Error('No search term provided');
-        console.log(`Performing search for: ${searchTerm}`);
+        console.log(`[performSearch] Performing search for: ${searchTerm}`);
 
         const maxRetries = 3;
         let lastError;
 
         // First, test basic connectivity
         try {
-            console.log('Testing connectivity to target site...');
+            console.log('[performSearch] Testing connectivity to target site...');
             const response = await this.page.goto(this.baseUrl, {
                 waitUntil: 'domcontentloaded',
                 timeout: 90000
             });
-            console.log(`Site loaded successfully. Status: ${response.status()}`);
+            console.log(`[performSearch] Site loaded successfully. Status: ${response.status()}`);
         } catch (error) {
-            console.error('Initial navigation failed:', error.message);
+            console.error('[performSearch] Initial navigation failed:', error.message);
 
             // Try with even more lenient settings
             try {
-                console.log('Retrying with minimal wait conditions...');
+                console.log('[performSearch] Retrying with minimal wait conditions...');
                 await this.page.goto(this.baseUrl, {
                     waitUntil: 'commit',  // Most lenient option
                     timeout: 120000
@@ -101,37 +104,37 @@ class CourtSearchPuppeteer {
                 // Give it extra time to load
                 await this.page.waitForTimeout(5000);
             } catch (retryError) {
-                console.error('All navigation attempts failed');
+                console.error('[performSearch] All navigation attempts failed');
                 throw new Error(`Cannot reach ${this.baseUrl}: ${retryError.message}`);
             }
         }
 
         try {
-            console.log('Waiting for search input...');
+            console.log('[performSearch] Waiting for search input...');
             await this.page.waitForSelector('#mainSearchInput', { timeout: 15000 });
 
-            console.log('Clearing and typing search term...');
+            console.log('[performSearch] Clearing and typing search term...');
             await this.page.click('#mainSearchInput', { clickCount: 3 }); // Select all
             await this.page.type('#mainSearchInput', searchTerm);
 
-            console.log('Clicking submit button...');
+            console.log('[performSearch] Clicking submit button...');
             await this.page.click('button[type="submit"]');
 
-            console.log('Waiting for results to appear...');
+            console.log('[performSearch] Waiting for results to appear...');
             await this.page.waitForSelector('li.item.row', { timeout: 60000 });
 
-            console.log('Search results have appeared. Page is loaded.');
+            console.log('[performSearch] Search results have appeared. Page is loaded.');
 
         } catch (error) {
-            console.error(`Failed during search process for "${searchTerm}":`, error.message);
-            console.error('Current URL:', this.page.url());
+            console.error(`[performSearch] Failed during search process for "${searchTerm}":`, error.message);
+            console.error('[performSearch] Current URL:', this.page.url());
 
             // Take screenshot for debugging
             try {
                 await this.page.screenshot({ path: `error-search-${Date.now()}.png` });
-                console.log('Debug screenshot saved');
+                console.log('[performSearch] Debug screenshot saved');
             } catch (screenshotError) {
-                console.error('Could not save screenshot:', screenshotError.message);
+                console.error('[performSearch] Could not save screenshot:', screenshotError.message);
             }
 
             throw error;
@@ -145,6 +148,7 @@ class CourtSearchPuppeteer {
      */
     async parseSearchResults() {
         try {
+            console.log('[parseSearchResults] Waiting for results to appear...');
             await this.page.waitForSelector('li.item.row', { timeout: 15000 });
             const results = await this.page.evaluate(() => {
                 const items = [];
@@ -221,11 +225,16 @@ class CourtSearchPuppeteer {
                 });
                 return items;
             });
-            console.log(`Parsed ${results.length} results from the page.`);
+            console.log(`[parseSearchResults] Parsed ${results.length} results from the page.`);
             return results;
         } catch (error) {
-            console.warn('Could not find or parse search results on the page.', error.message);
-            await this.page.screenshot({ path: `error-parseSearchResults-${Date.now()}.png` });
+            console.warn('[parseSearchResults] Could not find or parse search results on the page.', error.message);
+            try {
+                await this.page.screenshot({ path: `error-parseSearchResults-${Date.now()}.png` });
+                console.log('[parseSearchResults] Debug screenshot saved');
+            } catch (screenshotError) {
+                console.error('[parseSearchResults] Could not save screenshot:', screenshotError.message);
+            }
             return [];
         }
     }
@@ -238,11 +247,12 @@ class CourtSearchPuppeteer {
      * @returns {Promise<{caseInfo: object, documentLinks: Array<object>} | null>}
      */
     async searchAndGetFirstCaseWithDocuments(searchTerm) {
+        console.log('[searchAndGetFirstCaseWithDocuments] Starting search...');
         await this.performSearch(searchTerm);
         const allResults = await this.parseSearchResults();
 
         if (allResults.length === 0) {
-            console.warn('Search yielded no results.');
+            console.warn('[searchAndGetFirstCaseWithDocuments] Search yielded no results.');
             return null;
         }
 
@@ -251,7 +261,7 @@ class CourtSearchPuppeteer {
         const firstWithDocs = allResults.find(r => r.documentDownloadLink);
 
         if (firstWithDocs) {
-            console.log(`Success! Found direct download link for case: ${firstWithDocs.title}`);
+            console.log(`[searchAndGetFirstCaseWithDocuments] Success! Found direct download link for case: ${firstWithDocs.title}`);
             // Return the case info and a documentLinks array formatted for your pipeline.
             // This link typically points to a ZIP file with all documents.
             return {
@@ -263,7 +273,7 @@ class CourtSearchPuppeteer {
             };
         }
 
-        console.warn('Searched all results, but none had a direct document download button.');
+        console.warn('[searchAndGetFirstCaseWithDocuments] Searched all results, but none had a direct document download button.');
         return null;
     }
 
@@ -275,11 +285,12 @@ class CourtSearchPuppeteer {
      * @returns {Promise<Array<{caseInfo: object, documentLinks: Array<object>}>>}
      */
     async searchAndGetLatestCasesWithDocuments(searchTerm, limit = 2) {
+        console.log('[searchAndGetLatestCasesWithDocuments] Starting search...');
         await this.performSearch(searchTerm);
         const allResults = await this.parseSearchResults();
 
         if (allResults.length === 0) {
-            console.warn('Search yielded no results.');
+            console.warn('[searchAndGetLatestCasesWithDocuments] Search yielded no results.');
             return [];
         }
 
@@ -287,15 +298,15 @@ class CourtSearchPuppeteer {
         const resultsWithDocs = allResults.filter(r => r.documentDownloadLink);
 
         if (resultsWithDocs.length === 0) {
-            console.warn('Searched all results, but none had a direct document download button.');
+            console.warn('[searchAndGetLatestCasesWithDocuments] Searched all results, but none had a direct document download button.');
             return [];
         }
 
-        console.log(`Success! Found ${resultsWithDocs.length} case(s) with direct download links.`);
+        console.log(`[searchAndGetLatestCasesWithDocuments] Success! Found ${resultsWithDocs.length} case(s) with direct download links.`);
 
         // Take the most recent ones from the top of the list, up to the limit
         const limitedResults = resultsWithDocs.slice(0, limit);
-        console.log(`Processing the latest ${limitedResults.length} case(s).`);
+        console.log(`[searchAndGetLatestCasesWithDocuments] Processing the latest ${limitedResults.length} case(s).`);
 
         // Map them to the format your pipeline expects
         return limitedResults.map(caseInfo => ({
