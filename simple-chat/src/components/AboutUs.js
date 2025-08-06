@@ -82,19 +82,20 @@ export default function AboutUs() {
               <p className="mb-3">
                 Niste sigurni kako započeti žalbu ili prigovor? Na koji način odgovoriti na dopis? Doznajte koji su zakoni i podzakonski akti trenutno važeći za dokument koji ste primili.</p>
               <h4 className="font-semibold mb-3">Novo <span className="text-base">💡</span></h4>
+              <h4 className="mb-3">Automatizirana analiza sudskih objava!</h4>
               <p className="mb-3">
-                Unesite odgovarajući pojam za pretragu u okvir sa desne strane, a naš asistent će pronaći relevantan sudski predmet, preuzeti pripadajuću dokumentaciju, analizirati je i pružiti vam jasan i razumljiv sažetak cjelokupnog slučaja.</p>
+                Unesite odgovarajući pojam za pretragu u okvir sa desne strane, a naš asistent će pronaći relevantan sudski predmet na e-Oglasnoj ploči, preuzeti pripadajuću dokumentaciju, analizirati je i pružiti vam jasan i razumljiv sažetak cjelokupne objave.</p>
               <p className="mb-3">
                 Nakon što unesete naziv pravnog subjekta, OIB ili oznaku sudskog postupka, naš sustav će automatski:
               </p>
               <ul className="pl-6 mb-3 space-y-2 list-items">
-                <li>Pronaći najnoviju objavu vezanu uz postupak na stranicama e-Oglasne ploče</li>
+                <li>Pronaći najnoviju objavu vezanu uz postupak</li>
                 <li>Preuzeti i analizirati sve dokumente iz objave</li>
                 <li>Identificirati ključne informacije</li>
                 <li>Pružiti vam jasan sažetak o trenutnom statusu postupka i što možete očekivati dalje</li>
               </ul>
               <p className="mb-3">
-                Na jednostavan način pratite novosti u stečajnom ili ovršnom postupku, te se fokusirajte na ključne informacije koje su vam potrebne za daljnje postupanje i izradu strategije. Naš pravni asistent čita sa razumijevanjem.</p> 
+                Na jednostavan način pratite novosti u stečajnom ili ovršnom postupku i fokusirajte se na ključne informacije koje su vam potrebne za daljnje postupanje i izradu strategije. Naš pravni asistent čita sa razumijevanjem.</p> 
               <p className="mb-3">
                 <i>*Usluga trenutno <b>nije</b> predviđena za obradu povjerljivih podataka. <a href="mailto:admin@alimentacija.info" className="text-blue-600 hover:underline">Kontaktirajte nas</a> za dodatne mogućnosti i <em>on-premise</em> rješenja.</i></p>
             </div>
