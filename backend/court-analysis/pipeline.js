@@ -16,98 +16,28 @@ const AdmZip = require('adm-zip');
  */
 async function runCourtAnalysis(searchTerm, numberOfCases = 2, progressCallback) {
     const automator = new CourtSearchPuppeteer();
-    const allProcessedCases = []; // To store the results of each processed case
-    let allFilesToCleanup = []; // To store all file paths for final cleanup
+    const allProcessedCases = [];
+    let allFilesToCleanup = [];
 
     try {
         // 1. Scrape for the N latest cases
         progressCallback?.({ step: 'scraping', progress: 10, message: 'Pretražujem sudske zapise za nedavne objave...' });
         await automator.init();
         const casesToProcess = await automator.searchAndGetLatestCasesWithDocuments(searchTerm, numberOfCases);
-        await automator.close(); // Close scraper early
-
+        
         if (!casesToProcess || casesToProcess.length === 0) {
             throw new Error('Nije pronađen nijedan predmet s dostupnim dokumentima za traženi pojam.');
         }
 
-        const totalCases = casesToProcess.length;
-        progressCallback?.({ step: 'processing_setup', progress: 20, message: `Pronađeno ${totalCases} objava za analizu.` });
-
-        const downloadTool = new DownloadDocumentsTool();
-        const analyzeTool = new AnalyzeDocumentsTool();
-
-        // 2. Loop through each case, download its files, and analyze them
-        for (let i = 0; i < totalCases; i++) {
-            const caseEntry = casesToProcess[i];
-            const { caseInfo, documentLinks } = caseEntry;
-            let downloadedFiles = [];
-            let extractedFilePaths = [];
-
-            progressCallback?.({ step: 'processing_case', progress: 25 + (i / totalCases) * 50, message: `Obrađujem objavu ${i + 1} od ${totalCases}: ${caseInfo.title}` });
-
-            // 2a. Download
-            progressCallback?.({ step: 'downloading', message: `Preuzimam arhivu za objavu ${i + 1}...` });
-            downloadedFiles = await downloadTool._call({ documentLinks, progressCallback: null }); // Don't use sub-progress for now
-
-            // 2b. Unzip
-            progressCallback?.({ step: 'unzipping', message: `Raspakiram datoteke za objavu ${i + 1}...` });
-            const filesForAnalysis = [];
-            for (const file of downloadedFiles) {
-                extractedFilePaths.push(file.filePath);
-                if (path.extname(file.filePath).toLowerCase() === '.zip') {
-                    const zip = new AdmZip(file.filePath);
-                    const zipEntries = zip.getEntries();
-                    const extractionDir = path.dirname(file.filePath);
-                    zipEntries.forEach((zipEntry) => {
-                        if (!zipEntry.isDirectory) {
-                            const extractedFilePath = path.join(extractionDir, zipEntry.entryName);
-                            zip.extractEntryTo(zipEntry.entryName, extractionDir, false, true);
-                            filesForAnalysis.push({ filePath: extractedFilePath, text: zipEntry.entryName, url: file.url });
-                            extractedFilePaths.push(extractedFilePath);
-                        }
-                    });
-                } else {
-                    filesForAnalysis.push(file);
-                }
-            }
-            
-            allFilesToCleanup.push(...extractedFilePaths); // Add this case's files to the main cleanup list
-
-            if (filesForAnalysis.length === 0) {
-                 console.warn(`No files to analyze for case ${caseInfo.title}. Skipping analysis.`);
-                 // Still add the case info, but with no analysis
-                 allProcessedCases.push({ caseResult: caseInfo, analysis: { individualAnalyses: [], finalSummary: "Nema dokumenata za analizu." } });
-                 continue; // Move to the next case
-            }
-
-            // 2c. Analyze THIS case's documents
-            progressCallback?.({ step: 'analyzing', message: `Analiziram ${filesForAnalysis.length} datoteka za objavu ${i + 1}...` });
-            const analysis = await analyzeTool._call({ files: filesForAnalysis, progressCallback: null }); // Again, no sub-progress
-
-            // Store the fully processed case data
-            allProcessedCases.push({
-                caseResult: caseInfo,
-                // We keep the original downloaded zip for the user to download if they want
-                files: downloadedFiles, 
-                analysis: analysis
-            });
-        }
-
-        // 3. Final Comparative Analysis (The new, smart summary step)
-        progressCallback?.({ step: 'comparing', progress: 85, message: 'Generiram usporednu analizu i zaključak...' });
-        const comparativeAnalysis = await generateComparativeAnalysis(allProcessedCases);
-
-        progressCallback?.({ step: 'complete', progress: 100, message: 'Analiza je završena!' });
-
-        return {
-            processedCases: allProcessedCases,
-            comparativeAnalysis: comparativeAnalysis
-        };
+        // Process the scraped cases using the separate function
+        const result = await processScrapedCases(casesToProcess, progressCallback);
+        return result;
 
     } catch (error) {
         progressCallback?.({ step: 'error', progress: 100, message: error.message });
         throw error;
     } finally {
+        // Always close automator here - simpler logic
         await automator.close();
         await cleanupFiles(allFilesToCleanup);
     }
