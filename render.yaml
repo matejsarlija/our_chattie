@@ -1,0 +1,25 @@
+# render.yaml
+# This blueprint ONLY defines the backend service.
+# Your existing, manually-configured frontend service will be unaffected.
+
+services:
+  # --- Definition for your BACKEND Service ONLY ---
+  - type: web 
+    name: pravni-asistent-api # Give it a slightly different name to avoid conflicts initially
+    env: node
+    plan: free # Or your actual plan
+    
+    # Tell Render to run all commands from within the 'backend' sub-directory
+    rootDirectory: backend 
+    
+    buildCommand: "npm install" 
+    startCommand: "node server.js" 
+    
+    # Install the system packages needed for the 'canvas' library
+    aptPackages:
+      - build-essential
+      - libcairo2-dev
+      - libpango1.0-dev
+      - libjpeg-dev
+      - libgif-dev
+      - librsvg2-dev
