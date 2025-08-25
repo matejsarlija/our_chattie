@@ -16,7 +16,7 @@ async function extractTextFromFile(filePath) {
         if (filePath.endsWith('.pdf')) {
             const dataBuffer = fs.readFileSync(filePath);
             const data = await pdfParse(dataBuffer);
-            return data.text;
+            return data?.text || '';
         }
         if (filePath.endsWith('.docx')) {
             const result = await mammoth.extractRawText({ path: filePath });
@@ -45,8 +45,9 @@ class AnalyzeDocumentsTool extends Tool {
         const analysisPromises = files.map(async (file) => {
             try {
                 const text = await extractTextFromFile(file.filePath);
-                if (!text) {
-                    throw new Error('Could not extract text from file.');
+                if (!text || text.trim().length === 0) {
+                    // tu si možemo dodati hrvatski tekst za bolje error messagese za korisnike
+                    throw new Error('Could not extract text from file. It may be empty, corrupted, or an image-based document.');
                 }
 
                 //console.log(`Analyzing text from file: ${file.filePath}, the text length is: ${text.length}`);
@@ -61,6 +62,11 @@ class AnalyzeDocumentsTool extends Tool {
 
                 // 2. Clean the string by removing the Markdown wrapper.
                 const cleanedContent = rawContent.replace(/```json\n|```/g, '').trim();
+
+                // Added an extra check to see if the response looks like JSON before parsing
+                if (!cleanedContent.startsWith('{') || !cleanedContent.endsWith('}')) {
+                    throw new Error(`AI returned non-JSON response: "${cleanedContent.slice(0, 100)}..."`);
+                }
 
                 // 3. Parse the CLEANED string.
                 const aiResult = JSON.parse(cleanedContent);
