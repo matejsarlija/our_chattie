@@ -3,13 +3,22 @@
 require('dotenv').config();
 const { Tool } = require('@langchain/core/tools');
 const { ChatGoogleGenerativeAI } = require('@langchain/google-genai');
+const { HumanMessage } = require("@langchain/core/messages");
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const pdfParse = require('pdf-parse');
 const mammoth = require('mammoth');
 
 const API_KEY = process.env.GOOGLE_API_KEY;
 const gemini = new ChatGoogleGenerativeAI({ model: 'gemini-2.0-flash', apiKey: API_KEY });
+
+const pdfjsLib = require('pdfjs-dist/legacy/build/pdf.js');
+
+// 2. Explicitly set the path to the worker script for Node.js
+pdfjsLib.GlobalWorkerOptions.workerSrc = require.resolve('pdfjs-dist/build/pdf.worker.js');
+
+const { createCanvas } = require('canvas');
 
 async function extractTextFromFile(filePath) {
     try {
@@ -32,6 +41,58 @@ async function extractTextFromFile(filePath) {
     return '';
 }
 
+// --- NEW OCR FALLBACK FUNCTION ---
+/**
+ * Extracts text from an image-based PDF using Gemini directly.
+ * @param {string} filePath The path to the PDF file.
+ * @returns {Promise<string>} The combined text from all pages.
+ */
+/**
+ * Extracts text from an image-based PDF using pdf.js and Gemini Vision.
+ * This method has NO external system dependencies like Ghostscript.
+ * @param {string} filePath The path to the PDF file.
+ * @returns {Promise<string>} The combined text from all pages.
+ */
+async function extractTextViaOCR(filePath) {
+    console.log(`[OCR] Attempting OCR for ${path.basename(filePath)} with pdf.js`);
+    let combinedText = '';
+
+    try {
+        const data = new Uint8Array(fs.readFileSync(filePath));
+        const pdf = await pdfjsLib.getDocument(data).promise;
+        const numPages = pdf.numPages;
+        
+        for (let i = 1; i <= numPages; i++) {
+            const page = await pdf.getPage(i);
+            const viewport = page.getViewport({ scale: 2.0 }); // Higher scale = higher resolution image
+            const canvas = createCanvas(viewport.width, viewport.height);
+            const context = canvas.getContext('2d');
+            
+            await page.render({ canvasContext: context, viewport: viewport }).promise;
+            
+            const imageBuffer = canvas.toBuffer('image/png');
+            const imageAsBase64 = imageBuffer.toString('base64');
+            
+            const message = new HumanMessage({
+                content: [
+                    { type: "text", text: "Extract all text from this document image. Provide only the raw text." },
+                    { type: "image_url", image_url: `data:image/png;base64,${imageAsBase64}` },
+                ],
+            });
+
+            const response = await gemini.invoke([message]);
+            combinedText += response.content + '\n\n';
+        }
+    } catch (err) {
+        console.error(`[OCR] Failed during OCR process for ${filePath}:`, err);
+        return ''; // Return empty string on failure
+    }
+    
+    console.log(`[OCR] Successfully extracted ~${combinedText.length} characters.`);
+    return combinedText;
+}
+
+
 class AnalyzeDocumentsTool extends Tool {
     constructor() {
         super();
@@ -44,7 +105,15 @@ class AnalyzeDocumentsTool extends Tool {
 
         const analysisPromises = files.map(async (file) => {
             try {
-                const text = await extractTextFromFile(file.filePath);
+                let text = await extractTextFromFile(file.filePath);
+
+                // If initial extraction fails, try OCR for PDFs
+                if ((!text || text.trim().length === 0) && file.filePath.toLowerCase().endsWith('.pdf')) {
+                    console.log(`[Analyzer] Standard text extraction failed for ${path.basename(file.filePath)}. Falling back to OCR.`);
+                    text = await extractTextViaOCR(file.filePath);
+                }
+
+                // Final check: if still no text, return error, file failed analysis
                 if (!text || text.trim().length === 0) {
                     // tu si možemo dodati hrvatski tekst za bolje error messagese za korisnike
                     throw new Error('Could not extract text from file. It may be empty, corrupted, or an image-based document.');
