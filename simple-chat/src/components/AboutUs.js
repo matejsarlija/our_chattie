@@ -38,7 +38,7 @@ export default function AboutUs() {
               Dobili ste prometnu kaznu ili poziv na sud? Razmatrate privatnu tužbu ili čekate ostavinski postupak? Radite prekovremeno bez dodatne naknade? Prolazite kroz razvod ili imate pitanja oko skrbništva?
             </p>
 
-            <p className="mb-3">Naša usluga može vam pomoći da dobijete osnovne informacije i smjernice za dalje.</p>
+            <p className="mb-3">Naša usluga može vam pomoći da dobijete osnovne informacije i smjernice. Alat je koristan i za novinare koji žele pratiti sudski postupak.</p>
             <p className="mb-3">
               Zastupanje od strane odvjetnika, javni bilježnici, alimentacija i ugovori za nekretnine su teme koje ćemo rado pojasniti.
             </p>
@@ -61,7 +61,7 @@ export default function AboutUs() {
           <section className="mb-8">
             <h2 className="text-xl font-semibold mb-3">Kako koristiti pravnog asistenta</h2>
             <p className="mb-3">
-              Naš asistent je intuitivno i jednostavno sučelje dizajnirano za brzo dobivanje informacija kroz razgovor. Na jednostavan način:
+              Naš asistent je intuitivno i jednostavno sučelje dizajnirano za brzo dobivanje informacija kroz razgovor i analizu javno dostupnih sudskih podataka. Na jednostavan način:
             </p>
             <ul className="pl-6 mb-3 space-y-2 list-items">
               <li>Postavite svoje pitanje u chat prozoru</li>
@@ -78,11 +78,11 @@ export default function AboutUs() {
           <section className="mb-8">
 
             <div className="bg-indigo-100 p-6 rounded-lg shadow-md ring ring-indigo-100">
-              <h2 className="font-bold mb-3">Za pravne profesionalce <span className="text-2xl">👩‍⚖️👨‍⚖️</span></h2>
+              <h2 className="font-bold mb-3">Za znatiželjne i za profesionalce <span className="text-2xl">🤓</span></h2>
               <p className="mb-3">
-                Niste sigurni kako započeti žalbu ili prigovor? Na koji način odgovoriti na dopis? Doznajte koji su zakoni i podzakonski akti trenutno važeći za dokument koji ste primili.</p>
+                Niste sigurni kako započeti žalbu ili prigovor? Doznajte koji su zakoni i podzakonski akti važeći za dokument koji ste primili.</p>
               <h4 className="font-semibold mb-3">Novo <span className="text-base">💡</span></h4>
-              <h4 className="mb-3">Automatizirana analiza sudskih objava!</h4>
+              <h4 className="mb-3">Automatizirana analiza  i praćenje sudskih objava!</h4>
               <p className="mb-3">
                 Unesite odgovarajući pojam za pretragu u okvir sa desne strane, a naš asistent će pronaći relevantan sudski predmet na e-Oglasnoj ploči, preuzeti pripadajuću dokumentaciju, analizirati je i pružiti vam jasan i razumljiv sažetak cjelokupne objave.</p>
               <p className="mb-3">
@@ -94,10 +94,18 @@ export default function AboutUs() {
                 <li>Identificirati ključne informacije</li>
                 <li>Pružiti vam jasan sažetak o trenutnom statusu postupka i što možete očekivati dalje</li>
               </ul>
+              <h4 className="font-semibold mb-3">Želite pratiti tijek ovrhe ili stečajnog postupka?</h4>
               <p className="mb-3">
-                Na jednostavan način pratite novosti u stečajnom ili ovršnom postupku i fokusirajte se na ključne informacije koje su vam potrebne za daljnje postupanje i izradu strategije. Naš pravni asistent čita sa razumijevanjem.</p> 
+                <span className="text-base">✅</span> Ukoliko je naša tražilica uspješno pronašla sudski postupak po željenom terminu pretraživanja, na isti se na jednostavan način možete <b><em>pretplatiti.</em></b></p>
               <p className="mb-3">
-                <i>*Usluga trenutno <b>nije</b> predviđena za obradu povjerljivih podataka. <a href="mailto:admin@alimentacija.info" className="text-blue-600 hover:underline">Kontaktirajte nas</a> za dodatne mogućnosti i <em>on-premise</em> rješenja.</i></p>
+                Jednostavno kliknite na gumb za zvoncem '<b>Prati ovaj OIB</b>' i unesite vašu e-mail adresu kako bi u vaš sandučić stizala obavijest sa novim detaljima iz sudskog postupka.</p>
+              <p className="mb-3">
+                Na jednostavan način pratite novosti u sudskom postupku i fokusirajte se na ključne informacije koje su vam potrebne za daljnje postupanje. Naš pravni asistent čita sa razumijevanjem.</p>
+              <h4 className="font-semibold mb-3">Koga mogu pratiti?</h4>
+              <p className="mb-3">
+               Možete pratiti bilo koji pojam pretrage koji je javno dostupan na stranicama e-Oglasne ploče – ime i prezime fizičke osobe, njihov OIB, naziv tvrtke ili njen OIB, kao i konkretan broj sudskog predmeta.</p>
+              <p className="mb-3">
+                <i>*Usluga je predviđena za obradu javno dostupnih podataka. <a href="mailto:admin@alimentacija.info" className="text-blue-600 hover:underline">Kontaktirajte nas</a> za više pitanja.</i></p>
             </div>
 
           </section>
@@ -137,7 +145,7 @@ export default function AboutUs() {
               Alimentacija.info planiramo održavati zahvaljujući oglasima. Omogućavanjem oglasa u vašem pregledniku pomažete nam da nastavimo pružati ovu uslugu.
             </p>
             <p className="mb-3">
-              Najbolji način da podržite naš rad je da podijelite Alimentacija.info s prijateljima, obitelji i kolegama kojima bi ova usluga mogla koristiti.
+              Najbolji način da podržite naš rad je da podijelite Alimentacija.info sa svima kojima bi ova usluga mogla koristiti.
             </p>
           </section>
 
@@ -145,9 +153,6 @@ export default function AboutUs() {
 
             <div className="bg-indigo-100 p-6 rounded-lg shadow-md ring ring-indigo-100">
               <h4 className="text-xl font-semibold mb-3 text-end"><i class="fa-solid fa-circle-question"></i></h4>
-              <p className="mb-3">
-                Imate prijedlog za poboljšanje? Uočili ste pogrešku?
-              </p>
               <p className="mb-3">
                 Želite uvesti pametnog asistenta u vlastito poslovanje na GDPR sukladan način?
               </p>
