@@ -249,7 +249,7 @@ async function generateComparativeAnalysis(allProcessedCases) {
     // ${comparativeContext}`;
 
     const prompt = `Synthesize the following ${allProcessedCases.length} summaries into a coherent overview, in Croatian. Try to predict the most likely developments in the case, as well as what the next steps are for the parties involved.
-    Here is the data:\n${comparativeContext}. In case there are any numerical figures try to arrange them into a (markdown) table for clarity.`;
+    Here is the data:\n${comparativeContext}. In case there are any numerical figures try to arrange them into a table for clarity.`;
 
     //console.log("Comparative context contains the following data:", comparativeContext);
 
