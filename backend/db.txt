@@ -1,0 +1,17 @@
+CREATE TABLE subscriptions (
+    id SERIAL PRIMARY KEY,
+    email VARCHAR(255) NOT NULL,
+    search_term VARCHAR(255) NOT NULL,
+    last_seen_case_identifier TEXT, -- e.g., "St-123/2024 - 2024-05-21"
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    unsubscribe_token UUID DEFAULT gen_random_uuid() NOT NULL,
+    UNIQUE (email, search_term) -- Prevent a user from subscribing to the same term twice
+);
+
+e.g.
+
+INSERT INTO subscriptions (email, search_term)
+VALUES ('matejsarlija1@gmail.com', '66124057408');
+
+delete from subscriptions where email='matejsarlija1@gmail.com'

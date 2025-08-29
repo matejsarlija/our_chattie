@@ -288,25 +288,43 @@ async function startServer() {
     });
   });
 
+
   app.post('/api/subscribe', async (req, res) => {
     const { email, searchTerm } = req.body;
 
     if (!email || !searchTerm) {
+      console.log('Subscribe failed: Missing email or searchTerm', { email: !!email, searchTerm: !!searchTerm });
       return res.status(400).json({ error: 'Email and search term are required.' });
     }
 
     try {
-      // The UNIQUE constraint in the DB will handle duplicates
       const result = await db.query(
         'INSERT INTO subscriptions (email, search_term) VALUES ($1, $2) RETURNING id',
         [email, searchTerm]
       );
-      res.status(201).json({ success: true, message: 'Successfully subscribed!', subscriptionId: result.rows[0].id });
+
+      console.log(`Subscribe success: ${email} -> "${searchTerm}" (ID: ${result.rows[0].id})`);
+      res.status(201).json({
+        success: true,
+        message: 'Successfully subscribed!',
+        subscriptionId: result.rows[0].id
+      });
+
     } catch (error) {
+      // Log the actual error details for debugging
+      console.error('Subscribe error:', {
+        email,
+        searchTerm,
+        errorCode: error.code,
+        errorMessage: error.message,
+        errorDetail: error.detail,
+        constraint: error.constraint
+      });
+
       if (error.code === '23505') { // Unique violation
         return res.status(409).json({ error: 'This email is already subscribed to this search term.' });
       }
-      console.error('Subscription error:', error);
+
       res.status(500).json({ error: 'Failed to subscribe.' });
     }
   });

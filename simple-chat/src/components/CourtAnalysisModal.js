@@ -1,6 +1,6 @@
-import React from 'react';
+import React, { useState } from 'react';
 import ReactMarkdown from 'react-markdown';
-import { ArrowDownTrayIcon, DocumentArrowDownIcon, LinkIcon } from '@heroicons/react/24/outline';
+import { ArrowDownTrayIcon, DocumentArrowDownIcon, LinkIcon, BellAlertIcon } from '@heroicons/react/24/outline';
 
 // ==================================================================
 // HELPER FUNCTIONS (No changes)
@@ -73,7 +73,7 @@ const ProcessedCaseEntry = ({ processedCase }) => {
 
     return (
         <div className="rounded-lg p-4 space-y-4 bg-white">
-             {/* Case Summary Info Box */}
+            {/* Case Summary Info Box */}
             <div className="bg-blue-50 rounded-md p-4">
                 <h4 className="font-semibold text-blue-900 mb-3">{caseInfo.title || 'Informacije o objavi'}</h4>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
@@ -82,7 +82,7 @@ const ProcessedCaseEntry = ({ processedCase }) => {
                     <div><span className="font-medium text-blue-800">Datum objave:</span><span className="ml-2 text-blue-700">{caseInfo.date || 'N/A'}</span></div>
                     <div><span className="font-medium text-blue-800">Dokumenti:</span><span className="ml-2 text-blue-700">{documents.length} pronađen{documents.length === 1 ? '' : 'o'}</span></div>
                 </div>
-                 {/* Links for this specific case entry */}
+                {/* Links for this specific case entry */}
                 <div className="mt-4 pt-3 border-t border-blue-200 flex items-center gap-4 text-sm">
                     {originalFile && (
                         <a href={originalFile.url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline flex items-center gap-1.5">
@@ -90,14 +90,14 @@ const ProcessedCaseEntry = ({ processedCase }) => {
                         </a>
                     )}
                     {caseInfo.detailLink && (
-                         <a href={caseInfo.detailLink} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline flex items-center gap-1.5">
+                        <a href={caseInfo.detailLink} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline flex items-center gap-1.5">
                             <LinkIcon className="w-5 h-5" /> Vidi izvornu objavu
                         </a>
                     )}
                 </div>
             </div>
 
-             {/* Documents Analysis for this entry */}
+            {/* Documents Analysis for this entry */}
             <div>
                 <h4 className="font-semibold text-slate-800 mb-3">
                     Analiza dokumenata u ovoj objavi ({documents.length})
@@ -120,9 +120,44 @@ const ProcessedCaseEntry = ({ processedCase }) => {
 // ==================================================================
 // MAIN MODAL COMPONENT
 // ==================================================================
-export default function CourtAnalysisModal({ isOpen, onClose, result }) {
+export default function CourtAnalysisModal({ isOpen, onClose, result, searchTerm }) {
+    const [isSubscribing, setIsSubscribing] = useState(false);
+    const [email, setEmail] = useState('');
+    const [subscriptionStatus, setSubscriptionStatus] = useState('idle'); // 'idle', 'loading', 'success', 'error', 'conflict'
+
+    // --- This conditional return is now AFTER the hooks, which is correct ---
     if (!isOpen) return null;
 
+    // --- The rest of your component logic remains here ---
+    const handleSubscriptionSubmit = async (e) => {
+        e.preventDefault();
+        if (!email) return;
+
+        const ENTRY_SUBSCRIPTION_URL = process.env.REACT_APP_ENTRY_SUBSCRIPTION_URL || '/api/subscribe';
+
+        setSubscriptionStatus('loading');
+        try {
+            
+            const response = await fetch(ENTRY_SUBSCRIPTION_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email, searchTerm }),
+            });
+
+            if (response.ok) {
+                setSubscriptionStatus('success');
+            } else if (response.status === 409) {
+                setSubscriptionStatus('conflict');
+            } else {
+                const errorData = await response.json().catch(() => ({})); // try to parse error
+                console.error('Subscription API responded with an error:', response.status, errorData);
+                setSubscriptionStatus('error');
+            }
+        } catch (error) {
+            console.error('Subscription failed:', error);
+            setSubscriptionStatus('error');
+        }
+    };
     const processedCases = result?.processedCases || [];
     const comparativeAnalysis = result?.comparativeAnalysis;
     const hasResult = processedCases.length > 0;
@@ -132,16 +167,58 @@ export default function CourtAnalysisModal({ isOpen, onClose, result }) {
         <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-4">
             <div className="bg-white rounded-xl shadow-2xl max-w-4xl w-full max-h-[90vh] flex flex-col">
                 {/* Header */}
-                <div className="flex justify-between items-center p-6 border-b border-slate-200">
+                <div className="flex justify-between items-start p-6 border-b border-slate-200 gap-4">
                     <div>
                         <h3 className="text-xl font-bold text-slate-800">Analiza e-Oglasne ploče</h3>
                         {firstCaseNumber && (
                             <p className="text-sm text-slate-600 mt-1">Predmet: {firstCaseNumber}</p>
                         )}
                     </div>
-                    <button onClick={onClose} className="text-slate-400 hover:text-slate-600 transition-colors">
-                        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
-                    </button>
+
+                    {/* --- REVISED SUBSCRIPTION SECTION --- */}
+                    <div className="flex-shrink-0 text-right">
+                        {!isSubscribing ? (
+                            // STATE 1: Initial Button
+                            <button
+                                onClick={() => setIsSubscribing(true)}
+                                className="inline-flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-blue-700 bg-blue-100 rounded-md hover:bg-blue-200 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            >
+                                <BellAlertIcon className="w-4 h-4" />
+                                Prati ovaj OIB
+                            </button>
+                        ) : (
+                            // STATE 2: Inline Form and Status Messages
+                            <div className="w-64">
+                                {subscriptionStatus === 'idle' || subscriptionStatus === 'loading' ? (
+                                    <form onSubmit={handleSubscriptionSubmit} className="flex items-center gap-2">
+                                        <input
+                                            type="email"
+                                            value={email}
+                                            onChange={(e) => setEmail(e.target.value)}
+                                            placeholder="Unesite vaš email"
+                                            required
+                                            className="block w-full px-2 py-1 text-sm border-slate-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                                            disabled={subscriptionStatus === 'loading'}
+                                        />
+                                        <button
+                                            type="submit"
+                                            className="px-3 py-1 text-sm font-semibold text-white bg-slate-700 rounded-md hover:bg-slate-800 disabled:opacity-50"
+                                            disabled={subscriptionStatus === 'loading'}
+                                        >
+                                            {subscriptionStatus === 'loading' ? '...' : 'Potvrdi'}
+                                        </button>
+                                    </form>
+                                ) : subscriptionStatus === 'success' ? (
+                                    <p className="text-sm text-green-600 bg-green-50 p-2 rounded-md">✓ Uspješno ste prijavljeni!</p>
+                                ) : subscriptionStatus === 'conflict' ? (
+                                    <p className="text-sm text-amber-700 bg-amber-50 p-2 rounded-md">Ovaj email već prati navedeni OIB.</p>
+                                ) : (
+                                    <p className="text-sm text-red-600 bg-red-50 p-2 rounded-md">Došlo je do greške. Pokušajte ponovno.</p>
+                                )}
+                            </div>
+                        )}
+                    </div>
+                    {/* We remove the old close button to avoid layout issues, the one in the footer is enough */}
                 </div>
 
                 {/* Content */}
@@ -170,7 +247,7 @@ export default function CourtAnalysisModal({ isOpen, onClose, result }) {
                                     </div>
                                     {/* The button is now outside the box but grouped by the fragment */}
                                     <div className="mt-3 flex justify-end">
-                                         <button onClick={() => downloadComparativeAnalysis(comparativeAnalysis, firstCaseNumber)} className="text-blue-600 text-sm hover:underline flex items-center gap-1.5">
+                                        <button onClick={() => downloadComparativeAnalysis(comparativeAnalysis, firstCaseNumber)} className="text-blue-600 text-sm hover:underline flex items-center gap-1.5">
                                             <DocumentArrowDownIcon className="w-5 h-5" />
                                             Preuzmi zaključak kao .md
                                         </button>
@@ -187,7 +264,8 @@ export default function CourtAnalysisModal({ isOpen, onClose, result }) {
                 </div>
 
                 {/* Footer */}
-                <div className="flex justify-end p-6 border-t border-slate-200 bg-white">
+                <div className="flex justify-between items-center p-6 border-t border-slate-200 bg-white">
+                    <p className="text-xs text-slate-500">Primit ćete email samo kada se pojavi nova objava.</p>
                     <button onClick={onClose} className="px-6 py-2 bg-slate-700 text-white rounded-lg hover:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-500 focus:ring-offset-2 transition-colors">
                         Zatvori
                     </button>

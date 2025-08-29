@@ -751,6 +751,7 @@ export default function AltChat() {
                 onClose={() => setIsAnalysisModalOpen(false)}
                 progress={analysisProgress}
                 result={analysisResult}
+                searchTerm={caseNumber}
             />
             <WelcomeModal
                 isOpen={showWelcomeModal}

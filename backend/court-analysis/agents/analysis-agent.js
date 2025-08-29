@@ -61,18 +61,18 @@ async function extractTextViaOCR(filePath) {
         const data = new Uint8Array(fs.readFileSync(filePath));
         const pdf = await pdfjsLib.getDocument(data).promise;
         const numPages = pdf.numPages;
-        
+
         for (let i = 1; i <= numPages; i++) {
             const page = await pdf.getPage(i);
             const viewport = page.getViewport({ scale: 2.0 }); // Higher scale = higher resolution image
             const canvas = createCanvas(viewport.width, viewport.height);
             const context = canvas.getContext('2d');
-            
+
             await page.render({ canvasContext: context, viewport: viewport }).promise;
-            
+
             const imageBuffer = canvas.toBuffer('image/png');
             const imageAsBase64 = imageBuffer.toString('base64');
-            
+
             const message = new HumanMessage({
                 content: [
                     { type: "text", text: "Extract all text from this document image. Provide only the raw text." },
@@ -87,7 +87,7 @@ async function extractTextViaOCR(filePath) {
         console.error(`[OCR] Failed during OCR process for ${filePath}:`, err);
         return ''; // Return empty string on failure
     }
-    
+
     console.log(`[OCR] Successfully extracted ~${combinedText.length} characters.`);
     return combinedText;
 }
@@ -121,7 +121,8 @@ class AnalyzeDocumentsTool extends Tool {
 
                 //console.log(`Analyzing text from file: ${file.filePath}, the text length is: ${text.length}`);
                 // alt prompt: a medium-sized paragraph, two at most, ...
-                const prompt = `From the court document text below, extract key information as a JSON object with the following keys: "caseNumber", "parties" (an array of strings), "decisionDate", and "summary" (a medium-sized paragraph, nicely formatted, to be in Croatian please, as that is what our customers speak). Text:\n\n${text.slice(0, 25000)}`;
+                const prompt = `From the court document text below, extract key information as a JSON object with the following keys: "caseNumber", "parties" (an array of strings), "decisionDate", and "summary" (a medium-sized paragraph, nicely formatted, to be in Croatian please, as that is what our customers speak).
+                Do include any important figures (currency amounts) you find in the summary. Text:\n\n${text.slice(0, 25000)}`;
 
                 const response = await gemini.invoke(prompt);
 
@@ -165,7 +166,7 @@ class AnalyzeDocumentsTool extends Tool {
         }
         );
 
-         return {
+        return {
             individualAnalyses: individualAnalyses,
         };
     }
@@ -200,7 +201,7 @@ async function generateComparativeAnalysis(allProcessedCases) {
 
         // The prompt is slightly different: it asks for a deep dive and next steps, not a comparison.
         //const prompt = `This is the only recent court entry found. Synthesize the following document summaries into a single, coherent, and detailed overview IN CROATIAN. Explain the significance of this entry in the context of the case. Based on the information, what are the likely next steps for the parties involved?\n\nSUMMARIES:\n${successfulSummaries}`;
-        
+
         try {
             const response = await gemini.invoke(prompt);
             return response.content;
@@ -219,7 +220,7 @@ async function generateComparativeAnalysis(allProcessedCases) {
             .filter(f => f.aiResult && f.aiResult.summary)
             .map(f => f.aiResult.summary)
             .join('\n');
-        
+
         comparativeContext += `--- Case Entry ${index + 1} ---\n`;
         comparativeContext += `Title: ${caseInfo.title}\n`;
         comparativeContext += `Date: ${caseInfo.date}\n`;

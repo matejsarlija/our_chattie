@@ -1,9 +1,14 @@
 const { Pool } = require('pg');
 
+console.log('--- [DB DEBUG] Forcing SSL connection for debugging ---');
+console.log(`--- [DB DEBUG] Connecting with DATABASE_URL: ${process.env.DATABASE_URL ? 'Exists' : 'MISSING!'}`);
+
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  // Add SSL for production connections to Render's DB
-  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+  // NO conditional logic. We are forcing this configuration.
+  ssl: {
+    rejectUnauthorized: false
+  }
 });
 
 module.exports = {
