@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import ReactMarkdown from 'react-markdown';
-import { ArrowDownTrayIcon, DocumentArrowDownIcon, LinkIcon, BellAlertIcon } from '@heroicons/react/24/outline';
+import { ArrowDownTrayIcon, DocumentArrowDownIcon, LinkIcon, BellAlertIcon, ArrowPathIcon } from '@heroicons/react/24/outline';
 
 // ==================================================================
 // HELPER FUNCTIONS (No changes)
@@ -128,6 +128,11 @@ export default function CourtAnalysisModal({ isOpen, onClose, result, searchTerm
     // --- This conditional return is now AFTER the hooks, which is correct ---
     if (!isOpen) return null;
 
+    const handleSubscriptionReset = () => {
+        setSubscriptionStatus('idle');
+        // We don't clear the email, so the user can easily correct a typo.
+    };
+
     // --- The rest of your component logic remains here ---
     const handleSubscriptionSubmit = async (e) => {
         e.preventDefault();
@@ -137,7 +142,7 @@ export default function CourtAnalysisModal({ isOpen, onClose, result, searchTerm
 
         setSubscriptionStatus('loading');
         try {
-            
+
             const response = await fetch(ENTRY_SUBSCRIPTION_URL, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -189,7 +194,7 @@ export default function CourtAnalysisModal({ isOpen, onClose, result, searchTerm
                         ) : (
                             // STATE 2: Inline Form and Status Messages
                             <div className="w-64">
-                                {subscriptionStatus === 'idle' || subscriptionStatus === 'loading' ? (
+                                {(subscriptionStatus === 'idle' || subscriptionStatus === 'loading') && (
                                     <form onSubmit={handleSubscriptionSubmit} className="flex items-center gap-2">
                                         <input
                                             type="email"
@@ -208,12 +213,42 @@ export default function CourtAnalysisModal({ isOpen, onClose, result, searchTerm
                                             {subscriptionStatus === 'loading' ? '...' : 'Potvrdi'}
                                         </button>
                                     </form>
-                                ) : subscriptionStatus === 'success' ? (
-                                    <p className="text-sm text-green-600 bg-green-50 p-2 rounded-md">✓ Uspješno ste prijavljeni!</p>
-                                ) : subscriptionStatus === 'conflict' ? (
-                                    <p className="text-sm text-amber-700 bg-amber-50 p-2 rounded-md">Ovaj email već prati navedeni OIB.</p>
-                                ) : (
-                                    <p className="text-sm text-red-600 bg-red-50 p-2 rounded-md">Došlo je do greške. Pokušajte ponovno.</p>
+                                )}
+
+                                {subscriptionStatus === 'success' && (
+                                    <p className="text-sm text-green-600 bg-green-50 p-2 rounded-md text-center">✓ Uspješno ste prijavljeni!</p>
+                                )}
+
+                                {subscriptionStatus === 'conflict' && (
+                                    // New parent container to hold the icon and message separately
+                                    <div className="flex items-center gap-2">
+                                        <button
+                                            onClick={handleSubscriptionReset}
+                                            className="flex-shrink-0 p-1 rounded-full text-slate-500 hover:bg-slate-200 transition-colors"
+                                            title="Pokušaj ponovno"
+                                        >
+                                            <ArrowPathIcon className="w-4 h-4" strokeWidth={2.5} />
+                                        </button>
+                                        <p className="w-full text-sm text-amber-700 bg-amber-50 p-2 rounded-md">
+                                            Ovaj email već prati navedeni OIB.
+                                        </p>
+                                    </div>
+                                )}
+
+                                {subscriptionStatus === 'error' && (
+                                    // New parent container to hold the icon and message separately
+                                    <div className="flex items-center gap-2">
+                                        <button
+                                            onClick={handleSubscriptionReset}
+                                            className="flex-shrink-0 p-1 rounded-full text-slate-500 hover:bg-slate-200 transition-colors"
+                                            title="Pokušaj ponovno"
+                                        >
+                                            <ArrowPathIcon className="w-4 h-4" strokeWidth={2.5} />
+                                        </button>
+                                        <p className="w-full text-sm text-red-600 bg-red-50 p-2 rounded-md">
+                                            Došlo je do greške.
+                                        </p>
+                                    </div>
                                 )}
                             </div>
                         )}
