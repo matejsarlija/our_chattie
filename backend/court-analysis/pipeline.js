@@ -111,7 +111,8 @@ async function runCourtAnalysisWithExistingAutomator(searchTerm, numberOfCases =
 
             // 2c. Analyze THIS case's documents
             progressCallback?.({ step: 'analyzing', message: `Analiziram ${filesForAnalysis.length} datoteka za objavu ${i + 1}...` });
-            const analysis = await analyzeTool._call({ files: filesForAnalysis, progressCallback: null });
+
+            const analysis = await analyzeTool._call({ files: filesForAnalysis, caseInfo: caseInfo, progressCallback: null });
 
             // Store the fully processed case data
             allProcessedCases.push({
@@ -209,7 +210,7 @@ async function processScrapedCases(casesToProcess, progressCallback) {
 
             // 2c. Analyze THIS case's documents
             progressCallback?.({ step: 'analyzing', message: `Analiziram ${filesForAnalysis.length} datoteka za objavu ${i + 1}...` });
-            const analysis = await analyzeTool._call({ files: filesForAnalysis, progressCallback: null });
+            const analysis = await analyzeTool._call({ files: filesForAnalysis, caseInfo: caseInfo, progressCallback: null });
 
             allProcessedCases.push({
                 caseResult: caseInfo,

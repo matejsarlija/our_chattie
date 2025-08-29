@@ -101,7 +101,7 @@ class AnalyzeDocumentsTool extends Tool {
     }
 
     async _call(input) {
-        const { files, progressCallback } = input;
+        const { files, caseInfo, progressCallback } = input;
 
         const analysisPromises = files.map(async (file) => {
             try {
@@ -119,10 +119,15 @@ class AnalyzeDocumentsTool extends Tool {
                     throw new Error('Could not extract text from file. It may be empty, corrupted, or an image-based document.');
                 }
 
+                //console.log('Case info for analysis:', caseInfo);
+
+                const knownParties = caseInfo.participants ? `The main participants in this case are: ${JSON.stringify(caseInfo.participants, null, 2)}.` :
+                    "Participant information was not available from the source page.";
+
                 //console.log(`Analyzing text from file: ${file.filePath}, the text length is: ${text.length}`);
                 // alt prompt: a medium-sized paragraph, two at most, ...
-                const prompt = `From the court document text below, extract key information as a JSON object with the following keys: "caseNumber", "parties" (an array of strings), "decisionDate", and "summary" (a medium-sized paragraph, nicely formatted, to be in Croatian please, as that is what our customers speak).
-                Do include any important figures (currency amounts) you find in the summary. Text:\n\n${text.slice(0, 25000)}`;
+                const prompt = `${knownParties} From the court document text below, extract key information as a JSON object with the following keys: "caseNumber", "decisionDate", and "summary" (a medium-sized paragraph, nicely formatted, to be in Croatian please, as that is what our customers speak).
+                Do include any important figures (currency amounts) you find in the summary. Provide ONLY the json object and nothing else. Text:\n\n${text.slice(0, 25000)}`;
 
                 const response = await gemini.invoke(prompt);
 
@@ -139,8 +144,14 @@ class AnalyzeDocumentsTool extends Tool {
                 }
 
                 // 3. Parse the CLEANED string.
-                const aiResult = JSON.parse(cleanedContent);
-                // --- END OF FIX ---
+                const aiResultPartial = JSON.parse(cleanedContent);
+
+                const aiResult = {
+                    ...aiResultPartial,
+                    // Inject the reliably scraped parties into the final result object.
+                    parties: caseInfo.participants || []
+                };
+                // END of fix
 
                 // added by a human
                 console.log(`Analyzed file ${file.filePath}, AI result:`, aiResult);
@@ -237,8 +248,8 @@ async function generateComparativeAnalysis(allProcessedCases) {
     // Here is the data:
     // ${comparativeContext}`;
 
-    const prompt = `Synthesize the following ${allProcessedCases.length} summaries into a coherent overview, in Croatian. Try to predict the most likely developments in the case, as well as the next steps are for the parties involved.
-    Here is the data:\n${comparativeContext}`;
+    const prompt = `Synthesize the following ${allProcessedCases.length} summaries into a coherent overview, in Croatian. Try to predict the most likely developments in the case, as well as what the next steps are for the parties involved.
+    Here is the data:\n${comparativeContext}. In case there are any numerical figures try to arrange them into a (markdown) table for clarity.`;
 
     //console.log("Comparative context contains the following data:", comparativeContext);
 
