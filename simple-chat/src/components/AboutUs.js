@@ -79,9 +79,6 @@ export default function AboutUs() {
 
             <div className="bg-indigo-100 p-6 rounded-lg shadow-md ring ring-indigo-100">
               <h2 className="font-bold mb-3">Za znatiželjne i za profesionalce <span className="text-2xl">🤓</span></h2>
-              <p className="mb-3">
-                Niste sigurni kako započeti žalbu ili prigovor? Doznajte koji su zakoni i podzakonski akti važeći za dokument koji ste primili.</p>
-              <h4 className="font-semibold mb-3">Novo <span className="text-base">💡</span></h4>
               <h4 className="mb-3">Automatizirana analiza  i praćenje sudskih objava!</h4>
               <p className="mb-3">
                 Unesite odgovarajući pojam za pretragu u okvir sa desne strane, a naš asistent će pronaći relevantan sudski predmet na e-Oglasnoj ploči, preuzeti pripadajuću dokumentaciju, analizirati je i pružiti vam jasan i razumljiv sažetak cjelokupne objave.</p>
