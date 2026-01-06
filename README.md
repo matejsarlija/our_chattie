@@ -135,9 +135,9 @@ node cron/run_daily_checks.js
 
 Probable next steps include taking out the Gemini wrapper part (basically the entire front page would need to be reworked) and replacing it with a more focused AI-powered legal text creator and editor, in the line of the more professional tools that cater to Croatian legal professionals - [Yure.ai](https://yure.ai/hr), [Mikai](https://www.mikai-legal.com/en/), and drawing heavy inspiration from AI writing tools such as [Sudowrite](https://sudowrite.com/).
 
-The writing tool would enable a kind of a diff format for legal texts, enabling user to select parts of the text that doesn't work and send it back to the API to be replaced or rewritten. The difficult part is merging it all together in a way that makes legal sense as the reworked text is part of a whole, so we would need a way to "freeze" the parts that the user did like - which means choosing a level of persistence that is most adequate. Concatenating parts of legal text is more difficult than regular prose.
+The writing tool would enable a kind of a diff format for legal texts, enabling user to select parts of the text that doesn't work and send it back to the API to be replaced or rewritten. The difficult part is merging it all together in a way that makes legal sense as the reworked text is part of a whole, so we would need a way to "freeze" the parts that the user did like. Think ChatGPT's [canvas](https://openai.com/index/introducing-canvas/).
 
-Also necessary would be to build an embedding database of current legal laws and texts in Croatian, as well as the relevant court procedures and findings that would serve as a more direct inspiration for our writer agent (the RAG part, choosing appropriate chunking method). This is already somewhat enabled by the e-Oglasna archives, which would need to be vectorized and stored.
+Also necessary would be to build an embedding database of current legal laws and texts in Croatian, as well as the relevant court procedures and findings that would serve as a direct source for our writer agent (the RAG part, choosing appropriate chunking method, tiering legal texts by their type). This is already somewhat enabled by the e-Oglasna archives, which would need to be vectorized and stored.
 
 The design also needs an update, I currently don't have an exact vision for the final look of the project.
 

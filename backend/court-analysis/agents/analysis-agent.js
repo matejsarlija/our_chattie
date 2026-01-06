@@ -1,44 +1,51 @@
 // analysis-agent.js
 
-require('dotenv').config();
-const { Tool } = require('@langchain/core/tools');
-const { ChatGoogleGenerativeAI } = require('@langchain/google-genai');
+require("dotenv").config();
+const { Tool } = require("@langchain/core/tools");
+const { ChatGoogleGenerativeAI } = require("@langchain/google-genai");
 const { HumanMessage } = require("@langchain/core/messages");
-const fs = require('fs');
-const os = require('os');
-const path = require('path');
-const pdfParse = require('pdf-parse');
-const mammoth = require('mammoth');
+const fs = require("fs");
+const os = require("os");
+const path = require("path");
+const pdfParse = require("pdf-parse");
+const mammoth = require("mammoth");
 
 const API_KEY = process.env.GOOGLE_API_KEY;
-const gemini = new ChatGoogleGenerativeAI({ model: 'gemini-2.0-flash', apiKey: API_KEY });
+const gemini = new ChatGoogleGenerativeAI({
+    model: "gemini-2.5-flash",
+    apiKey: API_KEY,
+});
 
-const pdfjsLib = require('pdfjs-dist/legacy/build/pdf.js');
+const pdfjsLib = require("pdfjs-dist/legacy/build/pdf.js");
 
 // 2. Explicitly set the path to the worker script for Node.js
-pdfjsLib.GlobalWorkerOptions.workerSrc = require.resolve('pdfjs-dist/build/pdf.worker.js');
+pdfjsLib.GlobalWorkerOptions.workerSrc =
+    require.resolve("pdfjs-dist/build/pdf.worker.js");
 
-const { createCanvas } = require('canvas');
+const { createCanvas } = require("canvas");
 
 async function extractTextFromFile(filePath) {
     try {
-        if (filePath.endsWith('.pdf')) {
+        if (filePath.endsWith(".pdf")) {
             const dataBuffer = fs.readFileSync(filePath);
             const data = await pdfParse(dataBuffer);
-            return data?.text || '';
+            return data?.text || "";
         }
-        if (filePath.endsWith('.docx')) {
+        if (filePath.endsWith(".docx")) {
             const result = await mammoth.extractRawText({ path: filePath });
             return result.value;
         }
-        if (filePath.endsWith('.txt')) {
-            return fs.readFileSync(filePath, 'utf8');
+        if (filePath.endsWith(".txt")) {
+            return fs.readFileSync(filePath, "utf8");
         }
     } catch (error) {
-        console.error(`Failed to extract text from ${filePath}:`, error.message);
-        return '';
+        console.error(
+            `Failed to extract text from ${filePath}:`,
+            error.message,
+        );
+        return "";
     }
-    return '';
+    return "";
 }
 
 // --- NEW OCR FALLBACK FUNCTION ---
@@ -54,8 +61,10 @@ async function extractTextFromFile(filePath) {
  * @returns {Promise<string>} The combined text from all pages.
  */
 async function extractTextViaOCR(filePath) {
-    console.log(`[OCR] Attempting OCR for ${path.basename(filePath)} with pdf.js`);
-    let combinedText = '';
+    console.log(
+        `[OCR] Attempting OCR for ${path.basename(filePath)} with pdf.js`,
+    );
+    let combinedText = "";
 
     try {
         const data = new Uint8Array(fs.readFileSync(filePath));
@@ -66,38 +75,47 @@ async function extractTextViaOCR(filePath) {
             const page = await pdf.getPage(i);
             const viewport = page.getViewport({ scale: 2.0 }); // Higher scale = higher resolution image
             const canvas = createCanvas(viewport.width, viewport.height);
-            const context = canvas.getContext('2d');
+            const context = canvas.getContext("2d");
 
-            await page.render({ canvasContext: context, viewport: viewport }).promise;
+            await page.render({ canvasContext: context, viewport: viewport })
+                .promise;
 
-            const imageBuffer = canvas.toBuffer('image/png');
-            const imageAsBase64 = imageBuffer.toString('base64');
+            const imageBuffer = canvas.toBuffer("image/png");
+            const imageAsBase64 = imageBuffer.toString("base64");
 
             const message = new HumanMessage({
                 content: [
-                    { type: "text", text: "Extract all text from this document image. Provide only the raw text." },
-                    { type: "image_url", image_url: `data:image/png;base64,${imageAsBase64}` },
+                    {
+                        type: "text",
+                        text: "Extract all text from this document image. Provide only the raw text.",
+                    },
+                    {
+                        type: "image_url",
+                        image_url: `data:image/png;base64,${imageAsBase64}`,
+                    },
                 ],
             });
 
             const response = await gemini.invoke([message]);
-            combinedText += response.content + '\n\n';
+            combinedText += response.content + "\n\n";
         }
     } catch (err) {
         console.error(`[OCR] Failed during OCR process for ${filePath}:`, err);
-        return ''; // Return empty string on failure
+        return ""; // Return empty string on failure
     }
 
-    console.log(`[OCR] Successfully extracted ~${combinedText.length} characters.`);
+    console.log(
+        `[OCR] Successfully extracted ~${combinedText.length} characters.`,
+    );
     return combinedText;
 }
-
 
 class AnalyzeDocumentsTool extends Tool {
     constructor() {
         super();
-        this.name = 'analyze_documents_for_one_case';
-        this.description = 'Analyzes a set of documents related to a single court case entry and returns structured info for each.';
+        this.name = "analyze_documents_for_one_case";
+        this.description =
+            "Analyzes a set of documents related to a single court case entry and returns structured info for each.";
     }
 
     async _call(input) {
@@ -108,21 +126,29 @@ class AnalyzeDocumentsTool extends Tool {
                 let text = await extractTextFromFile(file.filePath);
 
                 // If initial extraction fails, try OCR for PDFs
-                if ((!text || text.trim().length === 0) && file.filePath.toLowerCase().endsWith('.pdf')) {
-                    console.log(`[Analyzer] Standard text extraction failed for ${path.basename(file.filePath)}. Falling back to OCR.`);
+                if (
+                    (!text || text.trim().length === 0) &&
+                    file.filePath.toLowerCase().endsWith(".pdf")
+                ) {
+                    console.log(
+                        `[Analyzer] Standard text extraction failed for ${path.basename(file.filePath)}. Falling back to OCR.`,
+                    );
                     text = await extractTextViaOCR(file.filePath);
                 }
 
                 // Final check: if still no text, return error, file failed analysis
                 if (!text || text.trim().length === 0) {
                     // tu si možemo dodati hrvatski tekst za bolje error messagese za korisnike
-                    throw new Error('Could not extract text from file. It may be empty, corrupted, or an image-based document.');
+                    throw new Error(
+                        "Could not extract text from file. It may be empty, corrupted, or an image-based document.",
+                    );
                 }
 
                 //console.log('Case info for analysis:', caseInfo);
 
-                const knownParties = caseInfo.participants ? `The main participants in this case are: ${JSON.stringify(caseInfo.participants, null, 2)}.` :
-                    "Participant information was not available from the source page.";
+                const knownParties = caseInfo.participants
+                    ? `The main participants in this case are: ${JSON.stringify(caseInfo.participants, null, 2)}.`
+                    : "Participant information was not available from the source page.";
 
                 //console.log(`Analyzing text from file: ${file.filePath}, the text length is: ${text.length}`);
                 // alt prompt: a medium-sized paragraph, two at most, ...
@@ -136,11 +162,18 @@ class AnalyzeDocumentsTool extends Tool {
                 const rawContent = response.content;
 
                 // 2. Clean the string by removing the Markdown wrapper.
-                const cleanedContent = rawContent.replace(/```json\n|```/g, '').trim();
+                const cleanedContent = rawContent
+                    .replace(/```json\n|```/g, "")
+                    .trim();
 
                 // Added an extra check to see if the response looks like JSON before parsing
-                if (!cleanedContent.startsWith('{') || !cleanedContent.endsWith('}')) {
-                    throw new Error(`AI returned non-JSON response: "${cleanedContent.slice(0, 100)}..."`);
+                if (
+                    !cleanedContent.startsWith("{") ||
+                    !cleanedContent.endsWith("}")
+                ) {
+                    throw new Error(
+                        `AI returned non-JSON response: "${cleanedContent.slice(0, 100)}..."`,
+                    );
                 }
 
                 // 3. Parse the CLEANED string.
@@ -149,33 +182,48 @@ class AnalyzeDocumentsTool extends Tool {
                 const aiResult = {
                     ...aiResultPartial,
                     // Inject the reliably scraped parties into the final result object.
-                    parties: caseInfo.participants || []
+                    parties: caseInfo.participants || [],
                 };
                 // END of fix
 
                 // added by a human
-                console.log(`Analyzed file ${file.filePath}, AI result:`, aiResult);
+                console.log(
+                    `Analyzed file ${file.filePath}, AI result:`,
+                    aiResult,
+                );
 
-                progressCallback && progressCallback({ step: 'analyzing', message: `Analyzed: ${file.text}` });
+                progressCallback &&
+                    progressCallback({
+                        step: "analyzing",
+                        message: `Analyzed: ${file.text}`,
+                    });
                 return { ...file, aiResult };
-
             } catch (err) {
-                console.error(`Error analyzing file ${file.filePath}:`, err.message);
-                progressCallback && progressCallback({ step: 'analyzing', message: `Failed to analyze: ${file.text}` });
+                console.error(
+                    `Error analyzing file ${file.filePath}:`,
+                    err.message,
+                );
+                progressCallback &&
+                    progressCallback({
+                        step: "analyzing",
+                        message: `Failed to analyze: ${file.text}`,
+                    });
                 return { ...file, aiResult: null, error: err.message };
             }
         });
 
         const settledResults = await Promise.allSettled(analysisPromises);
 
-        const individualAnalyses = settledResults.map(result => {
-            if (result.status === 'fulfilled') {
+        const individualAnalyses = settledResults.map((result) => {
+            if (result.status === "fulfilled") {
                 return result.value;
             } else {
-                return { error: 'An unexpected error occurred during analysis.', ...result.reason };
+                return {
+                    error: "An unexpected error occurred during analysis.",
+                    ...result.reason,
+                };
             }
-        }
-        );
+        });
 
         return {
             individualAnalyses: individualAnalyses,
@@ -199,9 +247,9 @@ async function generateComparativeAnalysis(allProcessedCases) {
     if (allProcessedCases.length === 1) {
         const singleCase = allProcessedCases[0];
         const successfulSummaries = singleCase.analysis.individualAnalyses
-            .filter(f => f.aiResult && f.aiResult.summary)
-            .map(f => f.aiResult.summary)
-            .join('\n\n---\n\n');
+            .filter((f) => f.aiResult && f.aiResult.summary)
+            .map((f) => f.aiResult.summary)
+            .join("\n\n---\n\n");
 
         if (!successfulSummaries) {
             return "Analiza dokumenata nije uspješno izvršena za jedinu pronađenu objavu.";
@@ -228,9 +276,9 @@ async function generateComparativeAnalysis(allProcessedCases) {
     allProcessedCases.forEach((processedCase, index) => {
         const caseInfo = processedCase.caseResult;
         const summaries = processedCase.analysis.individualAnalyses
-            .filter(f => f.aiResult && f.aiResult.summary)
-            .map(f => f.aiResult.summary)
-            .join('\n');
+            .filter((f) => f.aiResult && f.aiResult.summary)
+            .map((f) => f.aiResult.summary)
+            .join("\n");
 
         comparativeContext += `--- Case Entry ${index + 1} ---\n`;
         comparativeContext += `Title: ${caseInfo.title}\n`;
@@ -261,6 +309,5 @@ async function generateComparativeAnalysis(allProcessedCases) {
         return "Greška pri generiranju usporedne analize.";
     }
 }
-
 
 module.exports = { AnalyzeDocumentsTool, generateComparativeAnalysis };
