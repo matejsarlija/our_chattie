@@ -1,0 +1,395 @@
+import {
+    StreamParser,
+    createStreamParser,
+    parseSSEResponse,
+    validateSSEMessage,
+    getMessageType,
+    extractMessageData,
+    createStreamWithTimeout
+} from '../streamingParser';
+
+describe('streamingParser utilities', () => {
+    describe('StreamParser', () => {
+        let parser;
+
+        beforeEach(() => {
+            parser = new StreamParser();
+        });
+
+        test('should initialize with empty state', () => {
+            expect(parser.buffer).toBe('');
+            expect(parser.accumulatedContent).toBe('');
+        });
+
+        test('should parse single SSE message', () => {
+            const chunk = 'data: {"content": "Hello"}\n\n';
+            const messages = parser.parseChunk(chunk);
+
+            expect(messages).toHaveLength(1);
+            expect(messages[0]).toEqual({ content: 'Hello' });
+        });
+
+        test('should parse multiple SSE messages', () => {
+            const chunk = 'data: {"content": "Hello"}\n\ndata: {"content": " World"}\n\n';
+            const messages = parser.parseChunk(chunk);
+
+            expect(messages).toHaveLength(2);
+            expect(messages[0]).toEqual({ content: 'Hello' });
+            expect(messages[1]).toEqual({ content: ' World' });
+        });
+
+        test('should handle partial message across chunks', () => {
+            // First chunk - incomplete message
+            const chunk1 = 'data: {"content": "Hello';
+            const messages1 = parser.parseChunk(chunk1);
+            expect(messages1).toHaveLength(0);
+
+            // Second chunk - complete message
+            const chunk2 = '"}\n\n';
+            const messages2 = parser.parseChunk(chunk2);
+            expect(messages2).toHaveLength(1);
+            expect(messages2[0]).toEqual({ content: 'Hello' });
+        });
+
+        test('should accumulate content across messages', () => {
+            const callbacks = { onContent: jest.fn() };
+
+            const message1 = { content: 'Hello' };
+            parser.processMessage(message1, callbacks);
+
+            expect(parser.accumulatedContent).toBe('Hello');
+            expect(callbacks.onContent).toHaveBeenCalledWith('Hello', message1);
+
+            const message2 = { content: ' World' };
+            parser.processMessage(message2, callbacks);
+
+            expect(parser.accumulatedContent).toBe('Hello World');
+            expect(callbacks.onContent).toHaveBeenCalledWith('Hello World', message2);
+        });
+
+        test('should handle progress messages', () => {
+            const callbacks = { onProgress: jest.fn() };
+            const progressMessage = { progress: 50, step: 'processing' };
+
+            parser.processMessage(progressMessage, callbacks);
+
+            expect(callbacks.onProgress).toHaveBeenCalledWith(progressMessage);
+        });
+
+        test('should handle error messages', () => {
+            const callbacks = { onError: jest.fn() };
+            const errorMessage = { error: 'Something went wrong' };
+
+            parser.processMessage(errorMessage, callbacks);
+
+            expect(callbacks.onError).toHaveBeenCalledWith('Something went wrong');
+        });
+
+        test('should handle completion messages', () => {
+            const callbacks = { onComplete: jest.fn() };
+            const completeMessage = { step: 'complete', data: { result: 'success' } };
+
+            parser.processMessage(completeMessage, callbacks);
+
+            expect(callbacks.onComplete).toHaveBeenCalledWith({ result: 'success' });
+        });
+
+        test('should handle generic messages', () => {
+            const callbacks = { onMessage: jest.fn() };
+            const genericMessage = { type: 'info', message: 'Processing started' };
+
+            parser.processMessage(genericMessage, callbacks);
+
+            expect(callbacks.onMessage).toHaveBeenCalledWith(genericMessage);
+        });
+
+        test('should reset state', () => {
+            parser.accumulatedContent = 'Some content';
+            parser.buffer = 'Remaining data';
+
+            parser.reset();
+
+            expect(parser.accumulatedContent).toBe('');
+            expect(parser.buffer).toBe('');
+        });
+
+        test('should get remaining buffer', () => {
+            parser.buffer = 'Remaining incomplete message';
+            expect(parser.getRemainingBuffer()).toBe('Remaining incomplete message');
+        });
+
+        test('should handle malformed JSON gracefully', () => {
+            const chunk = 'data: {"invalid": json}\n\n';
+            const messages = parser.parseChunk(chunk);
+
+            expect(messages).toHaveLength(1);
+            expect(messages[0]).toEqual({ error: 'Failed to parse server response' });
+        });
+
+        test('should handle non-SSE data', () => {
+            const chunk = 'plain text message\n\n';
+            const messages = parser.parseChunk(chunk);
+
+            expect(messages).toHaveLength(0);
+        });
+    });
+
+    describe('createStreamParser', () => {
+        test('should return new StreamParser instance', () => {
+            const parser = createStreamParser();
+            expect(parser).toBeInstanceOf(StreamParser);
+        });
+    });
+
+    describe('parseSSEResponse', () => {
+        let mockResponse;
+        let callbacks;
+
+        beforeEach(() => {
+            callbacks = {
+                onContent: jest.fn(),
+                onProgress: jest.fn(),
+                onComplete: jest.fn(),
+                onError: jest.fn()
+            };
+
+            // Mock response body
+            const mockReader = {
+                read: jest.fn()
+                    .mockResolvedValueOnce({ 
+                        done: false, 
+                        value: new TextEncoder().encode('data: {"content": "Hello"}\n\n') 
+                    })
+                    .mockResolvedValueOnce({ 
+                        done: false, 
+                        value: new TextEncoder().encode('data: {"content": " World"}\n\n') 
+                    })
+                    .mockResolvedValueOnce({ done: true })
+            };
+
+            mockResponse = {
+                body: {
+                    getReader: () => mockReader
+                }
+            };
+        });
+
+        test('should parse SSE response successfully', async () => {
+            const result = await parseSSEResponse(mockResponse, callbacks);
+
+            expect(result).toBe('Hello World');
+            expect(callbacks.onContent).toHaveBeenCalledWith('Hello', { content: 'Hello' });
+            expect(callbacks.onContent).toHaveBeenCalledWith('Hello World', { content: ' World' });
+        });
+
+        test('should handle response without body', async () => {
+            await expect(parseSSEResponse({ body: null }, callbacks))
+                .rejects.toThrow('Response body is not available');
+        });
+
+        test('should handle completion message', async () => {
+            const mockReader = {
+                read: jest.fn()
+                    .mockResolvedValueOnce({ 
+                        done: false, 
+                        value: new TextEncoder().encode('data: {"step": "complete", "data": {"result": "success"}}\n\n') 
+                    })
+                    .mockResolvedValueOnce({ done: true })
+            };
+
+            const response = {
+                body: { getReader: () => mockReader }
+            };
+
+            await parseSSEResponse(response, callbacks);
+
+            expect(callbacks.onComplete).toHaveBeenCalledWith({ result: 'success' });
+        });
+
+        test('should process remaining buffer on completion', async () => {
+            const mockReader = {
+                read: jest.fn()
+                    .mockResolvedValueOnce({ 
+                        done: false, 
+                        value: new TextEncoder().encode('data: {"content": "Hello"}') 
+                    })
+                    .mockResolvedValueOnce({ done: true })
+            };
+
+            const response = {
+                body: { getReader: () => mockReader }
+            };
+
+            await parseSSEResponse(response, callbacks);
+
+            // Should process the incomplete message in buffer
+            expect(callbacks.onContent).toHaveBeenCalled();
+        });
+    });
+
+    describe('validateSSEMessage', () => {
+        test('should validate correct SSE message', () => {
+            const message = 'data: {"content": "Hello"}';
+            const result = validateSSEMessage(message);
+
+            expect(result.isValid).toBe(true);
+        });
+
+        test('should reject non-string input', () => {
+            const result = validateSSEMessage(null);
+            expect(result.isValid).toBe(false);
+            expect(result.error).toContain('non-empty string');
+        });
+
+        test('should reject empty string', () => {
+            const result = validateSSEMessage('');
+            expect(result.isValid).toBe(false);
+            expect(result.error).toContain('non-empty string');
+        });
+
+        test('should reject message without data: prefix', () => {
+            const message = '{"content": "Hello"}';
+            const result = validateSSEMessage(message);
+
+            expect(result.isValid).toBe(false);
+            expect(result.error).toContain('data:');
+        });
+
+        test('should reject message with invalid JSON', () => {
+            const message = 'data: {"invalid": json}';
+            const result = validateSSEMessage(message);
+
+            expect(result.isValid).toBe(false);
+            expect(result.error).toContain('Invalid JSON');
+        });
+    });
+
+    describe('getMessageType', () => {
+        test('should identify content messages', () => {
+            const message = { content: 'Hello world' };
+            expect(getMessageType(message)).toBe('content');
+        });
+
+        test('should identify progress messages', () => {
+            const message = { progress: 50, step: 'processing' };
+            expect(getMessageType(message)).toBe('progress');
+        });
+
+        test('should identify error messages', () => {
+            const message = { error: 'Something went wrong' };
+            expect(getMessageType(message)).toBe('error');
+        });
+
+        test('should identify complete messages', () => {
+            expect(getMessageType({ step: 'complete' })).toBe('complete');
+            expect(getMessageType({ complete: true })).toBe('complete');
+            expect(getMessageType({ step: 'complete', data: 'result' })).toBe('complete');
+        });
+
+        test('should identify unknown messages', () => {
+            expect(getMessageType({ type: 'info' })).toBe('unknown');
+            expect(getMessageType({ random: 'data' })).toBe('unknown');
+            expect(getMessageType({})).toBe('unknown');
+        });
+    });
+
+    describe('extractMessageData', () => {
+        test('should extract content message data', () => {
+            const message = { content: 'Hello', id: 123 };
+            const result = extractMessageData(message);
+
+            expect(result).toEqual({
+                type: 'content',
+                data: 'Hello',
+                fullMessage: message
+            });
+        });
+
+        test('should extract progress message data', () => {
+            const message = { progress: 75, step: 'processing' };
+            const result = extractMessageData(message);
+
+            expect(result).toEqual({
+                type: 'progress',
+                data: 75,
+                fullMessage: message
+            });
+        });
+
+        test('should extract error message data', () => {
+            const message = { error: 'Failed to process' };
+            const result = extractMessageData(message);
+
+            expect(result).toEqual({
+                type: 'error',
+                data: 'Failed to process',
+                fullMessage: message
+            });
+        });
+
+        test('should extract complete message data', () => {
+            const message = { step: 'complete', data: { result: 'success' } };
+            const result = extractMessageData(message);
+
+            expect(result).toEqual({
+                type: 'complete',
+                data: { result: 'success' },
+                fullMessage: message
+            });
+        });
+
+        test('should extract unknown message data', () => {
+            const message = { type: 'info', details: 'Processing started' };
+            const result = extractMessageData(message);
+
+            expect(result).toEqual({
+                type: 'unknown',
+                data: message,
+                fullMessage: message
+            });
+        });
+    });
+
+    describe('createStreamWithTimeout', () => {
+        test('should resolve when operation succeeds before timeout', async () => {
+            const operation = jest.fn().mockResolvedValue('success');
+            
+            const result = await createStreamWithTimeout(operation, 1000);
+
+            expect(result).toBe('success');
+        });
+
+        test('should timeout when operation takes too long', async () => {
+            const operation = jest.fn().mockImplementation(() => 
+                new Promise(resolve => setTimeout(resolve, 2000))
+            );
+            
+            await expect(createStreamWithTimeout(operation, 100))
+                .rejects.toThrow('Stream timed out');
+        });
+
+        test('should reject when operation fails', async () => {
+            const error = new Error('Operation failed');
+            const operation = jest.fn().mockRejectedValue(error);
+            
+            await expect(createStreamWithTimeout(operation, 1000))
+                .rejects.toThrow('Operation failed');
+        });
+
+        test('should clear timeout when operation succeeds', async () => {
+            jest.useFakeTimers();
+            
+            const operation = jest.fn().mockResolvedValue('success');
+            const promise = createStreamWithTimeout(operation, 1000);
+
+            // Fast-forward before timeout
+            jest.advanceTimersByTime(500);
+            await promise;
+
+            // Timeout should not trigger
+            expect(() => jest.advanceTimersByTime(600)).not.toThrow();
+            
+            jest.useRealTimers();
+        });
+    });
+});

@@ -7,7 +7,7 @@ const rateLimit = require('express-rate-limit');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
-const { handleChatMessage } = require('./chatAgent'); // Import the chat service
+const { handleChatMessage, handleDocumentEdit } = require('./chatAgent'); // Import the chat service
 const { CourtSearchPuppeteer } = require('./scraper/courtSearchPuppeteer');
 const rateLimiter = require('./court-analysis/utils/rateLimiter');
 const { runCourtAnalysis } = require('./court-analysis/pipeline');
@@ -30,6 +30,7 @@ async function startServer() {
   const db = require('./db'); // Import our database module
 
   const app = express();
+  app.set('trust proxy', 1); // Trust the first proxy (e.g., React dev server or production LB)
   const port = process.env.PORT || 3001;
   const courtAnalysisQueue = new PQueue({ concurrency: 1 }); // This should work now
 
@@ -83,13 +84,59 @@ async function startServer() {
   }));
 
   // CORS settings
-  app.use(cors({
-    origin: process.env.NODE_ENV === 'production'
+  const corsOrigin = process.env.CORS_ORIGIN
+    ? process.env.CORS_ORIGIN.split(',').map(item => item.trim())
+    : (process.env.NODE_ENV === 'production'
       ? ['https://our-chattie-front.onrender.com', 'https://alimentacija.info', 'https://www.alimentacija.info']
-      : 'http://localhost:3000',
+      : 'http://localhost:3000');
+
+  app.use(cors({
+    origin: corsOrigin,
+    credentials: true
   }));
 
   app.use(express.json());
+
+  // Document edit endpoint for specialized AI-assisted text modification
+  app.post('/api/document-edit', async (req, res) => {
+    try {
+      const { content, instruction, context } = req.body;
+
+      if (!content || !instruction) {
+        throw new Error("Both content and instruction are required");
+      }
+
+      console.log('Document edit request:', {
+        instructionPreview: instruction.substring(0, 50),
+        contentLength: content.length,
+        hasContext: !!context
+      });
+
+      const result = await handleDocumentEdit({ content, instruction, context });
+
+      res.setHeader('Content-Type', 'text/event-stream');
+      res.setHeader('Cache-Control', 'no-cache');
+      res.setHeader('Connection', 'keep-alive');
+
+      try {
+        for await (const chunk of result.stream) {
+          const text = chunk.content || chunk.text || chunk;
+          if (text) {
+            res.write(`data: ${JSON.stringify({ content: text })}\n\n`);
+          }
+        }
+      } catch (streamError) {
+        console.error('Document edit streaming error:', streamError);
+        res.write(`data: ${JSON.stringify({ error: 'Streaming failed' })}\n\n`);
+      }
+
+      res.end();
+
+    } catch (error) {
+      console.error('Document edit error:', error);
+      res.status(500).json({ error: error.message || 'AI service unavailable' });
+    }
+  });
 
   // Chat endpoint with proper streaming format
   app.post('/api/chat', upload.single('file'), async (req, res) => {
@@ -127,7 +174,9 @@ async function startServer() {
 
       try {
         for await (const chunk of result.stream) {
-          const content = chunk.content || chunk.text || chunk;
+          // Robustly extract text content from LangChain message chunks
+          const content = typeof chunk.content === 'string' ? chunk.content : (chunk.content || '');
+
           if (content) {
             res.write(`data: ${JSON.stringify({ content })}\n\n`);
           }

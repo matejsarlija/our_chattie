@@ -138,7 +138,10 @@ export default function CourtAnalysisModal({ isOpen, onClose, result, searchTerm
         e.preventDefault();
         if (!email) return;
 
-        const ENTRY_SUBSCRIPTION_URL = process.env.REACT_APP_ENTRY_SUBSCRIPTION_URL || '/api/subscribe';
+        const ENTRY_SUBSCRIPTION_URL = import.meta.env?.VITE_ENTRY_SUBSCRIPTION_URL || 
+                                       import.meta.env?.REACT_APP_ENTRY_SUBSCRIPTION_URL || 
+                                       (typeof process !== 'undefined' ? process.env.REACT_APP_ENTRY_SUBSCRIPTION_URL : undefined) || 
+                                       '/api/subscribe';
 
         setSubscriptionStatus('loading');
         try {

@@ -71,9 +71,9 @@ async function uploadFileToGoogleAI(filePath, originalFilename) {
 function convertMessagesToLangChain(messages, fileInfo = null) {
     const systemMessage = new SystemMessage(
         "You are a helpful legal assistant that excels at being factual, while also being kind and formal. " +
-            "Depending on the user inquiry, you can be informative beyond the immediate question. " +
-            "You frequently work with the elderly in need of free legal advice. " +
-            "You only provide answers in Croatian.",
+        "Depending on the user inquiry, you can be informative beyond the immediate question. " +
+        "You frequently work with the elderly in need of free legal advice. " +
+        "You only provide answers in Croatian.",
     );
 
     const langchainMessages = [systemMessage];
@@ -119,19 +119,27 @@ function convertMessagesToLangChain(messages, fileInfo = null) {
         }
 
         if (msg.role === "user") {
-            let content = textContent;
+            let content;
 
-            if (!content) {
-                console.warn(`Empty content for user message at index ${i}`);
-                continue;
-            }
-
-            // Handle file attachment for the last user message (same logic as working version)
             if (fileInfo && i === messages.length - 1) {
-                const fileType = fileInfo.mimeType.includes("pdf")
-                    ? "PDF"
-                    : "image";
-                content += `\n\n(Attached ${fileType}: ${fileInfo.originalFilename})`;
+                // Determine part type based on mimeType
+                const part = fileInfo.mimeType.startsWith("image/")
+                    ? {
+                        type: "image_url",
+                        image_url: fileInfo.fileUri,
+                    }
+                    : {
+                        type: "media",
+                        fileUri: fileInfo.fileUri,
+                        mimeType: fileInfo.mimeType,
+                    };
+
+                content = [
+                    { type: "text", text: textContent },
+                    part
+                ];
+            } else {
+                content = textContent;
             }
 
             langchainMessages.push(new HumanMessage(content));
@@ -190,4 +198,32 @@ async function handleChatMessage({ messages, filePath, originalFilename }) {
     return { stream };
 }
 
-module.exports = { handleChatMessage };
+// Document editing handler for specialized legal text modification
+async function handleDocumentEdit({ content, instruction, context }) {
+    console.log("handleDocumentEdit called with instruction:", instruction);
+
+    const systemMessage = new SystemMessage(
+        "You are a professional Croatian legal text editor and assistant. " +
+        "Your task is to modify, enhance, or refine legal text according to specific user instructions. " +
+        "Guidelines:\n" +
+        "1. Always respond in Croatian.\n" +
+        "2. Maintain a formal, legal tone appropriate for Croatian courts and administration.\n" +
+        "3. When providing legal references, use the following format: <citation label='Name of Law/Act' url='Link if known' confidence='high/medium/low'></citation>.\n" +
+        "4. If the user asks to 'simplify', maintain accuracy while making it accessible.\n" +
+        "5. If the user asks to 'formalize', use precise Croatian legal terminology (e.g., 'podnesak', 'ovršni ispravak', 'prijedlog za ovrhu')."
+    );
+
+    const prompt = `INSTRUCTION: ${instruction}\n\nTEXT TO EDIT:\n${content}\n\nProvide only the edited text below:`;
+
+    const langchainMessages = [
+        systemMessage,
+        new HumanMessage(prompt)
+    ];
+
+    // Get streaming response
+    const stream = await chatModel.stream(langchainMessages);
+
+    return { stream };
+}
+
+module.exports = { handleChatMessage, handleDocumentEdit };

@@ -1,0 +1,360 @@
+import { renderHook, act } from '@testing-library/react';
+import { useFileUpload } from '../useFileUpload';
+
+// Mock File object
+const createMockFile = (name = 'test.pdf', type = 'application/pdf', size = 1024 * 1024) => {
+    const file = new File(['test content'], name, { type });
+    Object.defineProperty(file, 'size', { value: size });
+    return file;
+};
+
+describe('useFileUpload', () => {
+    beforeEach(() => {
+        jest.clearAllMocks();
+    });
+
+    describe('File Validation', () => {
+        test('should accept valid PDF file', () => {
+            const { result } = renderHook(() => useFileUpload());
+            const validFile = createMockFile('document.pdf', 'application/pdf', 1024 * 1024);
+
+            const validation = result.current.validateFile(validFile);
+
+            expect(validation.isValid).toBe(true);
+            expect(validation.errors).toHaveLength(0);
+        });
+
+        test('should accept valid image file', () => {
+            const { result } = renderHook(() => useFileUpload());
+            const validFile = createMockFile('image.jpg', 'image/jpeg', 500 * 1024);
+
+            const validation = result.current.validateFile(validFile);
+
+            expect(validation.isValid).toBe(true);
+            expect(validation.errors).toHaveLength(0);
+        });
+
+        test('should reject file with invalid type', () => {
+            const { result } = renderHook(() => useFileUpload());
+            const invalidFile = createMockFile('video.mp4', 'video/mp4', 1024 * 1024);
+
+            const validation = result.current.validateFile(invalidFile);
+
+            expect(validation.isValid).toBe(false);
+            expect(validation.errors).toContain(
+                'Nepodržani format datoteke. Dozvoljeni su PDF, DOC, DOCX, TXT, JPEG, PNG i GIF.'
+            );
+        });
+
+        test('should reject file that is too large', () => {
+            const { result } = renderHook(() => useFileUpload());
+            const largeFile = createMockFile('large.pdf', 'application/pdf', 5 * 1024 * 1024);
+
+            const validation = result.current.validateFile(largeFile);
+
+            expect(validation.isValid).toBe(false);
+            expect(validation.errors).toContain(
+                'Datoteka je prevelika. Maksimalna veličina je 2MB.'
+            );
+        });
+
+        test('should reject document with invalid extension', () => {
+            const { result } = renderHook(() => useFileUpload());
+            const invalidFile = createMockFile('document.exe', 'application/octet-stream', 1024 * 1024);
+
+            const validation = result.current.validateFile(invalidFile);
+
+            expect(validation.isValid).toBe(false);
+        });
+    });
+
+    describe('File Selection', () => {
+        test('should select valid file', () => {
+            const { result } = renderHook(() => useFileUpload());
+            const validFile = createMockFile('document.pdf', 'application/pdf');
+            
+            const mockEvent = {
+                target: { files: [validFile] }
+            };
+
+            act(() => {
+                result.current.handleFileSelect(mockEvent);
+            });
+
+            expect(result.current.selectedFile).toBe(validFile);
+            expect(result.current.error).toBe('');
+        });
+
+        test('should reject invalid file', () => {
+            const { result } = renderHook(() => useFileUpload());
+            const invalidFile = createMockFile('video.mp4', 'video/mp4');
+            
+            const mockEvent = {
+                target: { files: [invalidFile] }
+            };
+
+            act(() => {
+                result.current.handleFileSelect(mockEvent);
+            });
+
+            expect(result.current.selectedFile).toBeNull();
+            expect(result.current.error).toBe(
+                'Nepodržani format datoteke. Dozvoljeni su PDF, DOC, DOCX, TXT, JPEG, PNG i GIF.'
+            );
+        });
+
+        test('should handle no file selected', () => {
+            const { result } = renderHook(() => useFileUpload());
+            
+            const mockEvent = {
+                target: { files: [] }
+            };
+
+            act(() => {
+                result.current.handleFileSelect(mockEvent);
+            });
+
+            expect(result.current.selectedFile).toBeNull();
+        });
+    });
+
+    describe('File Removal', () => {
+        test('should remove selected file', () => {
+            const { result } = renderHook(() => useFileUpload());
+            const file = createMockFile('document.pdf', 'application/pdf');
+            
+            act(() => {
+                result.current.setSelectedFile(file);
+            });
+
+            expect(result.current.selectedFile).toBe(file);
+
+            act(() => {
+                result.current.removeFile();
+            });
+
+            expect(result.current.selectedFile).toBeNull();
+            expect(result.current.error).toBe('');
+        });
+
+        test('should clear input when removing file', () => {
+            const { result } = renderHook(() => useFileUpload());
+            const file = createMockFile('document.pdf', 'application/pdf');
+            
+            // Mock fileInputRef
+            result.current.fileInputRef = { current: { value: 'some-value' } };
+
+            act(() => {
+                result.current.setSelectedFile(file);
+                result.current.removeFile();
+            });
+
+            expect(result.current.fileInputRef.current.value).toBe('');
+        });
+    });
+
+    describe('File Preview', () => {
+        test('should generate correct preview for image', () => {
+            const { result } = renderHook(() => useFileUpload());
+            const imageFile = createMockFile('image.jpg', 'image/jpeg', 500 * 1024);
+
+            const preview = result.current.getFilePreview(imageFile);
+
+            expect(preview).toMatchObject({
+                name: 'image.jpg',
+                size: '500 KB',
+                type: 'image/jpeg',
+                isImage: true,
+                isPDF: false,
+                isDocument: false
+            });
+            expect(preview.icon).toBe('🖼️');
+        });
+
+        test('should generate correct preview for PDF', () => {
+            const { result } = renderHook(() => useFileUpload());
+            const pdfFile = createMockFile('document.pdf', 'application/pdf', 1024 * 1024);
+
+            const preview = result.current.getFilePreview(pdfFile);
+
+            expect(preview).toMatchObject({
+                name: 'document.pdf',
+                size: '1 MB',
+                type: 'application/pdf',
+                isImage: false,
+                isPDF: true,
+                isDocument: false
+            });
+            expect(preview.icon).toBe('📄');
+        });
+
+        test('should generate correct preview for document', () => {
+            const { result } = renderHook(() => useFileUpload());
+            const docFile = createMockFile('document.docx', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+
+            const preview = result.current.getFilePreview(docFile);
+
+            expect(preview).toMatchObject({
+                name: 'document.docx',
+                isImage: false,
+                isPDF: false,
+                isDocument: true
+            });
+            expect(preview.icon).toBe('📝');
+        });
+
+        test('should return null for no file', () => {
+            const { result } = renderHook(() => useFileUpload());
+
+            const preview = result.current.getFilePreview(null);
+
+            expect(preview).toBeNull();
+        });
+    });
+
+    describe('File Size Formatting', () => {
+        test('should format bytes correctly', () => {
+            const { result } = renderHook(() => useFileUpload());
+
+            expect(result.current.formatFileSize(0)).toBe('0 Bytes');
+            expect(result.current.formatFileSize(1024)).toBe('1 KB');
+            expect(result.current.formatFileSize(1024 * 1024)).toBe('1 MB');
+            expect(result.current.formatFileSize(1024 * 1024 * 1024)).toBe('1 GB');
+        });
+    });
+
+    describe('Document Import', () => {
+        test('should import text file content', async () => {
+            const { result } = renderHook(() => useFileUpload());
+            const textContent = 'This is test content';
+            const textFile = new File([textContent], 'test.txt', { type: 'text/plain' });
+
+            const importResult = await result.current.handleDocumentImport(textFile);
+
+            expect(importResult).toMatchObject({
+                content: textContent,
+                fileName: 'test.txt',
+                fileType: 'text/plain'
+            });
+            expect(importResult.importedAt).toBeDefined();
+        });
+
+        test('should handle PDF import with placeholder', async () => {
+            const { result } = renderHook(() => useFileUpload());
+            const pdfFile = createMockFile('document.pdf', 'application/pdf');
+
+            const importResult = await result.current.handleDocumentImport(pdfFile);
+
+            expect(importResult.content).toContain('[Document: document.pdf]');
+            expect(importResult.fileName).toBe('document.pdf');
+        });
+
+        test('should handle upload progress', async () => {
+            const { result } = renderHook(() => useFileUpload());
+            const textFile = new File(['content'], 'test.txt', { type: 'text/plain' });
+
+            const importPromise = result.current.handleDocumentImport(textFile);
+
+            // Check initial state
+            expect(result.current.isUploading).toBe(true);
+            expect(result.current.uploadProgress).toBe(0);
+
+            // Fast-forward timers
+            act(() => {
+                jest.runAllTimers();
+            });
+
+            await importPromise;
+
+            expect(result.current.isUploading).toBe(false);
+            expect(result.current.uploadProgress).toBe(100);
+
+            // Progress should reset after a short delay
+            act(() => {
+                jest.advanceTimersByTime(1000);
+            });
+
+            expect(result.current.uploadProgress).toBe(0);
+        });
+
+        test('should handle import errors', async () => {
+            const { result } = renderHook(() => useFileUpload());
+            
+            // Create a file that will cause an error during parsing
+            const problematicFile = new File([''], 'test.txt', { type: 'text/plain' });
+            
+            // Mock the text() method to throw an error
+            problematicFile.text = jest.fn().mockRejectedValue(new Error('Read error'));
+
+            await expect(result.current.handleDocumentImport(problematicFile))
+                .rejects.toThrow('Failed to parse document content');
+
+            expect(result.current.error).toBe('Failed to parse document content');
+            expect(result.current.isUploading).toBe(false);
+        });
+    });
+
+    describe('Chat Attachments', () => {
+        test('should handle chat attachment correctly', () => {
+            const { result } = renderHook(() => useFileUpload());
+            const file = createMockFile('document.pdf', 'application/pdf');
+
+            const attachment = result.current.handleChatAttachment(file);
+
+            expect(attachment).toMatchObject({
+                file,
+                preview: expect.objectContaining({
+                    name: 'document.pdf',
+                    type: 'application/pdf'
+                })
+            });
+        });
+
+        test('should return null for invalid chat attachment', () => {
+            const { result } = renderHook(() => useFileUpload());
+            const invalidFile = createMockFile('video.mp4', 'video/mp4');
+
+            const attachment = result.current.handleChatAttachment(invalidFile);
+
+            expect(attachment).toBeNull();
+            expect(result.current.error).toBeTruthy();
+        });
+    });
+
+    describe('Upload Limits', () => {
+        test('should provide correct upload limits', () => {
+            const { result } = renderHook(() => useFileUpload());
+            const limits = result.current.getUploadLimits();
+
+            expect(limits.maxFileSize).toBe(2 * 1024 * 1024);
+            expect(limits.maxFileCount).toBe(1);
+            expect(limits.allowedTypes).toContain('application/pdf');
+            expect(limits.allowedTypes).toContain('image/jpeg');
+            expect(limits.premiumLimits.maxFileSize).toBe(15 * 1024 * 1024);
+        });
+    });
+
+    describe('Clear Upload State', () => {
+        test('should clear all upload state', () => {
+            const { result } = renderHook(() => useFileUpload());
+            const file = createMockFile('document.pdf', 'application/pdf');
+            
+            // Set some state
+            result.current.selectedFile = file;
+            result.current.uploadProgress = 50;
+            result.current.isUploading = true;
+            result.current.error = 'Some error';
+            result.current.fileInputRef = { current: { value: 'test' } };
+
+            act(() => {
+                result.current.clearUploadState();
+            });
+
+            expect(result.current.selectedFile).toBeNull();
+            expect(result.current.uploadProgress).toBe(0);
+            expect(result.current.isUploading).toBe(false);
+            expect(result.current.error).toBe('');
+            expect(result.current.fileInputRef.current.value).toBe('');
+        });
+    });
+});
