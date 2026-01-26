@@ -83,12 +83,26 @@ async function startServer() {
     message: "Dosegnuli ste dnevno ograničenje. Molimo pokušajte ponovno sutra."
   }));
 
-  // CORS settings
-  const corsOrigin = process.env.CORS_ORIGIN
-    ? process.env.CORS_ORIGIN.split(',').map(item => item.trim())
-    : (process.env.NODE_ENV === 'production'
-      ? ['https://our-chattie-front.onrender.com', 'https://alimentacija.info', 'https://www.alimentacija.info']
-      : 'http://localhost:3000');
+  // Define default allowed origins based on environment
+  let allowedOrigins = [
+    'https://our-chattie-front.onrender.com',
+    'https://alimentacija.info',
+    'https://www.alimentacija.info'
+  ];
+
+  // Only allow localhost in development or if explicitly requested
+  if (process.env.NODE_ENV !== 'production') {
+    allowedOrigins.push('http://localhost:3000');
+  }
+
+  // If environment variable exists, merge it in to allow for additional flexibility
+  if (process.env.CORS_ORIGIN) {
+    const envOrigins = process.env.CORS_ORIGIN.split(',').map(item => item.trim());
+    // Create a unique set of origins to avoid duplicates
+    allowedOrigins = [...new Set([...allowedOrigins, ...envOrigins])];
+  }
+
+  const corsOrigin = allowedOrigins;
 
   app.use(cors({
     origin: corsOrigin,
