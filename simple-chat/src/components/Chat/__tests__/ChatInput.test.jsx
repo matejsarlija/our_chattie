@@ -2,6 +2,12 @@ import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import ChatInput from '../ChatInput';
+import { useChat } from '../../../contexts/ChatContext';
+
+// Mock useChat hook
+jest.mock('../../../contexts/ChatContext', () => ({
+  useChat: jest.fn(),
+}));
 
 // Mock useFileUpload hook
 jest.mock('../../../hooks/useFileUpload', () => ({
@@ -14,37 +20,34 @@ jest.mock('../../../hooks/useFileUpload', () => ({
   })
 }));
 
-describe('ChatInput - Mode Removal', () => {
+describe('ChatInput', () => {
   const defaultProps = {
     inputText: '',
     setInputText: jest.fn(),
     onSend: jest.fn(),
-    isLoading: false,
     selectedFile: null,
     onFileSelect: jest.fn()
   };
 
   beforeEach(() => {
+    useChat.mockReturnValue({
+      isLoading: false,
+      error: '',
+    });
     jest.clearAllMocks();
   });
 
-  it('renders without mode prop', () => {
+  it('renders correctly', () => {
     render(<ChatInput {...defaultProps} />);
     
-    // Should render successfully
     expect(screen.getByPlaceholderText('Postavite svoje pravno pitanje...')).toBeInTheDocument();
   });
 
-  it('does not accept mode prop', () => {
-    // Component should work without mode prop
-    expect(() => <ChatInput {...defaultProps} />).not.toThrow();
-  });
-
-  it('renders suggestion buttons without mode dependency', () => {
+  it('renders suggestion buttons on desktop', () => {
     render(<ChatInput {...defaultProps} />);
     
-    // Suggestion buttons should be visible
-    expect(screen.getByText('Nisam u stanju otplatiti ratu kredita, što da radim?')).toBeInTheDocument();
+    // Suggestion buttons should be present (hidden on mobile via CSS but present in DOM)
+    expect(screen.getByText('Nisam u stanju otplatiti ratu kredita')).toBeInTheDocument();
   });
 
   it('calls setInputText when user types', () => {
@@ -57,23 +60,26 @@ describe('ChatInput - Mode Removal', () => {
     expect(mockSetInputText).toHaveBeenCalledWith('Test message');
   });
 
-    it('calls onSend when Enter key is pressed', () => {
-      // Skipped due to test complexity
-      expect(true).toBe(true);
+  it('shows stop button when loading', () => {
+    useChat.mockReturnValue({
+      isLoading: true,
+      error: '',
     });
 
-  it('shows correct placeholder text', () => {
     render(<ChatInput {...defaultProps} />);
     
-    const textarea = screen.getByPlaceholderText('Postavite svoje pravno pitanje...');
-    expect(textarea).toHaveAttribute('placeholder', 'Postavite svoje pravno pitanje...');
+    // The button aria-label should be "Zaustavi"
+    expect(screen.getByLabelText('Zaustavi')).toBeInTheDocument();
   });
 
-  it('does not include mode-related elements', () => {
-    const { container } = render(<ChatInput {...defaultProps} />);
+  it('shows error message when present in chat context', () => {
+    useChat.mockReturnValue({
+      isLoading: false,
+      error: 'API Error',
+    });
+
+    render(<ChatInput {...defaultProps} />);
     
-    // Should not have any mode-related elements
-    expect(container.querySelector('[data-testid*="mode"]')).not.toBeInTheDocument();
-    expect(container.querySelector('[data-testid*="canvas"]')).not.toBeInTheDocument();
+    expect(screen.getByText('API Error')).toBeInTheDocument();
   });
 });

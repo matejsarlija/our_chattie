@@ -85,12 +85,13 @@ describe('BubbleMenu Component Logic', () => {
       "Add legal terminology",
       "Simplify this language",
       "Add supporting arguments",
-      "Format as legal paragraph"
+      "Format as legal paragraph",
+      "Format as legal citation"
     ];
 
     expect(presetPrompts).toHaveLength(7);
     expect(presetPrompts[0]).toBe("Make this more formal for Croatian court");
-    expect(presetPrompts[presetPrompts.length - 1]).toBe("Format as legal paragraph");
+    expect(presetPrompts[presetPrompts.length - 1]).toBe("Format as legal citation");
   });
 
   test('handles API calls correctly', async () => {
