@@ -28,6 +28,7 @@ build/
 *.md
 /coverage
 */coverage
+*/*/stories
 
 # opencode
 /.opencode

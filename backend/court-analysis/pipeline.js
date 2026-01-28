@@ -4,6 +4,7 @@ const CourtSearchPuppeteer = require('../scraper/courtSearchPuppeteer');
 const { DownloadDocumentsTool } = require('./agents/download-agent');
 // We will modify AnalyzeDocumentsTool, so we need to import it
 const { AnalyzeDocumentsTool, generateComparativeAnalysis } = require('./agents/analysis-agent');
+const { enrichParticipants } = require('../court-registry/enricher');
 const fs = require('fs');
 const path = require('path');
 const AdmZip = require('adm-zip');
@@ -74,6 +75,17 @@ async function runCourtAnalysisWithExistingAutomator(searchTerm, numberOfCases =
             let extractedFilePaths = [];
 
             progressCallback?.({ step: 'processing_case', progress: 25 + (i / totalCases) * 50, message: `Obrađujem objavu ${i + 1} od ${totalCases}: ${caseInfo.title}` });
+
+            // --- ENRICHMENT STEP ---
+            if (caseInfo.participants && caseInfo.participants.length > 0) {
+                progressCallback?.({ step: 'enriching', message: `Dohvaćam podatke iz Sudskog registra za sudionike...` });
+                try {
+                    caseInfo.participants = await enrichParticipants(caseInfo.participants);
+                } catch (err) {
+                    console.error('Enrichment failed gracefully:', err.message);
+                }
+            }
+            // -----------------------
 
             // 2a. Download
             progressCallback?.({ step: 'downloading', message: `Preuzimam arhivu za objavu ${i + 1}...` });
@@ -173,6 +185,17 @@ async function processScrapedCases(casesToProcess, progressCallback) {
             let extractedFilePaths = [];
 
             progressCallback?.({ step: 'processing_case', progress: 25 + (i / totalCases) * 50, message: `Obrađujem objavu ${i + 1} od ${totalCases}: ${caseInfo.title}` });
+
+            // --- ENRICHMENT STEP ---
+            if (caseInfo.participants && caseInfo.participants.length > 0) {
+                progressCallback?.({ step: 'enriching', message: `Dohvaćam podatke iz Sudskog registra za sudionike...` });
+                try {
+                    caseInfo.participants = await enrichParticipants(caseInfo.participants);
+                } catch (err) {
+                    console.error('Enrichment failed gracefully:', err.message);
+                }
+            }
+            // -----------------------
 
             // 2a. Download
             progressCallback?.({ step: 'downloading', message: `Preuzimam arhivu za objavu ${i + 1}...` });
