@@ -8,7 +8,7 @@ class CourtRegistryClient {
         this.authUrl = 'https://sudreg-data.gov.hr/api/oauth/token';
         this.clientId = process.env.COURT_REGISTRY_CLIENT_ID;
         this.clientSecret = process.env.COURT_REGISTRY_CLIENT_SECRET;
-        
+
         this.token = null;
         this.tokenExpiresAt = 0;
 
@@ -16,7 +16,7 @@ class CourtRegistryClient {
         this.requestQueue = Promise.resolve();
         // PDF Page 20: "detalji_subjekta... 6 zahtjeva po minuti"
         // We set a safe buffer of 11 seconds between calls to be safe.
-        this.minRequestInterval = 11000; 
+        this.minRequestInterval = 11000;
         this.lastRequestTime = 0;
     }
 
@@ -34,15 +34,18 @@ class CourtRegistryClient {
         }
 
         try {
+            // Use HTTP Basic Auth as per official API documentation
             const response = await axios.post(
                 this.authUrl,
                 qs.stringify({
-                    grant_type: 'client_credentials',
-                    client_id: this.clientId,
-                    client_secret: this.clientSecret
+                    grant_type: 'client_credentials'
                 }),
                 {
-                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    auth: {
+                        username: this.clientId,
+                        password: this.clientSecret
+                    }
                 }
             );
 
@@ -66,7 +69,7 @@ class CourtRegistryClient {
         this.requestQueue = this.requestQueue.then(async () => {
             const now = Date.now();
             const timeSinceLast = now - this.lastRequestTime;
-            
+
             if (timeSinceLast < this.minRequestInterval) {
                 const waitTime = this.minRequestInterval - timeSinceLast;
                 console.log(`[CourtRegistry] Rate limit active. Waiting ${waitTime}ms...`);
@@ -78,7 +81,7 @@ class CourtRegistryClient {
 
         await this.requestQueue;
         const token = await this.authenticate();
-        
+
         if (!token) {
             throw new Error('No authentication token available');
         }
@@ -101,27 +104,66 @@ class CourtRegistryClient {
     }
 
     /**
-     * Search for a company. 
+     * Search for a company by OIB (primary method - exact match).
+     * Uses /detalji_subjekta endpoint which supports direct OIB lookup
+     * and returns full details (including for inactive/bankruptcy entities).
+     * @param {string} oib - The company's OIB number
+     * @returns {Promise<object|null>} - Single company object or null
      */
-    async searchCompany(name) {
+    async searchByOib(oib) {
         try {
-            return await this.executeRequest('GET', '/subjekti', { 
-                naziv: name 
+            const result = await this.executeRequest('GET', '/detalji_subjekta', {
+                tip_identifikatora: 'oib',
+                identifikator: oib,
+                no_data_error: '0',
+                expand_relations: true // Fetch connected entities (directors, founders)
             });
+
+            // The endpoint returns the object directly, or empty/null
+            if (result && result.mbs) {
+                return result;
+            }
+            return null;
+        } catch (error) {
+            console.warn(`[CourtRegistry] OIB search failed for ${oib}: ${error.message}`);
+            return null;
+        }
+    }
+
+    /**
+     * Search for a company by name.
+     * @param {string} name - Company name to search for
+     * @param {object} options - Search options
+     * @param {boolean} options.includeInactive - If true, includes inactive (e.g. bankruptcy) entities. Defaults to true.
+     */
+    async searchCompany(name, options = { includeInactive: true }) {
+        try {
+            const params = {
+                naziv: name,
+                // API default is only_active=true. We want to include inactive by default 
+                // for bankruptcy notices, so we set only_active='false'
+                only_active: options.includeInactive ? 'false' : 'true'
+            };
+
+            return await this.executeRequest('GET', '/subjekti', params);
         } catch (error) {
             console.warn(`[CourtRegistry] Search failed for ${name}: ${error.message}`);
             return null;
         }
     }
 
-    /**
-     * Fetch full details by MBS
-     */
     async getCompanyDetails(mbs) {
         try {
-            return await this.executeRequest('GET', `/subjekti/${mbs}`);
+            // NOTE: /subjekti/${mbs} returns 404. 
+            // The correct way to get full details by MBS is via /detalji_subjekta.
+            return await this.executeRequest('GET', '/detalji_subjekta', {
+                tip_identifikatora: 'mbs',
+                identifikator: mbs,
+                expand_relations: true,
+                no_data_error: '0'
+            });
         } catch (error) {
-            console.error(`[CourtRegistry] Could not fetch details for MBS ${mbs}`);
+            console.error(`[CourtRegistry] Could not fetch details for MBS ${mbs}: ${error.message}`);
             return null;
         }
     }

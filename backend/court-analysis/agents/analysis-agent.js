@@ -147,12 +147,26 @@ class AnalyzeDocumentsTool extends Tool {
                 //console.log('Case info for analysis:', caseInfo);
 
                 const knownParties = caseInfo.participants
-                    ? `The main participants in this case are: ${JSON.stringify(caseInfo.participants, null, 2)}.`
+                    ? caseInfo.participants.map(p => {
+                        let info = `- ${p.name} (${p.role})`;
+                        if (p.companyData) {
+                            const cd = p.companyData;
+                            info += `\n  - Official Name: ${cd.officialName}`;
+                            info += `\n  - Status: ${cd.status === 1 ? 'Active' : cd.status === 5 ? 'Deleted' : cd.status}`;
+                            if (cd.lastFinancialReportYear) info += `\n  - Last GFI Year: ${cd.lastFinancialReportYear}`;
+                            if (cd.founders) info += `\n  - Founders: ${cd.founders}`;
+                            if (cd.directors) info += `\n  - Directors: ${cd.directors}`;
+                        }
+                        return info;
+                    }).join('\n')
                     : "Participant information was not available from the source page.";
 
                 //console.log(`Analyzing text from file: ${file.filePath}, the text length is: ${text.length}`);
                 // alt prompt: a medium-sized paragraph, two at most, ...
-                const prompt = `${knownParties} From the court document text below, extract key information as a JSON object with the following keys: "caseNumber", "decisionDate", and "summary" (a medium-sized paragraph, nicely formatted, to be in Croatian please, as that is what our customers speak).
+                const prompt = `The main participants in this case are:\n${knownParties}\n
+                The participants include enriched registry data. Use this to determine if a company is active, in bankruptcy, or has failed to file financial reports (GFI) recently.
+                
+                From the court document text below, extract key information as a JSON object with the following keys: "caseNumber", "decisionDate", and "summary" (a medium-sized paragraph, nicely formatted, to be in Croatian please, as that is what our customers speak).
                 Do include any important figures (currency amounts) you find in the summary. Provide ONLY the json object and nothing else. Text:\n\n${text.slice(0, 25000)}`;
 
                 const response = await gemini.invoke(prompt);

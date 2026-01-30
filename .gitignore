@@ -29,6 +29,7 @@ build/
 /coverage
 */coverage
 */*/stories
+/dokumentacija*
 
 # opencode
 /.opencode

@@ -2,25 +2,30 @@
 const apiClient = require('./apiClient');
 
 // Regex to identify legal entities (Croatian forms)
-const COMPANY_REGEX = /\b(d\.?o\.?o\.?|j\.?d\.?o\.?o\.?|d\.?d\.?|k\.?d\.?|j\.?t\.?d\.?|zadruga|obrt)\b/i;
+// Includes both abbreviations and full formal names
+const COMPANY_REGEX = /\b(d\.?o\.?o\.?|j\.?d\.?o\.?o\.?|d\.?d\.?|k\.?d\.?|j\.?t\.?d\.?|zadruga|obrt|društvo s ograničenom odgovornošću|jednostavno društvo s ograničenom odgovornošću|dioničko društvo|komanditno društvo|javno trgovačko društvo)\b/i;
+
+// Regex for business status or suffixes that should be stripped for searching
+const STATUS_REGEX = /\b(u stečaju|u likvidaciji)\b/i;
 
 // Regex to clean up names for better search matching
 const CLEANUP_REGEX = /[^a-zA-Z0-9šđčćžŠĐČĆŽ\s]/g;
 
 /**
  * Normalizes company name for search.
- * Removes "d.o.o.", punctuation, and extra spaces.
+ * Removes legal forms, status suffixes, punctuation, and extra spaces.
  */
 function normalizeName(name) {
     if (!name) return '';
     let normalized = name.toLowerCase();
-    
-    // Remove legal suffixes to search by the core name
+
+    // Remove legal forms and status suffixes to search by the core name
     normalized = normalized.replace(COMPANY_REGEX, '');
-    
+    normalized = normalized.replace(STATUS_REGEX, '');
+
     // Remove special chars and extra whitespace
     normalized = normalized.replace(CLEANUP_REGEX, ' ').replace(/\s+/g, ' ').trim();
-    
+
     return normalized;
 }
 
@@ -38,16 +43,44 @@ function isLegalEntity(participantName) {
 function mapCompanyData(apiData) {
     if (!apiData) return null;
 
+    // Calculate last GFI year from the 'gfi' array if available
+    let lastGfiYear = null;
+    if (Array.isArray(apiData.gfi) && apiData.gfi.length > 0) {
+        // Filter for valid numeric years and find the max
+        // API v3 uses 'godina_izvjestaja'
+        const years = apiData.gfi
+            .map(r => parseInt(r.godina_izvjestaja || r.godina, 10))
+            .filter(y => !isNaN(y));
+        if (years.length > 0) {
+            lastGfiYear = Math.max(...years);
+        }
+    }
+
+    // Resolve company name from various possible fields
+    const nameObj = apiData.tvtka || apiData.tvrtka || apiData.naziv || apiData.ime || apiData.skracena_tvrtka;
+    let finalName = null;
+
+    if (typeof nameObj === 'string') {
+        finalName = nameObj;
+    } else if (nameObj && typeof nameObj === 'object') {
+        // Handle object wrapper (e.g. { ime: "..." }) seen in API responses
+        finalName = nameObj.ime || nameObj.naziv || nameObj.tvtka || nameObj.val || nameObj.text || nameObj.content;
+    }
+
     return {
-        officialName: apiData.tvtka || apiData.naziv || apiData.ime,
+        officialName: finalName ? String(finalName).trim() : null,
         mbs: apiData.mbs,
         oib: apiData.oib,
-        legalForm: apiData.pravni_oblik, // e.g., "Društvo s ograničenom odgovornošću"
+        legalForm: (apiData.pravni_oblik && apiData.pravni_oblik.vrsta_pravnog_oblika && apiData.pravni_oblik.vrsta_pravnog_oblika.naziv) || apiData.pravni_oblik_tekst || (apiData.pravni_oblik && apiData.pravni_oblik.naziv) || apiData.pravni_oblik,
         status: apiData.status, // 1 = Active, 5 = Deleted
-        registeredSeat: apiData.sjediste ? `${apiData.sjediste.ulica}, ${apiData.sjediste.mjesto}` : null,
-        directors: Array.isArray(apiData.zastupnici) 
-            ? apiData.zastupnici.map(p => `${p.ime} ${p.prezime}`).join(', ') 
+        registeredSeat: apiData.sjediste ? `${apiData.sjediste.ulica}, ${apiData.sjediste.naziv_naselja || apiData.sjediste.mjesto?.naziv || apiData.sjediste.mjesto || ''}` : null,
+        directors: Array.isArray(apiData.zastupnici)
+            ? apiData.zastupnici.map(p => `${p.ime} ${p.prezime}`).join(', ')
             : null,
+        founders: Array.isArray(apiData.osnivaci)
+            ? apiData.osnivaci.map(p => `${p.ime} ${p.prezime}`).join(', ')
+            : null,
+        lastFinancialReportYear: lastGfiYear,
         capital: apiData.temeljni_kapital,
         lastChange: apiData.datum_zadnje_promjene
     };
@@ -73,29 +106,79 @@ async function enrichParticipants(participants) {
         // 1. Check if it's a company
         if (isLegalEntity(newP.name)) {
             try {
+                let match = null;
+                const participantOib = newP.oib ? String(newP.oib).trim() : null;
                 const searchName = normalizeName(newP.name);
-                console.log(`[Enricher] Searching for entity: "${searchName}" (Original: "${newP.name}")`);
 
-                // 2. Search API
-                const searchResult = await apiClient.searchCompany(searchName);
+                // Strategy 1: Search by OIB using dedicated endpoint (most reliable)
+                if (participantOib) {
+                    console.log(`[Enricher] Searching by OIB (detalji_subjekta): ${participantOib} (Name: "${newP.name}")`);
+                    // This endpoint returns full details directly
+                    const oibMatch = await apiClient.searchByOib(participantOib);
 
-                // 3. Heuristic Matching
-                const match = searchResult && Array.isArray(searchResult) && searchResult.length > 0
-                    ? searchResult[0] // Simple heuristic: take top result
-                    : null;
+                    if (oibMatch) {
+                        console.log(`[Enricher] ✓ Found exact OIB match via ID endpoint: MBS ${oibMatch.mbs}`);
+                        match = oibMatch;
+                    } else {
+                        console.log(`[Enricher] OIB ${participantOib} not found via direct lookup.`);
+                    }
+                }
+
+                // Strategy 2: Fallback to name search + OIB filter
+                // (Only if direct OIB lookup failed or wasn't possible)
+                if (!match) {
+                    // search params: always name-based, include inactive/bankruptcy entities
+                    console.log(`[Enricher] Fallback: Searching for "${searchName}" (OIB: ${participantOib || 'None'})...`);
+
+                    const searchResult = await apiClient.searchCompany(searchName, { includeInactive: true });
+
+                    // Filter match from name search
+                    if (participantOib && searchResult && Array.isArray(searchResult)) {
+                        console.log(`[Enricher] Filtering ${searchResult.length} results by OIB ${participantOib}...`);
+                        match = searchResult.find(r => String(r.oib) === participantOib);
+
+                        if (match) {
+                            console.log(`[Enricher] ✓ Found OIB match in name results: MBS ${match.mbs}`);
+                        } else {
+                            console.log(`[Enricher] ⚠ No result matched OIB ${participantOib}.`);
+                        }
+                    } else if (!participantOib && searchResult && Array.isArray(searchResult) && searchResult.length > 0) {
+                        // Strategy 3: Name-only search (Last resort, no OIB to verify)
+                        match = searchResult[0];
+                        console.log(`[Enricher] ⚠ No OIB to verify! Using first of ${searchResult.length} name results (UNVERIFIED)`);
+                    }
+                }
 
                 if (match) {
-                    // 4. Fetch Details
-                    const details = await apiClient.getCompanyDetails(match.mbs);
-                    
-                    const finalData = details || match; // Fallback to search result if details fail
-                    
+                    // If we got the match from searchByOib, it's already full details.
+                    // If we got it from searchCompany (list), we might need to fetch details.
+
+                    let finalData = match;
+
+                    // Strategy 2 (list search) returns 'subjekti' objects which lack detailed data like GFI.
+                    // If GFI is missing, we fetch full details by MBS.
+                    if (!finalData.gfi || (Array.isArray(finalData.gfi) && finalData.gfi.length === 0)) {
+                        console.log(`[Enricher] GFI data missing in initial match. Fetching full details for MBS ${match.mbs}...`);
+                        const details = await apiClient.getCompanyDetails(match.mbs);
+                        if (details) finalData = details;
+                    }
+
                     newP.companyData = mapCompanyData(finalData);
                     newP.enrichmentStatus = 'enriched';
-                    console.log(`[Enricher] matched "${newP.name}" to MBS ${finalData.mbs}`);
+
+                    // Log enrichment details
+                    const cd = newP.companyData;
+                    console.log(`[Enricher] Whole Company Data: ${JSON.stringify(cd)}`);
+                    console.log(`[Enricher] ✓ Enriched "${newP.name}"`);
+                    console.log(`[Enricher]   → MBS: ${cd.mbs || 'N/A'}, OIB: ${cd.oib || 'N/A'}`);
+                    console.log(`[Enricher]   → Official Name: ${cd.officialName || 'N/A'}`);
+                    console.log(`[Enricher]   → Status: ${cd.status === 1 ? 'Active' : cd.status === 5 ? 'Deleted' : cd.status || 'N/A'}`);
+                    if (cd.lastFinancialReportYear) console.log(`[Enricher]   → Last GFI: ${cd.lastFinancialReportYear}`);
+                    if (cd.founders) console.log(`[Enricher]   → Founders: ${cd.founders}`);
+                    if (cd.registeredSeat) console.log(`[Enricher]   → Seat: ${cd.registeredSeat}`);
                 } else {
                     newP.enrichmentStatus = 'not_found';
-                    console.log(`[Enricher] No match found for "${newP.name}"`);
+                    console.log(`[Enricher] ✗ No match found for "${newP.name}"`);
                 }
             } catch (error) {
                 console.error(`[Enricher] Error processing "${newP.name}": ${error.message}`);
