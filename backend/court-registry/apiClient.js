@@ -139,7 +139,8 @@ class CourtRegistryClient {
     async searchCompany(name, options = { includeInactive: true }) {
         try {
             const params = {
-                naziv: name,
+                // Use wildcards for partial match as per V3 API behavior
+                tvrtka_naziv: `%${name}%`,
                 // API default is only_active=true. We want to include inactive by default 
                 // for bankruptcy notices, so we set only_active='false'
                 only_active: options.includeInactive ? 'false' : 'true'

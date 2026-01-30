@@ -81,9 +81,35 @@ function mapCompanyData(apiData) {
             ? apiData.osnivaci.map(p => `${p.ime} ${p.prezime}`).join(', ')
             : null,
         lastFinancialReportYear: lastGfiYear,
-        capital: apiData.temeljni_kapital,
+        capital: Array.isArray(apiData.temeljni_kapitali) && apiData.temeljni_kapitali.length > 0
+            ? apiData.temeljni_kapitali.map(k => `${k.iznos} ${k.valuta?.naziv || ''}`).join(', ')
+            : (apiData.temeljni_kapitals || apiData.temeljni_kapital),
         lastChange: apiData.datum_zadnje_promjene
     };
+}
+
+/**
+ * Heuristically checks if two names are likely the same company.
+ * 1. Exact match (case-insensitive)
+ * 2. Scraped name is contained in API name (or vice-versa)
+ * @returns {boolean} true if acceptable match
+ */
+function verifyNameMatch(scrapedName, apiName) {
+    if (!scrapedName || !apiName) return false;
+    
+    // Normalize both names for comparison
+    const normScraped = normalizeName(scrapedName);
+    const normApi = normalizeName(apiName);
+    
+    // 1. Direct equality
+    if (normScraped === normApi) return true;
+    
+    // 2. Containment (defensive)
+    // We only allow this if the name is sufficiently long to avoid false positives (like "A" matching "Apple")
+    if (normScraped.length > 3 && normApi.includes(normScraped)) return true;
+    if (normApi.length > 3 && normScraped.includes(normApi)) return true;
+    
+    return false;
 }
 
 /**
@@ -112,8 +138,8 @@ async function enrichParticipants(participants) {
 
                 // Strategy 1: Search by OIB using dedicated endpoint (most reliable)
                 if (participantOib) {
+                    // ... (Strategy 1 remains the same)
                     console.log(`[Enricher] Searching by OIB (detalji_subjekta): ${participantOib} (Name: "${newP.name}")`);
-                    // This endpoint returns full details directly
                     const oibMatch = await apiClient.searchByOib(participantOib);
 
                     if (oibMatch) {
@@ -125,29 +151,42 @@ async function enrichParticipants(participants) {
                 }
 
                 // Strategy 2: Fallback to name search + OIB filter
-                // (Only if direct OIB lookup failed or wasn't possible)
                 if (!match) {
-                    // search params: always name-based, include inactive/bankruptcy entities
                     console.log(`[Enricher] Fallback: Searching for "${searchName}" (OIB: ${participantOib || 'None'})...`);
-
                     const searchResult = await apiClient.searchCompany(searchName, { includeInactive: true });
 
-                    // Filter match from name search
                     if (participantOib && searchResult && Array.isArray(searchResult)) {
                         console.log(`[Enricher] Filtering ${searchResult.length} results by OIB ${participantOib}...`);
                         match = searchResult.find(r => String(r.oib) === participantOib);
+                        if (match) console.log(`[Enricher] ✓ Found OIB match in name results: MBS ${match.mbs}`);
+                        else console.log(`[Enricher] ⚠ No result matched OIB ${participantOib}.`);
 
-                        if (match) {
-                            console.log(`[Enricher] ✓ Found OIB match in name results: MBS ${match.mbs}`);
-                        } else {
-                            console.log(`[Enricher] ⚠ No result matched OIB ${participantOib}.`);
-                        }
                     } else if (!participantOib && searchResult && Array.isArray(searchResult) && searchResult.length > 0) {
-                        // Strategy 3: Name-only search (Last resort, no OIB to verify)
-                        match = searchResult[0];
-                        console.log(`[Enricher] ⚠ No OIB to verify! Using first of ${searchResult.length} name results (UNVERIFIED)`);
+                        // Strategy 3: Name-only search (Defensive Verification)
+                        // Old code: match = searchResult[0];
+
+                        // New Defensive Code:
+                        console.log(`[Enricher] Validating ${searchResult.length} name candidates against "${newP.name}"...`);
+                        
+                        match = searchResult.find(r => {
+                            // API result might have different name fields
+                            const apiName = r.tvtka || r.naziv || r.ime || r.skracena_tvrtka;
+                            const isMatch = verifyNameMatch(newP.name, apiName);
+                            if (isMatch) {
+                                console.log(`[Enricher] ✓ Accepted match: "${apiName}" (MBS: ${r.mbs})`);
+                            } else {
+                                // console.log(`[Enricher] ✗ Rejected candidate: "${apiName}"`);
+                            }
+                            return isMatch;
+                        });
+
+                        if (!match) {
+                            console.log(`[Enricher] ⚠ All candidates rejected. Search term "${searchName}" yielded results, but none matched sufficiently.`);
+                        }
                     }
                 }
+                
+                // ... (rest of logic)
 
                 if (match) {
                     // If we got the match from searchByOib, it's already full details.
@@ -194,4 +233,4 @@ async function enrichParticipants(participants) {
     return enrichedList;
 }
 
-module.exports = { enrichParticipants };
+module.exports = { enrichParticipants, verifyNameMatch };
