@@ -4,7 +4,7 @@ const CourtSearchPuppeteer = require('../scraper/courtSearchPuppeteer');
 const { DownloadDocumentsTool } = require('./agents/download-agent');
 // We will modify AnalyzeDocumentsTool, so we need to import it
 const { AnalyzeDocumentsTool, generateComparativeAnalysis } = require('./agents/analysis-agent');
-const visualizerAgent = require('./agents/visualizer-agent');
+const { VisualizerTool } = require('./agents/visualizer-agent');
 const { enrichParticipants } = require('../court-registry/enricher');
 const fs = require('fs');
 const path = require('path');
@@ -251,8 +251,9 @@ async function processScrapedCases(casesToProcess, progressCallback, options = {
         if (options.enableVisualizer && comparativeAnalysis) {
             progressCallback?.({ step: 'visualizing', progress: 95, message: 'Generiram vizualizaciju tijeka predmeta...' });
             try {
-                const diagramCode = await visualizerAgent.generateDiagram(comparativeAnalysis);
-                if (diagramCode) {
+                const visualizerTool = new VisualizerTool();
+                const diagramCode = await visualizerTool._call(comparativeAnalysis);
+                if (diagramCode && diagramCode !== "Error generating diagram.") {
                     comparativeAnalysis += `\n\n${diagramCode}`;
                 }
             } catch (err) {

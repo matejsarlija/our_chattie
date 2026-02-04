@@ -1,18 +1,25 @@
 // backend/court-analysis/agents/visualizer-agent.js
+const { Tool } = require("@langchain/core/tools");
 const { ChatGoogleGenerativeAI } = require("@langchain/google-genai");
 
 const gemini = new ChatGoogleGenerativeAI({
-    model: "gemini-2.5-flash", // Using 2.0-flash for speed and reliability in formatting
+    model: "gemini-2.5-flash", // Consistent with analysis agent
     apiKey: process.env.GOOGLE_API_KEY,
     temperature: 0.1, // Low temperature for strict syntax adherence
 });
 
 /**
- * VisualizerAgent: Transforms legal analysis text into a strictly valid Mermaid flowchart.
+ * VisualizerTool: Transforms legal analysis text into a strictly valid Mermaid flowchart.
  */
-class VisualizerAgent {
-    async generateDiagram(analysisText) {
-        console.log("[VisualizerAgent] Generating diagram for analysis text...");
+class VisualizerTool extends Tool {
+    constructor() {
+        super();
+        this.name = "visualize_court_analysis";
+        this.description = "Generates a Mermaid flowchart representing money flow and case chronology from legal analysis text.";
+    }
+
+    async _call(analysisText) {
+        console.log("[VisualizerTool] Generating diagram for analysis text...");
         const prompt = `
         You are a specialized Data Visualization Agent. Your ONLY job is to transform the provided legal analysis text into a strictly valid Mermaid flowchart.
         
@@ -42,13 +49,13 @@ class VisualizerAgent {
 
         try {
             const response = await gemini.invoke(prompt);
-            console.log("[VisualizerAgent] Raw Mermaid Output:\n", response.content);
+            console.log("[VisualizerTool] Raw Mermaid Output:\n", response.content);
             return response.content;
         } catch (err) {
-            console.error("[VisualizerAgent] Failed to generate diagram:", err.message);
-            return null;
+            console.error("[VisualizerTool] Failed to generate diagram:", err.message);
+            return "Error generating diagram.";
         }
     }
 }
 
-module.exports = new VisualizerAgent();
+module.exports = { VisualizerTool };

@@ -10,7 +10,7 @@ mermaid.initialize({
   fontFamily: 'inherit',
   flowchart: {
     htmlLabels: true,
-    useMaxWidth: false, // Don't squash the diagram
+    useMaxWidth: true, // Scale to fit the container by default
   }
 });
 
@@ -111,6 +111,12 @@ const MermaidDiagram = ({ chart }) => {
 
   return (
     <>
+      <style>{`
+        .mermaid-fullscreen-container svg {
+          max-width: none !important;
+          height: auto !important;
+        }
+      `}</style>
       <div className="group relative my-8 bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden transition-all hover:shadow-md">
         {/* Toolbar */}
         <div className="absolute top-3 right-3 flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity z-10">
@@ -133,9 +139,13 @@ const MermaidDiagram = ({ chart }) => {
         {/* Diagram Container */}
         <div 
           ref={containerRef}
-          className="p-6 overflow-x-auto min-h-[200px] flex justify-center items-center"
-          dangerouslySetInnerHTML={{ __html: svg }}
-        />
+          className="p-6 overflow-hidden min-h-[200px] max-h-[400px] flex justify-center items-center"
+        >
+          <div 
+            className="w-full max-w-full flex justify-center mermaid-preview-container"
+            dangerouslySetInnerHTML={{ __html: svg }} 
+          />
+        </div>
         
         <div className="bg-slate-50 px-4 py-2 border-t border-slate-100 flex justify-between items-center">
           <span className="text-[10px] uppercase tracking-wider font-bold text-slate-400">Vizualizacija predmeta</span>
@@ -164,9 +174,9 @@ const MermaidDiagram = ({ chart }) => {
               </button>
             </div>
           </div>
-          <div className="flex-1 bg-white rounded-2xl overflow-auto flex items-start justify-center p-8">
+          <div className="flex-1 bg-white rounded-2xl overflow-auto p-8 text-center mermaid-fullscreen-container">
             <div 
-              className="min-w-max"
+              className="inline-block min-w-max text-left"
               dangerouslySetInnerHTML={{ __html: svg }} 
             />
           </div>
