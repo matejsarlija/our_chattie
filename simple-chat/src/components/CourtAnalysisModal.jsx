@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { ArrowDownTrayIcon, DocumentArrowDownIcon, LinkIcon, BellAlertIcon, ArrowPathIcon } from '@heroicons/react/24/outline';
+import MermaidDiagram from './MermaidDiagram';
 
 // ==================================================================
 // HELPER FUNCTIONS (No changes)
@@ -57,7 +58,26 @@ const DocumentAnalysis = ({ fileAnalysis, index }) => (
                 {fileAnalysis.error ? (
                     <div className="mt-2 p-3 bg-red-50 border border-red-200 rounded-md"><p className="text-sm text-red-600"><span className="font-medium">Greška:</span> {fileAnalysis.error}</p></div>
                 ) : fileAnalysis.aiResult?.summary ? (
-                    <div className="mt-2 p-3 bg-white border border-slate-200 rounded-md"><div className="text-sm text-slate-700 whitespace-pre-wrap">{fileAnalysis.aiResult.summary}</div></div>
+                    <div className="mt-2 p-3 bg-white border border-slate-200 rounded-md">
+                        <div className="text-sm text-slate-700 leading-relaxed">
+                            <ReactMarkdown
+                                components={{
+                                    code({ node, inline, className, children, ...props }) {
+                                        const match = /language-mermaid/.exec(className || '');
+                                        return !inline && match ? (
+                                            <MermaidDiagram chart={String(children).replace(/\n$/, '')} />
+                                        ) : (
+                                            <code className={className} {...props}>
+                                                {children}
+                                            </code>
+                                        );
+                                    }
+                                }}
+                            >
+                                {fileAnalysis.aiResult.summary}
+                            </ReactMarkdown>
+                        </div>
+                    </div>
                 ) : (
                     <p className="mt-2 text-sm text-slate-500">Nema dostupnih rezultata analize.</p>
                 )}
@@ -279,8 +299,23 @@ export default function CourtAnalysisModal({ isOpen, onClose, result, searchTerm
                                             <svg className="w-5 h-5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
                                             {processedCases.length > 1 ? 'Usporedna analiza i zaključak' : 'Zaključak'}
                                         </h4>
-                                        <div className="ml-2 text-sm text-slate-700 whitespace-pre-wrap leading-relaxed">
-                                            <ReactMarkdown>{comparativeAnalysis}</ReactMarkdown>
+                                        <div className="ml-2 text-sm text-slate-700 leading-relaxed">
+                                            <ReactMarkdown
+                                                components={{
+                                                    code({ node, inline, className, children, ...props }) {
+                                                        const match = /language-mermaid/.exec(className || '');
+                                                        return !inline && match ? (
+                                                            <MermaidDiagram chart={String(children).replace(/\n$/, '')} />
+                                                        ) : (
+                                                            <code className={className} {...props}>
+                                                                {children}
+                                                            </code>
+                                                        );
+                                                    }
+                                                }}
+                                            >
+                                                {comparativeAnalysis}
+                                            </ReactMarkdown>
                                         </div>
                                     </div>
                                     {/* The button is now outside the box but grouped by the fragment */}

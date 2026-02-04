@@ -4,6 +4,7 @@ const CourtSearchPuppeteer = require('../scraper/courtSearchPuppeteer');
 const { DownloadDocumentsTool } = require('./agents/download-agent');
 // We will modify AnalyzeDocumentsTool, so we need to import it
 const { AnalyzeDocumentsTool, generateComparativeAnalysis } = require('./agents/analysis-agent');
+const visualizerAgent = require('./agents/visualizer-agent');
 const { enrichParticipants } = require('../court-registry/enricher');
 const fs = require('fs');
 const path = require('path');
@@ -161,7 +162,7 @@ async function runCourtAnalysisWithExistingAutomator(searchTerm, numberOfCases =
  * @param {function} progressCallback - The callback for sending progress updates.
  * @returns {Promise<object>} The final result with processed cases and comparative analysis.
  */
-async function processScrapedCases(casesToProcess, progressCallback) {
+async function processScrapedCases(casesToProcess, progressCallback, options = { enableVisualizer: true }) {
     const allProcessedCases = [];
     let allFilesToCleanup = [];
 
@@ -244,7 +245,21 @@ async function processScrapedCases(casesToProcess, progressCallback) {
 
         // 3. Final Comparative Analysis
         progressCallback?.({ step: 'comparing', progress: 85, message: 'Generiram usporednu anailzu i zaključak...' });
-        const comparativeAnalysis = await generateComparativeAnalysis(allProcessedCases);
+        let comparativeAnalysis = await generateComparativeAnalysis(allProcessedCases);
+
+        // --- VISUALIZATION STEP ---
+        if (options.enableVisualizer && comparativeAnalysis) {
+            progressCallback?.({ step: 'visualizing', progress: 95, message: 'Generiram vizualizaciju tijeka predmeta...' });
+            try {
+                const diagramCode = await visualizerAgent.generateDiagram(comparativeAnalysis);
+                if (diagramCode) {
+                    comparativeAnalysis += `\n\n${diagramCode}`;
+                }
+            } catch (err) {
+                console.error('Visualization failed gracefully:', err.message);
+            }
+        }
+        // -------------------------
 
         progressCallback?.({ step: 'complete', progress: 100, message: 'Analiza je završena!' });
 

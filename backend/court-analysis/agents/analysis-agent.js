@@ -165,7 +165,7 @@ class AnalyzeDocumentsTool extends Tool {
                 // alt prompt: a medium-sized paragraph, two at most, ...
                 const prompt = `The main participants in this case are:\n${knownParties}\n
                 The participants include enriched registry data. Use this to determine if a company is active, in bankruptcy, or has failed to file financial reports (GFI) recently.
-                
+
                 From the court document text below, extract key information as a JSON object with the following keys: "caseNumber", "decisionDate", and "summary" (a medium-sized paragraph, nicely formatted, to be in Croatian please, as that is what our customers speak).
                 Do include any important figures (currency amounts) you find in the summary. Provide ONLY the json object and nothing else. Text:\n\n${text.slice(0, 25000)}`;
 
@@ -270,7 +270,8 @@ async function generateComparativeAnalysis(allProcessedCases) {
         }
 
         // Old prompt was:
-        const prompt = `Synthesize the following summaries into a coherent overview (in Croatian):\n\n${successfulSummaries}. Try to extrapolate what might happen next in the case going forward, and what the next steps are for the parties involved.`;
+        const prompt = `Synthesize the following summaries into a coherent overview (in Croatian):\n\n${successfulSummaries}. 
+        Try to extrapolate what might happen next in the case going forward, and what the next steps are for the parties involved.`;
 
         // The prompt is slightly different: it asks for a deep dive and next steps, not a comparison.
         //const prompt = `This is the only recent court entry found. Synthesize the following document summaries into a single, coherent, and detailed overview IN CROATIAN. Explain the significance of this entry in the context of the case. Based on the information, what are the likely next steps for the parties involved?\n\nSUMMARIES:\n${successfulSummaries}`;
@@ -311,7 +312,7 @@ async function generateComparativeAnalysis(allProcessedCases) {
     // ${comparativeContext}`;
 
     const prompt = `Synthesize the following ${allProcessedCases.length} summaries into a coherent overview, in Croatian. Try to predict the most likely developments in the case, as well as what the next steps are for the parties involved.
-    Here is the data:\n${comparativeContext}. In case there are any numerical figures try to arrange them into a table for clarity.`;
+    Here is the data:\n${comparativeContext}.`;
 
     //console.log("Comparative context contains the following data:", comparativeContext);
 
