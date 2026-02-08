@@ -18,7 +18,7 @@ describe('TipTapEditor - Import Fix', () => {
             />
         );
 
-        expect(screen.getByRole('document-editor')).toBeInTheDocument();
+        expect(screen.getByTestId('editor-content')).toBeInTheDocument();
     });
 
     test('should render with BubbleMenu extension configured', () => {
@@ -34,6 +34,6 @@ describe('TipTapEditor - Import Fix', () => {
         );
 
         // Verify editor content is rendered
-        expect(container.querySelector('.ProseMirror')).toBeInTheDocument();
+        expect(container.querySelector('[data-testid="editor-content"]')).toBeInTheDocument();
     });
 });

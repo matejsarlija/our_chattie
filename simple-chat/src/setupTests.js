@@ -61,7 +61,9 @@ jest.mock('@tiptap/extension-placeholder', () => ({
 
 jest.mock('@tiptap/extension-bubble-menu', () => ({
   __esModule: true,
-  default: {},
+  BubbleMenu: {
+    configure: jest.fn(() => ({})),
+  },
 }));
 
 jest.mock('@tiptap/core', () => ({
@@ -77,4 +79,55 @@ jest.mock('@tiptap/core', () => ({
       addNodeView: jest.fn(() => ({})),
     })),
   },
+  Mark: {
+    create: jest.fn((config = {}) => ({
+      name: config.name || 'mark',
+      addAttributes: jest.fn(() => ({})),
+      parseHTML: jest.fn(() => ([])),
+      renderHTML: jest.fn(() => ([])),
+    })),
+  },
+  mergeAttributes: jest.fn((...args) => Object.assign({}, ...args)),
 }));
+
+jest.mock('./hooks/useStreamingAPI', () => ({
+  useStreamingAPI: () => ({
+    streamChat: jest.fn(),
+    streamDocumentEdit: jest.fn(),
+    streamCourtAnalysis: jest.fn(),
+    stopGeneration: jest.fn(),
+  }),
+}));
+
+jest.mock('react-markdown', () => ({
+  __esModule: true,
+  default: ({ children }) => <div data-testid="react-markdown">{children}</div>,
+}));
+
+jest.mock(
+  'react-router-dom',
+  () => ({
+    __esModule: true,
+    Link: ({ children, to }) => <a href={to}>{children}</a>,
+  }),
+  { virtual: true }
+);
+
+jest.mock('./components/CourtAnalysisModal', () => ({
+  __esModule: true,
+  default: () => null,
+}));
+
+jest.mock('./components/WelcomeModal', () => ({
+  __esModule: true,
+  default: () => null,
+}));
+
+jest.mock('./components/ErrorBoundary', () => ({
+  __esModule: true,
+  default: ({ children }) => <div data-testid="error-boundary">{children}</div>,
+}));
+
+if (!HTMLElement.prototype.scrollIntoView) {
+  HTMLElement.prototype.scrollIntoView = jest.fn();
+}

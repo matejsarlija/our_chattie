@@ -39,7 +39,7 @@ This project is GPLv3 licensed (LICENSE.md).
 
 ## Tech Stack
 
--   **Frontend:** React, Tailwind CSS
+-   **Frontend:** React, Tailwind CSS, TipTap
 -   **Backend:** Node.js, Express.js
 -   **Database:** PostgreSQL
 -   **Web Scraping:** Puppeteer, Browserless.io (for production deployment)
@@ -47,6 +47,18 @@ This project is GPLv3 licensed (LICENSE.md).
 -   **Job Scheduling:** Node Cron (or platform-native like Render Cron Jobs)
 -   **Email Notifications:** SendGrid API
 -   **Deployment:** Render
+
+## Latest Architecture Update (React Refactor)
+
+This project recently moved to a centralized, action-based state model inspired by Vercel-style React architecture.
+
+Highlights:
+-   `ChatContext` + `useReducer` for predictable streaming updates
+-   Local persistence handled in the provider (components stay UI-only)
+-   Error boundaries around message rendering and TipTap editors
+-   `AIMessageContent` memoized for streaming performance
+-   ARIA live regions and labels for accessibility
+-   Vite added for faster dev builds, while CRA remains supported
 
 ## Getting Started
 
@@ -74,7 +86,7 @@ To get a local copy up and running, follow these simple steps.
 
 3.  **Install Frontend Dependencies:**
     ```sh
-    cd ../frontend
+    cd ../simple-chat
     npm install
     ```
 
@@ -87,10 +99,12 @@ To get a local copy up and running, follow these simple steps.
     SENDGRID_API_KEY="your_sendgrid_api_key"
     BROWSERLESS_TOKEN="your_browserless_io_api_key" # Optional, for production scraping
     ```
-    Create a `.env` file in the `frontend` directory:
+    Create a `.env` file in the `simple-chat` directory:
     ```ini
-    # .env in /frontend
+    # .env in /simple-chat
     REACT_APP_API_URL="http://localhost:3001"
+    # Vite alternative (also supported by the app)
+    VITE_API_URL="http://localhost:3001"
     ```
 
 5.  **Set up the Database:**
@@ -119,10 +133,16 @@ To get a local copy up and running, follow these simple steps.
 
 2.  **Start the Frontend Development Server:**
     ```sh
-    cd frontend
+    cd simple-chat
     npm start
     ```
     Open [http://localhost:3000](http://localhost:3000) to view it in the browser.
+    
+    For the Vite dev server:
+    ```sh
+    cd simple-chat
+    npm run dev:vite
+    ```
 
 ### Running the Cron Job Locally
 
@@ -149,4 +169,10 @@ Alat pomoću scrapera (Puppeteer) preuzima dokumente, a zatim ih pomoću Google 
 
 Aplikacija također nudi mogućnost pretplate na određene pretrage kako bi korisnici automatski dobivali obavijesti o novim objavama. Uz to, naslovnica sadrži i AI chat asistenta za opća pravna pitanja.
 
-Možete isprobati funkcionalnost uz vlastiti OIB.
+Možete isprobati funkcionalnost uz vlastiti OIB, OIB neke druge pravne ili fizičke osobe, kao i kroz njihova imena i nazive.
+### Building with Vite
+
+```sh
+cd simple-chat
+npm run build:vite
+```

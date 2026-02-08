@@ -4,6 +4,8 @@ import StarterKit from '@tiptap/starter-kit';
 import CharacterCount from '@tiptap/extension-character-count';
 import Placeholder from '@tiptap/extension-placeholder';
 import CitationNode from './CitationNode';
+import InsertionMark from './InsertionMark';
+import DeletionMark from './DeletionMark';
 import { BubbleMenu as BubbleMenuExtension } from '@tiptap/extension-bubble-menu';
 import BubbleMenuContent from './BubbleMenu';
 
@@ -15,6 +17,7 @@ export default function TipTapEditor({
   onError
 }) {
   const [selectedText, setSelectedText] = useState('');
+  const [selectionRange, setSelectionRange] = useState({ from: null, to: null });
   const [showBubbleMenu, setShowBubbleMenu] = useState(false);
   const [menuPosition, setMenuPosition] = useState({ top: 0, left: 0 });
   const debounceTimerRef = useRef(null);
@@ -33,6 +36,8 @@ export default function TipTapEditor({
         placeholder: 'Edit this content...',
       }),
       CitationNode,
+      InsertionMark,
+      DeletionMark,
       BubbleMenuExtension.configure({
         pluginKey: 'aiEditMenu',
         shouldShow: ({ from, to }) => from !== to,
@@ -58,6 +63,7 @@ export default function TipTapEditor({
       if (hasSelection) {
         const selected = editor.state.doc.textBetween(from, to, ' ');
         setSelectedText(selected);
+        setSelectionRange({ from, to });
         
         // Calculate position for the menu
         const { view } = editor;
@@ -153,6 +159,7 @@ export default function TipTapEditor({
           <BubbleMenuContent
             editor={editor}
             selectedText={selectedText}
+            selectionRange={selectionRange}
             onReplaceText={handleReplaceText}
             onClose={handleCloseBubbleMenu}
             isMobile={isMobile}

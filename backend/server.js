@@ -8,6 +8,7 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const { handleChatMessage, handleDocumentEdit } = require('./chatAgent'); // Import the chat service
+const { validateDocumentEditPayload } = require('./helpers/documentEditValidation');
 const { CourtSearchPuppeteer } = require('./scraper/courtSearchPuppeteer');
 const rateLimiter = require('./court-analysis/utils/rateLimiter');
 const { runCourtAnalysis } = require('./court-analysis/pipeline');
@@ -83,6 +84,19 @@ async function startServer() {
     message: "Dosegnuli ste dnevno ograničenje. Molimo pokušajte ponovno sutra."
   }));
 
+  // Document edit rate limiters (separate from chat)
+  app.use('/api/document-edit', rateLimit({
+    windowMs: 60 * 1000, // 1 minute window
+    max: 10, // 10 requests per minute
+    message: "Previše zahtjeva za uređivanje. Molimo pokušajte ponovno za 1 minutu."
+  }));
+
+  app.use('/api/document-edit', rateLimit({
+    windowMs: 24 * 60 * 60 * 1000, // 24 hour window
+    max: 500, // 500 requests per day
+    message: "Dosegnuli ste dnevno ograničenje za uređivanje. Molimo pokušajte ponovno sutra."
+  }));
+
   // Define default allowed origins based on environment
   let allowedOrigins = [
     'https://our-chattie-front.onrender.com',
@@ -114,10 +128,10 @@ async function startServer() {
   // Document edit endpoint for specialized AI-assisted text modification
   app.post('/api/document-edit', async (req, res) => {
     try {
-      const { content, instruction, context } = req.body;
-
-      if (!content || !instruction) {
-        throw new Error("Both content and instruction are required");
+      const { content, instruction, context, selectionRange, mode } = req.body || {};
+      const validation = validateDocumentEditPayload({ content, instruction, selectionRange });
+      if (!validation.ok) {
+        return res.status(400).json({ error: validation.error });
       }
 
       console.log('Document edit request:', {
@@ -126,23 +140,49 @@ async function startServer() {
         hasContext: !!context
       });
 
-      const result = await handleDocumentEdit({ content, instruction, context });
+      const result = await handleDocumentEdit({ content, instruction, context, selectionRange, mode });
 
       res.setHeader('Content-Type', 'text/event-stream');
       res.setHeader('Cache-Control', 'no-cache');
       res.setHeader('Connection', 'keep-alive');
+      res.flushHeaders();
+
+      let clientClosed = false;
+      let timedOut = false;
+      const requestTimeoutMs = 60000;
+      const timeoutId = setTimeout(() => {
+        timedOut = true;
+        if (!res.writableEnded) {
+          res.write(`data: ${JSON.stringify({ error: 'Request timed out.' })}\n\n`);
+          res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
+          res.end();
+        }
+      }, requestTimeoutMs);
+
+      req.on('close', () => {
+        clientClosed = true;
+      });
 
       try {
         for await (const chunk of result.stream) {
+          if (clientClosed || timedOut) {
+            break;
+          }
           const text = chunk.content || chunk.text || chunk;
           if (text) {
             res.write(`data: ${JSON.stringify({ content: text })}\n\n`);
           }
         }
+        if (!clientClosed && !timedOut) {
+          res.write(`data: ${JSON.stringify({ done: true, mode: mode || 'preview' })}\n\n`);
+        }
       } catch (streamError) {
         console.error('Document edit streaming error:', streamError);
-        res.write(`data: ${JSON.stringify({ error: 'Streaming failed' })}\n\n`);
+        if (!res.writableEnded) {
+          res.write(`data: ${JSON.stringify({ error: 'Streaming failed' })}\n\n`);
+        }
       }
+      clearTimeout(timeoutId);
 
       res.end();
 

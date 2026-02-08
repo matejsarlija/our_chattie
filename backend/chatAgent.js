@@ -199,7 +199,7 @@ async function handleChatMessage({ messages, filePath, originalFilename }) {
 }
 
 // Document editing handler for specialized legal text modification
-async function handleDocumentEdit({ content, instruction, context }) {
+async function handleDocumentEdit({ content, instruction, context, selectionRange, mode }) {
     console.log("handleDocumentEdit called with instruction:", instruction);
 
     const systemMessage = new SystemMessage(
@@ -213,7 +213,10 @@ async function handleDocumentEdit({ content, instruction, context }) {
         "5. If the user asks to 'formalize', use precise Croatian legal terminology (e.g., 'podnesak', 'ovršni ispravak', 'prijedlog za ovrhu')."
     );
 
-    const prompt = `INSTRUCTION: ${instruction}\n\nTEXT TO EDIT:\n${content}\n\nProvide only the edited text below:`;
+    const previewLine = mode === 'preview'
+        ? "Return the edited text for preview without additional commentary."
+        : "Return only the edited text below:";
+    const prompt = `INSTRUCTION: ${instruction}\n\nTEXT TO EDIT:\n${content}\n\n${previewLine}`;
 
     const langchainMessages = [
         systemMessage,

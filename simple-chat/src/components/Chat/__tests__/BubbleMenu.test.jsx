@@ -1,12 +1,13 @@
 import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
+import BubbleMenuContent from '../BubbleMenu';
 
 // Mock useStreamingAPI
-const mockStreamChat = jest.fn();
+const mockStreamDocumentEdit = jest.fn();
 jest.mock('../../../hooks/useStreamingAPI', () => ({
   useStreamingAPI: () => ({
-    streamChat: mockStreamChat,
+    streamDocumentEdit: mockStreamDocumentEdit,
   }),
 }));
 
@@ -38,7 +39,7 @@ describe('BubbleMenu Component Logic', () => {
   beforeEach(() => {
     mockOnReplaceText = jest.fn();
     mockOnClose = jest.fn();
-    mockStreamChat.mockResolvedValue(undefined);
+    mockStreamDocumentEdit.mockResolvedValue(undefined);
     jest.clearAllMocks();
   });
 
@@ -80,67 +81,57 @@ describe('BubbleMenu Component Logic', () => {
   test('provides preset prompts array', () => {
     // Test the preset prompts that should be available
     const presetPrompts = [
-      "Make this more formal for Croatian court",
-      "Expand with legal precedents", 
-      "Add legal terminology",
-      "Simplify this language",
-      "Add supporting arguments",
-      "Format as legal paragraph",
-      "Format as legal citation"
+      "Učini formalnijim za hrvatski sud",
+      "Proširi uz relevantne pravne argumente", 
+      "Dodaj pravnu terminologiju",
+      "Pojednostavi ovaj tekst",
+      "Dodaj dodatne argumente",
+      "Formatiraj kao pravni odlomak"
     ];
 
-    expect(presetPrompts).toHaveLength(7);
-    expect(presetPrompts[0]).toBe("Make this more formal for Croatian court");
-    expect(presetPrompts[presetPrompts.length - 1]).toBe("Format as legal citation");
+    expect(presetPrompts).toHaveLength(6);
+    expect(presetPrompts[0]).toBe("Učini formalnijim za hrvatski sud");
+    expect(presetPrompts[presetPrompts.length - 1]).toBe("Formatiraj kao pravni odlomak");
   });
 
   test('handles API calls correctly', async () => {
-    mockStreamChat.mockImplementation(() => {
+    mockStreamDocumentEdit.mockImplementation(() => {
       return Promise.resolve();
     });
 
-    const mockCallbacks = {
-      onContent: jest.fn(),
-      onComplete: jest.fn(),
-      onError: jest.fn(),
-    };
+    render(
+      <BubbleMenuContent
+        editor={mockEditor}
+        selectedText="Test text"
+        selectionRange={{ from: 10, to: 20 }}
+        onReplaceText={mockOnReplaceText}
+        onClose={mockOnClose}
+        isMobile={false}
+      />
+    );
 
-    // Simulate the component calling streamChat
-    const { useStreamingAPI } = require('../../../hooks/useStreamingAPI');
-    const streamingAPI = useStreamingAPI();
-    
-    await streamingAPI.streamChat([
-      { role: 'system', content: 'Test' },
-      { role: 'user', content: 'Test instruction' }
-    ], null, mockCallbacks);
+    const firstPreset = screen.getByText('Učini formalnijim za hrvatski sud');
+    fireEvent.click(firstPreset);
 
-    expect(mockStreamChat).toHaveBeenCalled();
-    expect(mockCallbacks.onContent).toHaveBeenCalled();
-    expect(mockCallbacks.onComplete).toHaveBeenCalled();
+    await waitFor(() => {
+      expect(mockStreamDocumentEdit).toHaveBeenCalled();
+    });
   });
 
   test('handles escape key events', () => {
-    const mockAddEventListener = jest.fn();
-    const mockRemoveEventListener = jest.fn();
-    
-    // Mock document methods
-    document.addEventListener = mockAddEventListener;
-    document.removeEventListener = mockRemoveEventListener;
+    render(
+      <BubbleMenuContent
+        editor={mockEditor}
+        selectedText="Test text"
+        selectionRange={{ from: 10, to: 20 }}
+        onReplaceText={mockOnReplaceText}
+        onClose={mockOnClose}
+        isMobile={false}
+      />
+    );
 
-    // Reset mocks
-    jest.clearAllMocks();
-
-    // Trigger component cleanup (should add event listener)
-    const cleanup = () => {
-      // Mock cleanup logic
-    };
-
-    // Simulate cleanup
-    cleanup();
-
-    // Verify event listener was added and removed
-    expect(mockAddEventListener).toHaveBeenCalledWith('keydown', expect.any(Function));
-    expect(mockRemoveEventListener).toHaveBeenCalledWith('keydown', expect.any(Function));
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(mockOnClose).toHaveBeenCalled();
   });
 
   test('prevents event propagation', () => {
@@ -161,7 +152,7 @@ describe('BubbleMenu Component Logic', () => {
     let resolveLoading;
     let isLoading = false;
 
-    mockStreamChat.mockImplementation(() => {
+    mockStreamDocumentEdit.mockImplementation(() => {
       return new Promise(resolve => {
         resolveLoading = () => {
           isLoading = false;
@@ -175,7 +166,7 @@ describe('BubbleMenu Component Logic', () => {
     expect(isLoading).toBe(false);
 
     // Start loading
-    const promise = mockStreamChat();
+    const promise = mockStreamDocumentEdit();
     expect(isLoading).toBe(true);
 
     // Complete loading

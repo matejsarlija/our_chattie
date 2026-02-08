@@ -136,7 +136,7 @@ export const useStreamingAPI = () => {
                 }
 
                 // Handle completion
-                if (parsedData.step === 'complete' || parsedData.complete) {
+                if (parsedData.step === 'complete' || parsedData.complete || parsedData.done) {
                     onComplete?.(parsedData.data || parsedData);
                 }
 
@@ -217,8 +217,7 @@ export const useStreamingAPI = () => {
             language: 'hr', // Croatian
             jurisdiction: 'Croatia',
             legalContext: 'Croatian law and court system',
-            includeCitations: true,
-            citationFormat: 'inline',
+            includeCitations: false,
             ...options.context
         };
 
@@ -228,8 +227,9 @@ export const useStreamingAPI = () => {
                 content: selectedText,
                 instruction: instruction,
                 context: context,
-                mode: 'edit', // Distinguish from canvas document editing
-                preserveFormatting: true
+                mode: options.mode || 'preview',
+                preserveFormatting: true,
+                selectionRange: options.selectionRange
             },
             onContent: callbacks.onContent,
             onComplete: callbacks.onComplete,
