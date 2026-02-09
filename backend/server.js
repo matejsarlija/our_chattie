@@ -9,6 +9,7 @@ const path = require('path');
 const fs = require('fs');
 const { handleChatMessage, handleDocumentEdit } = require('./chatAgent'); // Import the chat service
 const { validateDocumentEditPayload } = require('./helpers/documentEditValidation');
+const { buildSseData } = require('./helpers/sse');
 const { CourtSearchPuppeteer } = require('./scraper/courtSearchPuppeteer');
 const rateLimiter = require('./court-analysis/utils/rateLimiter');
 const { runCourtAnalysis } = require('./court-analysis/pipeline');
@@ -52,8 +53,11 @@ async function startServer() {
 
   // File filter to allow only PDFs and images
   const fileFilter = (req, file, cb) => {
-    const allowedTypes = ['application/pdf', 'image/jpeg', 'image/png'];
-    if (allowedTypes.includes(file.mimetype)) {
+    const allowedTypes = ['application/pdf', 'application/x-pdf', 'application/acrobat', 'application/vnd.pdf', 'image/jpeg', 'image/png'];
+    const isPdfByExtension = path.extname(file.originalname || '').toLowerCase() === '.pdf';
+    const isOctetStreamPdf = file.mimetype === 'application/octet-stream' && isPdfByExtension;
+
+    if (allowedTypes.includes(file.mimetype) || isOctetStreamPdf) {
       cb(null, true);
     } else {
       cb(new Error('Unsupported file type. Only PDFs and images are allowed.'), false);
@@ -163,23 +167,55 @@ async function startServer() {
         clientClosed = true;
       });
 
+      const extractChunkText = (chunk) => {
+        if (!chunk) return '';
+        if (typeof chunk.text === 'function') {
+          try {
+            return chunk.text();
+          } catch {
+            return '';
+          }
+        }
+        if (typeof chunk.content === 'string') return chunk.content;
+        if (Array.isArray(chunk.content)) {
+          return chunk.content
+            .map((part) => (typeof part === 'string' ? part : (part?.text || '')))
+            .join('');
+        }
+        if (typeof chunk.text === 'string') return chunk.text;
+        return '';
+      };
+
       try {
+        let sentAny = false;
+        let loggedFirstChunk = false;
         for await (const chunk of result.stream) {
           if (clientClosed || timedOut) {
             break;
           }
-          const text = chunk.content || chunk.text || chunk;
+          const text = extractChunkText(chunk);
           if (text) {
-            res.write(`data: ${JSON.stringify({ content: text })}\n\n`);
+            sentAny = true;
+            res.write(buildSseData({ content: text }));
+          } else if (!loggedFirstChunk && process.env.NODE_ENV !== 'production') {
+            console.log('Document edit stream first chunk (no text):', {
+              keys: chunk ? Object.keys(chunk) : null,
+              contentType: typeof chunk?.content,
+              contentIsArray: Array.isArray(chunk?.content)
+            });
+            loggedFirstChunk = true;
           }
         }
         if (!clientClosed && !timedOut) {
-          res.write(`data: ${JSON.stringify({ done: true, mode: mode || 'preview' })}\n\n`);
+          if (!sentAny) {
+            res.write(buildSseData({ error: 'No response from model.' }));
+          }
+          res.write(buildSseData({ done: true, mode: mode || 'preview' }));
         }
       } catch (streamError) {
         console.error('Document edit streaming error:', streamError);
         if (!res.writableEnded) {
-          res.write(`data: ${JSON.stringify({ error: 'Streaming failed' })}\n\n`);
+          res.write(buildSseData({ error: 'Streaming failed' }));
         }
       }
       clearTimeout(timeoutId);
@@ -226,14 +262,46 @@ async function startServer() {
       res.setHeader('Cache-Control', 'no-cache');
       res.setHeader('Connection', 'keep-alive');
 
+      const extractChunkText = (chunk) => {
+        if (!chunk) return '';
+        if (typeof chunk.text === 'function') {
+          try {
+            return chunk.text();
+          } catch {
+            return '';
+          }
+        }
+        if (typeof chunk.content === 'string') return chunk.content;
+        if (Array.isArray(chunk.content)) {
+          return chunk.content
+            .map((part) => (typeof part === 'string' ? part : (part?.text || '')))
+            .join('');
+        }
+        if (typeof chunk.text === 'string') return chunk.text;
+        return '';
+      };
+
       try {
+        let sentAny = false;
+        let loggedFirstChunk = false;
         for await (const chunk of result.stream) {
           // Robustly extract text content from LangChain message chunks
-          const content = typeof chunk.content === 'string' ? chunk.content : (chunk.content || '');
+          const content = extractChunkText(chunk);
 
           if (content) {
+            sentAny = true;
             res.write(`data: ${JSON.stringify({ content })}\n\n`);
+          } else if (!loggedFirstChunk && process.env.NODE_ENV !== 'production') {
+            console.log('Chat stream first chunk (no text):', {
+              keys: chunk ? Object.keys(chunk) : null,
+              contentType: typeof chunk?.content,
+              contentIsArray: Array.isArray(chunk?.content)
+            });
+            loggedFirstChunk = true;
           }
+        }
+        if (!sentAny) {
+          res.write(`data: ${JSON.stringify({ error: 'No response from model.' })}\n\n`);
         }
       } catch (streamError) {
         console.error('Streaming error:', streamError);

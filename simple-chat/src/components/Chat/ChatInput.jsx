@@ -1,3 +1,4 @@
+import { useRef } from "react";
 import { useFileUpload } from "../../hooks/useFileUpload";
 import { useChat } from "../../contexts/ChatContext";
 
@@ -5,6 +6,7 @@ export default function ChatInput({
     inputText,
     setInputText,
     onSend,
+    onStop = () => {},
     selectedFile: externalSelectedFile,
     onFileSelect,
     suggestionButtons = true,
@@ -17,6 +19,7 @@ export default function ChatInput({
         triggerFileInput,
         fileInputRef,
     } = useFileUpload();
+    const textareaRef = useRef(null);
 
     // Use external file if provided, otherwise use internal state
     const currentFile = externalSelectedFile || selectedFile;
@@ -41,10 +44,10 @@ export default function ChatInput({
     const handleSuggestionClick = (text) => {
         setInputText(text);
         // Focus the input field after setting the text
-        document.querySelector("textarea")?.focus();
+        textareaRef.current?.focus();
     };
 
-    const handleKeyPress = (e) => {
+    const handleKeyDown = (e) => {
         if (e.key === "Enter" && !e.shiftKey) {
             e.preventDefault();
             onSend();
@@ -117,7 +120,7 @@ export default function ChatInput({
                             handleFileSelect(e);
                             onFileSelect?.(e.target.files[0]);
                         }}
-                        accept=".pdf,image/jpeg,image/png,image/gif,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain"
+                        accept=".pdf,image/jpeg,image/png,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain"
                         className="hidden"
                     />
 
@@ -136,9 +139,10 @@ export default function ChatInput({
 
                     {/* Textarea */}
                     <textarea
+                        ref={textareaRef}
                         value={inputText}
                         onChange={adjustTextareaHeight}
-                        onKeyPress={handleKeyPress}
+                        onKeyDown={handleKeyDown}
                         placeholder="Postavite svoje pravno pitanje..."
                         className="flex-1 max-h-[200px] py-3.5 bg-transparent border-none focus:ring-0 text-slate-800 placeholder:text-slate-400 resize-none leading-relaxed"
                         style={{
@@ -152,7 +156,7 @@ export default function ChatInput({
                     {/* Action Button (Send or Stop) */}
                     <div className="p-2">
                         <button
-                            onClick={isLoading ? () => {} : onSend}
+                            onClick={isLoading ? onStop : onSend}
                             disabled={!inputText.trim() && !currentFile && !isLoading}
                             className={`h-9 w-9 flex items-center justify-center rounded-xl transition-all duration-200 ${
                                 isLoading 

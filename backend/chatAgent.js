@@ -5,6 +5,7 @@ const {
     SystemMessage,
     AIMessage,
 } = require("@langchain/core/messages");
+const { GoogleGenerativeAI } = require("@google/generative-ai");
 const { GoogleAIFileManager } = require("@google/generative-ai/server");
 const path = require("path");
 
@@ -26,6 +27,8 @@ const chatModel = new ChatGoogleGenerativeAI({
     maxOutputTokens: 8192,
     apiKey: API_KEY,
 });
+
+const genAIClient = new GoogleGenerativeAI(API_KEY);
 
 // Helper function to upload file (same as working version)
 async function uploadFileToGoogleAI(filePath, originalFilename) {
@@ -121,26 +124,7 @@ function convertMessagesToLangChain(messages, fileInfo = null) {
         if (msg.role === "user") {
             let content;
 
-            if (fileInfo && i === messages.length - 1) {
-                // Determine part type based on mimeType
-                const part = fileInfo.mimeType.startsWith("image/")
-                    ? {
-                        type: "image_url",
-                        image_url: fileInfo.fileUri,
-                    }
-                    : {
-                        type: "media",
-                        fileUri: fileInfo.fileUri,
-                        mimeType: fileInfo.mimeType,
-                    };
-
-                content = [
-                    { type: "text", text: textContent },
-                    part
-                ];
-            } else {
-                content = textContent;
-            }
+            content = textContent;
 
             langchainMessages.push(new HumanMessage(content));
         } else if (msg.role === "model" || msg.role === "assistant") {
@@ -151,6 +135,51 @@ function convertMessagesToLangChain(messages, fileInfo = null) {
     }
 
     return langchainMessages;
+}
+
+function buildGeminiContents(messages, fileInfo, systemText) {
+    const contents = [];
+    const lastUserIndex = (() => {
+        for (let i = messages.length - 1; i >= 0; i--) {
+            if (messages[i]?.role === "user") return i;
+        }
+        return -1;
+    })();
+
+    const pushContent = (role, parts) => {
+        if (parts.length === 0) return;
+        const last = contents[contents.length - 1];
+        if (last && last.role === role) {
+            last.parts.push(...parts);
+        } else {
+            contents.push({ role, parts });
+        }
+    };
+
+    for (let i = 0; i < messages.length; i++) {
+        const msg = messages[i];
+        if (!msg || !msg.role) continue;
+
+        const role = msg.role === "assistant" || msg.role === "model" ? "model" : "user";
+        const textContent = msg.content ||
+            (msg.parts && Array.isArray(msg.parts) && msg.parts[0]?.text) ||
+            "";
+
+        const parts = [];
+        if (role === "user" && contents.length === 0 && systemText) {
+            parts.push({ text: systemText });
+        }
+        if (textContent) {
+            parts.push({ text: textContent });
+        }
+        if (fileInfo && i === lastUserIndex) {
+            parts.push({ fileData: { fileUri: fileInfo.fileUri, mimeType: fileInfo.mimeType } });
+        }
+
+        pushContent(role, parts);
+    }
+
+    return contents;
 }
 
 // Main chat handler
@@ -188,14 +217,43 @@ async function handleChatMessage({ messages, filePath, originalFilename }) {
     }
 
     // Convert messages to LangChain format
-    const langchainMessages = convertMessagesToLangChain(messages, fileInfo);
+    if (fileInfo) {
+        const systemText =
+            "You are a helpful legal assistant that excels at being factual, while also being kind and formal. " +
+            "Depending on the user inquiry, you can be informative beyond the immediate question. " +
+            "You frequently work with the elderly in need of free legal advice. " +
+            "You only provide answers in Croatian.";
+        const contents = buildGeminiContents(messages, fileInfo, systemText);
+
+        console.log("Converted messages (genai):", contents.length);
+
+        const model = genAIClient.getGenerativeModel({ model: "gemini-2.5-flash" });
+        let stream;
+        try {
+            const result = await model.generateContentStream({ contents });
+            stream = result.stream;
+        } catch (error) {
+            console.error("genAI generateContentStream failed:", error);
+            throw error;
+        }
+
+        return { stream, source: "genai" };
+    }
+
+    const langchainMessages = convertMessagesToLangChain(messages, null);
 
     console.log("Converted messages:", langchainMessages.length);
 
     // Get streaming response
-    const stream = await chatModel.stream(langchainMessages);
+    let stream;
+    try {
+        stream = await chatModel.stream(langchainMessages);
+    } catch (error) {
+        console.error("chatModel.stream failed:", error);
+        throw error;
+    }
 
-    return { stream };
+    return { stream, source: "langchain" };
 }
 
 // Document editing handler for specialized legal text modification
@@ -229,4 +287,4 @@ async function handleDocumentEdit({ content, instruction, context, selectionRang
     return { stream };
 }
 
-module.exports = { handleChatMessage, handleDocumentEdit };
+module.exports = { handleChatMessage, handleDocumentEdit, buildGeminiContents };

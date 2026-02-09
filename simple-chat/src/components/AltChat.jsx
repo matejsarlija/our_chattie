@@ -18,7 +18,7 @@ export default function AltChat() {
   // Custom hooks for state management
   const { 
     messages, addMessages, updateMessage, removeMessage, clearMessages,
-    textSize, setTextSize, setError, clearError
+    textSize, setTextSize, setError, clearError, setLoading
   } = useChat();
   const streamingAPI = useStreamingAPI();
   const fileUpload = useFileUpload();
@@ -83,6 +83,9 @@ export default function AltChat() {
     addMessages([userMessage, aiMessage]);
     setInputText('');
     clearError();
+    setLoading(true);
+    let latestContent = '';
+    let hadError = false;
 
     try {
       // Stream chat response
@@ -91,23 +94,36 @@ export default function AltChat() {
         fileUpload.selectedFile,
         {
           onContent: (content) => {
-            updateMessage(aiMessageTimestamp, { text: content });
+            latestContent = content;
+            updateMessage(aiMessageTimestamp, { text: content, isStreaming: true });
           },
           onError: (err) => {
+            hadError = true;
             setError(`Connection failed: ${err}. Please try again.`);
             removeMessage(aiMessageTimestamp); // Remove failed AI message by timestamp
-          }
+          },
+          onComplete: () => {}
         }
       );
 
     } catch (err) {
       if (err.name !== 'AbortError') {
+        hadError = true;
         setError(`Connection failed: ${err.message || 'Unknown error'}. Please try again.`);
         removeMessage(aiMessageTimestamp);
       }
     } finally {
+      if (!hadError) {
+        updateMessage(aiMessageTimestamp, { text: latestContent, finalize: true });
+      }
+      setLoading(false);
       fileUpload.clearUploadState();
     }
+  };
+
+  const handleStop = () => {
+    streamingAPI.stopGeneration();
+    setLoading(false);
   };
 
   // Handle court analysis
@@ -182,7 +198,7 @@ export default function AltChat() {
         <div className="flex-1">
           <div className="flex flex-col h-full">
             {/* Message List */}
-            <div className="flex-1 overflow-y-auto">
+            <div className="flex-1 overflow-y-auto" data-scroll-container="chat">
               <ErrorBoundary>
                 <MessageList />
               </ErrorBoundary>
@@ -193,6 +209,7 @@ export default function AltChat() {
               inputText={inputText}
               setInputText={setInputText}
               onSend={handleSend}
+              onStop={handleStop}
               isLoading={streamingAPI.isLoading}
               selectedFile={fileUpload.selectedFile}
               onFileSelect={handleFileSelect}

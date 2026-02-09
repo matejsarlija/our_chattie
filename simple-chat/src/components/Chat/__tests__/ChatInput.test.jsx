@@ -25,6 +25,7 @@ describe('ChatInput', () => {
     inputText: '',
     setInputText: jest.fn(),
     onSend: jest.fn(),
+    onStop: jest.fn(),
     selectedFile: null,
     onFileSelect: jest.fn()
   };
@@ -60,6 +61,17 @@ describe('ChatInput', () => {
     expect(mockSetInputText).toHaveBeenCalledWith('Test message');
   });
 
+  it('sends on Enter but not on Shift+Enter', () => {
+    const mockOnSend = jest.fn();
+    render(<ChatInput {...defaultProps} onSend={mockOnSend} />);
+
+    const textarea = screen.getByPlaceholderText('Postavite svoje pravno pitanje...');
+    fireEvent.keyDown(textarea, { key: 'Enter', shiftKey: true });
+    fireEvent.keyDown(textarea, { key: 'Enter', shiftKey: false });
+
+    expect(mockOnSend).toHaveBeenCalledTimes(1);
+  });
+
   it('shows stop button when loading', () => {
     useChat.mockReturnValue({
       isLoading: true,
@@ -70,6 +82,37 @@ describe('ChatInput', () => {
     
     // The button aria-label should be "Zaustavi"
     expect(screen.getByLabelText('Zaustavi')).toBeInTheDocument();
+  });
+
+  it('calls onStop when loading and stop is clicked', () => {
+    useChat.mockReturnValue({
+      isLoading: true,
+      error: '',
+    });
+
+    const mockOnStop = jest.fn();
+    render(<ChatInput {...defaultProps} onStop={mockOnStop} />);
+
+    fireEvent.click(screen.getByLabelText('Zaustavi'));
+    expect(mockOnStop).toHaveBeenCalled();
+  });
+
+  it('fills input when suggestion clicked', () => {
+    const mockSetInputText = jest.fn();
+    render(<ChatInput {...defaultProps} setInputText={mockSetInputText} />);
+
+    fireEvent.click(screen.getByText('Nisam u stanju otplatiti ratu kredita'));
+    expect(mockSetInputText).toHaveBeenCalledWith('Nisam u stanju otplatiti ratu kredita');
+  });
+
+  it('focuses the textarea after suggestion click', () => {
+    render(<ChatInput {...defaultProps} />);
+    const textarea = screen.getByPlaceholderText('Postavite svoje pravno pitanje...');
+    const focusSpy = jest.spyOn(textarea, 'focus');
+
+    fireEvent.click(screen.getByText('Nisam u stanju otplatiti ratu kredita'));
+
+    expect(focusSpy).toHaveBeenCalled();
   });
 
   it('shows error message when present in chat context', () => {

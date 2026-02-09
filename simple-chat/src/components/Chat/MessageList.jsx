@@ -6,19 +6,42 @@ import TypingBubble from './TypingBubble';
 function MessageList() {
   const { messages, error, isLoading, textSize } = useChat();
   const messagesEndRef = useRef(null);
+  const shouldAutoScrollRef = useRef(true);
 
-  // Debug logging for message display issues
+  // Debug logging (opt-in in dev only)
   useEffect(() => {
-    console.log('MessageList render:', {
+    const isDevHost = typeof window !== 'undefined' &&
+      (window.location?.hostname === 'localhost' || window.location?.hostname === '127.0.0.1');
+    if (!isDevHost || !window?.__CHAT_DEBUG__) return;
+    console.debug('MessageList render:', {
       messageCount: messages.length,
       isLoading,
       hasError: !!error
     });
   }, [messages, isLoading, error]);
 
-  // Scroll to bottom when messages change
+  // Track whether user is near the bottom of the scroll container
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    const scrollContainer = messagesEndRef.current?.closest('[data-scroll-container="chat"]');
+    if (!scrollContainer) return;
+
+    const handleScroll = () => {
+      const distanceFromBottom =
+        scrollContainer.scrollHeight - scrollContainer.scrollTop - scrollContainer.clientHeight;
+      shouldAutoScrollRef.current = distanceFromBottom < 120;
+    };
+
+    handleScroll();
+    scrollContainer.addEventListener('scroll', handleScroll, { passive: true });
+    return () => {
+      scrollContainer.removeEventListener('scroll', handleScroll);
+    };
+  }, []);
+
+  // Scroll to bottom when messages change, but avoid fighting user scroll
+  useEffect(() => {
+    if (!shouldAutoScrollRef.current) return;
+    messagesEndRef.current?.scrollIntoView({ behavior: isLoading ? "auto" : "smooth" });
   }, [messages, isLoading]);
 
   // Empty state for chat

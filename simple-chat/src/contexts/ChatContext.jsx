@@ -59,23 +59,34 @@ function chatReducer(state, action) {
 
             const message = { ...newMessages[index], ...updates };
 
-            // Logic from useWorkspaceState for AI message processing
+            // AI message processing: extract editors from markdown blocks when appropriate
             if (updates.text && !message.isUser) {
                 try {
                     message.rawText = updates.text;
-                    const { blocks, cleanedText } = extractAndCleanMarkdown(updates.text, index);
+                    const shouldProcessMarkdown = updates.finalize ||
+                        (updates.processMarkdown !== false && !updates.isStreaming);
 
-                    if (blocks.length > 0) {
-                        message.editors = blocks.map(block => ({
-                            id: block.id,
-                            content: convertMarkdownWithCitations(block.markdown),
-                            originalMarkdown: block.originalMarkdown,
-                            lastModified: new Date().toISOString()
-                        }));
-                        message.text = cleanedText;
+                    if (shouldProcessMarkdown) {
+                        const { blocks, cleanedText } = extractAndCleanMarkdown(updates.text, index);
+
+                        if (blocks.length > 0) {
+                            message.editors = blocks.map(block => ({
+                                id: block.id,
+                                content: convertMarkdownWithCitations(block.markdown),
+                                originalMarkdown: block.originalMarkdown,
+                                lastModified: new Date().toISOString()
+                            }));
+                            message.text = cleanedText;
+                        } else {
+                            delete message.editors;
+                            message.text = cleanedText;
+                        }
                     } else {
-                        delete message.editors;
-                        message.text = cleanedText;
+                        // Streaming updates: keep raw text visible and avoid heavy parsing
+                        message.text = updates.text;
+                        if (updates.isStreaming) {
+                            delete message.editors;
+                        }
                     }
                 } catch (error) {
                     console.error('Error updating message markdown blocks:', error);

@@ -81,7 +81,7 @@ export default function TipTapEditor({
     },
     editorProps: {
       attributes: {
-        class: 'prose prose-slate max-w-none focus:outline-none p-4 rounded-lg border border-slate-200 focus:border-blue-500 transition-colors text-sm',
+        class: 'prose prose-slate max-w-none focus:outline-none p-4 rounded-lg border border-slate-200 focus:border-blue-500 transition-colors text-sm min-h-[100px] max-h-[400px] overflow-y-auto',
         spellcheck: 'false',
       },
     },
@@ -138,13 +138,6 @@ export default function TipTapEditor({
       <EditorContent 
         editor={editor} 
         className="bg-white border border-slate-200 rounded-md shadow-sm"
-        style={{
-          '.ProseMirror': {
-            minHeight: '100px',
-            maxHeight: '400px',
-            overflowY: 'auto',
-          }
-        }}
       />
 
       {/* BubbleMenu - Desktop: Floating, Mobile: Modal */}

@@ -16,14 +16,13 @@ export const useFileUpload = () => {
             'application/pdf',
             'image/jpeg',
             'image/png',
-            'image/gif',
             'application/msword',
             'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
             'text/plain'
         ];
 
         if (!allowedTypes.includes(file.type)) {
-            errors.push('Nepodržani format datoteke. Dozvoljeni su PDF, DOC, DOCX, TXT, JPEG, PNG i GIF.');
+            errors.push('Nepodržani format datoteke. Dozvoljeni su PDF, DOC, DOCX, TXT, JPEG i PNG.');
         }
 
         // Check file size (2MB default, 15MB for premium)
@@ -222,7 +221,6 @@ export const useFileUpload = () => {
                 'application/pdf',
                 'image/jpeg',
                 'image/png',
-                'image/gif',
                 'application/msword',
                 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
                 'text/plain'
