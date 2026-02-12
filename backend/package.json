@@ -18,7 +18,6 @@
     "@langchain/core": "^0.3.61",
     "@langchain/google-genai": "^0.2.14",
     "@langchain/langgraph": "^0.3.6",
-    "@supabase/auth-helpers-express": "^0.10.0",
     "@supabase/supabase-js": "^2.49.1",
     "@sendgrid/mail": "^8.1.5",
     "adm-zip": "^0.5.16",
