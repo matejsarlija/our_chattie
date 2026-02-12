@@ -4,15 +4,41 @@ const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
+const cookieParser = require('cookie-parser');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
+const crypto = require('crypto');
+const { requireSupabaseAuth, optionalSupabaseAuth } = require('./middleware/supabaseAuth');
 const { handleChatMessage, handleDocumentEdit } = require('./chatAgent'); // Import the chat service
 const { validateDocumentEditPayload } = require('./helpers/documentEditValidation');
 const { buildSseData } = require('./helpers/sse');
+const { parsePagination } = require('./helpers/pagination');
+const { sanitizeMarkdown } = require('./helpers/sanitize');
+const { DEFAULT_TRIAL_LIMIT, isTrialAllowed } = require('./helpers/trial');
 const { CourtSearchPuppeteer } = require('./scraper/courtSearchPuppeteer');
 const rateLimiter = require('./court-analysis/utils/rateLimiter');
 const { runCourtAnalysis } = require('./court-analysis/pipeline');
+const { getSupabaseAdminClient } = require('./services/supabase');
+const {
+  createAnalysisRun,
+  appendAnalysisEvent,
+  completeAnalysisRun,
+  failAnalysisRun,
+  listAnalysisRuns,
+  getAnalysisRun,
+  getAnalysisEvents,
+} = require('./services/analysisStore');
+const {
+  countTrialRuns,
+  createTrialRun,
+  appendTrialEvent,
+  completeTrialRun,
+  failTrialRun,
+  getTrialRuns,
+  getTrialEvents,
+  deleteTrialData,
+} = require('./services/trialStore');
 
 // ========= CHANGE 1: REMOVE THE BROKEN REQUIRE STATEMENT =========
 // const PQueue = require('p-queue').default; // This line is removed
@@ -35,6 +61,10 @@ async function startServer() {
   app.set('trust proxy', 1); // Trust the first proxy (e.g., React dev server or production LB)
   const port = process.env.PORT || 3001;
   const courtAnalysisQueue = new PQueue({ concurrency: 1 }); // This should work now
+  const trialCookieSecret = process.env.TRIAL_COOKIE_SECRET || process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!trialCookieSecret) {
+    console.warn('[Trial] TRIAL_COOKIE_SECRET is missing. Anonymous trial flow will be disabled.');
+  }
 
   // Configure multer for file uploads (same as working version)
   const storage = multer.diskStorage({
@@ -74,6 +104,9 @@ async function startServer() {
 
   // Middleware (same as working version)
   app.use(helmet());
+  if (trialCookieSecret) {
+    app.use(cookieParser(trialCookieSecret));
+  }
 
   // Rate limiters
   app.use('/api/chat', rateLimit({
@@ -128,6 +161,35 @@ async function startServer() {
   }));
 
   app.use(express.json());
+
+  const trialCookieName = 'trial_id';
+  const trialCookieOptions = {
+    httpOnly: true,
+    sameSite: 'lax',
+    secure: process.env.NODE_ENV === 'production',
+    maxAge: 1000 * 60 * 60 * 24 * 30, // 30 days
+    signed: true,
+  };
+
+  const ensureTrialCookie = (req, res) => {
+    if (!trialCookieSecret) return null;
+    let trialId = req.signedCookies?.[trialCookieName];
+    if (!trialId) {
+      trialId = crypto.randomUUID();
+      res.cookie(trialCookieName, trialId, trialCookieOptions);
+    }
+    return trialId;
+  };
+
+  const clearTrialCookie = (res) => {
+    if (!trialCookieSecret) return;
+    res.clearCookie(trialCookieName, {
+      httpOnly: true,
+      sameSite: trialCookieOptions.sameSite,
+      secure: trialCookieOptions.secure,
+      signed: true,
+    });
+  };
 
   // Document edit endpoint for specialized AI-assisted text modification
   app.post('/api/document-edit', async (req, res) => {
@@ -363,11 +425,48 @@ async function startServer() {
 
   app.use('/api/court-analysis', rateLimiter);
 
-  app.post('/api/court-analysis', (req, res) => {
+  const analysisIpLimiter = rateLimit({
+    windowMs: 60 * 1000,
+    max: 10,
+    message: 'Previše zahtjeva. Molimo pokušajte ponovno za 1 minutu.',
+  });
+
+  const analysisUserLimiter = rateLimit({
+    windowMs: 60 * 1000,
+    max: 6,
+    keyGenerator: (req) => req.user?.id || req.ip,
+    message: 'Previše zahtjeva za analizu. Molimo pokušajte ponovno za 1 minutu.',
+  });
+
+  app.post('/api/court-analysis', analysisIpLimiter, optionalSupabaseAuth, analysisUserLimiter, async (req, res) => {
     const { searchTerm } = req.body;
 
     if (!searchTerm) {
       return res.status(400).json({ error: 'Search term is required' });
+    }
+
+    if (req.authError) {
+      return res.status(401).json({ error: 'Invalid or expired token.' });
+    }
+
+    const isAuthed = Boolean(req.user);
+    const supabaseAdmin = req.supabaseAdmin || getSupabaseAdminClient();
+    let trialId = null;
+
+    if (!isAuthed) {
+      trialId = ensureTrialCookie(req, res);
+      if (!trialId) {
+        return res.status(500).json({ error: 'Trial flow unavailable.' });
+      }
+      try {
+        const runsUsed = await countTrialRuns({ supabaseAdmin, trialId });
+        if (!isTrialAllowed({ runsUsed, limit: DEFAULT_TRIAL_LIMIT })) {
+          return res.status(403).json({ error: 'Please sign in to continue.', code: 'AUTH_REQUIRED' });
+        }
+      } catch (err) {
+        console.error('[Trial] Failed to check trial quota:', err.message);
+        return res.status(500).json({ error: 'Trial quota check failed.' });
+      }
     }
 
     // --- Step 1: Immediately set up the streaming connection for the user ---
@@ -380,6 +479,8 @@ async function startServer() {
     // --- Step 2: Add the heavy task to the queue to protect the server ---
     // The code inside add() will only run when it's this request's turn.
     courtAnalysisQueue.add(async () => {
+      let analysisRun = null;
+      let trialRun = null;
 
       // Define the progress callback INSIDE the queued job.
       // This is crucial because it gives the job access to this specific user's `res` object.
@@ -391,10 +492,67 @@ async function startServer() {
       };
 
       try {
-        progressCallback({ step: 'starting', progress: 5, message: 'Vaš zahtjev je započeo s obradom...' });
+        if (isAuthed) {
+          analysisRun = await createAnalysisRun({
+            supabase: req.supabase,
+            userId: req.user.id,
+            oib: searchTerm,
+            status: 'running',
+          });
+        } else {
+          trialRun = await createTrialRun({
+            supabaseAdmin,
+            trialId,
+            oib: searchTerm,
+            status: 'running',
+          });
+        }
+
+        const runId = analysisRun?.id || trialRun?.id;
+
+        const safeProgress = async (event) => {
+          progressCallback(event);
+          try {
+            if (isAuthed) {
+              await appendAnalysisEvent({
+                supabase: req.supabase,
+                analysisId: analysisRun.id,
+                eventType: event.step || 'progress',
+                message: event.message || null,
+                metadata: {
+                  progress: event.progress || null,
+                  hasData: Boolean(event.data),
+                },
+              });
+            } else {
+              await appendTrialEvent({
+                supabaseAdmin,
+                trialRunId: trialRun.id,
+                eventType: event.step || 'progress',
+                message: event.message || null,
+                metadata: {
+                  progress: event.progress || null,
+                  hasData: Boolean(event.data),
+                },
+              });
+            }
+          } catch (err) {
+            console.error('[Analysis Events] Failed to persist event:', err.message);
+          }
+        };
+
+        // Emit run id immediately so the client can start polling events.
+        await safeProgress({
+          step: 'queued',
+          progress: 1,
+          message: 'Zahtjev je zaprimljen.',
+          analysisId: runId,
+        });
+
+        await safeProgress({ step: 'starting', progress: 5, message: 'Vaš zahtjev je započeo s obradom...' });
 
         // The call to the pipeline is the same, but it will return a different structure.
-        const finalResult = await runCourtAnalysis(searchTerm, 2, progressCallback); // We can make `2` a parameter later
+        const finalResult = await runCourtAnalysis(searchTerm, 2, safeProgress); // We can make `2` a parameter later
 
         // --- NEW: Construct the optimized final payload ---
         const finalPayload = {
@@ -426,7 +584,23 @@ async function startServer() {
         //console.log('Final payload constructed:', finalPayload);
         //console.log('Participants:', finalPayload.processedCases.map(p => p.caseResult.participants));
 
-        progressCallback({
+        const sanitizedResult = sanitizeMarkdown(finalResult.comparativeAnalysis || '');
+        finalPayload.comparativeAnalysis = sanitizedResult;
+        if (isAuthed) {
+          await completeAnalysisRun({
+            supabase: req.supabase,
+            analysisId: analysisRun.id,
+            resultText: sanitizedResult,
+          });
+        } else {
+          await completeTrialRun({
+            supabaseAdmin,
+            trialRunId: trialRun.id,
+            resultText: sanitizedResult,
+          });
+        }
+
+        await safeProgress({
           step: 'complete',
           progress: 100,
           message: 'Analiza je završena!',
@@ -436,6 +610,46 @@ async function startServer() {
       } catch (error) {
         console.error('[Court Analysis Queue] Pipeline error:', error);
         // If the pipeline fails, send a structured error message to the user.
+        if (isAuthed && analysisRun?.id) {
+          await appendAnalysisEvent({
+            supabase: req.supabase,
+            analysisId: analysisRun.id,
+            eventType: 'error',
+            message: error.message || 'Došlo je do greške u obradi.',
+            metadata: {},
+          }).catch((err) => {
+            console.error('[Analysis Events] Failed to persist error event:', err.message);
+          });
+
+          await failAnalysisRun({
+            supabase: req.supabase,
+            analysisId: analysisRun.id,
+            errorMessage: error.message || 'Došlo je do greške u obradi.',
+          }).catch((err) => {
+            console.error('[Analysis Runs] Failed to mark error:', err.message);
+          });
+        }
+
+        if (!isAuthed && trialRun?.id) {
+          await appendTrialEvent({
+            supabaseAdmin,
+            trialRunId: trialRun.id,
+            eventType: 'error',
+            message: error.message || 'Došlo je do greške u obradi.',
+            metadata: {},
+          }).catch((err) => {
+            console.error('[Trial Events] Failed to persist error event:', err.message);
+          });
+
+          await failTrialRun({
+            supabaseAdmin,
+            trialRunId: trialRun.id,
+            errorMessage: error.message || 'Došlo je do greške u obradi.',
+          }).catch((err) => {
+            console.error('[Trial Runs] Failed to mark error:', err.message);
+          });
+        }
+
         progressCallback({
           step: 'error',
           progress: 100,
@@ -457,6 +671,113 @@ async function startServer() {
     req.on('close', () => {
       console.log(`[Court Analysis Queue] Client disconnected while waiting or processing term: ${searchTerm}`);
     });
+  });
+
+  app.get('/api/analysis/runs', analysisIpLimiter, requireSupabaseAuth, analysisUserLimiter, async (req, res) => {
+    try {
+      const { limit, offset } = parsePagination(req.query);
+      const result = await listAnalysisRuns({
+        supabase: req.supabase,
+        limit,
+        offset,
+      });
+      res.json({ runs: result.data, count: result.count, limit, offset });
+    } catch (error) {
+      console.error('[Analysis Runs] list failed:', error.message);
+      res.status(500).json({ error: 'Failed to load analysis runs.' });
+    }
+  });
+
+  app.get('/api/analysis/runs/:id', analysisIpLimiter, requireSupabaseAuth, analysisUserLimiter, async (req, res) => {
+    try {
+      const run = await getAnalysisRun({
+        supabase: req.supabase,
+        id: req.params.id,
+      });
+      res.json({ run });
+    } catch (error) {
+      console.error('[Analysis Runs] get failed:', error.message);
+      res.status(404).json({ error: 'Analysis run not found.' });
+    }
+  });
+
+  app.get('/api/analysis/runs/:id/events', analysisIpLimiter, requireSupabaseAuth, analysisUserLimiter, async (req, res) => {
+    try {
+      const events = await getAnalysisEvents({
+        supabase: req.supabase,
+        analysisId: req.params.id,
+      });
+      res.json({ events });
+    } catch (error) {
+      console.error('[Analysis Events] get failed:', error.message);
+      res.status(404).json({ error: 'Analysis events not found.' });
+    }
+  });
+
+  app.post('/api/trial/claim', requireSupabaseAuth, async (req, res) => {
+    const trialId = req.signedCookies?.[trialCookieName];
+    if (!trialId) {
+      return res.json({ claimed: false, migrated: 0 });
+    }
+
+    const supabaseAdmin = req.supabaseAdmin || getSupabaseAdminClient();
+
+    try {
+      const trialRuns = await getTrialRuns({ supabaseAdmin, trialId });
+      if (trialRuns.length === 0) {
+        clearTrialCookie(res);
+        return res.json({ claimed: false, migrated: 0 });
+      }
+
+      let migrated = 0;
+      for (const trialRun of trialRuns) {
+        const { data: insertedRun, error } = await supabaseAdmin
+          .from('analysis_runs')
+          .insert({
+            user_id: req.user.id,
+            oib: trialRun.oib,
+            status: trialRun.status,
+            result_text: trialRun.result_text,
+            result_format: trialRun.result_format,
+            error: trialRun.error,
+            created_at: trialRun.created_at,
+            completed_at: trialRun.completed_at,
+          })
+          .select('*')
+          .single();
+
+        if (error) {
+          throw new Error(`Failed to migrate trial run: ${error.message}`);
+        }
+
+        const events = await getTrialEvents({ supabaseAdmin, trialRunId: trialRun.id });
+        if (events.length > 0) {
+          const payload = events.map((event) => ({
+            analysis_id: insertedRun.id,
+            event_type: event.event_type,
+            message: event.message,
+            metadata: event.metadata,
+            created_at: event.created_at,
+          }));
+          const { error: eventsError } = await supabaseAdmin
+            .from('analysis_events')
+            .insert(payload);
+          if (eventsError) {
+            throw new Error(`Failed to migrate trial events: ${eventsError.message}`);
+          }
+        }
+
+        migrated += 1;
+      }
+
+      await deleteTrialData({ supabaseAdmin, trialId });
+      clearTrialCookie(res);
+
+      return res.json({ claimed: true, migrated });
+    } catch (error) {
+      console.error('[Trial] Claim failed:', error.message);
+      return res.status(500).json({ error: 'Failed to claim trial runs.' });
+    }
   });
 
 

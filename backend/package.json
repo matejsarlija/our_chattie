@@ -18,9 +18,12 @@
     "@langchain/core": "^0.3.61",
     "@langchain/google-genai": "^0.2.14",
     "@langchain/langgraph": "^0.3.6",
+    "@supabase/auth-helpers-express": "^0.10.0",
+    "@supabase/supabase-js": "^2.49.1",
     "@sendgrid/mail": "^8.1.5",
     "adm-zip": "^0.5.16",
     "axios": "^1.10.0",
+    "cookie-parser": "^1.4.6",
     "canvas": "^3.2.0",
     "cors": "^2.8.5",
     "docx": "^9.5.1",
@@ -39,6 +42,7 @@
     "puppeteer-core": "^24.11.2"
   },
   "devDependencies": {
+    "fast-check": "^4.1.1",
     "groq-sdk": "^0.13.0",
     "jest": "^30.0.4",
     "nodemon": "^3.1.9",

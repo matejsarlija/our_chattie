@@ -17,6 +17,7 @@ const gemini = new ChatGoogleGenerativeAI({
 });
 
 const pdfjsLib = require("pdfjs-dist/legacy/build/pdf.js");
+const { withGeminiRetry } = require("../../helpers/geminiRetry");
 
 // 2. Explicitly set the path to the worker script for Node.js
 pdfjsLib.GlobalWorkerOptions.workerSrc =
@@ -60,7 +61,7 @@ async function extractTextFromFile(filePath) {
  * @param {string} filePath The path to the PDF file.
  * @returns {Promise<string>} The combined text from all pages.
  */
-async function extractTextViaOCR(filePath) {
+async function extractTextViaOCR(filePath, progressCallback) {
     console.log(
         `[OCR] Attempting OCR for ${path.basename(filePath)} with pdf.js`,
     );
@@ -96,7 +97,18 @@ async function extractTextViaOCR(filePath) {
                 ],
             });
 
-            const response = await gemini.invoke([message]);
+            const response = await withGeminiRetry(
+                () => gemini.invoke([message]),
+                {
+                    onRetry: ({ attempt, delayMs }) => {
+                        progressCallback &&
+                            progressCallback({
+                                step: "ocr_retry",
+                                message: `OCR retry ${attempt}. Waiting ${Math.round(delayMs / 1000)}s...`,
+                            });
+                    },
+                },
+            );
             combinedText += response.content + "\n\n";
         }
     } catch (err) {
@@ -133,7 +145,7 @@ class AnalyzeDocumentsTool extends Tool {
                     console.log(
                         `[Analyzer] Standard text extraction failed for ${path.basename(file.filePath)}. Falling back to OCR.`,
                     );
-                    text = await extractTextViaOCR(file.filePath);
+                    text = await extractTextViaOCR(file.filePath, progressCallback);
                 }
 
                 // Final check: if still no text, return error, file failed analysis
@@ -169,7 +181,18 @@ class AnalyzeDocumentsTool extends Tool {
                 From the court document text below, extract key information as a JSON object with the following keys: "caseNumber", "decisionDate", and "summary" (a medium-sized paragraph, nicely formatted, to be in Croatian please, as that is what our customers speak).
                 Do include any important figures (currency amounts) you find in the summary. Provide ONLY the json object and nothing else. Text:\n\n${text.slice(0, 25000)}`;
 
-                const response = await gemini.invoke(prompt);
+                const response = await withGeminiRetry(
+                    () => gemini.invoke(prompt),
+                    {
+                        onRetry: ({ attempt, delayMs }) => {
+                            progressCallback &&
+                                progressCallback({
+                                    step: "analyze_retry",
+                                    message: `Retry ${attempt} for ${file.text}. Waiting ${Math.round(delayMs / 1000)}s...`,
+                                });
+                        },
+                    },
+                );
 
                 // --- THIS IS THE FIX ---
                 // 1. Get the raw content from the AI.
@@ -277,7 +300,7 @@ async function generateComparativeAnalysis(allProcessedCases) {
         //const prompt = `This is the only recent court entry found. Synthesize the following document summaries into a single, coherent, and detailed overview IN CROATIAN. Explain the significance of this entry in the context of the case. Based on the information, what are the likely next steps for the parties involved?\n\nSUMMARIES:\n${successfulSummaries}`;
 
         try {
-            const response = await gemini.invoke(prompt);
+            const response = await withGeminiRetry(() => gemini.invoke(prompt));
             return response.content;
         } catch (err) {
             console.error("Failed to generate summary for single case:", err);
@@ -317,7 +340,7 @@ async function generateComparativeAnalysis(allProcessedCases) {
     //console.log("Comparative context contains the following data:", comparativeContext);
 
     try {
-        const response = await gemini.invoke(prompt);
+        const response = await withGeminiRetry(() => gemini.invoke(prompt));
         return response.content;
     } catch (err) {
         console.error("Failed to generate comparative analysis:", err);
