@@ -1,28 +1,40 @@
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import MobileHeaderDropdown from '../MobileHeaderDropdown';
 import { useChat } from '../../contexts/ChatContext';
+import { useOptionalAuth } from '../../contexts/AuthContext';
 
 export default function ChatHeader({ 
   mode = 'chat', 
-  onModeToggle
+  onModeToggle,
+  onOpenNewAnalysis,
 }) {
+  const navigate = useNavigate();
   const { textSize, setTextSize } = useChat();
+  const auth = useOptionalAuth();
+  const isAuthed = Boolean(auth?.user);
+
+  const handleNewAnalysis = () => {
+    if (onOpenNewAnalysis) {
+      onOpenNewAnalysis();
+      return;
+    }
+    navigate('/dashboard?new=1');
+  };
+
   return (
-    <div className="bg-white p-4 shadow-sm border-b border-slate-200">
+    <div className="border-b border-[var(--border)] bg-[var(--surface)]/95 p-4 backdrop-blur">
       <div className="max-w-6xl mx-auto flex justify-between items-center">
         <div className="flex items-center gap-4">
-          {/* Logo */}
-          <h1 className="text-slate-800 text-xl font-medium font-main">
+          <h1 className="text-[var(--text)] text-xl font-semibold tracking-tight">
             <Link to="/">
               Pravni Asistent
             </Link>
           </h1>
 
-          {/* Mode toggle button - only show if onModeToggle provided */}
           {onModeToggle && (
             <button
               onClick={onModeToggle}
-              className="px-3 py-1.5 text-sm bg-slate-100 hover:bg-slate-200 rounded-md transition-colors flex items-center gap-2"
+              className="px-3 py-1.5 text-sm border border-[var(--border)] bg-[var(--surface-muted)] hover:bg-[var(--surface)] rounded-md transition-colors flex items-center gap-2 text-[var(--text)]"
               title={mode === 'chat' ? 'Prebaci na Canvas' : 'Prebaci na Chat'}
             >
               {mode === 'chat' ? (
@@ -45,38 +57,74 @@ export default function ChatHeader({
           )}
         </div>
 
-        {/* Desktop navigation links - shown only on large screens */}
         <div className="hidden lg:flex items-center gap-6">
-          {/* Text size controls */}
           <div className="flex items-center gap-2">
-            <span className="text-sm text-slate-600">Tekst:</span>
+            <span className="text-sm text-[var(--text-muted)]">Tekst:</span>
             <button
               onClick={() => setTextSize(16)}
-              className={`px-2 py-1 text-sm rounded ${textSize === 16 ? 'bg-blue-100 text-blue-600' : 'bg-slate-100 text-slate-800'} hover:bg-slate-200`}
+              className={`px-2 py-1 text-sm rounded border ${
+                textSize === 16
+                  ? 'bg-[var(--surface)] text-[var(--accent)] border-[var(--accent)]'
+                  : 'bg-[var(--surface-muted)] text-[var(--text)] border-[var(--border)]'
+              } hover:bg-[var(--surface)]`}
             >
               A
             </button>
             <button
               onClick={() => setTextSize(18)}
-              className={`px-2 py-1 text-sm rounded ${textSize === 18 ? 'bg-blue-100 text-blue-600' : 'bg-slate-100 text-slate-800'} hover:bg-slate-200`}
+              className={`px-2 py-1 text-sm rounded border ${
+                textSize === 18
+                  ? 'bg-[var(--surface)] text-[var(--accent)] border-[var(--accent)]'
+                  : 'bg-[var(--surface-muted)] text-[var(--text)] border-[var(--border)]'
+              } hover:bg-[var(--surface)]`}
             >
               A+
             </button>
           </div>
 
-          <div className="h-4 w-px bg-slate-200"></div>
+          <div className="h-4 w-px bg-[var(--border)]"></div>
 
-          <Link to="/pravila-privatnosti" className="text-slate-600 hover:text-slate-800 transition-colors">
+          <Link to="/dashboard" className="text-[var(--text-muted)] hover:text-[var(--text)] transition-colors">
+            Dashboard
+          </Link>
+          <button
+            type="button"
+            onClick={handleNewAnalysis}
+            className="rounded-lg bg-[var(--accent)] px-3 py-1.5 text-sm text-white hover:opacity-90"
+          >
+            + Nova analiza
+          </button>
+
+          {auth && (
+            isAuthed ? (
+              <button
+                type="button"
+                onClick={auth.signOut}
+                className="rounded-lg border border-[var(--border)] px-3 py-1.5 text-sm text-[var(--text-muted)] hover:bg-[var(--surface-muted)]"
+              >
+                Odjava
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={auth.openAuthModal}
+                className="rounded-lg border border-[var(--border)] px-3 py-1.5 text-sm text-[var(--text-muted)] hover:bg-[var(--surface-muted)]"
+              >
+                Prijava
+              </button>
+            )
+          )}
+
+          <Link to="/pravila-privatnosti" className="text-[var(--text-muted)] hover:text-[var(--text)] transition-colors">
             Pravila privatnosti
           </Link>
-          <Link to="/o-nama" className="text-slate-600 hover:text-slate-800 transition-colors">
+          <Link to="/o-nama" className="text-[var(--text-muted)] hover:text-[var(--text)] transition-colors">
             O nama
           </Link>
         </div>
 
-        {/* Mobile hamburger menu - hidden on large screens */}
         <div className="lg:hidden ml-auto">
-          <MobileHeaderDropdown />
+          <MobileHeaderDropdown onOpenNewAnalysis={handleNewAnalysis} />
         </div>
       </div>
     </div>

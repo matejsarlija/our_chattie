@@ -450,10 +450,17 @@ async function startServer() {
     }
 
     const isAuthed = Boolean(req.user);
-    const supabaseAdmin = req.supabaseAdmin || getSupabaseAdminClient();
+    let supabaseAdmin = req.supabaseAdmin || null;
     let trialId = null;
 
     if (!isAuthed) {
+      try {
+        supabaseAdmin = supabaseAdmin || getSupabaseAdminClient();
+      } catch (err) {
+        console.error('[Trial] Supabase admin unavailable:', err.message);
+        return res.status(503).json({ error: 'Trial flow unavailable.' });
+      }
+
       trialId = ensureTrialCookie(req, res);
       if (!trialId) {
         return res.status(500).json({ error: 'Trial flow unavailable.' });
@@ -720,7 +727,13 @@ async function startServer() {
       return res.json({ claimed: false, migrated: 0 });
     }
 
-    const supabaseAdmin = req.supabaseAdmin || getSupabaseAdminClient();
+    let supabaseAdmin = req.supabaseAdmin || null;
+    try {
+      supabaseAdmin = supabaseAdmin || getSupabaseAdminClient();
+    } catch (err) {
+      console.error('[Trial] Supabase admin unavailable:', err.message);
+      return res.status(503).json({ error: 'Trial flow unavailable.' });
+    }
 
     try {
       const trialRuns = await getTrialRuns({ supabaseAdmin, trialId });

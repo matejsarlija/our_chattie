@@ -108,6 +108,12 @@ jest.mock(
   'react-router-dom',
   () => ({
     __esModule: true,
+    BrowserRouter: ({ children }) => <div data-testid="browser-router">{children}</div>,
+    Routes: ({ children }) => <>{children}</>,
+    Route: ({ element }) => element || null,
+    useNavigate: () => jest.fn(),
+    useParams: () => ({}),
+    useSearchParams: () => [new URLSearchParams(), jest.fn()],
     Link: ({ children, to }) => <a href={to}>{children}</a>,
   }),
   { virtual: true }

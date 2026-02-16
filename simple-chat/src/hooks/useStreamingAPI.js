@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback } from 'react';
+import { env } from '../lib/env';
 
 export const useStreamingAPI = () => {
     const [isLoading, setIsLoading] = useState(false);
@@ -9,6 +10,7 @@ export const useStreamingAPI = () => {
     const streamResponse = async ({
         url,
         payload,
+        headers = {},
         onProgress,
         onContent,
         onComplete,
@@ -23,8 +25,8 @@ export const useStreamingAPI = () => {
             const response = await fetch(url, {
                 method: 'POST',
                 headers: payload instanceof FormData
-                    ? {} // Let browser set Content-Type for FormData
-                    : { 'Content-Type': 'application/json' },
+                    ? headers
+                    : { 'Content-Type': 'application/json', ...headers },
                 body: payload instanceof FormData
                     ? payload
                     : JSON.stringify(payload),
@@ -33,7 +35,10 @@ export const useStreamingAPI = () => {
 
             if (!response.ok) {
                 const errorData = await response.json().catch(() => ({}));
-                throw new Error(errorData.error || `Server error: ${response.status}`);
+                const apiError = new Error(errorData.error || `Server error: ${response.status}`);
+                apiError.code = errorData.code;
+                apiError.status = response.status;
+                throw apiError;
             }
 
             if (!response.body) {
@@ -92,7 +97,7 @@ export const useStreamingAPI = () => {
         } catch (err) {
             if (err.name !== 'AbortError') {
                 const errorMessage = err.message || 'Unknown error occurred';
-                onError?.(errorMessage);
+                onError?.(errorMessage, err);
             }
         } finally {
             setIsLoading(false);
@@ -159,10 +164,7 @@ export const useStreamingAPI = () => {
 
     // Chat-specific streaming function
     const streamChat = async (messages, file, callbacks) => {
-        const API_URL = import.meta.env?.VITE_API_URL || 
-                        import.meta.env?.REACT_APP_API_URL || 
-                        (typeof process !== 'undefined' ? process.env.REACT_APP_API_URL : undefined) || 
-                        '/api/chat';
+        const API_URL = env.apiUrl;
 
         // Prepare chat messages for API
         const chatMessages = messages.map(msg => ({
@@ -190,15 +192,17 @@ export const useStreamingAPI = () => {
     };
 
     // Court analysis streaming function
-    const streamCourtAnalysis = async (searchTerm, callbacks) => {
-        const COURT_ANALYSIS_URL = import.meta.env?.VITE_COURT_ANALYSIS_URL || 
-                                   import.meta.env?.REACT_APP_COURT_ANALYSIS_URL || 
-                                   (typeof process !== 'undefined' ? process.env.REACT_APP_COURT_ANALYSIS_URL : undefined) || 
-                                   '/api/court-analysis';
+    const streamCourtAnalysis = async (searchTerm, callbacks, options = {}) => {
+        const COURT_ANALYSIS_URL = env.courtAnalysisUrl;
+        const requestHeaders = {};
+        if (options.token) {
+            requestHeaders.Authorization = `Bearer ${options.token}`;
+        }
 
         return streamResponse({
             url: COURT_ANALYSIS_URL,
             payload: { searchTerm: searchTerm.trim() },
+            headers: requestHeaders,
             onProgress: callbacks.onProgress,
             onComplete: callbacks.onComplete,
             onError: callbacks.onError
@@ -207,10 +211,7 @@ export const useStreamingAPI = () => {
 
     // Document editing streaming function (for Bubble Menu AI editing)
     const streamDocumentEdit = async (selectedText, instruction, callbacks, options = {}) => {
-        const DOCUMENT_EDIT_URL = import.meta.env?.VITE_DOCUMENT_EDIT_URL || 
-                                  import.meta.env?.REACT_APP_DOCUMENT_EDIT_URL || 
-                                  (typeof process !== 'undefined' ? process.env.REACT_APP_DOCUMENT_EDIT_URL : undefined) || 
-                                  '/api/document-edit';
+        const DOCUMENT_EDIT_URL = env.documentEditUrl;
 
         // Add Croatian legal context for better AI responses
         const context = {
@@ -262,9 +263,6 @@ export const useStreamingAPI = () => {
         streamResponse,
 
         // Constants for usage
-        DOCUMENT_EDIT_URL: import.meta.env?.VITE_DOCUMENT_EDIT_URL || 
-                           import.meta.env?.REACT_APP_DOCUMENT_EDIT_URL || 
-                           (typeof process !== 'undefined' ? process.env.REACT_APP_DOCUMENT_EDIT_URL : undefined) || 
-                           '/api/document-edit'
+        DOCUMENT_EDIT_URL: env.documentEditUrl
     };
 };

@@ -3,11 +3,21 @@ const { createClient } = require('@supabase/supabase-js');
 let adminClient = null;
 let anonClient = null;
 
+function getPublishableKey() {
+  return process.env.SUPABASE_PUBLISHABLE_KEY || process.env.SUPABASE_ANON_KEY;
+}
+
+function getSecretKey() {
+  return process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
+}
+
 function assertSupabaseConfig() {
   const missing = [];
+  const publishableKey = getPublishableKey();
+  const secretKey = getSecretKey();
   if (!process.env.SUPABASE_URL) missing.push('SUPABASE_URL');
-  if (!process.env.SUPABASE_ANON_KEY) missing.push('SUPABASE_ANON_KEY');
-  if (!process.env.SUPABASE_SERVICE_ROLE_KEY) missing.push('SUPABASE_SERVICE_ROLE_KEY');
+  if (!publishableKey) missing.push('SUPABASE_PUBLISHABLE_KEY (or SUPABASE_ANON_KEY)');
+  if (!secretKey) missing.push('SUPABASE_SECRET_KEY (or SUPABASE_SERVICE_ROLE_KEY)');
   if (missing.length > 0) {
     throw new Error(`Missing Supabase env vars: ${missing.join(', ')}`);
   }
@@ -18,7 +28,7 @@ function getSupabaseAdminClient() {
   if (!adminClient) {
     adminClient = createClient(
       process.env.SUPABASE_URL,
-      process.env.SUPABASE_SERVICE_ROLE_KEY,
+      getSecretKey(),
       {
         auth: {
           persistSession: false,
@@ -35,7 +45,7 @@ function getSupabaseAnonClient() {
   if (!anonClient) {
     anonClient = createClient(
       process.env.SUPABASE_URL,
-      process.env.SUPABASE_ANON_KEY,
+      getPublishableKey(),
       {
         auth: {
           persistSession: false,
@@ -51,7 +61,7 @@ function getSupabaseUserClient(jwt) {
   assertSupabaseConfig();
   return createClient(
     process.env.SUPABASE_URL,
-    process.env.SUPABASE_ANON_KEY,
+    getPublishableKey(),
     {
       auth: {
         persistSession: false,
