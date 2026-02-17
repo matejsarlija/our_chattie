@@ -69,12 +69,14 @@ export default function AnalysisRunDetailPage() {
             </div>
             <h1 className="text-2xl font-semibold tracking-tight text-[var(--text)]">Analiza {run?.oib || id}</h1>
           </div>
-          <button
-            onClick={refresh}
-            className="rounded-lg border border-[var(--border)] px-3 py-1.5 text-sm text-[var(--text)] hover:bg-[var(--surface-muted)]"
-          >
-            Osvježi
-          </button>
+          {isRunning && (
+            <button
+              onClick={refresh}
+              className="rounded-lg border border-[var(--border)] px-3 py-1.5 text-sm text-[var(--text)] hover:bg-[var(--surface-muted)]"
+            >
+              Osvježi
+            </button>
+          )}
         </div>
 
         {error && (

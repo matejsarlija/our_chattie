@@ -9,7 +9,6 @@ export function useAnalysisRunDetail({ runId, token, pollMs = 5000, enabled = tr
   const [loading, setLoading] = useState(false);
   const [eventsLoading, setEventsLoading] = useState(false);
   const [error, setError] = useState('');
-  const [lastUpdatedAt, setLastUpdatedAt] = useState(null);
 
   const loadRun = useCallback(async () => {
     if (!enabled || !token || !runId) return;
@@ -18,7 +17,6 @@ export function useAnalysisRunDetail({ runId, token, pollMs = 5000, enabled = tr
     try {
       const data = await apiFetch(`/api/analysis/runs/${runId}`, { token });
       setRun(data?.run || null);
-      setLastUpdatedAt(new Date().toISOString());
     } catch (err) {
       setError(err.message || 'Neuspjelo učitavanje analize.');
     } finally {
@@ -32,7 +30,6 @@ export function useAnalysisRunDetail({ runId, token, pollMs = 5000, enabled = tr
     try {
       const data = await apiFetch(`/api/analysis/runs/${runId}/events`, { token });
       setEvents(data?.events || []);
-      setLastUpdatedAt(new Date().toISOString());
     } catch (err) {
       setError((prev) => prev || err.message || 'Neuspjelo učitavanje događaja.');
     } finally {
@@ -50,6 +47,11 @@ export function useAnalysisRunDetail({ runId, token, pollMs = 5000, enabled = tr
     const status = String(run?.status || '').toLowerCase();
     return Boolean(status) && !TERMINAL.has(status);
   }, [run?.status]);
+
+  const lastUpdatedAt = useMemo(
+    () => run?.completed_at || run?.updated_at || run?.created_at || null,
+    [run?.completed_at, run?.updated_at, run?.created_at],
+  );
 
   useEffect(() => {
     if (!enabled || !token || !runId || !isRunning) return;
