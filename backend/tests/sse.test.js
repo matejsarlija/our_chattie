@@ -1,4 +1,4 @@
-const { buildSseData } = require('../helpers/sse');
+const { buildSseData, buildSseEvent } = require('../helpers/sse');
 
 describe('buildSseData', () => {
   test('wraps payload as SSE data line', () => {
@@ -14,5 +14,10 @@ describe('buildSseData', () => {
   test('supports error payloads', () => {
     const result = buildSseData({ error: 'Streaming failed' });
     expect(result).toBe('data: {"error":"Streaming failed"}\n\n');
+  });
+
+  test('supports named SSE events', () => {
+    const result = buildSseEvent('snapshot', { run: { id: 'r1' } });
+    expect(result).toBe('event: snapshot\ndata: {"run":{"id":"r1"}}\n\n');
   });
 });

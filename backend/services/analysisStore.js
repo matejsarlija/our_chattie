@@ -98,13 +98,23 @@ async function getAnalysisEvents({ supabase, analysisId }) {
     .from('analysis_events')
     .select('*')
     .eq('analysis_id', analysisId)
-    .order('created_at', { ascending: true });
+    .order('created_at', { ascending: true })
+    .order('id', { ascending: true });
 
   if (error) {
     throw new Error(`Failed to load analysis events: ${error.message}`);
   }
 
   return data;
+}
+
+async function getAnalysisRunFull({ supabase, id }) {
+  const [run, events] = await Promise.all([
+    getAnalysisRun({ supabase, id }),
+    getAnalysisEvents({ supabase, analysisId: id }),
+  ]);
+
+  return { run, events };
 }
 
 module.exports = {
@@ -115,4 +125,5 @@ module.exports = {
   listAnalysisRuns,
   getAnalysisRun,
   getAnalysisEvents,
+  getAnalysisRunFull,
 };

@@ -12,10 +12,18 @@ const crypto = require('crypto');
 const { requireSupabaseAuth, optionalSupabaseAuth } = require('./middleware/supabaseAuth');
 const { handleChatMessage, handleDocumentEdit } = require('./chatAgent'); // Import the chat service
 const { validateDocumentEditPayload } = require('./helpers/documentEditValidation');
-const { buildSseData } = require('./helpers/sse');
+const { buildSseData, buildSseEvent } = require('./helpers/sse');
+const { createAnalysisRunStreamHandler } = require('./helpers/analysisStreamHandler');
 const { parsePagination } = require('./helpers/pagination');
 const { sanitizeMarkdown } = require('./helpers/sanitize');
 const { DEFAULT_TRIAL_LIMIT, isTrialAllowed } = require('./helpers/trial');
+const {
+  isTerminalStatus,
+  buildCursor,
+  didRunChange,
+  getNewEvents,
+  shouldStartStreamTimers,
+} = require('./helpers/analysisStream');
 const { CourtSearchPuppeteer } = require('./scraper/courtSearchPuppeteer');
 const rateLimiter = require('./court-analysis/utils/rateLimiter');
 const { runCourtAnalysis } = require('./court-analysis/pipeline');
@@ -28,6 +36,7 @@ const {
   listAnalysisRuns,
   getAnalysisRun,
   getAnalysisEvents,
+  getAnalysisRunFull,
 } = require('./services/analysisStore');
 const {
   countTrialRuns,
@@ -425,20 +434,33 @@ async function startServer() {
 
   app.use('/api/court-analysis', rateLimiter);
 
-  const analysisIpLimiter = rateLimit({
+  const analysisWriteIpLimiter = rateLimit({
     windowMs: 60 * 1000,
     max: 10,
     message: 'Previše zahtjeva. Molimo pokušajte ponovno za 1 minutu.',
   });
 
-  const analysisUserLimiter = rateLimit({
+  const analysisWriteUserLimiter = rateLimit({
     windowMs: 60 * 1000,
     max: 6,
     keyGenerator: (req) => req.user?.id || req.ip,
     message: 'Previše zahtjeva za analizu. Molimo pokušajte ponovno za 1 minutu.',
   });
 
-  app.post('/api/court-analysis', analysisIpLimiter, optionalSupabaseAuth, analysisUserLimiter, async (req, res) => {
+  const analysisReadIpLimiter = rateLimit({
+    windowMs: 60 * 1000,
+    max: 120,
+    message: 'Previše zahtjeva. Molimo pokušajte ponovno za 1 minutu.',
+  });
+
+  const analysisReadUserLimiter = rateLimit({
+    windowMs: 60 * 1000,
+    max: 120,
+    keyGenerator: (req) => req.user?.id || req.ip,
+    message: 'Previše zahtjeva za analizu. Molimo pokušajte ponovno za 1 minutu.',
+  });
+
+  app.post('/api/court-analysis', analysisWriteIpLimiter, optionalSupabaseAuth, analysisWriteUserLimiter, async (req, res) => {
     const { searchTerm } = req.body;
 
     if (!searchTerm) {
@@ -680,7 +702,7 @@ async function startServer() {
     });
   });
 
-  app.get('/api/analysis/runs', analysisIpLimiter, requireSupabaseAuth, analysisUserLimiter, async (req, res) => {
+  app.get('/api/analysis/runs', analysisReadIpLimiter, requireSupabaseAuth, analysisReadUserLimiter, async (req, res) => {
     try {
       const { limit, offset } = parsePagination(req.query);
       const result = await listAnalysisRuns({
@@ -695,7 +717,7 @@ async function startServer() {
     }
   });
 
-  app.get('/api/analysis/runs/:id', analysisIpLimiter, requireSupabaseAuth, analysisUserLimiter, async (req, res) => {
+  app.get('/api/analysis/runs/:id', analysisReadIpLimiter, requireSupabaseAuth, analysisReadUserLimiter, async (req, res) => {
     try {
       const run = await getAnalysisRun({
         supabase: req.supabase,
@@ -708,7 +730,24 @@ async function startServer() {
     }
   });
 
-  app.get('/api/analysis/runs/:id/events', analysisIpLimiter, requireSupabaseAuth, analysisUserLimiter, async (req, res) => {
+  app.get('/api/analysis/runs/:id/full', analysisReadIpLimiter, requireSupabaseAuth, analysisReadUserLimiter, async (req, res) => {
+    try {
+      const result = await getAnalysisRunFull({
+        supabase: req.supabase,
+        id: req.params.id,
+      });
+      res.json({
+        run: result.run,
+        events: result.events,
+        server_time: new Date().toISOString(),
+      });
+    } catch (error) {
+      console.error('[Analysis Runs] get full failed:', error.message);
+      res.status(404).json({ error: 'Analysis run not found.' });
+    }
+  });
+
+  app.get('/api/analysis/runs/:id/events', analysisReadIpLimiter, requireSupabaseAuth, analysisReadUserLimiter, async (req, res) => {
     try {
       const events = await getAnalysisEvents({
         supabase: req.supabase,
@@ -720,6 +759,19 @@ async function startServer() {
       res.status(404).json({ error: 'Analysis events not found.' });
     }
   });
+
+  const analysisRunStreamHandler = createAnalysisRunStreamHandler({
+    getAnalysisRunFull,
+    buildSseEvent,
+    isTerminalStatus,
+    buildCursor,
+    didRunChange,
+    getNewEvents,
+    shouldStartStreamTimers,
+    streamPollMs: 1500,
+    heartbeatMs: 25000,
+  });
+  app.get('/api/analysis/runs/:id/stream', analysisReadIpLimiter, requireSupabaseAuth, analysisReadUserLimiter, analysisRunStreamHandler);
 
   app.post('/api/trial/claim', requireSupabaseAuth, async (req, res) => {
     const trialId = req.signedCookies?.[trialCookieName];

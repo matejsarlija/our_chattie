@@ -1,10 +1,11 @@
 class ApiError extends Error {
-  constructor(message, { status, code, data } = {}) {
+  constructor(message, { status, code, data, retryAfter } = {}) {
     super(message);
     this.name = 'ApiError';
     this.status = status;
     this.code = code;
     this.data = data;
+    this.retryAfter = retryAfter;
   }
 }
 
@@ -42,10 +43,12 @@ export const apiFetch = async (url, { method = 'GET', body, token, headers, isJs
 
   if (!response.ok) {
     const message = payload?.error || `Request failed with status ${response.status}`;
+    const retryAfter = response.headers.get('retry-after');
     throw new ApiError(message, {
       status: response.status,
       code: payload?.code,
       data: payload,
+      retryAfter,
     });
   }
 

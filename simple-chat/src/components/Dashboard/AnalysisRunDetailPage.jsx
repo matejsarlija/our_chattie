@@ -10,6 +10,7 @@ import DashboardShell from './DashboardShell';
 import { useAuth } from '../../contexts/AuthContext';
 import { useAnalysisRunDetail } from '../../hooks/useAnalysisRunDetail';
 import { useAnalysisEvents } from '../../hooks/useAnalysisEvents';
+import { env } from '../../lib/env';
 
 const formatDate = (iso) => {
   if (!iso) return '-';
@@ -27,6 +28,7 @@ export default function AnalysisRunDetailPage() {
     runId: id,
     token: accessToken,
     enabled: Boolean(user),
+    streamEnabled: env.analysisDetailSseEnabled,
   });
 
   const { timeline, stages, isErrored } = useAnalysisEvents(events);

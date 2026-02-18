@@ -5,19 +5,12 @@
 //
 // For CRA compatibility we still fall back to process.env when present.
 
-const readProcess = (key) => {
-  try {
-    if (typeof process !== 'undefined' && process.env) return process.env[key];
-  } catch { /* process may not exist in browser */ }
-  return undefined;
-};
-
-const first = (...values) => {
-  for (const v of values) {
-    if (v !== undefined && v !== '') return v;
-  }
-  return '';
-};
+import {
+  readProcess,
+  first,
+  readBool,
+  requireEnv,
+} from './envUtils';
 
 export const env = {
   apiUrl: first(
@@ -58,12 +51,12 @@ export const env = {
     import.meta.env.REACT_APP_SUPABASE_ANON_KEY,
     readProcess('REACT_APP_SUPABASE_ANON_KEY'),
   ),
-};
-
-export const requireEnv = (value, keyName) => {
-  if (!value) {
-    throw new Error(`Missing required environment variable: ${keyName}`);
-  }
-
-  return value;
+  analysisDetailSseEnabled: readBool(
+    first(
+      import.meta.env.VITE_ANALYSIS_DETAIL_SSE_ENABLED,
+      import.meta.env.REACT_APP_ANALYSIS_DETAIL_SSE_ENABLED,
+      readProcess('REACT_APP_ANALYSIS_DETAIL_SSE_ENABLED'),
+    ),
+    false,
+  ),
 };
