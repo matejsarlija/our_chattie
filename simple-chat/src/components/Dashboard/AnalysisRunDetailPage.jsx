@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import MermaidDiagram from '../MermaidDiagram';
@@ -23,8 +23,14 @@ const formatDate = (iso) => {
 export default function AnalysisRunDetailPage() {
   const { id } = useParams();
   const { user, accessToken, loading: authLoading, openAuthModal } = useAuth();
+  const [showFullTimeline, setShowFullTimeline] = useState(false);
+  const CONNECTION_LABELS = {
+    live: 'Live',
+    syncing: 'Syncing',
+    idle: 'Idle',
+  };
 
-  const { run, events, loading, eventsLoading, error, isRunning, lastUpdatedAt, refresh } = useAnalysisRunDetail({
+  const { run, events, loading, eventsLoading, error, isRunning, connectionMode, lastUpdatedAt, refresh } = useAnalysisRunDetail({
     runId: id,
     token: accessToken,
     enabled: Boolean(user),
@@ -32,6 +38,7 @@ export default function AnalysisRunDetailPage() {
   });
 
   const { timeline, stages, isErrored } = useAnalysisEvents(events);
+  const timelineToRender = showFullTimeline ? timeline : timeline.slice(-2);
 
   const resultMarkdown = useMemo(() => run?.result_text || '', [run?.result_text]);
 
@@ -92,9 +99,16 @@ export default function AnalysisRunDetailPage() {
         ) : (
           <>
             <section className="mb-5 rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4">
-              <div className="flex flex-wrap items-center gap-3">
-                <RunStatusBadge status={run.status} />
-                <span className="text-sm text-[var(--text-muted)]">Kreirano: {formatDate(run.created_at)}</span>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex flex-wrap items-center gap-3">
+                  <RunStatusBadge status={run.status} />
+                  {isRunning && (
+                    <span className="rounded-full border border-[var(--border)] bg-[var(--surface-muted)] px-2.5 py-1 text-xs text-[var(--text-muted)]">
+                      {CONNECTION_LABELS[connectionMode] || CONNECTION_LABELS.idle}
+                    </span>
+                  )}
+                  <span className="text-sm text-[var(--text-muted)]">OIB: {run.oib || id}</span>
+                </div>
                 <span className="text-sm text-[var(--text-muted)]">Ažurirano: {formatDate(lastUpdatedAt)}</span>
               </div>
             </section>
@@ -104,7 +118,20 @@ export default function AnalysisRunDetailPage() {
             </section>
 
             <section className="mb-5">
-              <RunEventTimeline timeline={timeline} isRunning={isRunning} loading={eventsLoading} />
+              <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4">
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <h3 className="text-sm font-semibold text-[var(--text)]">Događaji</h3>
+                  {timeline.length > 2 && (
+                    <button
+                      onClick={() => setShowFullTimeline((prev) => !prev)}
+                      className="rounded-lg border border-[var(--border)] px-3 py-1.5 text-xs font-medium text-[var(--text)] hover:bg-[var(--surface-muted)]"
+                    >
+                      {showFullTimeline ? 'Prikaži zadnje događaje' : 'Prikaži sve događaje'}
+                    </button>
+                  )}
+                </div>
+                <RunEventTimeline timeline={timelineToRender} isRunning={isRunning} loading={eventsLoading} embedded />
+              </div>
             </section>
 
             <section className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-5">

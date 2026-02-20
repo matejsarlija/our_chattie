@@ -136,7 +136,7 @@ export function useAnalysisRunDetail({ runId, token, pollMs = 5000, enabled = tr
     && isVisible
     && !streamFallback;
 
-  useAnalysisRunStream({
+  const { connected: streamConnected } = useAnalysisRunStream({
     runId,
     token,
     enabled: shouldUseStream,
@@ -195,6 +195,12 @@ export function useAnalysisRunDetail({ runId, token, pollMs = 5000, enabled = tr
     [run?.completed_at, run?.updated_at, run?.created_at],
   );
 
+  const connectionMode = useMemo(() => {
+    if (!isRunning) return 'idle';
+    if (shouldUseStream && streamConnected) return 'live';
+    return 'syncing';
+  }, [isRunning, shouldUseStream, streamConnected]);
+
   useEffect(() => {
     clearTimer();
     if (!enabled || !token || !runId || !isRunning || !isVisible || shouldUseStream) return undefined;
@@ -251,6 +257,7 @@ export function useAnalysisRunDetail({ runId, token, pollMs = 5000, enabled = tr
     eventsLoading,
     error: error || streamError,
     isRunning,
+    connectionMode,
     lastUpdatedAt,
     refresh: async () => {
       await loadDetail();

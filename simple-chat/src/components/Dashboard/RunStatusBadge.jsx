@@ -9,6 +9,10 @@ const mapStatus = (status) => {
     return { label: 'Greška', tone: 'danger' };
   }
 
+  if (['canceled', 'cancelled'].includes(normalized)) {
+    return { label: 'Otkazano', tone: 'warning' };
+  }
+
   if (['queued'].includes(normalized)) {
     return { label: 'U redu čekanja', tone: 'warning' };
   }
