@@ -1,3 +1,5 @@
+import { env } from './env';
+
 class ApiError extends Error {
   constructor(message, { status, code, data, retryAfter } = {}) {
     super(message);
@@ -11,45 +13,12 @@ class ApiError extends Error {
 
 const ABSOLUTE_URL_RE = /^https?:\/\//i;
 
-const readProcessApiUrl = () => {
-  try {
-    if (typeof process !== 'undefined' && process.env) {
-      return process.env.REACT_APP_API_URL;
-    }
-  } catch {
-    // ignore
-  }
-  return undefined;
-};
-
-const readViteApiUrl = () => {
-  try {
-    return Function(
-      'try { return (import.meta.env && (import.meta.env.VITE_API_URL || import.meta.env.REACT_APP_API_URL)) || undefined; } catch (_) { return undefined; }',
-    )();
-  } catch {
-    return undefined;
-  }
-};
-
-const getConfiguredApiUrl = () => {
-  try {
-    if (typeof globalThis !== 'undefined' && globalThis.__APP_API_URL) {
-      return globalThis.__APP_API_URL;
-    }
-  } catch {
-    // ignore
-  }
-
-  return readViteApiUrl() || readProcessApiUrl();
-};
-
 export const resolveApiUrl = (url) => {
   if (typeof url !== 'string' || !url) return url;
   if (ABSOLUTE_URL_RE.test(url)) return url;
   if (!url.startsWith('/api/')) return url;
 
-  const configuredApiUrl = getConfiguredApiUrl();
+  const configuredApiUrl = env.apiUrl;
   if (!configuredApiUrl || typeof configuredApiUrl !== 'string') {
     return url;
   }

@@ -1,8 +1,15 @@
-import { apiFetch, ApiClientError } from '../apiClient';
+const envMock = { apiUrl: '/api/chat' };
+
+jest.mock('../env', () => ({
+  env: envMock,
+}));
+
+import { apiFetch, ApiClientError, resolveApiUrl } from '../apiClient';
 
 describe('apiFetch', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    envMock.apiUrl = '/api/chat';
   });
 
   test('includes retry-after header in thrown ApiClientError', async () => {
@@ -44,5 +51,19 @@ describe('apiFetch', () => {
   test('exports ApiClientError alias', () => {
     expect(ApiClientError).toBeDefined();
     expect(typeof ApiClientError).toBe('function');
+  });
+
+  test('resolves /api paths to configured backend origin', () => {
+    envMock.apiUrl = 'https://pravni-asistent-api.onrender.com/api/chat';
+    expect(resolveApiUrl('/api/analysis/runs?limit=10&offset=0')).toBe(
+      'https://pravni-asistent-api.onrender.com/api/analysis/runs?limit=10&offset=0',
+    );
+  });
+
+  test('keeps absolute URLs unchanged', () => {
+    envMock.apiUrl = 'https://pravni-asistent-api.onrender.com/api/chat';
+    expect(resolveApiUrl('https://alimentacija.info/api/analysis/runs')).toBe(
+      'https://alimentacija.info/api/analysis/runs',
+    );
   });
 });
