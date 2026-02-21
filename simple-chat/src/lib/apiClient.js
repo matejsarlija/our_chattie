@@ -9,6 +9,70 @@ class ApiError extends Error {
   }
 }
 
+const ABSOLUTE_URL_RE = /^https?:\/\//i;
+
+const readProcessApiUrl = () => {
+  try {
+    if (typeof process !== 'undefined' && process.env) {
+      return process.env.REACT_APP_API_URL;
+    }
+  } catch {
+    // ignore
+  }
+  return undefined;
+};
+
+const readViteApiUrl = () => {
+  try {
+    return Function('try { return import.meta.env && import.meta.env.VITE_API_URL; } catch (_) { return undefined; }')();
+  } catch {
+    return undefined;
+  }
+};
+
+const getConfiguredApiUrl = () => {
+  try {
+    if (typeof globalThis !== 'undefined' && globalThis.__APP_API_URL) {
+      return globalThis.__APP_API_URL;
+    }
+  } catch {
+    // ignore
+  }
+
+  return readViteApiUrl() || readProcessApiUrl();
+};
+
+export const resolveApiUrl = (url) => {
+  if (typeof url !== 'string' || !url) return url;
+  if (ABSOLUTE_URL_RE.test(url)) return url;
+  if (!url.startsWith('/api/')) return url;
+
+  const configuredApiUrl = getConfiguredApiUrl();
+  if (!configuredApiUrl || typeof configuredApiUrl !== 'string') {
+    return url;
+  }
+
+  if (ABSOLUTE_URL_RE.test(configuredApiUrl)) {
+    try {
+      const parsed = new URL(configuredApiUrl);
+      const apiPathIndex = parsed.pathname.indexOf('/api');
+      const apiPrefix = apiPathIndex >= 0
+        ? parsed.pathname.slice(0, apiPathIndex + 4)
+        : '/api';
+      return `${parsed.origin}${apiPrefix}${url.slice(4)}`;
+    } catch {
+      return url;
+    }
+  }
+
+  const apiPathIndex = configuredApiUrl.indexOf('/api');
+  if (apiPathIndex < 0) {
+    return url;
+  }
+  const apiPrefix = configuredApiUrl.slice(0, apiPathIndex + 4);
+  return `${apiPrefix}${url.slice(4)}`;
+};
+
 const buildHeaders = ({ token, headers = {}, isJson = true }) => {
   const out = { ...headers };
 
@@ -24,7 +88,7 @@ const buildHeaders = ({ token, headers = {}, isJson = true }) => {
 };
 
 export const apiFetch = async (url, { method = 'GET', body, token, headers, isJson = true, signal } = {}) => {
-  const response = await fetch(url, {
+  const response = await fetch(resolveApiUrl(url), {
     method,
     headers: buildHeaders({ token, headers, isJson }),
     body: body === undefined ? undefined : isJson ? JSON.stringify(body) : body,

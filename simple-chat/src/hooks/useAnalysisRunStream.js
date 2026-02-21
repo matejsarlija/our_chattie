@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { SseEventParser } from '../utils/sseEventParser';
+import { resolveApiUrl } from '../lib/apiClient';
 
 export function useAnalysisRunStream({
   runId,
@@ -80,7 +81,7 @@ export function useAnalysisRunStream({
 
     const run = async () => {
       try {
-        const response = await fetch(`/api/analysis/runs/${runId}/stream`, {
+        const response = await fetch(resolveApiUrl(`/api/analysis/runs/${runId}/stream`), {
           method: 'GET',
           headers: {
             Authorization: `Bearer ${token}`,

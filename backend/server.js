@@ -10,7 +10,6 @@ const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
 const { requireSupabaseAuth, optionalSupabaseAuth } = require('./middleware/supabaseAuth');
-const { handleChatMessage, handleDocumentEdit } = require('./chatAgent'); // Import the chat service
 const { validateDocumentEditPayload } = require('./helpers/documentEditValidation');
 const { buildSseData, buildSseEvent } = require('./helpers/sse');
 const { createAnalysisRunStreamHandler } = require('./helpers/analysisStreamHandler');
@@ -49,6 +48,15 @@ const {
   deleteTrialData,
 } = require('./services/trialStore');
 
+let chatAgent = null;
+
+function getChatAgent() {
+  if (!chatAgent) {
+    chatAgent = require('./chatAgent');
+  }
+  return chatAgent;
+}
+
 // ========= CHANGE 1: REMOVE THE BROKEN REQUIRE STATEMENT =========
 // const PQueue = require('p-queue').default; // This line is removed
 
@@ -68,7 +76,8 @@ async function startServer() {
 
   const app = express();
   app.set('trust proxy', 1); // Trust the first proxy (e.g., React dev server or production LB)
-  const port = process.env.PORT || 3001;
+  const port = Number(process.env.PORT) || 3001;
+  const host = '0.0.0.0';
   const courtAnalysisQueue = new PQueue({ concurrency: 1 }); // This should work now
   const trialCookieSecret = process.env.TRIAL_COOKIE_SECRET || process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!trialCookieSecret) {
@@ -202,6 +211,14 @@ async function startServer() {
 
   // Document edit endpoint for specialized AI-assisted text modification
   app.post('/api/document-edit', async (req, res) => {
+    let handleDocumentEdit;
+    try {
+      ({ handleDocumentEdit } = getChatAgent());
+    } catch (agentError) {
+      console.error('[AI] chatAgent init failed:', agentError);
+      return res.status(503).json({ error: 'AI service unavailable.' });
+    }
+
     try {
       const { content, instruction, context, selectionRange, mode } = req.body || {};
       const validation = validateDocumentEditPayload({ content, instruction, selectionRange });
@@ -302,6 +319,13 @@ async function startServer() {
   // Chat endpoint with proper streaming format
   app.post('/api/chat', upload.single('file'), async (req, res) => {
     let uploadedFilePath = null;
+    let handleChatMessage;
+    try {
+      ({ handleChatMessage } = getChatAgent());
+    } catch (agentError) {
+      console.error('[AI] chatAgent init failed:', agentError);
+      return res.status(503).json({ error: 'AI service unavailable.' });
+    }
 
     try {
       let { messages } = req.body;
@@ -912,8 +936,12 @@ async function startServer() {
     next();
   });
 
-  app.listen(port, () => {
-    console.log(`Gemini server running on port ${port}`);
+  const server = app.listen(port, host, () => {
+    console.log(`Gemini server running on ${host}:${port}`);
+  });
+  server.on('error', (error) => {
+    console.error('[Startup] Server listen failed:', error);
+    process.exit(1);
   });
 
 } // End of the async startServer function
