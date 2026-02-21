@@ -24,7 +24,9 @@ const readProcessApiUrl = () => {
 
 const readViteApiUrl = () => {
   try {
-    return Function('try { return import.meta.env && import.meta.env.VITE_API_URL; } catch (_) { return undefined; }')();
+    return Function(
+      'try { return (import.meta.env && (import.meta.env.VITE_API_URL || import.meta.env.REACT_APP_API_URL)) || undefined; } catch (_) { return undefined; }',
+    )();
   } catch {
     return undefined;
   }
