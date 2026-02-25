@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import BubbleMenuContent from '../BubbleMenu';
 
@@ -11,207 +11,172 @@ jest.mock('../../../hooks/useStreamingAPI', () => ({
   }),
 }));
 
-// Mock useEditor
-const mockEditor = {
-  state: {
-    selection: {
-      from: 10,
-      to: 20,
-    },
-  },
-  chain: jest.fn(() => ({
-    focus: jest.fn(() => ({
-      deleteRange: jest.fn(() => ({ run: jest.fn() })),
-      insertContent: jest.fn(() => ({ run: jest.fn() })),
-    })),
-  })),
-};
-
-jest.mock('@tiptap/react', () => ({
-  useEditor: jest.fn(() => mockEditor),
+// Mock buildTrackedChangesHtml
+jest.mock('../../../hooks/utils/diffUtils', () => ({
+  buildTrackedChangesHtml: (original, final) => ({
+    html: `<span class="diff-removed">${original}</span><span class="diff-added">${final}</span>`,
+    textLength: final.length
+  })
 }));
 
-// Test the component's structure and behavior without importing it directly
-describe('BubbleMenu Component Logic', () => {
+describe('BubbleMenuContent', () => {
+  let mockEditor;
   let mockOnReplaceText;
   let mockOnClose;
 
   beforeEach(() => {
     mockOnReplaceText = jest.fn();
     mockOnClose = jest.fn();
-    mockStreamDocumentEdit.mockResolvedValue(undefined);
-    jest.clearAllMocks();
-  });
+    mockStreamDocumentEdit.mockReset(); 
+    
+    // Setup default mock implementation
+    mockStreamDocumentEdit.mockImplementation((text, prompt, callbacks) => {
+       // Simulate async response
+       setTimeout(() => {
+           callbacks.onComplete("Updated text");
+       }, 10);
+       return Promise.resolve();
+    });
 
-  test('has correct props interface', () => {
-    // Test that the component interface matches expectations
-    const props = {
-      editor: expect.any(Object),
-      selectedText: expect.any(String),
-      onReplaceText: expect.any(Function),
-      onClose: expect.any(Function)
+    // Mock Tiptap editor chain with simplified structure
+    const chainResult = {
+        focus: jest.fn(() => ({
+            deleteRange: jest.fn(() => ({
+                insertContent: jest.fn(() => ({
+                    run: jest.fn()
+                }))
+            }))
+        }))
     };
 
-    expect(props).toEqual({
-      editor: expect.any(Object),
-      selectedText: expect.any(String),
-      onReplaceText: expect.any(Function),
-      onClose: expect.any(Function)
-    });
+    const mockSetTextSelection = jest.fn();
+
+    mockEditor = {
+      state: {
+        selection: { from: 10, to: 20 },
+      },
+      chain: jest.fn(() => chainResult),
+      commands: {
+        setTextSelection: mockSetTextSelection
+      }
+    };
   });
 
-  test('handles mobile screen detection', () => {
-    // Mock mobile screen width
-    Object.defineProperty(window, 'innerWidth', {
-      writable: true,
-      configurable: true,
-      value: 767,
-    });
-
-    // Reset mock
-    jest.clearAllMocks();
-
-    // Trigger a resize event to test mobile detection
-    window.dispatchEvent(new Event('resize'));
-
-    // The test passes if no errors are thrown
-    expect(true).toBe(true);
-  });
-
-  test('provides preset prompts array', () => {
-    // Test the preset prompts that should be available
-    const presetPrompts = [
-      "Učini formalnijim za hrvatski sud",
-      "Proširi uz relevantne pravne argumente", 
-      "Dodaj pravnu terminologiju",
-      "Pojednostavi ovaj tekst",
-      "Dodaj dodatne argumente",
-      "Formatiraj kao pravni odlomak"
-    ];
-
-    expect(presetPrompts).toHaveLength(6);
-    expect(presetPrompts[0]).toBe("Učini formalnijim za hrvatski sud");
-    expect(presetPrompts[presetPrompts.length - 1]).toBe("Formatiraj kao pravni odlomak");
-  });
-
-  test('handles API calls correctly', async () => {
-    mockStreamDocumentEdit.mockImplementation(() => {
-      return Promise.resolve();
-    });
-
-    render(
+  const renderComponent = (props = {}) => {
+    return render(
       <BubbleMenuContent
         editor={mockEditor}
-        selectedText="Test text"
+        selectedText="Original text"
         selectionRange={{ from: 10, to: 20 }}
         onReplaceText={mockOnReplaceText}
         onClose={mockOnClose}
         isMobile={false}
+        {...props}
       />
     );
+  };
 
-    const firstPreset = screen.getByText('Učini formalnijim za hrvatski sud');
-    fireEvent.click(firstPreset);
+  test('DE-106: Renders only the 3 approved presets', () => {
+    renderComponent();
+    
+    expect(screen.getByText('Učini formalnijim')).toBeInTheDocument();
+    expect(screen.getByText('Pojednostavi')).toBeInTheDocument();
+    expect(screen.getByText('Dodaj pravne argumente')).toBeInTheDocument();
+    
+    // Ensure old presets are gone
+    expect(screen.queryByText('Učini formalnijim za hrvatski sud')).not.toBeInTheDocument();
+  });
 
+  test('DE-101: Preset click triggers mutation exactly once via editor chain (Single Writer)', async () => {
+    renderComponent();
+    
+    fireEvent.click(screen.getByText('Učini formalnijim'));
+    
+    // Wait for the chain call to ensure async logic completed
     await waitFor(() => {
-      expect(mockStreamDocumentEdit).toHaveBeenCalled();
+      expect(mockEditor.chain).toHaveBeenCalled();
+    });
+
+    // Verify preview mutation happened
+    expect(mockEditor.chain).toHaveBeenCalledTimes(1);
+    expect(mockOnReplaceText).not.toHaveBeenCalled();
+  });
+
+  test('DE-102: Custom prompt submit works via button', async () => {
+    renderComponent();
+    fireEvent.click(screen.getByText('Prilagođena naredba'));
+    
+    const textarea = screen.getByPlaceholderText('Kako da uredim ovaj tekst?');
+    fireEvent.change(textarea, { target: { value: 'Make it better' } });
+    fireEvent.click(screen.getByText('Primijeni prijedlog'));
+    
+    // Wait for side effect
+    await waitFor(() => {
+      expect(mockStreamDocumentEdit).toHaveBeenCalledWith(
+        'Original text',
+        'Make it better',
+        expect.anything(),
+        expect.objectContaining({ mode: 'preview' })
+      );
+      expect(mockEditor.chain).toHaveBeenCalled();
     });
   });
 
-  test('handles escape key events', () => {
-    render(
-      <BubbleMenuContent
-        editor={mockEditor}
-        selectedText="Test text"
-        selectionRange={{ from: 10, to: 20 }}
-        onReplaceText={mockOnReplaceText}
-        onClose={mockOnClose}
-        isMobile={false}
-      />
-    );
+  test('DE-102: Custom prompt submit works via Enter key', async () => {
+    renderComponent();
+    fireEvent.click(screen.getByText('Prilagođena naredba'));
+    
+    const textarea = screen.getByPlaceholderText('Kako da uredim ovaj tekst?');
+    fireEvent.change(textarea, { target: { value: 'Make it better' } });
+    
+    fireEvent.keyDown(textarea, { key: 'Enter', code: 'Enter', charCode: 13 });
+    
+    await waitFor(() => {
+      expect(mockEditor.chain).toHaveBeenCalled();
+    });
+  });
 
-    fireEvent.keyDown(document, { key: 'Escape' });
+  test('DE-106: Format quick action triggers specific prompt', async () => {
+    renderComponent();
+    fireEvent.click(screen.getByText('Prilagođena naredba'));
+    
+    fireEvent.click(screen.getByTitle('Formatiraj strukturu')); 
+    
+    await waitFor(() => {
+      expect(mockStreamDocumentEdit).toHaveBeenCalledWith(
+        'Original text',
+        "Formatiraj tekst za bolju čitljivost i strukturu, ali ne mijenjaj pravno značenje.",
+        expect.anything(),
+        expect.anything()
+      );
+      expect(mockEditor.chain).toHaveBeenCalled();
+    });
+  });
+
+  test('DE-104: Otkaži (Cancel) behavior', async () => {
+    // 1. Test Simple Cancel (No Preview)
+    const { unmount } = renderComponent();
+    
+    fireEvent.click(screen.getByText('Otkaži'));
+    expect(mockOnClose).toHaveBeenCalledTimes(1);
+    
+    unmount();
+    mockOnClose.mockClear();
+
+    // 2. Test Smart Cancel (With Preview)
+    renderComponent();
+    fireEvent.click(screen.getByText('Učini formalnijim'));
+    
+    // Wait for preview to render (Accept button appears)
+    await waitFor(() => {
+      expect(screen.getByText('Prihvati')).toBeInTheDocument();
+    });
+    
+    mockEditor.chain.mockClear(); 
+    fireEvent.click(screen.getByText('Otkaži'));
+    
+    // Should revert changes 
+    expect(mockEditor.chain).toHaveBeenCalled();
     expect(mockOnClose).toHaveBeenCalled();
   });
-
-  test('prevents event propagation', () => {
-    const mockEvent = {
-      stopPropagation: jest.fn(),
-    };
-
-    // Test event handling
-    const event = { ...mockEvent, key: 'Enter' };
-    
-    // Simulate the component preventing propagation
-    event.stopPropagation();
-
-    expect(mockEvent.stopPropagation).toHaveBeenCalled();
-  });
-
-  test('handles loading states correctly', async () => {
-    let resolveLoading;
-    let isLoading = false;
-
-    mockStreamDocumentEdit.mockImplementation(() => {
-      return new Promise(resolve => {
-        resolveLoading = () => {
-          isLoading = false;
-          resolve();
-        };
-        isLoading = true;
-      });
-    });
-
-    // Test loading state management
-    expect(isLoading).toBe(false);
-
-    // Start loading
-    const promise = mockStreamDocumentEdit();
-    expect(isLoading).toBe(true);
-
-    // Complete loading
-    resolveLoading();
-    await promise;
-    expect(isLoading).toBe(false);
-  });
-
-  test('validates required props', () => {
-    // Test component with missing props
-    const validProps = {
-      editor: mockEditor,
-      selectedText: "Selected text",
-      onReplaceText: mockOnReplaceText,
-      onClose: mockOnClose
-    };
-
-    // All props should be provided
-    expect(validProps.editor).toBeDefined();
-    expect(validProps.selectedText).toBeDefined();
-    expect(validProps.onReplaceText).toBeDefined();
-    expect(validProps.onClose).toBeDefined();
-  });
-
-  test('handles empty selected text', () => {
-    const emptyTextProps = {
-      editor: mockEditor,
-      selectedText: "",
-      onReplaceText: mockOnReplaceText,
-      onClose: mockOnClose
-    };
-
-    // Component should handle empty text gracefully
-    expect(emptyTextProps.selectedText).toBe("");
-  });
-
-  test('supports custom prompt input', () => {
-    const customPromptProps = {
-      editor: mockEditor,
-      selectedText: "Selected text",
-      onReplaceText: mockOnReplaceText,
-      onClose: mockOnClose
-    };
-
-    // Should support custom prompt functionality
-    expect(customPromptProps.selectedText).toBe("Selected text");
-    });
 });

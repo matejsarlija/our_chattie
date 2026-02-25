@@ -20,7 +20,44 @@ export default function TipTapEditor({
   const [selectionRange, setSelectionRange] = useState({ from: null, to: null });
   const [showBubbleMenu, setShowBubbleMenu] = useState(false);
   const [menuPosition, setMenuPosition] = useState({ top: 0, left: 0 });
+  // DE-105: State for vertical flip
+  const [isFlipped, setIsFlipped] = useState(false);
   const debounceTimerRef = useRef(null);
+
+  // DE-105: Shared position calculation logic
+  const updateMenuPosition = useCallback((editorInstance) => {
+    if (!editorInstance) return;
+    
+    const { from, to } = editorInstance.state.selection;
+    if (from === to) return;
+
+    const { view } = editorInstance;
+    const start = view.coordsAtPos(from);
+    const end = view.coordsAtPos(to);
+
+    // Constants for clamping
+    const MENU_WIDTH_HALF = 160; 
+    const PADDING = 24;
+    const HEADER_OFFSET = 60; // Approximate top nav height
+
+    // 1. Clamp Horizontal (Left)
+    let left = (start.left + end.right) / 2;
+    left = Math.max(MENU_WIDTH_HALF + PADDING, left); 
+    left = Math.min(window.innerWidth - MENU_WIDTH_HALF - PADDING, left);
+
+    // 2. Flip Vertical (Top)
+    let top = start.top - 10;
+    let flipped = false;
+
+    // If top is too close to header/top of screen, flip to bottom
+    if (top < HEADER_OFFSET + PADDING) {
+      flipped = true;
+      top = end.bottom + 10;
+    }
+
+    setMenuPosition({ top, left });
+    setIsFlipped(flipped);
+  }, []);
   
   const editor = useEditor({
     onError: (error) => {
@@ -64,17 +101,7 @@ export default function TipTapEditor({
         const selected = editor.state.doc.textBetween(from, to, ' ');
         setSelectedText(selected);
         setSelectionRange({ from, to });
-        
-        // Calculate position for the menu
-        const { view } = editor;
-        const start = view.coordsAtPos(from);
-        const end = view.coordsAtPos(to);
-        
-        // Center horizontally over selection, position above
-        const left = (start.left + end.right) / 2;
-        const top = start.top - 10; // 10px offset above
-        
-        setMenuPosition({ top, left });
+        updateMenuPosition(editor);
       }
       
       setShowBubbleMenu(hasSelection);
@@ -86,6 +113,24 @@ export default function TipTapEditor({
       },
     },
   });
+
+  // DE-105: Recompute position on scroll/resize
+  useEffect(() => {
+    if (!showBubbleMenu || !editor) return;
+
+    const handleScrollOrResize = () => {
+      requestAnimationFrame(() => updateMenuPosition(editor));
+    };
+
+    window.addEventListener('resize', handleScrollOrResize);
+    window.addEventListener('scroll', handleScrollOrResize, true); // Capture phase for all scrollables
+
+    return () => {
+      window.removeEventListener('resize', handleScrollOrResize);
+      window.removeEventListener('scroll', handleScrollOrResize, true);
+    };
+  }, [showBubbleMenu, editor, updateMenuPosition]);
+
 
   // Handle external content changes (e.g., from localStorage)
   useEffect(() => {
@@ -143,7 +188,7 @@ export default function TipTapEditor({
       {/* BubbleMenu - Desktop: Floating, Mobile: Modal */}
       {editor && showBubbleMenu && (
         <div 
-          className={isMobile ? "" : "fixed z-50 transform -translate-x-1/2 -translate-y-full"}
+          className={isMobile ? "" : `fixed z-50 transform -translate-x-1/2 ${isFlipped ? '' : '-translate-y-full'}`}
           style={isMobile ? {} : { 
             top: `${menuPosition.top}px`, 
             left: `${menuPosition.left}px` 

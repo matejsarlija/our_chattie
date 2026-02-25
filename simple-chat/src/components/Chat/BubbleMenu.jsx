@@ -21,14 +21,31 @@ export default function BubbleMenuContent({
   const streamingAPI = useStreamingAPI();
 
   // Preset legal prompts for Croatian legal context
+  // DE-106: Preset Taxonomy Cleanup
   const presetPrompts = [
-    "Učini formalnijim za hrvatski sud",
-    "Proširi uz relevantne pravne argumente",
-    "Dodaj pravnu terminologiju",
-    "Pojednostavi ovaj tekst",
-    "Dodaj dodatne argumente",
-    "Formatiraj kao pravni odlomak"
+    "Učini formalnijim",
+    "Pojednostavi",
+    "Dodaj pravne argumente"
   ];
+
+  // DE-102: Custom prompt handlers
+  const handleCustomSubmit = useCallback(() => {
+    if (!customPrompt.trim()) return;
+    // DE-103: Custom prompts always use preview
+    handlePresetClick(customPrompt, true);
+  }, [customPrompt]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleKeyDown = (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleCustomSubmit();
+    }
+  };
+
+  // DE-106: Format Quick Action
+  const handleFormat = () => {
+    handlePresetClick("Formatiraj tekst za bolju čitljivost i strukturu, ali ne mijenjaj pravno značenje.", true);
+  };
 
   // Handle preset prompt selection
   const handlePresetClick = useCallback(async (prompt, preview = true) => {
@@ -68,20 +85,24 @@ export default function BubbleMenuContent({
                 finalText
               });
             } else {
+              // DE-101: Single writer policy - BubbleMenu handles mutation directly
               editor.chain()
                 .focus()
                 .deleteRange({ from, to })
                 .insertContent(finalText)
                 .run();
-              onReplaceText?.(finalText);
+              // Removed duplicate onReplaceText call
               onClose?.();
             }
           }
           setIsLoading(false);
-          setTimeout(() => {
-            setCustomPrompt('');
-            setShowPresetButtons(true);
-          }, 1000);
+          // Only reset prompt if we're not in preview mode (if we are, we wait for Accept/Reject)
+          if (!preview) {
+            setTimeout(() => {
+              setCustomPrompt('');
+              setShowPresetButtons(true);
+            }, 1000);
+          }
         },
         onError: (error) => {
           setIsLoading(false);
@@ -95,7 +116,7 @@ export default function BubbleMenuContent({
       setIsLoading(false);
       console.error('BubbleMenu request failed:', error);
     }
-  }, [selectedText, editor, onReplaceText, onClose, streamingAPI, isLoading, selectionRange]);
+  }, [selectedText, editor, onClose, streamingAPI, isLoading, selectionRange]);
 
   const handleAcceptChanges = useCallback(() => {
     if (!editor || !previewState) return;
@@ -104,10 +125,10 @@ export default function BubbleMenuContent({
       .deleteRange({ from: previewState.from, to: previewState.to })
       .insertContent(previewState.finalText)
       .run();
-    onReplaceText?.(previewState.finalText);
+    // Removed duplicate onReplaceText call
     setPreviewState(null);
     onClose?.();
-  }, [editor, onReplaceText, onClose, previewState]);
+  }, [editor, onClose, previewState]);
 
   const handleRejectChanges = useCallback(() => {
     if (!editor || !previewState) return;
@@ -116,25 +137,34 @@ export default function BubbleMenuContent({
       .deleteRange({ from: previewState.from, to: previewState.to })
       .insertContent(previewState.originalText)
       .run();
-    onReplaceText?.(previewState.originalText);
+    // Removed duplicate onReplaceText call
     setPreviewState(null);
     onClose?.();
-  }, [editor, onReplaceText, onClose, previewState]);
+  }, [editor, onClose, previewState]);
+
+  // DE-104: Smart Cancel
+  const handleCancel = useCallback(() => {
+    if (previewState) {
+      handleRejectChanges();
+    } else {
+      onClose?.();
+      setCustomPrompt('');
+      setShowPresetButtons(true);
+    }
+  }, [previewState, handleRejectChanges, onClose]);
 
   // Handle escape key
   useEffect(() => {
     const handleEscape = (e) => {
       if (e.key === 'Escape') {
         e.preventDefault();
-        onClose?.();
-        setCustomPrompt('');
-        setShowPresetButtons(true);
+        handleCancel();
       }
     };
 
     document.addEventListener('keydown', handleEscape);
     return () => document.removeEventListener('keydown', handleEscape);
-  }, [onClose]);
+  }, [handleCancel]);
 
   const containerClasses = isMobile 
     ? "fixed top-5 left-4 right-4 z-50 bg-white rounded-lg shadow-lg border border-slate-200 p-4 max-w-md"
@@ -165,16 +195,36 @@ export default function BubbleMenuContent({
             ))}
           </div>
         ) : (
-          <div className="mb-3">
+          <div className="mb-3 space-y-2">
             <textarea
               value={customPrompt}
               onChange={(e) => setCustomPrompt(e.target.value)}
+              onKeyDown={handleKeyDown}
               placeholder="Kako da uredim ovaj tekst?"
               className="w-full p-2 border border-slate-300 rounded-md text-sm resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               rows={3}
               disabled={isLoading}
               autoFocus
             />
+            
+            {/* DE-102: Submit button & DE-106: Format Quick Action */}
+            <div className="flex gap-2">
+               <button
+                 onClick={handleCustomSubmit}
+                 disabled={isLoading || !customPrompt.trim()}
+                 className="flex-1 text-xs p-2 bg-blue-600 hover:bg-blue-700 text-white rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed font-medium"
+               >
+                 Primijeni prijedlog
+               </button>
+               <button
+                 onClick={handleFormat}
+                 disabled={isLoading}
+                 className="px-3 text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 rounded transition-colors"
+                 title="Formatiraj strukturu"
+               >
+                 Format
+               </button>
+            </div>
           </div>
         )}
 
@@ -187,15 +237,7 @@ export default function BubbleMenuContent({
               Prilagođena naredba
             </button>
           )}
-          {showPresetButtons && !previewState && (
-            <button
-              onClick={() => handlePresetClick(customPrompt || 'Uredi označeni tekst', false)}
-              disabled={isLoading || !selectedText}
-              className="text-xs p-2 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              Primijeni odmah
-            </button>
-          )}
+          {/* DE-103: Removed ambiguous "Primijeni odmah" button to enforce preview flow */}
 
           {previewState && (
             <>
@@ -215,21 +257,12 @@ export default function BubbleMenuContent({
               >
                 Prihvati
               </button>
-              <button
-                onClick={handleRejectChanges}
-                className="text-xs p-2 bg-rose-100 hover:bg-rose-200 text-rose-800 rounded transition-colors"
-              >
-                Odbaci
-              </button>
+              {/* DE-104: Removed Odbaci */}
             </>
           )}
           
           <button
-            onClick={() => {
-              onClose?.();
-              setCustomPrompt('');
-              setShowPresetButtons(true);
-            }}
+            onClick={handleCancel}
             className="text-xs p-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded transition-colors"
           >
             Otkaži
