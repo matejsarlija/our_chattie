@@ -22,6 +22,7 @@ export default function TipTapEditor({
   const [menuPosition, setMenuPosition] = useState({ top: 0, left: 0 });
   // DE-105: State for vertical flip
   const [isFlipped, setIsFlipped] = useState(false);
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
   const debounceTimerRef = useRef(null);
 
   // DE-105: Shared position calculation logic
@@ -116,10 +117,11 @@ export default function TipTapEditor({
 
   // DE-105: Recompute position on scroll/resize
   useEffect(() => {
-    if (!showBubbleMenu || !editor) return;
-
     const handleScrollOrResize = () => {
-      requestAnimationFrame(() => updateMenuPosition(editor));
+      setIsMobile(window.innerWidth < 768);
+      if (showBubbleMenu && editor) {
+        requestAnimationFrame(() => updateMenuPosition(editor));
+      }
     };
 
     window.addEventListener('resize', handleScrollOrResize);
@@ -130,6 +132,7 @@ export default function TipTapEditor({
       window.removeEventListener('scroll', handleScrollOrResize, true);
     };
   }, [showBubbleMenu, editor, updateMenuPosition]);
+
 
 
   // Handle external content changes (e.g., from localStorage)
@@ -174,8 +177,6 @@ export default function TipTapEditor({
     setShowBubbleMenu(false);
     editor?.chain().focus().run();
   }, [editor]);
-
-  const isMobile = window.innerWidth < 768;
 
   return (
     <div className="w-full">

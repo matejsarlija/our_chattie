@@ -3,7 +3,7 @@
  */
 
 import React from 'react';
-import { render } from '@testing-library/react';
+import { render, act } from '@testing-library/react';
 import MessageList from '../MessageList';
 
 jest.mock('../../../contexts/ChatContext', () => ({
@@ -88,7 +88,9 @@ describe('MessageList scroll behavior', () => {
     const scrollContainer = container.querySelector('[data-scroll-container="chat"]');
     setScrollMetrics(scrollContainer, { scrollHeight: 2000, scrollTop: 200, clientHeight: 200 });
 
-    scrollContainer.dispatchEvent(new Event('scroll'));
+    act(() => {
+        scrollContainer.dispatchEvent(new Event('scroll'));
+    });
 
     useChat.mockReturnValue({
       ...baseChatState,

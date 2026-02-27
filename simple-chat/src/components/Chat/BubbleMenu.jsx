@@ -144,6 +144,10 @@ export default function BubbleMenuContent({
 
   // DE-104: Smart Cancel
   const handleCancel = useCallback(() => {
+    if (isLoading) {
+      streamingAPI.stopGeneration();
+    }
+
     if (previewState) {
       handleRejectChanges();
     } else {
@@ -151,7 +155,7 @@ export default function BubbleMenuContent({
       setCustomPrompt('');
       setShowPresetButtons(true);
     }
-  }, [previewState, handleRejectChanges, onClose]);
+  }, [previewState, handleRejectChanges, onClose, isLoading, streamingAPI]);
 
   // Handle escape key
   useEffect(() => {

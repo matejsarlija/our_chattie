@@ -5,9 +5,11 @@ import BubbleMenuContent from '../BubbleMenu';
 
 // Mock useStreamingAPI
 const mockStreamDocumentEdit = jest.fn();
+const mockStopGeneration = jest.fn();
 jest.mock('../../../hooks/useStreamingAPI', () => ({
   useStreamingAPI: () => ({
     streamDocumentEdit: mockStreamDocumentEdit,
+    stopGeneration: mockStopGeneration,
   }),
 }));
 
@@ -177,6 +179,26 @@ describe('BubbleMenuContent', () => {
     
     // Should revert changes 
     expect(mockEditor.chain).toHaveBeenCalled();
+    expect(mockOnClose).toHaveBeenCalled();
+  });
+
+  test('UX: Cancel during loading stops generation', async () => {
+    // Setup mock that doesn't complete immediately
+    mockStreamDocumentEdit.mockImplementation(() => {
+      return new Promise(() => {}); // Never resolves
+    });
+
+    renderComponent();
+    
+    // Start loading
+    fireEvent.click(screen.getByText('Učini formalnijim'));
+    
+    expect(screen.getByText('AI obrađuje...')).toBeInTheDocument();
+    
+    // Click Cancel
+    fireEvent.click(screen.getByText('Otkaži'));
+    
+    expect(mockStopGeneration).toHaveBeenCalled();
     expect(mockOnClose).toHaveBeenCalled();
   });
 });
