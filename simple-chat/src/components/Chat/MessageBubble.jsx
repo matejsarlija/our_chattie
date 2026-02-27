@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
 import TipTapEditor from './TipTapEditor';
+import WordFadeIn from './WordFadeIn';
 import { extractAndCleanMarkdown } from '../../hooks/utils/markdownParser';
 import { convertMarkdownWithCitations } from '../../hooks/utils/markdownToHTML';
 import { useChat } from '../../contexts/ChatContext';
@@ -8,7 +9,7 @@ import { useChat } from '../../contexts/ChatContext';
 /**
  * Renders a single chat message (User or AI)
  */
-export default function MessageBubble({ msg, index }) {
+export default function MessageBubble({ msg, index, isLastMessage }) {
   const isUser = msg.isUser;
 
   return (
@@ -25,7 +26,9 @@ export default function MessageBubble({ msg, index }) {
             <UserMessageContent msg={msg} />
           ) : (
             <div className="prose prose-slate max-w-none">
-              <AIMessageContent msg={msg} messageIndex={index} />
+              <WordFadeIn animate={isLastMessage && !msg.isStreaming}>
+                <AIMessageContent msg={msg} messageIndex={index} isLastMessage={isLastMessage} />
+              </WordFadeIn>
             </div>
           )}
         </div>
@@ -61,7 +64,7 @@ function UserMessageContent({ msg }) {
   );
 }
 
-const AIMessageContent = React.memo(({ msg, messageIndex }) => {
+const AIMessageContent = React.memo(({ msg, messageIndex, isLastMessage }) => {
   const { updateEditorContent } = useChat();
   const [hasError, setHasError] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');

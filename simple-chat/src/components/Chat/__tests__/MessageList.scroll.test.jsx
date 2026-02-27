@@ -91,6 +91,7 @@ describe('MessageList scroll behavior', () => {
     act(() => {
         scrollContainer.dispatchEvent(new Event('scroll'));
     });
+    scrollSpy.mockClear();
 
     useChat.mockReturnValue({
       ...baseChatState,

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useChat } from '../contexts/ChatContext';
 import { useStreamingAPI } from '../hooks/useStreamingAPI';
 import { useFileUpload } from '../hooks/useFileUpload';
@@ -11,7 +11,8 @@ import {
   ChatInput,
   ChatHeader,
   ControlPanel,
-  MobileControls
+  MobileControls,
+  ScrollToBottomButton
 } from './Chat';
 
 export default function AltChat() {
@@ -35,6 +36,8 @@ export default function AltChat() {
   // Welcome modal state
   const { isFirstVisit, loading } = useFirstVisit();
   const [showWelcomeModal, setShowWelcomeModal] = useState(false);
+  const [showScrollButton, setShowScrollButton] = useState(false);
+  const chatScrollContainerRef = useRef(null);
 
   // Input text state
   const [inputText, setInputText] = useState('');
@@ -170,6 +173,41 @@ export default function AltChat() {
     fileUpload.handleFileSelect({ target: { files: [file] } });
   };
 
+  useEffect(() => {
+    const scrollContainer = chatScrollContainerRef.current;
+    if (!scrollContainer) return;
+
+    const updateScrollButtonVisibility = () => {
+      const distanceFromBottom =
+        scrollContainer.scrollHeight - scrollContainer.scrollTop - scrollContainer.clientHeight;
+      setShowScrollButton(distanceFromBottom >= 120);
+    };
+
+    updateScrollButtonVisibility();
+    scrollContainer.addEventListener('scroll', updateScrollButtonVisibility, { passive: true });
+
+    return () => {
+      scrollContainer.removeEventListener('scroll', updateScrollButtonVisibility);
+    };
+  }, []);
+
+  useEffect(() => {
+    const scrollContainer = chatScrollContainerRef.current;
+    if (!scrollContainer) return;
+
+    const distanceFromBottom =
+      scrollContainer.scrollHeight - scrollContainer.scrollTop - scrollContainer.clientHeight;
+    setShowScrollButton(distanceFromBottom >= 120);
+  }, [messages, streamingAPI.isLoading]);
+
+  const handleScrollToBottom = useCallback(() => {
+    const scrollContainer = chatScrollContainerRef.current;
+    if (!scrollContainer) return;
+
+    setShowScrollButton(false);
+    scrollContainer.scrollTo({ top: scrollContainer.scrollHeight, behavior: 'smooth' });
+  }, []);
+
   return (
     <div className="flex flex-col h-screen bg-slate-50">
       {/* Header */}
@@ -195,13 +233,22 @@ export default function AltChat() {
         </div>
 
         {/* Main Content Area */}
-        <div className="flex-1">
-          <div className="flex flex-col h-full">
+        <div className="flex-1 min-h-0">
+          <div className="flex flex-col h-full min-h-0">
             {/* Message List */}
-            <div className="flex-1 overflow-y-auto" data-scroll-container="chat">
-              <ErrorBoundary>
-                <MessageList />
-              </ErrorBoundary>
+            <div className="flex-1 min-h-0 relative">
+              <div
+                ref={chatScrollContainerRef}
+                className="h-full min-h-0 overflow-y-auto"
+                data-scroll-container="chat"
+              >
+                <ErrorBoundary>
+                  <MessageList />
+                </ErrorBoundary>
+              </div>
+              <div className="pointer-events-none absolute inset-x-0 bottom-6 z-30 flex justify-center">
+                <ScrollToBottomButton visible={showScrollButton} onClick={handleScrollToBottom} />
+              </div>
             </div>
 
             {/* Chat Input */}

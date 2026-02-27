@@ -6,7 +6,13 @@ import TypingBubble from './TypingBubble';
 function MessageList() {
   const { messages, error, isLoading, textSize } = useChat();
   const messagesEndRef = useRef(null);
+  const scrollContainerRef = useRef(null);
   const shouldAutoScrollRef = useRef(true);
+
+  // Find the scroll container once on mount
+  useEffect(() => {
+    scrollContainerRef.current = messagesEndRef.current?.closest('[data-scroll-container="chat"]');
+  }, []);
 
   // Debug logging (opt-in in dev only)
   useEffect(() => {
@@ -22,13 +28,15 @@ function MessageList() {
 
   // Track whether user is near the bottom of the scroll container
   useEffect(() => {
-    const scrollContainer = messagesEndRef.current?.closest('[data-scroll-container="chat"]');
+    const scrollContainer = scrollContainerRef.current ||
+      messagesEndRef.current?.closest('[data-scroll-container="chat"]');
     if (!scrollContainer) return;
 
     const handleScroll = () => {
       const distanceFromBottom =
         scrollContainer.scrollHeight - scrollContainer.scrollTop - scrollContainer.clientHeight;
-      shouldAutoScrollRef.current = distanceFromBottom < 120;
+      const isNearBottom = distanceFromBottom < 120;
+      shouldAutoScrollRef.current = isNearBottom;
     };
 
     handleScroll();
@@ -61,10 +69,12 @@ function MessageList() {
     );
   }
 
+  const lastNonUserIndex = messages.reduce((acc, msg, i) => (!msg.isUser ? i : acc), -1);
+
   return (
-    <div 
-      className="max-w-4xl mx-auto p-4 md:p-5 w-full" 
-      style={{ 
+    <div
+      className="max-w-4xl mx-auto p-4 md:p-5 w-full relative"
+      style={{
         fontSize: `${textSize}px`,
         paddingBottom: '200px' // Added huge padding to clear the floating input
       }}
@@ -76,7 +86,8 @@ function MessageList() {
         {/* Render chat messages */}
         {messages.map((msg, index) => {
           const messageKey = msg.timestamp || `msg-${index}`;
-          return <MessageBubble key={messageKey} msg={msg} index={index} />;
+          const isLastMessage = index === lastNonUserIndex;
+          return <MessageBubble key={messageKey} msg={msg} index={index} isLastMessage={isLastMessage} />;
         })}
 
         {/* Loading indicator (Typing Bubble) */}
@@ -90,7 +101,7 @@ function MessageList() {
             </div>
           </div>
         )}
-        
+
         {/* Scroll anchor */}
         <div ref={messagesEndRef} className="h-1" />
       </div>
