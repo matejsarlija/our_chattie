@@ -1,10 +1,11 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useStreamingAPI } from '../../hooks/useStreamingAPI';
 import { buildTrackedChangesHtml } from '../../hooks/utils/diffUtils';
+import Shimmer from './Shimmer';
 
-export default function BubbleMenuContent({ 
-  editor, 
-  selectedText, 
+export default function BubbleMenuContent({
+  editor,
+  selectedText,
   selectionRange,
   onReplaceText,
   onClose,
@@ -17,7 +18,7 @@ export default function BubbleMenuContent({
   const activeRangeRef = useRef(null);
   const menuRef = useRef(null);
   const latestResponseRef = useRef('');
-  
+
   const streamingAPI = useStreamingAPI();
 
   // Preset legal prompts for Croatian legal context
@@ -46,13 +47,13 @@ export default function BubbleMenuContent({
   // Handle preset prompt selection
   const handlePresetClick = useCallback(async (prompt, preview = true) => {
     if (!selectedText || isLoading) return;
-    
+
     setIsLoading(true);
     setShowPresetButtons(false);
     setCustomPrompt(prompt);
     setPreviewState(null);
     activeRangeRef.current = selectionRange || (editor ? editor.state.selection : null);
-    
+
     try {
       await streamingAPI.streamDocumentEdit(selectedText, prompt, {
         onContent: (content) => {
@@ -166,12 +167,12 @@ export default function BubbleMenuContent({
     return () => document.removeEventListener('keydown', handleEscape);
   }, [handleCancel]);
 
-  const containerClasses = isMobile 
+  const containerClasses = isMobile
     ? "fixed top-5 left-4 right-4 z-50 bg-white rounded-lg shadow-lg border border-slate-200 p-4 max-w-md"
     : "bg-white rounded-lg shadow-lg border border-slate-200 p-4 w-80"; // Desktop uses relative styling as it's wrapped in BubbleMenu
 
   return (
-    <div 
+    <div
       ref={menuRef}
       className={containerClasses}
       onClick={(e) => e.stopPropagation()}
@@ -180,7 +181,7 @@ export default function BubbleMenuContent({
         <div className="text-sm font-medium text-slate-700 mb-2">
           Uredite označeni tekst
         </div>
-        
+
         {showPresetButtons && !previewState ? (
           <div className="grid grid-cols-2 gap-2 mb-3">
             {presetPrompts.map((preset, index) => (
@@ -206,16 +207,16 @@ export default function BubbleMenuContent({
               disabled={isLoading}
               autoFocus
             />
-            
+
             {/* DE-102: Submit button */}
             <div className="flex gap-2">
-               <button
-                 onClick={handleCustomSubmit}
-                 disabled={isLoading || !customPrompt.trim()}
-                 className="flex-1 text-xs p-2 bg-blue-600 hover:bg-blue-700 text-white rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed font-medium"
-               >
-                 Primijeni prijedlog
-               </button>
+              <button
+                onClick={handleCustomSubmit}
+                disabled={isLoading || !customPrompt.trim()}
+                className="flex-1 text-xs p-2 bg-blue-600 hover:bg-blue-700 text-white rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed font-medium"
+              >
+                Primijeni prijedlog
+              </button>
             </div>
           </div>
         )}
@@ -252,7 +253,7 @@ export default function BubbleMenuContent({
               {/* DE-104: Removed Odbaci */}
             </>
           )}
-          
+
           <button
             onClick={handleCancel}
             className="text-xs p-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded transition-colors"
@@ -262,8 +263,10 @@ export default function BubbleMenuContent({
         </div>
 
         {isLoading && (
-          <div className="text-xs text-slate-500 text-center mt-2">
-            AI obrađuje...
+          <div className="text-xs text-center mt-2">
+            <Shimmer duration={1.5} spread={2}>
+              AI obrađuje...
+            </Shimmer>
           </div>
         )}
       </div>
