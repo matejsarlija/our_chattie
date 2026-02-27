@@ -78,15 +78,13 @@ describe('BubbleMenuContent', () => {
     );
   };
 
-  test('DE-106: Renders only the 3 approved presets', () => {
+  test('DE-106: Renders 4 core presets including Format', () => {
     renderComponent();
     
     expect(screen.getByText('Učini formalnijim')).toBeInTheDocument();
     expect(screen.getByText('Pojednostavi')).toBeInTheDocument();
     expect(screen.getByText('Dodaj pravne argumente')).toBeInTheDocument();
-    
-    // Ensure old presets are gone
-    expect(screen.queryByText('Učini formalnijim za hrvatski sud')).not.toBeInTheDocument();
+    expect(screen.getByText('Formatiraj')).toBeInTheDocument();
   });
 
   test('DE-101: Preset click triggers mutation exactly once via editor chain (Single Writer)', async () => {
@@ -138,11 +136,11 @@ describe('BubbleMenuContent', () => {
     });
   });
 
-  test('DE-106: Format quick action triggers specific prompt', async () => {
+  test('DE-106: Format preset triggers specific prompt', async () => {
     renderComponent();
-    fireEvent.click(screen.getByText('Prilagođena naredba'));
     
-    fireEvent.click(screen.getByTitle('Formatiraj strukturu')); 
+    // Click the new Format preset button
+    fireEvent.click(screen.getByText('Formatiraj')); 
     
     await waitFor(() => {
       expect(mockStreamDocumentEdit).toHaveBeenCalledWith(
@@ -153,6 +151,14 @@ describe('BubbleMenuContent', () => {
       );
       expect(mockEditor.chain).toHaveBeenCalled();
     });
+  });
+
+  test('DE-106: Format button is removed from custom panel', () => {
+    renderComponent();
+    fireEvent.click(screen.getByText('Prilagođena naredba'));
+    
+    // The specific title we used for the quick action button should be gone
+    expect(screen.queryByTitle('Formatiraj strukturu')).not.toBeInTheDocument();
   });
 
   test('DE-104: Otkaži (Cancel) behavior', async () => {

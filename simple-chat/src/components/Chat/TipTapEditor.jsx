@@ -9,10 +9,10 @@ import DeletionMark from './DeletionMark';
 import { BubbleMenu as BubbleMenuExtension } from '@tiptap/extension-bubble-menu';
 import BubbleMenuContent from './BubbleMenu';
 
-export default function TipTapEditor({ 
+export default function TipTapEditor({
   messageId,
   editorId,
-  initialContent = '', 
+  initialContent = '',
   onChange,
   onError
 }) {
@@ -28,7 +28,7 @@ export default function TipTapEditor({
   // DE-105: Shared position calculation logic
   const updateMenuPosition = useCallback((editorInstance) => {
     if (!editorInstance) return;
-    
+
     const { from, to } = editorInstance.state.selection;
     if (from === to) return;
 
@@ -37,29 +37,45 @@ export default function TipTapEditor({
     const end = view.coordsAtPos(to);
 
     // Constants for clamping
-    const MENU_WIDTH_HALF = 160; 
+    const MENU_WIDTH_HALF = 160;
     const PADDING = 24;
     const HEADER_OFFSET = 60; // Approximate top nav height
+    const MENU_HEIGHT = 260;  // Approximate max height of the bubble menu
 
     // 1. Clamp Horizontal (Left)
     let left = (start.left + end.right) / 2;
-    left = Math.max(MENU_WIDTH_HALF + PADDING, left); 
+    left = Math.max(MENU_WIDTH_HALF + PADDING, left);
     left = Math.min(window.innerWidth - MENU_WIDTH_HALF - PADDING, left);
 
-    // 2. Flip Vertical (Top)
-    let top = start.top - 10;
+    // 2. Decide Vertical position: prefer above selection, flip below if too close to top
+    const ABOVE_TOP = start.top - 10;
+    const BELOW_BOTTOM = end.bottom + 10;
+
+    let top;
     let flipped = false;
 
-    // If top is too close to header/top of screen, flip to bottom
-    if (top < HEADER_OFFSET + PADDING) {
+    const spaceAbove = ABOVE_TOP - HEADER_OFFSET - PADDING;
+    const spaceBelow = window.innerHeight - BELOW_BOTTOM - PADDING;
+
+    if (spaceAbove >= MENU_HEIGHT) {
+      // Enough room above — always prefer top
+      top = ABOVE_TOP;
+      flipped = false;
+    } else {
+      // Not enough room above, flip to below
+      top = BELOW_BOTTOM;
       flipped = true;
-      top = end.bottom + 10;
     }
+
+    // 3. Final vertical clamp: ensure the menu always stays within the visible viewport
+    const minTop = HEADER_OFFSET + PADDING;
+    const maxTop = window.innerHeight - MENU_HEIGHT - PADDING;
+    top = Math.min(Math.max(top, minTop), Math.max(maxTop, minTop));
 
     setMenuPosition({ top, left });
     setIsFlipped(flipped);
   }, []);
-  
+
   const editor = useEditor({
     onError: (error) => {
       console.error('TipTap editor error:', error);
@@ -84,12 +100,12 @@ export default function TipTapEditor({
     content: initialContent,
     onUpdate: ({ editor }) => {
       const html = editor.getHTML();
-      
+
       // Debounce onChange to prevent excessive localStorage writes (500ms)
       if (debounceTimerRef.current) {
         clearTimeout(debounceTimerRef.current);
       }
-      
+
       debounceTimerRef.current = setTimeout(() => {
         onChange?.(messageId, editorId, html);
       }, 500);
@@ -97,14 +113,14 @@ export default function TipTapEditor({
     onSelectionUpdate: ({ editor }) => {
       const { from, to } = editor.state.selection;
       const hasSelection = from !== to;
-      
+
       if (hasSelection) {
         const selected = editor.state.doc.textBetween(from, to, ' ');
         setSelectedText(selected);
         setSelectionRange({ from, to });
         updateMenuPosition(editor);
       }
-      
+
       setShowBubbleMenu(hasSelection);
     },
     editorProps: {
@@ -150,7 +166,7 @@ export default function TipTapEditor({
       }
     }
   }, [initialContent, editor]);
-  
+
   // Cleanup debounce timer on unmount
   useEffect(() => {
     return () => {
@@ -181,18 +197,18 @@ export default function TipTapEditor({
   return (
     <div className="w-full">
       {/* Editor Content with auto-expanding height */}
-      <EditorContent 
-        editor={editor} 
+      <EditorContent
+        editor={editor}
         className="bg-white border border-slate-200 rounded-md shadow-sm"
       />
 
       {/* BubbleMenu - Desktop: Floating, Mobile: Modal */}
       {editor && showBubbleMenu && (
-        <div 
+        <div
           className={isMobile ? "" : `fixed z-50 transform -translate-x-1/2 ${isFlipped ? '' : '-translate-y-full'}`}
-          style={isMobile ? {} : { 
-            top: `${menuPosition.top}px`, 
-            left: `${menuPosition.left}px` 
+          style={isMobile ? {} : {
+            top: `${menuPosition.top}px`,
+            left: `${menuPosition.left}px`
           }}
         >
           <BubbleMenuContent

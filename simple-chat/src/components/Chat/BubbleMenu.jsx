@@ -23,9 +23,10 @@ export default function BubbleMenuContent({
   // Preset legal prompts for Croatian legal context
   // DE-106: Preset Taxonomy Cleanup
   const presetPrompts = [
-    "Učini formalnijim",
-    "Pojednostavi",
-    "Dodaj pravne argumente"
+    { label: "Učini formalnijim", prompt: "Učini formalnijim" },
+    { label: "Pojednostavi", prompt: "Pojednostavi" },
+    { label: "Dodaj pravne argumente", prompt: "Dodaj pravne argumente" },
+    { label: "Formatiraj", prompt: "Formatiraj tekst za bolju čitljivost i strukturu, ali ne mijenjaj pravno značenje." }
   ];
 
   // DE-102: Custom prompt handlers
@@ -40,11 +41,6 @@ export default function BubbleMenuContent({
       e.preventDefault();
       handleCustomSubmit();
     }
-  };
-
-  // DE-106: Format Quick Action
-  const handleFormat = () => {
-    handlePresetClick("Formatiraj tekst za bolju čitljivost i strukturu, ali ne mijenjaj pravno značenje.", true);
   };
 
   // Handle preset prompt selection
@@ -187,14 +183,14 @@ export default function BubbleMenuContent({
         
         {showPresetButtons && !previewState ? (
           <div className="grid grid-cols-2 gap-2 mb-3">
-            {presetPrompts.map((prompt, index) => (
+            {presetPrompts.map((preset, index) => (
               <button
                 key={index}
-                onClick={() => handlePresetClick(prompt)}
+                onClick={() => handlePresetClick(preset.prompt)}
                 disabled={isLoading}
                 className="text-left text-xs p-2 bg-slate-100 hover:bg-slate-200 rounded disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
-                {prompt}
+                {preset.label}
               </button>
             ))}
           </div>
@@ -211,7 +207,7 @@ export default function BubbleMenuContent({
               autoFocus
             />
             
-            {/* DE-102: Submit button & DE-106: Format Quick Action */}
+            {/* DE-102: Submit button */}
             <div className="flex gap-2">
                <button
                  onClick={handleCustomSubmit}
@@ -219,14 +215,6 @@ export default function BubbleMenuContent({
                  className="flex-1 text-xs p-2 bg-blue-600 hover:bg-blue-700 text-white rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed font-medium"
                >
                  Primijeni prijedlog
-               </button>
-               <button
-                 onClick={handleFormat}
-                 disabled={isLoading}
-                 className="px-3 text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 rounded transition-colors"
-                 title="Formatiraj strukturu"
-               >
-                 Format
                </button>
             </div>
           </div>
