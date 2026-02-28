@@ -12,6 +12,8 @@ create table if not exists analysis_runs (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users(id) on delete cascade,
   oib text not null,
+  query_type text,
+  query_value text,
   status text not null default 'running',
   result_text text,
   result_format text default 'markdown',
@@ -22,6 +24,11 @@ create table if not exists analysis_runs (
 
 create index if not exists analysis_runs_user_id_idx on analysis_runs(user_id);
 create index if not exists analysis_runs_created_at_idx on analysis_runs(created_at desc);
+alter table analysis_runs
+  drop constraint if exists analysis_runs_query_type_check;
+alter table analysis_runs
+  add constraint analysis_runs_query_type_check
+  check (query_type is null or query_type in ('oib', 'case_number', 'text'));
 
 create table if not exists analysis_events (
   id uuid primary key default gen_random_uuid(),

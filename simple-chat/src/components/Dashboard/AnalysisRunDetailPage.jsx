@@ -6,11 +6,55 @@ import ErrorBoundary from '../ErrorBoundary';
 import RunStatusBadge from './RunStatusBadge';
 import RunProgressStepper from './RunProgressStepper';
 import RunEventTimeline from './RunEventTimeline';
+import AnalysisReportAnnex from './AnalysisReportAnnex';
 import DashboardShell from './DashboardShell';
 import { useAuth } from '../../contexts/AuthContext';
 import { useAnalysisRunDetail } from '../../hooks/useAnalysisRunDetail';
 import { useAnalysisEvents } from '../../hooks/useAnalysisEvents';
 import { env } from '../../lib/env';
+
+const parseMaybeJson = (value) => {
+  if (!value) return null;
+  if (typeof value === 'string') {
+    try {
+      return JSON.parse(value);
+    } catch {
+      return null;
+    }
+  }
+  if (typeof value === 'object') return value;
+  return null;
+};
+
+const deriveEntryDisplayId = (detailLink) => {
+  if (!detailLink) return '-';
+  try {
+    const url = new URL(detailLink);
+    const parts = url.pathname.split('/').filter(Boolean);
+    return parts.at(-1) || '-';
+  } catch {
+    const parts = String(detailLink).split('/').filter(Boolean);
+    return parts.at(-1) || '-';
+  }
+};
+
+const getProcessedCasesFromParsedResult = (parsedResult, run) => {
+  if (Array.isArray(parsedResult?.processedCases)) return parsedResult.processedCases;
+  if (Array.isArray(run?.processedCases)) return run.processedCases;
+  return [];
+};
+
+const getReportFromParsedResult = (parsedResult) => {
+  if (parsedResult?.report && typeof parsedResult.report === 'object') return parsedResult.report;
+  return null;
+};
+
+const getQueryLabel = (queryType) => {
+  if (queryType === 'case_number') return 'Predmet';
+  if (queryType === 'oib') return 'OIB';
+  if (queryType === 'text') return 'Tekst';
+  return 'Upit';
+};
 
 const formatDate = (iso) => {
   if (!iso) return '-';
@@ -40,7 +84,27 @@ export default function AnalysisRunDetailPage() {
   const { timeline, stages, isErrored } = useAnalysisEvents(events);
   const timelineToRender = showFullTimeline ? timeline : timeline.slice(-2);
 
+  const parsedResult = useMemo(() => parseMaybeJson(run?.result_json ?? run?.resultJson), [run?.result_json, run?.resultJson]);
+  const report = useMemo(() => getReportFromParsedResult(parsedResult), [parsedResult]);
+  const findings = useMemo(() => Array.isArray(report?.findings) ? report.findings : [], [report?.findings]);
+  const reportTimeline = useMemo(() => Array.isArray(report?.timeline) ? report.timeline : [], [report?.timeline]);
+  const conflicts = useMemo(() => Array.isArray(report?.conflicts) ? report.conflicts : [], [report?.conflicts]);
   const resultMarkdown = useMemo(() => run?.result_text || '', [run?.result_text]);
+  const queryLabel = useMemo(() => getQueryLabel(run?.query_type), [run?.query_type]);
+  const queryValue = useMemo(() => run?.query_value || run?.oib || id, [run?.query_value, run?.oib, id]);
+  const metadataEntries = useMemo(() => {
+    const processedCases = getProcessedCasesFromParsedResult(parsedResult, run);
+    return processedCases.map((processedCase, index) => {
+      const caseResult = processedCase?.caseResult || {};
+      return {
+        key: `${caseResult.detailLink || caseResult.caseNumber || caseResult.title || 'entry'}-${index}`,
+        title: caseResult.title || '-',
+        caseNumber: caseResult.caseNumber || '-',
+        entryDisplayId: caseResult.entryDisplayId || deriveEntryDisplayId(caseResult.detailLink),
+        detailLink: caseResult.detailLink || null,
+      };
+    });
+  }, [parsedResult, run]);
 
   if (authLoading) {
     return (
@@ -107,11 +171,44 @@ export default function AnalysisRunDetailPage() {
                       {CONNECTION_LABELS[connectionMode] || CONNECTION_LABELS.idle}
                     </span>
                   )}
-                  <span className="text-sm text-[var(--text-muted)]">OIB: {run.oib || id}</span>
+                  <span className="text-sm text-[var(--text-muted)]">{queryLabel}: {queryValue}</span>
                 </div>
                 <span className="text-sm text-[var(--text-muted)]">Ažurirano: {formatDate(lastUpdatedAt)}</span>
               </div>
             </section>
+
+            {metadataEntries.length > 0 && (
+              <section className="mb-5 rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4">
+                <h2 className="mb-3 text-sm font-semibold text-[var(--text)]">Povezane objave i metapodaci predmeta</h2>
+                <div className="space-y-3">
+                  {metadataEntries.map((entry) => (
+                    <article key={entry.key} className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4">
+                      <div className="grid gap-2 sm:grid-cols-3">
+                        <div className="rounded-lg border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-2">
+                          <p className="text-[11px] uppercase tracking-wide text-[var(--text-muted)]">Naziv objave</p>
+                          <p className="mt-0.5 text-sm font-medium text-[var(--text)]">{entry.title}</p>
+                        </div>
+                        <div className="rounded-lg border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-2">
+                          <p className="text-[11px] uppercase tracking-wide text-[var(--text-muted)]">Broj predmeta</p>
+                          <p className="mt-0.5 text-sm font-medium text-[var(--text)]">{entry.caseNumber}</p>
+                        </div>
+                        <div className="rounded-lg border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-2">
+                          <p className="text-[11px] uppercase tracking-wide text-[var(--text-muted)]">ID objave</p>
+                          <p className="mt-0.5 text-sm font-medium text-[var(--text)]">{entry.entryDisplayId || '-'}</p>
+                        </div>
+                      </div>
+                      {entry.detailLink && (
+                        <div className="mt-3 border-t border-[var(--border)] pt-3">
+                          <a href={entry.detailLink} target="_blank" rel="noreferrer" className="text-xs text-[var(--accent)] hover:underline">
+                            Vidi izvornu objavu
+                          </a>
+                        </div>
+                      )}
+                    </article>
+                  ))}
+                </div>
+              </section>
+            )}
 
             <section className="mb-5">
               <RunProgressStepper stages={stages} isErrored={isErrored} />
@@ -164,6 +261,8 @@ export default function AnalysisRunDetailPage() {
                 </ErrorBoundary>
               )}
             </section>
+
+            <AnalysisReportAnnex findings={findings} timeline={reportTimeline} conflicts={conflicts} />
           </>
         )}
       </main>

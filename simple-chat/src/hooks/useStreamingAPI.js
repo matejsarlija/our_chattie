@@ -1,6 +1,47 @@
 import { useState, useRef, useCallback } from 'react';
 import { env } from '../lib/env';
 
+const isNonProductionRuntime = () => {
+    try {
+        return typeof process === 'undefined' || process.env?.NODE_ENV !== 'production';
+    } catch {
+        return true;
+    }
+};
+
+const classifyQueryType = (value) => {
+    if (/^\d{11}$/.test(value)) return 'oib';
+    // Covers common Croatian court case formats like St-357/2013.
+    if (/^[A-Za-zČĆŽŠĐčćžšđ]{1,5}\s*-\s*\d+\s*\/\s*\d{2,4}$/.test(value)) return 'case_number';
+    return 'text';
+};
+
+const buildCourtAnalysisPayload = (input) => {
+    if (input && typeof input === 'object' && !Array.isArray(input)) {
+        const typedType = String(input.type || '').trim();
+        const typedValue = String(input.value || '').trim();
+        if (typedType && typedValue) {
+            return {
+                query: {
+                    type: typedType,
+                    value: typedValue,
+                },
+                // Keep legacy fallback while backend rollout is in progress.
+                searchTerm: typedValue,
+            };
+        }
+    }
+
+    const searchTerm = String(input || '').trim();
+    return {
+        query: {
+            type: classifyQueryType(searchTerm),
+            value: searchTerm,
+        },
+        searchTerm,
+    };
+};
+
 export const useStreamingAPI = () => {
     const [isLoading, setIsLoading] = useState(false);
     const [progress, setProgress] = useState(0);
@@ -192,16 +233,23 @@ export const useStreamingAPI = () => {
     };
 
     // Court analysis streaming function
-    const streamCourtAnalysis = async (searchTerm, callbacks, options = {}) => {
+    const streamCourtAnalysis = async (queryInput, callbacks, options = {}) => {
         const COURT_ANALYSIS_URL = env.courtAnalysisUrl;
         const requestHeaders = {};
         if (options.token) {
             requestHeaders.Authorization = `Bearer ${options.token}`;
         }
 
+        const payload = buildCourtAnalysisPayload(queryInput);
+
+        if (isNonProductionRuntime()) {
+            // Useful for debugging payload contract changes during rollout.
+            console.debug('[streamCourtAnalysis] payload query:', payload.query);
+        }
+
         return streamResponse({
             url: COURT_ANALYSIS_URL,
-            payload: { searchTerm: searchTerm.trim() },
+            payload,
             headers: requestHeaders,
             onProgress: callbacks.onProgress,
             onComplete: callbacks.onComplete,

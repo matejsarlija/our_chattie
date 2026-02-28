@@ -6,37 +6,80 @@ const { DownloadDocumentsTool } = require('./agents/download-agent');
 const { AnalyzeDocumentsTool, generateComparativeAnalysis } = require('./agents/analysis-agent');
 const { VisualizerTool } = require('./agents/visualizer-agent');
 const { enrichParticipants } = require('../court-registry/enricher');
+const {
+    DEFAULT_CASE_LIMIT,
+    MIN_CASE_LIMIT,
+    MAX_CASE_LIMIT,
+} = require('../helpers/courtAnalysisRequest');
 const fs = require('fs');
 const path = require('path');
 const AdmZip = require('adm-zip');
 
+function clampCaseLimit(rawLimit) {
+    const numeric = Number.parseInt(String(rawLimit), 10);
+    if (Number.isNaN(numeric)) return DEFAULT_CASE_LIMIT;
+    if (numeric < MIN_CASE_LIMIT) return MIN_CASE_LIMIT;
+    if (numeric > MAX_CASE_LIMIT) return MAX_CASE_LIMIT;
+    return numeric;
+}
+
+function resolveAnalysisArgs(caseLimitOrOptions, maybeProgressCallback) {
+    if (typeof caseLimitOrOptions === 'function') {
+        return {
+            caseLimit: DEFAULT_CASE_LIMIT,
+            progressCallback: caseLimitOrOptions,
+        };
+    }
+
+    if (typeof caseLimitOrOptions === 'number' || typeof caseLimitOrOptions === 'string') {
+        return {
+            caseLimit: clampCaseLimit(caseLimitOrOptions),
+            progressCallback: maybeProgressCallback,
+        };
+    }
+
+    if (caseLimitOrOptions && typeof caseLimitOrOptions === 'object') {
+        return {
+            caseLimit: clampCaseLimit(caseLimitOrOptions.caseLimit),
+            progressCallback: maybeProgressCallback,
+        };
+    }
+
+    return {
+        caseLimit: DEFAULT_CASE_LIMIT,
+        progressCallback: maybeProgressCallback,
+    };
+}
+
 /**
  * New Pipeline for comparative court analysis: (Scrape → [Download → Unzip → Analyze] x N) → Compare
  * @param {string} searchTerm
- * @param {number} numberOfCases - How many recent cases to analyze.
+ * @param {number|object|function} caseLimitOrOptions - Case limit or options object.
  * @param {function} progressCallback
  */
-async function runCourtAnalysis(searchTerm, numberOfCases = 2, progressCallback) {
+async function runCourtAnalysis(searchTerm, caseLimitOrOptions, progressCallback) {
+    const resolved = resolveAnalysisArgs(caseLimitOrOptions, progressCallback);
+    const callback = resolved.progressCallback;
     const automator = new CourtSearchPuppeteer();
     const allProcessedCases = [];
     let allFilesToCleanup = [];
 
     try {
         // 1. Scrape for the N latest cases
-        progressCallback?.({ step: 'scraping', progress: 10, message: 'Pretražujem sudske zapise za nedavne objave...' });
+        callback?.({ step: 'scraping', progress: 10, message: 'Pretražujem sudske zapise za nedavne objave...' });
         await automator.init();
-        const casesToProcess = await automator.searchAndGetLatestCasesWithDocuments(searchTerm, numberOfCases);
+        const casesToProcess = await automator.searchAndGetLatestCasesWithDocuments(searchTerm, resolved.caseLimit);
         
         if (!casesToProcess || casesToProcess.length === 0) {
             throw new Error('Nije pronađen nijedan predmet s dostupnim dokumentima za traženi pojam.');
         }
 
         // Process the scraped cases using the separate function
-        const result = await processScrapedCases(casesToProcess, progressCallback);
+        const result = await processScrapedCases(casesToProcess, callback);
         return result;
 
     } catch (error) {
-        progressCallback?.({ step: 'error', progress: 100, message: error.message });
+        callback?.({ step: 'error', progress: 100, message: error.message });
         throw error;
     } finally {
         // Always close automator here - simpler logic
@@ -49,21 +92,23 @@ async function runCourtAnalysis(searchTerm, numberOfCases = 2, progressCallback)
  * Modified version of runCourtAnalysis that uses an existing automator instance
  * This prevents creating multiple Puppeteer instances in the cron job
  */
-async function runCourtAnalysisWithExistingAutomator(searchTerm, numberOfCases = 2, existingAutomator, progressCallback) {
+async function runCourtAnalysisWithExistingAutomator(searchTerm, caseLimitOrOptions, existingAutomator, progressCallback) {
+    const resolved = resolveAnalysisArgs(caseLimitOrOptions, progressCallback);
+    const callback = resolved.progressCallback;
     const allProcessedCases = [];
     let allFilesToCleanup = [];
 
     try {
         // 1. Use the existing automator to scrape (no init/close needed)
-        progressCallback?.({ step: 'scraping', progress: 10, message: 'Pretražujem sudske zapise za nedavne objave...' });
-        const casesToProcess = await existingAutomator.searchAndGetLatestCasesWithDocuments(searchTerm, numberOfCases);
+        callback?.({ step: 'scraping', progress: 10, message: 'Pretražujem sudske zapise za nedavne objave...' });
+        const casesToProcess = await existingAutomator.searchAndGetLatestCasesWithDocuments(searchTerm, resolved.caseLimit);
 
         if (!casesToProcess || casesToProcess.length === 0) {
             throw new Error('Nije pronađen nijedan predmet s dostupnim dokumentima za traženi pojam.');
         }
 
         const totalCases = casesToProcess.length;
-        progressCallback?.({ step: 'processing_setup', progress: 20, message: `Pronađeno ${totalCases} objava za analizu.` });
+        callback?.({ step: 'processing_setup', progress: 20, message: `Pronađeno ${totalCases} objava za analizu.` });
 
         const downloadTool = new DownloadDocumentsTool();
         const analyzeTool = new AnalyzeDocumentsTool();
@@ -75,11 +120,11 @@ async function runCourtAnalysisWithExistingAutomator(searchTerm, numberOfCases =
             let downloadedFiles = [];
             let extractedFilePaths = [];
 
-            progressCallback?.({ step: 'processing_case', progress: 25 + (i / totalCases) * 50, message: `Obrađujem objavu ${i + 1} od ${totalCases}: ${caseInfo.title}` });
+            callback?.({ step: 'processing_case', progress: 25 + (i / totalCases) * 50, message: `Obrađujem objavu ${i + 1} od ${totalCases}: ${caseInfo.title}` });
 
             // --- ENRICHMENT STEP ---
             if (caseInfo.participants && caseInfo.participants.length > 0) {
-                progressCallback?.({ step: 'enriching', message: `Dohvaćam podatke iz Sudskog registra za sudionike...` });
+                callback?.({ step: 'enriching', message: `Dohvaćam podatke iz Sudskog registra za sudionike...` });
                 try {
                     caseInfo.participants = await enrichParticipants(caseInfo.participants);
                 } catch (err) {
@@ -89,11 +134,11 @@ async function runCourtAnalysisWithExistingAutomator(searchTerm, numberOfCases =
             // -----------------------
 
             // 2a. Download
-            progressCallback?.({ step: 'downloading', message: `Preuzimam arhivu za objavu ${i + 1}...` });
+            callback?.({ step: 'downloading', message: `Preuzimam arhivu za objavu ${i + 1}...` });
             downloadedFiles = await downloadTool._call({ documentLinks, progressCallback: null });
 
             // 2b. Unzip
-            progressCallback?.({ step: 'unzipping', message: `Raspakiram datoteke za objavu ${i + 1}...` });
+            callback?.({ step: 'unzipping', message: `Raspakiram datoteke za objavu ${i + 1}...` });
             const filesForAnalysis = [];
             for (const file of downloadedFiles) {
                 extractedFilePaths.push(file.filePath);
@@ -123,7 +168,7 @@ async function runCourtAnalysisWithExistingAutomator(searchTerm, numberOfCases =
             }
 
             // 2c. Analyze THIS case's documents
-            progressCallback?.({ step: 'analyzing', message: `Analiziram ${filesForAnalysis.length} datoteka za objavu ${i + 1}...` });
+            callback?.({ step: 'analyzing', message: `Analiziram ${filesForAnalysis.length} datoteka za objavu ${i + 1}...` });
 
             const analysis = await analyzeTool._call({ files: filesForAnalysis, caseInfo: caseInfo, progressCallback: null });
 
@@ -136,10 +181,10 @@ async function runCourtAnalysisWithExistingAutomator(searchTerm, numberOfCases =
         }
 
         // 3. Final Comparative Analysis
-        progressCallback?.({ step: 'comparing', progress: 85, message: 'Generiram usporednu analizu i zaključak...' });
+        callback?.({ step: 'comparing', progress: 85, message: 'Generiram usporednu analizu i zaključak...' });
         const comparativeAnalysis = await generateComparativeAnalysis(allProcessedCases);
 
-        progressCallback?.({ step: 'complete', progress: 100, message: 'Analiza je završena!' });
+        callback?.({ step: 'complete', progress: 100, message: 'Analiza je završena!' });
 
         return {
             processedCases: allProcessedCases,
@@ -147,7 +192,7 @@ async function runCourtAnalysisWithExistingAutomator(searchTerm, numberOfCases =
         };
 
     } catch (error) {
-        progressCallback?.({ step: 'error', progress: 100, message: error.message });
+        callback?.({ step: 'error', progress: 100, message: error.message });
         throw error;
     } finally {
         // Don't close the automator - the cron job will handle that

@@ -15,6 +15,8 @@ const { buildSseData, buildSseEvent } = require('./helpers/sse');
 const { createAnalysisRunStreamHandler } = require('./helpers/analysisStreamHandler');
 const { parsePagination } = require('./helpers/pagination');
 const { sanitizeMarkdown } = require('./helpers/sanitize');
+const { parseCourtAnalysisRequest } = require('./helpers/courtAnalysisRequest');
+const { normalizeAnalysisProgressEvent } = require('./helpers/analysisStage');
 const { DEFAULT_TRIAL_LIMIT, isTrialAllowed } = require('./helpers/trial');
 const {
   isTerminalStatus,
@@ -25,6 +27,7 @@ const {
 } = require('./helpers/analysisStream');
 const { CourtSearchPuppeteer } = require('./scraper/courtSearchPuppeteer');
 const rateLimiter = require('./court-analysis/utils/rateLimiter');
+const { deriveEntryDisplayId } = require('./court-analysis/utils/entryDisplayId');
 const { runCourtAnalysis } = require('./court-analysis/pipeline');
 const { getSupabaseAdminClient } = require('./services/supabase');
 const {
@@ -485,10 +488,14 @@ async function startServer() {
   });
 
   app.post('/api/court-analysis', analysisWriteIpLimiter, optionalSupabaseAuth, analysisWriteUserLimiter, async (req, res) => {
-    const { searchTerm } = req.body;
-
-    if (!searchTerm) {
-      return res.status(400).json({ error: 'Search term is required' });
+    let parsedRequest;
+    try {
+      parsedRequest = parseCourtAnalysisRequest(req.body);
+    } catch (err) {
+      if (err.statusCode === 400) {
+        return res.status(400).json({ error: err.message });
+      }
+      throw err;
     }
 
     if (req.authError) {
@@ -549,14 +556,16 @@ async function startServer() {
           analysisRun = await createAnalysisRun({
             supabase: req.supabase,
             userId: req.user.id,
-            oib: searchTerm,
+            oib: parsedRequest.query.value,
+            queryType: parsedRequest.query.type,
+            queryValue: parsedRequest.query.value,
             status: 'running',
           });
         } else {
           trialRun = await createTrialRun({
             supabaseAdmin,
             trialId,
-            oib: searchTerm,
+            oib: parsedRequest.query.value,
             status: 'running',
           });
         }
@@ -564,28 +573,31 @@ async function startServer() {
         const runId = analysisRun?.id || trialRun?.id;
 
         const safeProgress = async (event) => {
-          progressCallback(event);
+          const normalizedEvent = normalizeAnalysisProgressEvent(event);
+          progressCallback(normalizedEvent);
           try {
             if (isAuthed) {
               await appendAnalysisEvent({
                 supabase: req.supabase,
                 analysisId: analysisRun.id,
-                eventType: event.step || 'progress',
-                message: event.message || null,
+                eventType: normalizedEvent.step || 'progress',
+                message: normalizedEvent.message || null,
                 metadata: {
-                  progress: event.progress || null,
-                  hasData: Boolean(event.data),
+                  progress: normalizedEvent.progress || null,
+                  hasData: Boolean(normalizedEvent.data),
+                  ...(normalizedEvent.metadata?.originalStep ? { originalStep: normalizedEvent.metadata.originalStep } : {}),
                 },
               });
             } else {
               await appendTrialEvent({
                 supabaseAdmin,
                 trialRunId: trialRun.id,
-                eventType: event.step || 'progress',
-                message: event.message || null,
+                eventType: normalizedEvent.step || 'progress',
+                message: normalizedEvent.message || null,
                 metadata: {
-                  progress: event.progress || null,
-                  hasData: Boolean(event.data),
+                  progress: normalizedEvent.progress || null,
+                  hasData: Boolean(normalizedEvent.data),
+                  ...(normalizedEvent.metadata?.originalStep ? { originalStep: normalizedEvent.metadata.originalStep } : {}),
                 },
               });
             }
@@ -604,8 +616,11 @@ async function startServer() {
 
         await safeProgress({ step: 'starting', progress: 5, message: 'Vaš zahtjev je započeo s obradom...' });
 
-        // The call to the pipeline is the same, but it will return a different structure.
-        const finalResult = await runCourtAnalysis(searchTerm, 2, safeProgress); // We can make `2` a parameter later
+        const finalResult = await runCourtAnalysis(
+          parsedRequest.query.value,
+          { caseLimit: parsedRequest.options.caseLimit },
+          safeProgress
+        );
 
         // --- NEW: Construct the optimized final payload ---
         const finalPayload = {
@@ -617,6 +632,7 @@ async function startServer() {
               court: pCase.caseResult.court,
               date: pCase.caseResult.date,
               detailLink: pCase.caseResult.detailLink,
+              entryDisplayId: deriveEntryDisplayId(pCase.caseResult.detailLink),
               participants: pCase.caseResult.participants,
             },
             // Send back simplified file info, including the main download link
@@ -714,7 +730,7 @@ async function startServer() {
         if (!res.writableEnded) {
           res.end();
         }
-        console.log(`[Court Analysis Queue] Stream closed for search term: ${searchTerm}`);
+        console.log(`[Court Analysis Queue] Stream closed for search term: ${parsedRequest.query.value}`);
       }
     });
 
@@ -722,7 +738,7 @@ async function startServer() {
     // If the user closes their browser tab while their request is waiting in the queue,
     // this will log it. The `writableEnded` check above prevents errors.
     req.on('close', () => {
-      console.log(`[Court Analysis Queue] Client disconnected while waiting or processing term: ${searchTerm}`);
+      console.log(`[Court Analysis Queue] Client disconnected while waiting or processing term: ${parsedRequest.query.value}`);
     });
   });
 

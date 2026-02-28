@@ -1,14 +1,38 @@
-async function createAnalysisRun({ supabase, userId, oib, status = 'running' }) {
-  const { data, error } = await supabase
+function isMissingTypedQueryColumnError(error) {
+  const message = String(error?.message || '').toLowerCase();
+  return message.includes('query_type') || message.includes('query_value');
+}
+
+async function insertAnalysisRunRow({ supabase, payload }) {
+  return supabase
     .from('analysis_runs')
-    .insert({
-      user_id: userId,
-      oib,
-      status,
-      result_format: 'markdown',
-    })
+    .insert(payload)
     .select('*')
     .single();
+}
+
+async function createAnalysisRun({ supabase, userId, oib, queryType = null, queryValue = null, status = 'running' }) {
+  const basePayload = {
+    user_id: userId,
+    oib,
+    status,
+    result_format: 'markdown',
+  };
+
+  const typedPayload = {
+    ...basePayload,
+    query_type: queryType || null,
+    query_value: queryValue || null,
+  };
+
+  let data;
+  let error;
+
+  ({ data, error } = await insertAnalysisRunRow({ supabase, payload: typedPayload }));
+
+  if (error && isMissingTypedQueryColumnError(error)) {
+    ({ data, error } = await insertAnalysisRunRow({ supabase, payload: basePayload }));
+  }
 
   if (error) {
     throw new Error(`Failed to create analysis run: ${error.message}`);
