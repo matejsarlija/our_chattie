@@ -146,4 +146,32 @@ describe('useStreamingAPI court-analysis request builder', () => {
       });
     }
   });
+
+  test('classifies 6-letter case-number prefix correctly (A-02b parity)', async () => {
+    function Harness() {
+      const api = useStreamingAPI();
+
+      useEffect(() => {
+        // Test a 6-letter prefix e.g. "Abcdef-123/2023"
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+        api.streamCourtAnalysis('Abcdef-123/2023', {
+          onComplete: () => {},
+          onError: () => {},
+        });
+      }, [api]);
+
+      return null;
+    }
+
+    render(<Harness />);
+
+    await waitFor(() => {
+      expect(global.fetch).toHaveBeenCalled();
+    });
+
+    const call = global.fetch.mock.calls[0];
+    const payload = JSON.parse(call[1].body);
+
+    expect(payload.query).toEqual({ type: 'case_number', value: 'Abcdef-123/2023' });
+  });
 });

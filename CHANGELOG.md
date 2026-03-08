@@ -38,3 +38,6 @@ All notable changes to this project will be documented in this file.
 - **Supabase Schema (A-08)**: Added nullable `analysis_runs.query_type` and `analysis_runs.query_value` with `query_type` check constraint (`oib|case_number|text`).
 - **Dashboard Analysis (D-03/E-04)**: Updated typed query header labels in run detail to map `text -> Tekst` and unknown/missing types to neutral `Upit` (no OIB fallback).
 - **Dashboard Analysis Runtime Safety (D-01/E-04)**: Guarded `streamCourtAnalysis` debug branch against missing global `process` in browser runtimes.
+- **Court Analysis Pipeline (A-05/A-06)**: Fixed unique-case under-selection by widening pre-group scrape input (`scrapeLimit = caseLimit * 3`, bounded) before grouping, so duplicate listings do not reduce final distinct-case coverage below the requested `caseLimit`.
+- **Court Analysis Pipeline (A-06)**: Fixed options merge regression so visualization remains enabled by default when passing `{ caseLimit }`; visualizer is now disabled only when explicitly set with `enableVisualizer: false`.
+- **Court Analysis Testing (A-05/A-06)**: Added/updated regression coverage in `pipeline.caseLimit.test.js`, `pipeline.selection.test.js`, and `pipeline.visualizer-default.test.js` for widened scrape-window behavior and visualizer default semantics.

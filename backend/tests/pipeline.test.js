@@ -15,12 +15,14 @@ describe('runCourtAnalysis pipeline', () => {
             expect(e.message).toMatch(/No results with documents found|timeout|network/i);
             return;
         }
-        expect(result).toHaveProperty('caseResult');
-        expect(result).toHaveProperty('files');
-        expect(result).toHaveProperty('analysis');
-        expect(progressUpdates.some(p => p.step === 'scraping')).toBe(true);
+        expect(result).toHaveProperty('processedCases');
+        expect(result.processedCases.length).toBeGreaterThan(0);
+        expect(result).toHaveProperty('comparativeAnalysis');
+        
+        // Canonical stages check
+        expect(progressUpdates.some(p => p.step === 'discovering')).toBe(true);
         expect(progressUpdates.some(p => p.step === 'downloading')).toBe(true);
-        expect(progressUpdates.some(p => p.step === 'analyzing')).toBe(true);
+        expect(progressUpdates.some(p => p.step === 'reasoning')).toBe(true);
         expect(progressUpdates.some(p => p.step === 'complete')).toBe(true);
     });
 });

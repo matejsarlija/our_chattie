@@ -12,7 +12,7 @@ const isNonProductionRuntime = () => {
 const classifyQueryType = (value) => {
     if (/^\d{11}$/.test(value)) return 'oib';
     // Covers common Croatian court case formats like St-357/2013.
-    if (/^[A-Za-zČĆŽŠĐčćžšđ]{1,5}\s*-\s*\d+\s*\/\s*\d{2,4}$/.test(value)) return 'case_number';
+    if (/^[A-Za-zČĆŽŠĐčćžšđ]{1,6}\s*-\s*\d+\s*\/\s*\d{2,4}$/.test(value)) return 'case_number';
     return 'text';
 };
 

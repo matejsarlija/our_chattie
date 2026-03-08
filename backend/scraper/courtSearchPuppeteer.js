@@ -1,5 +1,6 @@
 // courtSearchPuppeteer.js
 require('dotenv').config();
+const { normalizeCaseNumber } = require('../court-analysis/utils/caseNumber');
 let puppeteer;
 
 if (process.env.NODE_ENV === 'production' || process.env.BROWSERLESS_TOKEN) {
@@ -400,6 +401,15 @@ class CourtSearchPuppeteer {
                 });
                 return items;
             });
+
+            // Normalize case numbers immediately after extraction
+            results.forEach(item => {
+                const normalized = normalizeCaseNumber(item.caseNumber);
+                if (normalized) {
+                    item.caseNumber = normalized;
+                }
+            });
+
             console.log(`[parseSearchResults] Parsed ${results.length} results from the page.`);
             return results;
         } catch (error) {

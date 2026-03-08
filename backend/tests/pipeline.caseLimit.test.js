@@ -21,21 +21,21 @@ describe('runCourtAnalysis caseLimit options', () => {
   test('uses default caseLimit when options are omitted and second arg is callback', async () => {
     const progress = jest.fn();
     await expect(runCourtAnalysis('66124057408', progress)).rejects.toThrow();
-    expect(mockSearchAndGetLatestCasesWithDocuments).toHaveBeenCalledWith('66124057408', 5);
+    expect(mockSearchAndGetLatestCasesWithDocuments).toHaveBeenCalledWith('66124057408', 15);
   });
 
   test('honors options.caseLimit from caller', async () => {
     await expect(
       runCourtAnalysis('66124057408', { caseLimit: 3 }, jest.fn()),
     ).rejects.toThrow();
-    expect(mockSearchAndGetLatestCasesWithDocuments).toHaveBeenCalledWith('66124057408', 3);
+    expect(mockSearchAndGetLatestCasesWithDocuments).toHaveBeenCalledWith('66124057408', 9);
   });
 
   test('clamps options.caseLimit into supported bounds', async () => {
     await expect(
       runCourtAnalysis('66124057408', { caseLimit: 0 }, jest.fn()),
     ).rejects.toThrow();
-    expect(mockSearchAndGetLatestCasesWithDocuments).toHaveBeenCalledWith('66124057408', 1);
+    expect(mockSearchAndGetLatestCasesWithDocuments).toHaveBeenCalledWith('66124057408', 3);
 
     jest.clearAllMocks();
     mockSearchAndGetLatestCasesWithDocuments.mockResolvedValue([]);
@@ -43,6 +43,6 @@ describe('runCourtAnalysis caseLimit options', () => {
     await expect(
       runCourtAnalysis('66124057408', { caseLimit: 77 }, jest.fn()),
     ).rejects.toThrow();
-    expect(mockSearchAndGetLatestCasesWithDocuments).toHaveBeenCalledWith('66124057408', 10);
+    expect(mockSearchAndGetLatestCasesWithDocuments).toHaveBeenCalledWith('66124057408', 30);
   });
 });
