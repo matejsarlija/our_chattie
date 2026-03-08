@@ -81,6 +81,77 @@ describe('processScrapedCases Selection Policy', () => {
         expect(c4).toBeUndefined();
     });
 
+    test('returns requested unique-case count when scraped input contains duplicates', async () => {
+        const casesToProcess = [
+            { caseInfo: { caseNumber: 'C1', title: 'T1-A' }, documentLinks: [{ url: 'u1a' }] },
+            { caseInfo: { caseNumber: 'C1', title: 'T1-B' }, documentLinks: [{ url: 'u1b' }] },
+            { caseInfo: { caseNumber: 'C1', title: 'T1-C' }, documentLinks: [{ url: 'u1c' }] },
+            { caseInfo: { caseNumber: 'C2', title: 'T2-A' }, documentLinks: [{ url: 'u2a' }] },
+            { caseInfo: { caseNumber: 'C2', title: 'T2-B' }, documentLinks: [{ url: 'u2b' }] },
+            { caseInfo: { caseNumber: 'C3', title: 'T3-A' }, documentLinks: [{ url: 'u3a' }] },
+            { caseInfo: { caseNumber: 'C4', title: 'T4-A' }, documentLinks: [{ url: 'u4a' }] },
+        ];
+
+        const result = await processScrapedCases(
+            casesToProcess,
+            jest.fn(),
+            { caseLimit: 3, enableVisualizer: false },
+        );
+
+        expect(result.processedCases).toHaveLength(3);
+        expect(result.processedCases.map(c => c.caseResult.caseNumber)).toEqual(['C1', 'C2', 'C3']);
+    });
+
+    test('prefers more recent clusters when limiting selection', async () => {
+        const casesToProcess = [
+            { caseInfo: { caseNumber: 'C_OLD', title: 'Old', date: '01.01.2022' }, documentLinks: [{ url: 'u-old' }] },
+            { caseInfo: { caseNumber: 'C_NEW', title: 'New', date: '01.01.2025' }, documentLinks: [{ url: 'u-new' }] },
+            { caseInfo: { caseNumber: 'C_MID', title: 'Mid', date: '01.01.2024' }, documentLinks: [{ url: 'u-mid' }] },
+        ];
+
+        const result = await processScrapedCases(
+            casesToProcess,
+            jest.fn(),
+            { caseLimit: 2, enableVisualizer: false },
+        );
+
+        expect(result.processedCases.map(c => c.caseResult.caseNumber)).toEqual(['C_NEW', 'C_MID']);
+    });
+
+    test('parses trailing-dot Croatian dates for recency ranking', async () => {
+        const casesToProcess = [
+            { caseInfo: { caseNumber: 'C_OLDER', title: 'Older A', date: '13.01.2025.' }, documentLinks: [{ url: 'u-older-1' }] },
+            { caseInfo: { caseNumber: 'C_OLDER', title: 'Older B', date: '13.01.2025.' }, documentLinks: [{ url: 'u-older-2' }] },
+            { caseInfo: { caseNumber: 'C_NEWER', title: 'Newer', date: '14.01.2025.' }, documentLinks: [{ url: 'u-newer-1' }] },
+        ];
+
+        const result = await processScrapedCases(
+            casesToProcess,
+            jest.fn(),
+            { caseLimit: 1, enableVisualizer: false },
+        );
+
+        expect(result.processedCases.map(c => c.caseResult.caseNumber)).toEqual(['C_NEWER']);
+    });
+
+    test('prefers higher-coverage clusters on recency ties', async () => {
+        const casesToProcess = [
+            { caseInfo: { caseNumber: 'C_LOW', title: 'Low', date: '01.03.2025' }, documentLinks: [{ url: 'u-low-1' }] },
+            { caseInfo: { caseNumber: 'C_HIGH', title: 'High A', date: '01.03.2025' }, documentLinks: [{ url: 'u-high-1' }] },
+            { caseInfo: { caseNumber: 'C_HIGH', title: 'High B', date: '01.03.2025' }, documentLinks: [{ url: 'u-high-2' }] },
+            { caseInfo: { caseNumber: 'C_MED', title: 'Med A', date: '01.03.2025' }, documentLinks: [{ url: 'u-med-1' }] },
+            { caseInfo: { caseNumber: 'C_MED', title: 'Med B', date: '01.03.2025' }, documentLinks: [{ url: 'u-med-2' }] },
+        ];
+
+        const result = await processScrapedCases(
+            casesToProcess,
+            jest.fn(),
+            { caseLimit: 2, enableVisualizer: false },
+        );
+
+        expect(result.processedCases.map(c => c.caseResult.caseNumber)).toEqual(['C_HIGH', 'C_MED']);
+    });
+
     test('handles caseLimit greater than available clusters', async () => {
         const casesToProcess = [
             { caseInfo: { caseNumber: 'C1', title: 'T1' }, documentLinks: [{ url: 'u1' }] },

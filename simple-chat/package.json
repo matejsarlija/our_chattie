@@ -29,6 +29,9 @@
     "cra:start": "react-scripts start",
     "cra:build": "react-scripts build",
     "test": "react-scripts test",
+    "test:unit": "react-scripts test --watch=false",
+    "test:ci": "react-scripts test --watch=false --passWithNoTests",
+    "build:matrix": "npm run build && npm run cra:build",
     "eject": "react-scripts eject",
     "storybook": "storybook dev -p 6006",
     "build-storybook": "storybook build"

@@ -192,6 +192,59 @@ describe('AnalysisRunDetailPage metadata modules', () => {
     expect(screen.getByText('Tekst: adriatic osiguranje')).toBeInTheDocument();
   });
 
+  test('renders OIB label for explicit oib query runs', () => {
+    useAnalysisRunDetail.mockReturnValue({
+      run: {
+        id: 'run-1',
+        status: 'done',
+        oib: '12345678901',
+        query_type: 'oib',
+        query_value: '12345678901',
+        result_text: 'Rezultat',
+        result_json: { processedCases: [] },
+      },
+      events: [],
+      loading: false,
+      eventsLoading: false,
+      error: '',
+      isRunning: false,
+      connectionMode: 'idle',
+      lastUpdatedAt: '2026-02-27T12:00:00.000Z',
+      refresh: jest.fn(),
+    });
+
+    render(<AnalysisRunDetailPage />);
+
+    expect(screen.getByText('OIB: 12345678901')).toBeInTheDocument();
+  });
+
+  test('renders neutral Upit label for unknown query types', () => {
+    useAnalysisRunDetail.mockReturnValue({
+      run: {
+        id: 'run-1',
+        status: 'done',
+        oib: '12345678901',
+        query_type: 'unknown',
+        query_value: 'nepoznato',
+        result_text: 'Rezultat',
+        result_json: { processedCases: [] },
+      },
+      events: [],
+      loading: false,
+      eventsLoading: false,
+      error: '',
+      isRunning: false,
+      connectionMode: 'idle',
+      lastUpdatedAt: '2026-02-27T12:00:00.000Z',
+      refresh: jest.fn(),
+    });
+
+    render(<AnalysisRunDetailPage />);
+
+    expect(screen.getByText('Upit: nepoznato')).toBeInTheDocument();
+    expect(screen.queryByText('OIB: nepoznato')).not.toBeInTheDocument();
+  });
+
   test('renders structured annex sections when report exists', () => {
     useAnalysisRunDetail.mockReturnValue({
       run: {
@@ -232,6 +285,99 @@ describe('AnalysisRunDetailPage metadata modules', () => {
     expect(screen.getByText('Otvoren postupak.')).toBeInTheDocument();
     expect(screen.getByText('Konflikti')).toBeInTheDocument();
     expect(screen.getByText('Nesklad u navodu o datumu dospijeca.')).toBeInTheDocument();
+  });
+
+  test('renders open questions section when report includes open_questions', () => {
+    useAnalysisRunDetail.mockReturnValue({
+      run: {
+        id: 'run-1',
+        status: 'done',
+        oib: '12345678901',
+        result_text: 'Legacy rezultat',
+        result_json: {
+          processedCases: [],
+          report: {
+            open_questions: [
+              { question: 'Nedostaje datum dospijeća glavnog potraživanja.' },
+            ],
+          },
+        },
+      },
+      events: [],
+      loading: false,
+      eventsLoading: false,
+      error: '',
+      isRunning: false,
+      connectionMode: 'idle',
+      lastUpdatedAt: '2026-02-27T12:00:00.000Z',
+      refresh: jest.fn(),
+    });
+
+    render(<AnalysisRunDetailPage />);
+
+    expect(screen.getByText('Otvorena pitanja')).toBeInTheDocument();
+    expect(screen.getByText('Nedostaje datum dospijeća glavnog potraživanja.')).toBeInTheDocument();
+  });
+
+  test('shows robust empty and malformed item fallback states inside annex sections', () => {
+    useAnalysisRunDetail.mockReturnValue({
+      run: {
+        id: 'run-1',
+        status: 'done',
+        oib: '12345678901',
+        result_text: 'Legacy rezultat',
+        result_json: {
+          processedCases: [],
+          report: {
+            findings: [{ irrelevant: true }],
+            timeline: [{ wrong: 'shape' }],
+            conflicts: [{}],
+            open_questions: [{}],
+          },
+        },
+      },
+      events: [],
+      loading: false,
+      eventsLoading: false,
+      error: '',
+      isRunning: false,
+      connectionMode: 'idle',
+      lastUpdatedAt: '2026-02-27T12:00:00.000Z',
+      refresh: jest.fn(),
+    });
+
+    render(<AnalysisRunDetailPage />);
+
+    expect(screen.getByText('Prilozi analize')).toBeInTheDocument();
+    expect(screen.getAllByText('-').length).toBeGreaterThanOrEqual(4);
+  });
+
+  test('renders narrative fallback when report is missing', () => {
+    useAnalysisRunDetail.mockReturnValue({
+      run: {
+        id: 'run-1',
+        status: 'done',
+        oib: '12345678901',
+        result_text: '## Legacy nalaz\n\n- ključna točka',
+        result_json: {
+          processedCases: [],
+        },
+      },
+      events: [],
+      loading: false,
+      eventsLoading: false,
+      error: '',
+      isRunning: false,
+      connectionMode: 'idle',
+      lastUpdatedAt: '2026-02-27T12:00:00.000Z',
+      refresh: jest.fn(),
+    });
+
+    render(<AnalysisRunDetailPage />);
+
+    expect(screen.getByText(/Legacy nalaz/)).toBeInTheDocument();
+    expect(screen.getByTestId('react-markdown')).toHaveTextContent('ključna točka');
+    expect(screen.queryByText('Prilozi analize')).not.toBeInTheDocument();
   });
 
   test('hides structured annex sections when report is missing', () => {

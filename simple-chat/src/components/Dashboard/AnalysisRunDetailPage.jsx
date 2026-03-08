@@ -89,6 +89,11 @@ export default function AnalysisRunDetailPage() {
   const findings = useMemo(() => Array.isArray(report?.findings) ? report.findings : [], [report?.findings]);
   const reportTimeline = useMemo(() => Array.isArray(report?.timeline) ? report.timeline : [], [report?.timeline]);
   const conflicts = useMemo(() => Array.isArray(report?.conflicts) ? report.conflicts : [], [report?.conflicts]);
+  const openQuestions = useMemo(() => {
+    if (Array.isArray(report?.open_questions)) return report.open_questions;
+    if (Array.isArray(report?.openQuestions)) return report.openQuestions;
+    return [];
+  }, [report?.open_questions, report?.openQuestions]);
   const resultMarkdown = useMemo(() => run?.result_text || '', [run?.result_text]);
   const queryLabel = useMemo(() => getQueryLabel(run?.query_type), [run?.query_type]);
   const queryValue = useMemo(() => run?.query_value || run?.oib || id, [run?.query_value, run?.oib, id]);
@@ -262,7 +267,13 @@ export default function AnalysisRunDetailPage() {
               )}
             </section>
 
-            <AnalysisReportAnnex findings={findings} timeline={reportTimeline} conflicts={conflicts} />
+            <AnalysisReportAnnex
+              findings={findings}
+              timeline={reportTimeline}
+              conflicts={conflicts}
+              openQuestions={openQuestions}
+              hasStructuredReport={Boolean(report)}
+            />
           </>
         )}
       </main>

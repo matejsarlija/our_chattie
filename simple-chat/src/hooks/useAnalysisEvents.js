@@ -34,6 +34,8 @@ const LEGACY_TO_CANONICAL = {
   downloading: 'downloading',
   scraping: 'discovering',
   processing_setup: 'grouping',
+  processing_case: 'grouping',
+  enriching: 'grouping',
   unzipping: 'extracting',
   analyzing: 'reasoning',
   comparing: 'reasoning',

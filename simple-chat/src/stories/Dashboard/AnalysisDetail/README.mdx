@@ -1,0 +1,81 @@
+import { Meta } from '@storybook/addon-docs/blocks';
+
+<Meta title="Dashboard/AnalysisDetail/README" />
+
+# Analysis Detail Decision Log
+
+This page is the canonical decision history for dashboard analysis-detail presentation choices.
+
+Use this together with:
+- `Dashboard/AnalysisDetail/DecisionMatrix` for quick tradeoff comparison
+- `Dashboard/AnalysisDetail/ProgressPresentation` for visual validation
+
+## Current Baseline
+
+- Status: `Approved`
+- Chosen variant: `DashboardRichMetadata`
+- Last updated: `2026-03-08`
+- Governance sync: `2026-03-08` (structured annex alignment)
+- Governance sync reference: `D-08-full-governance-pass`
+- Owner: `Frontend / UX`
+
+Current approved direction:
+- Keep dashboard-native detail layout (status capsule, progress stepper, event timeline, metadata cards).
+- Render structured annex from `result_json.report` (`Nalazi`, `Vremenska crta`, `Konflikti`, `Otvorena pitanja`) with robust empty states when structured payload exists.
+- Keep narrative markdown compatibility as fallback.
+
+## Variant Status Board
+
+| Variant | Status | Notes |
+| --- | --- | --- |
+| SubtleRailDefault | Candidate | Balanced default; progress informative but secondary |
+| QuietFullStack | Candidate | Full processing visibility; higher density |
+| SignalLine | Candidate | Most minimal active surface |
+| ContextStrip | Candidate | Lightweight contextual orientation |
+| RightRailMonitor | Candidate | Best for long result reading (desktop) |
+| MilestoneDots | Candidate | Coarse milestones, low noise |
+| ChronicleFirst | Candidate | Timeline-first interpretation |
+| TerminalCompression | Candidate | Compresses progress after terminal states |
+| DashboardRichMetadata | Approved | Dashboard baseline + metadata cards + structured annex sections with narrative fallback |
+| DashboardRichMetadataCompact | Candidate | Compact version of richer metadata cards |
+
+## Review Checklist
+
+For each review round, validate:
+1. Running + rich events: scanability and noise level
+2. Running + sparse events: confidence without over-chrome
+3. Completed + result: result readability takes priority
+4. Failed + escalation: error salience without full-page alarm state
+5. Mobile layout: no clipped controls, no unusable density
+
+## Implementation Note
+
+- `ID objave` in current Storybook metadata variants is a UI-derived value from `detailLink` (last URL segment).
+- Candidate backend follow-up: derive and expose a canonical `entry_display_id` (or similar) so all clients render the same stable ID.
+
+## How to Record Decisions
+
+Every UI decision PR that changes analysis-detail direction must:
+1. Update status in Storybook docs/matrix
+2. Add a new history row below
+3. Include PR/reference link
+
+## Decision History
+
+| Date | Change | Status Transition | Why | PR / Reference |
+| --- | --- | --- | --- | --- |
+| 2026-02-20 | Established Storybook-first variant exploration and governance docs | N/A | Make decisions explicit and trackable across iterations | This session |
+| 2026-02-27 | Added metadata-module exploration variants (`DashboardRichMetadata`, `DashboardRichMetadataCompact`) plus dedicated `MetadataModules` stories | N/A | Validate “dashboard but richer” direction before patching spec/tickets | This session |
+| 2026-03-08 | Promoted `DashboardRichMetadata` to approved baseline and aligned production behavior with structured annex rendering (`findings/timeline/conflicts/open_questions`) + empty-state resilience + narrative fallback | `Candidate -> Approved` (`DashboardRichMetadata`) | Close prototype/implementation gap and establish canonical analysis-detail behavior for typed-query and stage-parity release guardrails | This PR |
+
+## Feedback Template (for review comments)
+
+Use this format when picking or adjusting a variant:
+
+```md
+Selected variant: <name>
+Keep: <what works>
+Soften: <what feels too strong/noisy>
+Hide behind expand: <what should be secondary>
+State-specific note: <running/completed/failed/mobile>
+```

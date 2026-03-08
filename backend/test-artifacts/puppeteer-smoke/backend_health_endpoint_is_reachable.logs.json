@@ -1,0 +1,19 @@
+{
+  "consoleMessages": [],
+  "pageErrors": [],
+  "requestFailures": [
+    {
+      "url": "http://127.0.0.1:3001/health",
+      "method": "GET",
+      "failureText": "net::ERR_CONNECTION_REFUSED"
+    }
+  ],
+  "errorMessage": "net::ERR_CONNECTION_REFUSED at http://127.0.0.1:3001/health",
+  "artifactCaptureErrors": [
+    "screenshot: Protocol error (Page.captureScreenshot): Not attached to an active page"
+  ],
+  "capturedAt": "2026-03-08T11:43:38.055Z",
+  "testName": "backend health endpoint is reachable",
+  "frontendUrl": "http://127.0.0.1:5173",
+  "backendHealthUrl": "http://127.0.0.1:3001/health"
+}

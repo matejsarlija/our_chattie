@@ -2,12 +2,43 @@ const request = require('supertest');
 const express = require('express');
 const bodyParser = require('body-parser');
 const { runCourtAnalysis } = require('../court-analysis/pipeline');
-const PQueue = require('p-queue');
+
+class TestQueue {
+  constructor({ concurrency }) {
+    this.concurrency = concurrency;
+    this.pending = 0;
+    this.queue = [];
+  }
+
+  add(task) {
+    return new Promise((resolve, reject) => {
+      this.queue.push({ task, resolve, reject });
+      this.drain();
+    });
+  }
+
+  drain() {
+    while (this.pending < this.concurrency && this.queue.length > 0) {
+      const next = this.queue.shift();
+      this.pending += 1;
+
+      Promise.resolve()
+        .then(next.task)
+        .then(next.resolve)
+        .catch(next.reject)
+        .finally(() => {
+          this.pending -= 1;
+          this.drain();
+        });
+    }
+  }
+}
 
 // Minimal express app for integration test
 const app = express();
 app.use(bodyParser.json());
-const queue = new PQueue({ concurrency: 3 });
+const queue = new TestQueue({ concurrency: 3 });
+const describeIfIntegration = process.env.RUN_PUPPETEER_INTEGRATION === '1' ? describe : describe.skip;
 
 app.post('/api/court-analysis', async (req, res) => {
   try {
@@ -21,7 +52,7 @@ app.post('/api/court-analysis', async (req, res) => {
   }
 });
 
-describe('Integration: /api/court-analysis concurrency', () => {
+describeIfIntegration('Integration: /api/court-analysis concurrency', () => {
   it('should process multiple requests and respect concurrency limit', async () => {
     const concurrent = 6; // More than queue concurrency
     const searchTerm = '66124057408';

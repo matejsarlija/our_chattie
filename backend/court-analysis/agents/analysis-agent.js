@@ -9,6 +9,7 @@ const os = require("os");
 const path = require("path");
 const pdfParse = require("pdf-parse");
 const mammoth = require("mammoth");
+const { splitTextIntoChunks } = require("../reasoning/chunker");
 
 const API_KEY = process.env.GOOGLE_API_KEY;
 const gemini = new ChatGoogleGenerativeAI({
@@ -24,6 +25,95 @@ pdfjsLib.GlobalWorkerOptions.workerSrc =
     require.resolve("pdfjs-dist/build/pdf.worker.js");
 
 const { createCanvas } = require("canvas");
+
+const DIRECT_TEXT_LIMIT = 25000;
+const CHUNKING_TRIGGER_TEXT_LENGTH = 25000;
+const ANALYSIS_CHUNK_SIZE = 3500;
+const ANALYSIS_CHUNK_OVERLAP = 350;
+const ANALYSIS_RETRIEVAL_LIMIT = 6;
+
+function buildRetrievalTerms(caseInfo = {}, file = {}) {
+    const terms = new Set();
+    if (caseInfo.caseNumber) terms.add(String(caseInfo.caseNumber).toLowerCase());
+    if (file.text) terms.add(String(file.text).toLowerCase());
+    if (file.url) terms.add(String(file.url).toLowerCase());
+
+    (caseInfo.participants || []).forEach((participant) => {
+        if (participant?.name) terms.add(String(participant.name).toLowerCase());
+        if (participant?.oib) terms.add(String(participant.oib).toLowerCase());
+    });
+
+    return Array.from(terms).filter(Boolean);
+}
+
+function rankChunksForAnalysis(chunks = [], retrievalTerms = []) {
+    return chunks
+        .map((chunk, index) => {
+            const lowerText = String(chunk.text || "").toLowerCase();
+            const lexicalHits = retrievalTerms.reduce((hits, term) => {
+                if (!term) return hits;
+                return lowerText.includes(term) ? hits + 1 : hits;
+            }, 0);
+
+            return {
+                chunk,
+                score: lexicalHits,
+                index,
+            };
+        })
+        .sort((a, b) => {
+            if (a.score !== b.score) return b.score - a.score;
+            return a.index - b.index;
+        });
+}
+
+function buildAnalysisInputText(text, caseInfo, file) {
+    if (!text || text.length <= CHUNKING_TRIGGER_TEXT_LENGTH) {
+        return {
+            analysisText: String(text || "").slice(0, DIRECT_TEXT_LIMIT),
+            usedChunking: false,
+            chunkCount: 0,
+            retrievedChunkCount: 0,
+        };
+    }
+
+    const docId = path.basename(file?.filePath || file?.text || "analysis-doc");
+    const chunks = splitTextIntoChunks(text, {
+        chunkSize: ANALYSIS_CHUNK_SIZE,
+        chunkOverlap: ANALYSIS_CHUNK_OVERLAP,
+        docId,
+    });
+
+    if (!chunks || chunks.length === 0) {
+        return {
+            analysisText: text.slice(0, DIRECT_TEXT_LIMIT),
+            usedChunking: false,
+            chunkCount: 0,
+            retrievedChunkCount: 0,
+        };
+    }
+
+    const retrievalTerms = buildRetrievalTerms(caseInfo, file);
+    const ranked = rankChunksForAnalysis(chunks, retrievalTerms);
+    const selected = ranked
+        .slice(0, ANALYSIS_RETRIEVAL_LIMIT)
+        .map(({ chunk }) => chunk);
+
+    const analysisText = selected
+        .map(
+            (chunk, index) =>
+                `[Chunk ${index + 1} | ${chunk.id || "no-id"}]\n${chunk.text}`,
+        )
+        .join("\n\n")
+        .slice(0, DIRECT_TEXT_LIMIT);
+
+    return {
+        analysisText,
+        usedChunking: true,
+        chunkCount: chunks.length,
+        retrievedChunkCount: selected.length,
+    };
+}
 
 async function extractTextFromFile(filePath) {
     try {
@@ -173,13 +263,27 @@ class AnalyzeDocumentsTool extends Tool {
                     }).join('\n')
                     : "Participant information was not available from the source page.";
 
+                const analysisInput = buildAnalysisInputText(text, caseInfo, file);
+                if (analysisInput.usedChunking) {
+                    progressCallback &&
+                        progressCallback({
+                            step: "chunking",
+                            message: `Chunked ${file.text} into ${analysisInput.chunkCount} chunks.`,
+                        });
+                    progressCallback &&
+                        progressCallback({
+                            step: "retrieving",
+                            message: `Retrieved ${analysisInput.retrievedChunkCount} relevant chunks for ${file.text}.`,
+                        });
+                }
+
                 //console.log(`Analyzing text from file: ${file.filePath}, the text length is: ${text.length}`);
                 // alt prompt: a medium-sized paragraph, two at most, ...
                 const prompt = `The main participants in this case are:\n${knownParties}\n
                 The participants include enriched registry data. Use this to determine if a company is active, in bankruptcy, or has failed to file financial reports (GFI) recently.
 
                 From the court document text below, extract key information as a JSON object with the following keys: "caseNumber", "decisionDate", and "summary" (a medium-sized paragraph, nicely formatted, to be in Croatian please, as that is what our customers speak).
-                Do include any important figures (currency amounts) you find in the summary. Provide ONLY the json object and nothing else. Text:\n\n${text.slice(0, 25000)}`;
+                Do include any important figures (currency amounts) you find in the summary. Provide ONLY the json object and nothing else. Text:\n\n${analysisInput.analysisText}`;
 
                 const response = await withGeminiRetry(
                     () => gemini.invoke(prompt),

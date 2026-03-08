@@ -7,7 +7,11 @@
     "start": "node server.js",
     "dev": "nodemon server.js",
     "prod": "NODE_ENV=production node server.js",
-    "test": "jest"
+    "test": "jest",
+    "test:unit": "jest --testPathIgnorePatterns='backend/tests/(pipeline.live.integration|court-analysis-integration|app.smoke.puppeteer).test.js'",
+    "test:integration": "RUN_PUPPETEER_INTEGRATION=1 jest backend/tests/pipeline.live.integration.test.js backend/tests/court-analysis-integration.test.js",
+    "test:e2e:smoke": "RUN_PUPPETEER_INTEGRATION=1 RUN_PUPPETEER_SMOKE=1 jest backend/tests/app.smoke.puppeteer.test.js",
+    "test:nightly-live": "RUN_PUPPETEER_INTEGRATION=1 RUN_PUPPETEER_SMOKE=1 jest backend/tests/pipeline.live.integration.test.js backend/tests/court-analysis-integration.test.js backend/tests/app.smoke.puppeteer.test.js"
   },
   "keywords": [],
   "author": "",

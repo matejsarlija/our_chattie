@@ -32,6 +32,93 @@ function computeRawScrapeLimit(caseLimit) {
     return Math.min(normalizedLimit * RAW_SCRAPE_MULTIPLIER, maxRawLimit);
 }
 
+function parseCaseDateToTimestamp(rawDate) {
+    if (!rawDate || typeof rawDate !== 'string') return null;
+    const value = rawDate.trim();
+    if (!value || value.toUpperCase() === 'N/A') return null;
+
+    const croatianDateMatch = value.match(/^(\d{1,2})[.\-/](\d{1,2})[.\-/](\d{2,4})\.?$/);
+    if (croatianDateMatch) {
+        const day = Number.parseInt(croatianDateMatch[1], 10);
+        const month = Number.parseInt(croatianDateMatch[2], 10);
+        const yearRaw = Number.parseInt(croatianDateMatch[3], 10);
+        const year = yearRaw < 100 ? 2000 + yearRaw : yearRaw;
+        const ts = Date.UTC(year, month - 1, day);
+        const parsed = new Date(ts);
+
+        if (
+            parsed.getUTCFullYear() === year &&
+            parsed.getUTCMonth() === month - 1 &&
+            parsed.getUTCDate() === day
+        ) {
+            return ts;
+        }
+        return null;
+    }
+
+    const fallbackTs = Date.parse(value);
+    return Number.isNaN(fallbackTs) ? null : fallbackTs;
+}
+
+function selectClustersForProcessing(allClusters, rawCaseLimit) {
+    if (!Array.isArray(allClusters) || allClusters.length === 0) {
+        return [];
+    }
+
+    if (typeof rawCaseLimit !== 'number' || Number.isNaN(rawCaseLimit)) {
+        return allClusters;
+    }
+
+    const caseLimit = clampCaseLimit(rawCaseLimit);
+    if (caseLimit >= allClusters.length) {
+        return allClusters;
+    }
+
+    const scored = allClusters.map((cluster, originalIndex) => {
+        const entries = Array.isArray(cluster.entries) ? cluster.entries : [];
+        const recencyTimestamp = entries.reduce((maxTs, entry) => {
+            const dateCandidate = entry?.caseInfo?.date || entry?.caseInfo?.datePublished;
+            const ts = parseCaseDateToTimestamp(dateCandidate);
+            if (ts === null) return maxTs;
+            if (maxTs === null) return ts;
+            return ts > maxTs ? ts : maxTs;
+        }, null);
+
+        const documentCount = entries.reduce((sum, entry) => {
+            const links = Array.isArray(entry?.documentLinks) ? entry.documentLinks.length : 0;
+            return sum + links;
+        }, 0);
+
+        return {
+            cluster,
+            originalIndex,
+            recencyTimestamp,
+            documentCount,
+            entryCount: entries.length,
+        };
+    });
+
+    scored.sort((a, b) => {
+        if (a.recencyTimestamp !== null && b.recencyTimestamp !== null && a.recencyTimestamp !== b.recencyTimestamp) {
+            return b.recencyTimestamp - a.recencyTimestamp;
+        }
+        if (a.recencyTimestamp !== null && b.recencyTimestamp === null) return -1;
+        if (a.recencyTimestamp === null && b.recencyTimestamp !== null) return 1;
+
+        if (a.documentCount !== b.documentCount) {
+            return b.documentCount - a.documentCount;
+        }
+
+        if (a.entryCount !== b.entryCount) {
+            return b.entryCount - a.entryCount;
+        }
+
+        return a.originalIndex - b.originalIndex;
+    });
+
+    return scored.slice(0, caseLimit).map(item => item.cluster);
+}
+
 function resolveAnalysisArgs(caseLimitOrOptions, maybeProgressCallback) {
     if (typeof caseLimitOrOptions === 'function') {
         return {
@@ -177,12 +264,11 @@ async function processScrapedCases(casesToProcess, progressCallback, options = {
         const allClusters = groupEntriesByCase(entriesForGrouping);
         
         // --- SELECTION STEP (A-06) ---
-        // If caseLimit is provided in options, use it. Otherwise default to all (or use default constant).
-        // Since the scraper already did a rough limit, we're just refining here.
-        let clusters = allClusters;
-        if (resolvedOptions.caseLimit && typeof resolvedOptions.caseLimit === 'number') {
-             clusters = allClusters.slice(0, resolvedOptions.caseLimit);
-        }
+        // Selection policy:
+        // 1) newer clusters first (by parsed entry dates when available)
+        // 2) better-covered clusters next (more document links, then more entries)
+        // 3) preserve original discovery order as final tie-break
+        const clusters = selectClustersForProcessing(allClusters, resolvedOptions.caseLimit);
 
         const totalCases = clusters.length;
 

@@ -151,6 +151,53 @@ To test the daily subscription check, you can run the script manually from the b
 node cron/run_daily_checks.js
  ```
 
+### Running QA / Puppeteer Tests Locally
+
+Use three terminals for live browser smoke tests.
+
+1. Install dependencies:
+```sh
+cd backend && npm ci
+cd ../simple-chat && npm ci
+```
+
+2. Start backend (Terminal A):
+```sh
+cd backend
+npm run start
+```
+
+3. Start frontend (Terminal B):
+```sh
+cd simple-chat
+npm run start -- --host 127.0.0.1 --port 5173
+```
+
+4. Run test lanes (Terminal C):
+```sh
+cd backend
+npm run test:unit
+npm run test:integration
+npm run test:e2e:smoke
+```
+
+Optional combined live suite:
+```sh
+cd backend
+npm run test:nightly-live
+```
+
+If your local URLs differ, override smoke endpoints:
+```sh
+cd backend
+SMOKE_BACKEND_HEALTH_URL=http://127.0.0.1:3001/health \
+SMOKE_FRONTEND_URL=http://127.0.0.1:5173 \
+npm run test:e2e:smoke
+```
+
+Smoke failure artifacts are written to:
+- `backend/test-artifacts/puppeteer-smoke/`
+
 ## TODO
 
 Probable next steps include taking out the Gemini wrapper part (basically the entire front page would need to be reworked) and replacing it with a more focused AI-powered legal text creator and editor, in the line of the more professional tools that cater to Croatian legal professionals - [Yure.ai](https://yure.ai/hr), [Mikai](https://www.mikai-legal.com/en/), and drawing heavy inspiration from AI writing tools such as [Sudowrite](https://sudowrite.com/).

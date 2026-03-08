@@ -33,6 +33,15 @@ build/
 /coverage
 */coverage
 */*/stories
+!simple-chat/src/stories/
+simple-chat/src/stories/**
+!simple-chat/src/stories/Dashboard/
+simple-chat/src/stories/Dashboard/**
+!simple-chat/src/stories/Dashboard/AnalysisDetail/
+simple-chat/src/stories/Dashboard/AnalysisDetail/**
+!simple-chat/src/stories/Dashboard/AnalysisDetail/README.mdx
+!simple-chat/src/stories/Dashboard/AnalysisDetailDecisionMatrix.stories.jsx
+!simple-chat/src/stories/Dashboard/AnalysisDetailProgressPresentation.stories.jsx
 /dokumentacija*
 
 # opencode

@@ -64,6 +64,25 @@ describe('useAnalysisEvents canonical stage parity', () => {
     expect(latest.current).toBe('complete');
   });
 
+  test('maps processing_case and enriching aliases to grouping', () => {
+    let latest = null;
+
+    render(
+      <Harness
+        events={[
+          { id: 'e1', event_type: 'processing_case', message: 'Obrada predmeta', created_at: '2026-02-27T10:00:00.000Z' },
+          { id: 'e2', event_type: 'enriching', message: 'Obogaćivanje metapodataka', created_at: '2026-02-27T10:01:00.000Z' },
+        ]}
+        onValue={(value) => {
+          latest = value;
+        }}
+      />,
+    );
+
+    expect(latest.timeline.map((event) => event.stage)).toEqual(['grouping', 'grouping']);
+    expect(latest.current).toBe('grouping');
+  });
+
   test('flags terminal error stage and keeps stage list stable', () => {
     let latest = null;
 
