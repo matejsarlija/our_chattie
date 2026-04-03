@@ -5,6 +5,7 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- **Court Analysis Planning (Spec/Breakdown Refresh)**: Reframed the reasoning-engine plan around a two-stage architecture (`Discovery Engine` + cluster-scoped `Reasoning Engine`), added deterministic discovery breadth/depth heuristics and optional cluster-expansion crawling, promoted frozen-fixture regression coverage to the critical path, and updated the ticket breakdown to run test-first in parallel instead of deferring hardening to the end.
 - **Chat UI (CHAT-201)**: Added `ScrollToBottomButton` component and exported it through the Chat component index.
 - **Chat UI (CHAT-202)**: Added `WordFadeIn` (`WordFadeIn.jsx` + `WordFadeIn.css`) to support animated reveal of finalized assistant responses.
 - **Testing (CHAT-203)**: Added `AltChat.scroll-button.test.jsx` coverage for scroll-button visibility, overlay anchoring, and near-bottom hide behavior.

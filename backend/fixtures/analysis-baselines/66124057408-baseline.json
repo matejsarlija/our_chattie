@@ -1,0 +1,839 @@
+{
+  "meta": {
+    "capturedAt": "2026-03-31T11:50:25.050Z",
+    "gitCommit": "50b509d11e7704fbd6005deb1c30bee4270adac8",
+    "searchTerm": "66124057408",
+    "caseLimit": 3,
+    "scrapeLimit": 9,
+    "visualizerEnabled": true,
+    "note": "Captured from existing analysis pipeline only. No reasoning synthesizer/verifier modules are invoked here."
+  },
+  "progressEvents": [
+    {
+      "step": "grouping",
+      "progress": 15,
+      "message": "Grupiram pronađene objave po predmetima..."
+    },
+    {
+      "step": "grouping",
+      "progress": 20,
+      "message": "Pronađeno 1 jedinstvenih predmeta (odabrano od 1 grupa iz 9 objava) za analizu."
+    },
+    {
+      "step": "downloading",
+      "progress": 25,
+      "message": "Obrađujem predmet 1 od 1: ST-2/2013 (9 objava)"
+    },
+    {
+      "step": "discovering",
+      "message": "Dohvaćam podatke iz Sudskog registra za sudionike..."
+    },
+    {
+      "step": "downloading",
+      "message": "Preuzimam arhivu za predmet 1 (9 linkova)..."
+    },
+    {
+      "step": "extracting",
+      "message": "Raspakiram datoteke za predmet 1..."
+    },
+    {
+      "step": "reasoning",
+      "message": "Analiziram 13 datoteka za predmet 1..."
+    },
+    {
+      "step": "reasoning",
+      "progress": 85,
+      "message": "Generiram usporednu analizu i zaključak..."
+    },
+    {
+      "step": "reasoning",
+      "progress": 95,
+      "message": "Generiram vizualizaciju tijeka predmeta..."
+    },
+    {
+      "step": "complete",
+      "progress": 100,
+      "message": "Analiza je završena!"
+    }
+  ],
+  "discovery": {
+    "count": 9,
+    "caseNumbers": [
+      "ST-2/2013"
+    ],
+    "entries": [
+      {
+        "index": 0,
+        "caseNumber": "ST-2/2013",
+        "title": "Podnesak od 29.01.2026.",
+        "court": "Trgovački sud u Splitu",
+        "date": "29.01.2026. 09:19",
+        "detailLink": "https://e-oglasna.pravosudje.hr/objave/49cee34b-fb43-43ce-918a-8b88b89b3235",
+        "documentCount": 1,
+        "documentLinks": [
+          {
+            "url": "https://e-oglasna.pravosudje.hr/objave/dokument/b4db8bc4-1213-4c76-a68f-c2502d16964c/preuzimanje",
+            "text": "Dokument objave"
+          }
+        ]
+      },
+      {
+        "index": 1,
+        "caseNumber": "ST-2/2013",
+        "title": "Podnesak od 26.01.2026.; Prilog od: 26.01.2026.; Prilog od: 26.01.2026.; Prilog od: 26.01.2026.; Prilog od: 26.01.2026.",
+        "court": "Trgovački sud u Splitu",
+        "date": "26.01.2026. 13:51",
+        "detailLink": "https://e-oglasna.pravosudje.hr/objave/a95490cf-11b2-4542-a9cc-79778d6ad31b",
+        "documentCount": 1,
+        "documentLinks": [
+          {
+            "url": "https://e-oglasna.pravosudje.hr/objave/a95490cf-11b2-4542-a9cc-79778d6ad31b/dokumenti/preuzimanje",
+            "text": "Dokumenti objave"
+          }
+        ]
+      },
+      {
+        "index": 2,
+        "caseNumber": "ST-2/2013",
+        "title": "Zaključak od 26.01.2026.-odgoda ročišta",
+        "court": "Trgovački sud u Splitu",
+        "date": "26.01.2026. 08:23",
+        "detailLink": "https://e-oglasna.pravosudje.hr/objave/b988824d-4308-4478-8f5d-91345f8b8966",
+        "documentCount": 1,
+        "documentLinks": [
+          {
+            "url": "https://e-oglasna.pravosudje.hr/objave/dokument/1186b5e1-20c2-45d7-9a55-6ea6552a4f05/preuzimanje",
+            "text": "Dokument objave"
+          }
+        ]
+      },
+      {
+        "index": 3,
+        "caseNumber": "ST-2/2013",
+        "title": "Rješenje od 13.01.2026.",
+        "court": "Trgovački sud u Splitu",
+        "date": "13.01.2026. 14:43",
+        "detailLink": "https://e-oglasna.pravosudje.hr/objave/6ef1a0ef-1452-44b8-a08b-54590d91b6cc",
+        "documentCount": 1,
+        "documentLinks": [
+          {
+            "url": "https://e-oglasna.pravosudje.hr/objave/dokument/e61f258c-5c88-41fb-af47-a07e3bac9665/preuzimanje",
+            "text": "Dokument objave"
+          }
+        ]
+      },
+      {
+        "index": 4,
+        "caseNumber": "ST-2/2013",
+        "title": "Podnesak od 12.01.2026.",
+        "court": "Trgovački sud u Splitu",
+        "date": "12.01.2026. 09:18",
+        "detailLink": "https://e-oglasna.pravosudje.hr/objave/00cf0258-ec00-4021-b1c1-360ee68ecff3",
+        "documentCount": 1,
+        "documentLinks": [
+          {
+            "url": "https://e-oglasna.pravosudje.hr/objave/dokument/522e5304-a886-41cf-a565-1be5cd051be8/preuzimanje",
+            "text": "Dokument objave"
+          }
+        ]
+      },
+      {
+        "index": 5,
+        "caseNumber": "ST-2/2013",
+        "title": "Podnesak od 09.01.2026.",
+        "court": "Trgovački sud u Splitu",
+        "date": "09.01.2026. 10:13",
+        "detailLink": "https://e-oglasna.pravosudje.hr/objave/d5ac55cc-e8ee-446e-8e7b-fce94c212cc3",
+        "documentCount": 1,
+        "documentLinks": [
+          {
+            "url": "https://e-oglasna.pravosudje.hr/objave/dokument/b9aaec1a-caed-4db0-8660-a9f18d8f5e88/preuzimanje",
+            "text": "Dokument objave"
+          }
+        ]
+      },
+      {
+        "index": 6,
+        "caseNumber": "ST-2/2013",
+        "title": "Žalba od 29.12.2025.",
+        "court": "Trgovački sud u Splitu",
+        "date": "29.12.2025. 13:40",
+        "detailLink": "https://e-oglasna.pravosudje.hr/objave/be9b1485-16b8-4f6e-b403-922bf64a5a43",
+        "documentCount": 1,
+        "documentLinks": [
+          {
+            "url": "https://e-oglasna.pravosudje.hr/objave/dokument/96e4cb04-97ab-4e48-ac85-6cfa945a7397/preuzimanje",
+            "text": "Dokument objave"
+          }
+        ]
+      },
+      {
+        "index": 7,
+        "caseNumber": "ST-2/2013",
+        "title": "Rješenje od 17.12.2025.",
+        "court": "Trgovački sud u Splitu",
+        "date": "17.12.2025. 13:14",
+        "detailLink": "https://e-oglasna.pravosudje.hr/objave/b29c7060-a114-44a8-8082-76ee0615d688",
+        "documentCount": 1,
+        "documentLinks": [
+          {
+            "url": "https://e-oglasna.pravosudje.hr/objave/dokument/376e8654-af13-481d-8cf0-b2f41dd15552/preuzimanje",
+            "text": "Dokument objave"
+          }
+        ]
+      },
+      {
+        "index": 8,
+        "caseNumber": "ST-2/2013",
+        "title": "Podnesak od 07.11.2025.",
+        "court": "Trgovački sud u Splitu",
+        "date": "11.11.2025. 09:06",
+        "detailLink": "https://e-oglasna.pravosudje.hr/objave/91791f29-5881-46e2-95a7-2abe9f835e4b",
+        "documentCount": 1,
+        "documentLinks": [
+          {
+            "url": "https://e-oglasna.pravosudje.hr/objave/dokument/3a7d832a-7925-4da7-8f8a-d7f74b00caa7/preuzimanje",
+            "text": "Dokument objave"
+          }
+        ]
+      }
+    ]
+  },
+  "pipeline": {
+    "processedCaseCount": 1,
+    "processedCases": [
+      {
+        "index": 0,
+        "caseNumber": "ST-2/2013",
+        "title": "Podnesak od 29.01.2026.",
+        "court": "Trgovački sud u Splitu",
+        "date": "29.01.2026. 09:19",
+        "entryCount": 0,
+        "entryDates": [],
+        "participants": [
+          {
+            "name": "KERUM društvo s ograničenom odgovornošću, za unutarnju i vanjsku trgovinu, promet i usluge u stečaju",
+            "role": "DUŽNIK"
+          }
+        ],
+        "files": [
+          {
+            "name": null,
+            "path": null,
+            "url": "https://e-oglasna.pravosudje.hr/objave/dokument/b4db8bc4-1213-4c76-a68f-c2502d16964c/preuzimanje"
+          },
+          {
+            "name": null,
+            "path": null,
+            "url": "https://e-oglasna.pravosudje.hr/objave/a95490cf-11b2-4542-a9cc-79778d6ad31b/dokumenti/preuzimanje"
+          },
+          {
+            "name": null,
+            "path": null,
+            "url": "https://e-oglasna.pravosudje.hr/objave/dokument/1186b5e1-20c2-45d7-9a55-6ea6552a4f05/preuzimanje"
+          },
+          {
+            "name": null,
+            "path": null,
+            "url": "https://e-oglasna.pravosudje.hr/objave/dokument/e61f258c-5c88-41fb-af47-a07e3bac9665/preuzimanje"
+          },
+          {
+            "name": null,
+            "path": null,
+            "url": "https://e-oglasna.pravosudje.hr/objave/dokument/522e5304-a886-41cf-a565-1be5cd051be8/preuzimanje"
+          },
+          {
+            "name": null,
+            "path": null,
+            "url": "https://e-oglasna.pravosudje.hr/objave/dokument/b9aaec1a-caed-4db0-8660-a9f18d8f5e88/preuzimanje"
+          },
+          {
+            "name": null,
+            "path": null,
+            "url": "https://e-oglasna.pravosudje.hr/objave/dokument/96e4cb04-97ab-4e48-ac85-6cfa945a7397/preuzimanje"
+          },
+          {
+            "name": null,
+            "path": null,
+            "url": "https://e-oglasna.pravosudje.hr/objave/dokument/376e8654-af13-481d-8cf0-b2f41dd15552/preuzimanje"
+          },
+          {
+            "name": null,
+            "path": null,
+            "url": "https://e-oglasna.pravosudje.hr/objave/dokument/3a7d832a-7925-4da7-8f8a-d7f74b00caa7/preuzimanje"
+          }
+        ],
+        "analyses": [
+          {
+            "index": 0,
+            "fileName": null,
+            "filePath": "/home/oxioxi/proj/our_chattie/backend/uploads/1774957627133_Dokument_objave.pdf",
+            "error": null,
+            "summary": "Stečajna upraviteljica Natalija Mladineo podnijela je očitovanje u predmetu stečajnog dužnika KERUM d.o.o., a povodom podneska odvjetnika Ante Kukoča, punomoćnika stečajnih vjerovnika CRO GO doo i KGH Tehnika doo. Upraviteljica je suglasna s prijedlogom za prijeboj parničnih troškova proizašlih iz pravomoćne presude VTSRH posl.br.Pž-2889/2022-2. Na temelju te presude, tužitelju je dosuđeno platiti tuženiku 185,48 EUR, dok je stečajnom dužniku dosuđeno platiti tužitelju 248,86 EUR. Nakon provedenog prijeboja, sa računa stečajnog dužnika bit će isplaćeno 63,68 EUR stečajnom vjerovniku CRO GO doo. Također, upraviteljica je suglasna s prijedlogom da se iz stečajne mase rezervira iznos od 1.033,25 EUR za namirenje budućih pretpostavljenih parničnih troškova u postupku posl.br.Povrv-297/2020 u pravnoj stvari tužitelja KGH Tehnika doo, s obzirom na očekivanje da će stečajni dužnik imati obvezu plaćanja troškova u tom, još uvijek nepravomoćno okončanom postupku.",
+            "decisionDate": "28.01.2026.",
+            "parties": [
+              {
+                "name": "KERUM društvo s ograničenom odgovornošću, za unutarnju i vanjsku trgovinu, promet i usluge u stečaju",
+                "oib": "66124057408",
+                "address": "Zrinjsko Frankopanska 68, 21000 Split, Hrvatska",
+                "role": "DUŽNIK"
+              }
+            ]
+          },
+          {
+            "index": 1,
+            "fileName": null,
+            "filePath": "/home/oxioxi/proj/our_chattie/backend/uploads/Troškovnik.pdf",
+            "error": null,
+            "summary": "U ovom predmetu stečajnog dužnika KERUM d.o.o. u stečaju, stečajni vjerovnici CRO-GO d.o.o. i KGH TEHNIKA d.o.o. podnijeli su zajednički podnesak sa zahtjevom za isplatu parničnog troška i izdvajanje sredstava. Vjerovnik CRO-GO d.o.o. potražuje iznos od 63,38 € (što je rezultat prijeboja tražbine od 248,86 € ili 1.875,00 kn, s protutražbinom dužnika od 185,48 € ili 1.397,50 kn) na ime parničnog troška kao obvezu stečajne mase. Nadalje, vjerovnik KGH TEHNIKA d.o.o. zahtijeva izdvajanje sredstava iz stečajne mase u visini od 1.033,25 € (7.786,25 kn) radi buduće namire popisanih troškova parničnog postupka koji se vodi pred Trgovačkim sudom u Splitu, a za koje još nije donesena presuda o troškovima.",
+            "decisionDate": "26. siječnja 2026.",
+            "parties": [
+              {
+                "name": "KERUM društvo s ograničenom odgovornošću, za unutarnju i vanjsku trgovinu, promet i usluge u stečaju",
+                "oib": "66124057408",
+                "address": "Zrinjsko Frankopanska 68, 21000 Split, Hrvatska",
+                "role": "DUŽNIK"
+              }
+            ]
+          },
+          {
+            "index": 2,
+            "fileName": null,
+            "filePath": "/home/oxioxi/proj/our_chattie/backend/uploads/Prilog St-2_2013-1196-1 - CroGo-Kerum_I°-2.pdf",
+            "error": null,
+            "summary": "Trgovački sud u Splitu je u postupku između tužitelja CRO-GO d.o.o. i tuženika KERUM d.o.o. u stečaju, povodom tužbenog zahtjeva za utvrđenje tražbine zateznih kamata, donio presudu na temelju odricanja i rješenje. Tužitelj je u ovoj parnici prvotno tražio utvrđivanje tražbine zateznih kamata u iznosu od 122.029,88 kn, dospjelih do dana otvaranja stečajnog postupka nad tuženikom. Međutim, tužbeni zahtjev u tom dijelu je odbijen kao neosnovan, s obzirom na to da je tužitelj obavijestio sud da mu je ista tražbina u iznosu od 122.029,88 kn, vezana za obračunate zakonske zatezne kamate na glavno potraživanje, pravomoćno priznata u stečajnom postupku nad tuženikom dana 28. travnja 2022. Zbog toga se tužitelj odrekao glavnog tužbenog zahtjeva u ovoj parnici.  Nadalje, ukinut je platni nalog javnog bilježnika u dijelu kojim se nalaže tuženiku isplata glavnice od 171.128,90 kn i troškova ovršnog postupka pred javnim bilježnikom u iznosu od 6.089,11 kn, jer je tužba u tom dijelu povučena. Sud je naložio tuženiku da tužitelju nadoknadi troškove parničnog postupka u iznosu od 13.467,54 kn, dok je zahtjev tužitelja za više traženu naknadu troškova u iznosu od 7.058,71 kn odbijen. Odluka o troškovima je donesena primjenom članka 158. stavka 2. ZPP-a, budući da se tužitelj odrekao tužbenog zahtjeva nakon što je tuženik udovoljio zahtjevu priznavši tražbinu zateznih kamata u stečajnom postupku.",
+            "decisionDate": "11. svibnja 2022.",
+            "parties": [
+              {
+                "name": "KERUM društvo s ograničenom odgovornošću, za unutarnju i vanjsku trgovinu, promet i usluge u stečaju",
+                "oib": "66124057408",
+                "address": "Zrinjsko Frankopanska 68, 21000 Split, Hrvatska",
+                "role": "DUŽNIK"
+              }
+            ]
+          },
+          {
+            "index": 3,
+            "fileName": null,
+            "filePath": "/home/oxioxi/proj/our_chattie/backend/uploads/Prilog St-2_2013-1196-2 - CroGo-Kerum_II°-2.pdf",
+            "error": null,
+            "summary": "Visoki trgovački sud Republike Hrvatske donio je rješenje u pravnoj stvari tužitelja CRO-GO d.o.o. protiv tuženika KERUM d.o.o. u stečaju, vezano za isplatu i troškove parničnog postupka. Sud je djelomično odbio žalbu tuženika, potvrđujući rješenje Trgovačkog suda u Splitu u dijelu kojim je tuženiku naloženo naknaditi tužitelju trošak parničnog postupka u iznosu od **1.875,00 kn (248,86 EUR)**. Istovremeno, sud je djelomično uvažio tuženikovu žalbu i preinačio prvostupanjsko rješenje u dijelu kojim je tuženiku naloženo naknaditi tužitelju trošak od **11.592,54 kn (1.538,59 EUR)**, odbivši taj tužiteljev zahtjev kao neosnovan. Nadalje, tužitelju je naloženo da tuženiku naknadi trošak žalbenog postupka u iznosu od **1.397,50 kn (185,48 EUR)**, dok je tuženikov zahtjev za naknadu troška žalbenog postupka u iznosu od **1.165,00 kn (154,62 EUR)** odbijen. Predmet spora bili su troškovi parničnog postupka nakon što je tužiteljeva tražbina utvrđena i priznata u stečajnom postupku nad tuženikom, a sud je razmatrao primjenu odredbi Zakona o parničnom postupku i Stečajnog zakona vezano za pojam 'udovoljenja zahtjevu' i obračun troškova.",
+            "decisionDate": "2022-09-07",
+            "parties": [
+              {
+                "name": "KERUM društvo s ograničenom odgovornošću, za unutarnju i vanjsku trgovinu, promet i usluge u stečaju",
+                "oib": "66124057408",
+                "address": "Zrinjsko Frankopanska 68, 21000 Split, Hrvatska",
+                "role": "DUŽNIK"
+              }
+            ]
+          },
+          {
+            "index": 4,
+            "fileName": null,
+            "filePath": "/home/oxioxi/proj/our_chattie/backend/uploads/Prilog St-2_2013-1196-3 - KGH-T_KERUM_u_stč-pdn_tr.pdf",
+            "error": null,
+            "summary": "U ovom predmetu, tužitelj KGH TEHNIKA d.o.o. podnio je podnesak kojim se u cijelosti odriče od glavnog tužbenog zahtjeva postavljenog 4. rujna 2020. godine. Razlog za odricanje je pravomoćno rješenje Stečajnog suda, broj 4. St-2/2013-747 od 11. travnja 2022. godine, kojim je priznata tražbina tužitelja kao stečajnog vjerovnika. S obzirom na to da je navedeno rješenje postalo pravomoćno na dan podnošenja ovog podneska, tužitelj je odlučio odustati od daljnjeg parničnog postupka za tu tražbinu. Istovremeno, tužitelj traži od tuženika, KERUM d.o.o. u stečaju (čiji je stečaj otvoren 2. studenog 2018. godine), naknadu parničnih troškova nastalih nakon otvaranja stečaja, sukladno članku 158. stavku 2. Zakona o parničnom postupku, čiji popis je priložen uz podnesak.",
+            "decisionDate": "28. travnja 2022.g.",
+            "parties": [
+              {
+                "name": "KERUM društvo s ograničenom odgovornošću, za unutarnju i vanjsku trgovinu, promet i usluge u stečaju",
+                "oib": "66124057408",
+                "address": "Zrinjsko Frankopanska 68, 21000 Split, Hrvatska",
+                "role": "DUŽNIK"
+              }
+            ]
+          },
+          {
+            "index": 5,
+            "fileName": null,
+            "filePath": "/home/oxioxi/proj/our_chattie/backend/uploads/Prilog St-2_2013-1196-4 - KGH-T_tr.pdf",
+            "error": null,
+            "summary": "Ovaj dokument predstavlja popis troškova tužitelja pred Trgovačkim sudom u Splitu, vezan uz predmet spora čija je vrijednost 33.994,72 kn. Popis detaljno specificira nagradu opunomoćeniku tužitelja, koja ukupno iznosi 5.125,00 kn bez PDV-a, odnosno 6.406,25 kn uključujući PDV od 1.281,25 kn. Navedeni su troškovi za sastav žalbe protiv rješenja o odbačaju tužbe u iznosu od 3.125,00 kn te dva obrazložena podneska, svaki u iznosu od 1.000,00 kn. Osim odvjetničkih nagrada, tužitelj potražuje i sudske pristojbe za žalbu u iznosu od 1.380,00 kn. Ukupni troškovi tužitelja, koji obuhvaćaju nagradu opunomoćeniku i sudske pristojbe, iznose 7.786,25 kn. Obračun je izvršen prema Tarifi o nagradama i naknadi troškova za rad odvjetnika.",
+            "decisionDate": "28. travnja 2022.",
+            "parties": [
+              {
+                "name": "KERUM društvo s ograničenom odgovornošću, za unutarnju i vanjsku trgovinu, promet i usluge u stečaju",
+                "oib": "66124057408",
+                "address": "Zrinjsko Frankopanska 68, 21000 Split, Hrvatska",
+                "role": "DUŽNIK"
+              }
+            ]
+          },
+          {
+            "index": 6,
+            "fileName": null,
+            "filePath": "/home/oxioxi/proj/our_chattie/backend/uploads/1774957645278_Dokument_objave.pdf",
+            "error": null,
+            "summary": "Trgovački sud u Splitu, po sutkinji Katarini Mikulić, donio je rješenje u stečajnom postupku nad stečajnim dužnikom KERUM d.o.o. u stečaju. Sud je odlučio odgoditi završno ročište, prvotno zakazano za 27. siječnja 2026. u 12:00 sati, u sobi broj 118/I (sudnica broj 4) Trgovačkog suda u Splitu. Odgoda je donesena do donošenja odluke Visokog trgovačkog suda Republike Hrvatske o žalbi protiv rješenja Trgovačkog suda u Splitu poslovni broj: St-2/2013-1182 od 17. prosinca 2025. U ovom dokumentu nisu navedeni nikakvi novčani iznosi.",
+            "decisionDate": "26. siječnja 2026.",
+            "parties": [
+              {
+                "name": "KERUM društvo s ograničenom odgovornošću, za unutarnju i vanjsku trgovinu, promet i usluge u stečaju",
+                "oib": "66124057408",
+                "address": "Zrinjsko Frankopanska 68, 21000 Split, Hrvatska",
+                "role": "DUŽNIK"
+              }
+            ]
+          },
+          {
+            "index": 7,
+            "fileName": null,
+            "filePath": "/home/oxioxi/proj/our_chattie/backend/uploads/1774957648136_Dokument_objave.pdf",
+            "error": null,
+            "summary": "Trgovački sud u Splitu je rješenjem od 13. siječnja 2026. godine ispravio svoje ranije rješenje poslovnog broja St-2/2013-1182 od 17. prosinca 2025. godine, doneseno u stečajnom postupku nad dužnikom KERUM d.o.o. u stečaju. Ispravak se odnosi na točku I. izreke, gdje se precizira iznos i postotak namirenja vjerovnika Drugog višeg isplatnog reda. Umjesto prvotno navedenog iznosa od 266.988,78 eura, koji je predstavljao 1,23% od utvrđene tražbine, ispravno je naveden iznos od 1.200.000,00 eura, što odgovara 1,20% od utvrđene tražbine.",
+            "decisionDate": "2026-01-13",
+            "parties": [
+              {
+                "name": "KERUM društvo s ograničenom odgovornošću, za unutarnju i vanjsku trgovinu, promet i usluge u stečaju",
+                "oib": "66124057408",
+                "address": "Zrinjsko Frankopanska 68, 21000 Split, Hrvatska",
+                "role": "DUŽNIK"
+              }
+            ]
+          },
+          {
+            "index": 8,
+            "fileName": null,
+            "filePath": "/home/oxioxi/proj/our_chattie/backend/uploads/1774957651063_Dokument_objave.pdf",
+            "error": null,
+            "summary": "Ovo očitovanje, datirano 9. siječnja 2026. godine, podneseno je u vezi sa žalbom društva Adria Rijeka d.o.o. protiv Rješenja Trgovačkog suda u Splitu, poslovni broj St-2/2013-1182 od 17. prosinca 2025., u stečajnom postupku nad dužnikom Kerum d.o.o. Stečajna upraviteljica predlaže odbacivanje žalbe kao nedopuštene jer žalitelj nema pravni položaj stečajnog vjerovnika niti vjerovnika stečajne mase, a prvostupanjsko rješenje o završnoj diobi i određivanju završnog ročišta vjerovnika predstavlja odluku o upravljanju postupkom protiv koje žalba nije dopuštena. Također se ističe da su žalbeni navodi, koji se tiču prigovora na završni račun, završno izvješće i diobni popis, preuranjeni jer su to pitanja o kojima će se raspravljati na završnom ročištu vjerovnika. Posebno se naglašava da je žalitelj netočno naveo da će se stečajni vjerovnici drugog višeg isplatnog reda namiriti u iznosu od 266.988,78 EUR, dok je stečajna upraviteljica predložila namirenje u ukupnom iznosu od 1.200.000,00 EUR. Raspravlja se i o prigovorima na troškove knjigovodstva i arhiviranja, gdje je za arhiviranje 160 registratora tražbina i dvadesetak registratora knjigovodstvene dokumentacije procijenjen trošak od 109,73 EUR po registratoru s PDV-om. Konačno, pojašnjava se stavka namirenja stečajnih vjerovnika prvog višeg isplatnog reda u iznosu od 27.031,98 EUR, te se spominje iznos ostalih obveza stečajne mase od 180.953,76 EUR.",
+            "decisionDate": "09.01.2026",
+            "parties": [
+              {
+                "name": "KERUM društvo s ograničenom odgovornošću, za unutarnju i vanjsku trgovinu, promet i usluge u stečaju",
+                "oib": "66124057408",
+                "address": "Zrinjsko Frankopanska 68, 21000 Split, Hrvatska",
+                "role": "DUŽNIK"
+              }
+            ]
+          },
+          {
+            "index": 9,
+            "fileName": null,
+            "filePath": "/home/oxioxi/proj/our_chattie/backend/uploads/1774957654061_Dokument_objave.pdf",
+            "error": null,
+            "summary": "Ovaj podnesak, datiran 9. siječnja 2026., predstavlja očitovanje stečajnog vjerovnika Tenant d.o.o. na žalbu društva Adria Rijeka d.o.o. podnesenu protiv Rješenja Trgovačkog suda u Splitu, poslovni broj St-2/2013-1182 od 17. prosinca 2025. Navedenim je rješenjem dana suglasnost stečajnoj upraviteljici Nataliji Mladineo za završnu diobu, prema kojoj će se vjerovnici drugog višeg isplatnog reda namiriti za ukupan iznos od **266.988,78 EUR**, što čini 1,23% od utvrđene tražbine, te je određeno završno ročište za 27. siječnja 2026. Stečajni vjerovnik Tenant d.o.o. predlaže odbacivanje žalbe Adria Rijeka d.o.o. kao nedopuštene, tvrdeći da žalitelj nema pravni položaj stečajnog vjerovnika niti vjerovnika stečajne mase. Dodatno, ističe se da je odluka o davanju suglasnosti za diobu i sazivanju završnog ročišta odluka o upravljanju postupkom, protiv koje žalba nije dopuštena. Eventualne primjedbe na završni račun i diobni popis trebaju se raspravljati na samom završnom ročištu.",
+            "decisionDate": "2026-01-09",
+            "parties": [
+              {
+                "name": "KERUM društvo s ograničenom odgovornošću, za unutarnju i vanjsku trgovinu, promet i usluge u stečaju",
+                "oib": "66124057408",
+                "address": "Zrinjsko Frankopanska 68, 21000 Split, Hrvatska",
+                "role": "DUŽNIK"
+              }
+            ]
+          },
+          {
+            "index": 10,
+            "fileName": null,
+            "filePath": "/home/oxioxi/proj/our_chattie/backend/uploads/1774957656782_Dokument_objave.pdf",
+            "error": null,
+            "summary": "Ovo je žalba vjerovnika stečajne mase, tvrtke ADRIA RIJEKA d.o.o., protiv rješenja Trgovačkog suda u Splitu posl. br. St-2/2013-1182 od 17. prosinca 2025. godine. Spomenutim rješenjem data je suglasnost stečajnoj upraviteljici dužnika KERUM d.o.o. u stečaju za završnu diobu, kojom bi se vjerovnici drugog višeg isplatnog reda namirili za ukupan iznos od 266.988,78 EUR, odnosno 1,23% utvrđene tražbine. Žalba se podnosi zbog pogrešno i nepotpuno utvrđenog činjeničnog stanja, pogrešne primjene materijalnog prava te bitne povrede postupka. Adria Rijeka d.o.o. ističe da je sud u potpunosti zanemario njezin prigovor na diobni popis i završni račun. Posebno se naglašava da nisu predviđeni troškovi stečajne mase, uključujući parnične troškove od 84.150,00 EUR dosuđene stečajnom dužniku u sporu koji je uspješno vodila Adria Rijeka d.o.o., čime je ostvarena korist za stečajnu masu. Vjerovnik osporava i rezervacije i plaćanja u završnom računu u ukupnom iznosu od 45.647,85 EUR, uključujući nespecificiranu rezervaciju odvjetničkih troškova (3.115,87 EUR), nerealno procijenjene rezervacije za knjigovodstvo (4.500,00 EUR), arhiviranje (10.000,00 EUR) i platni promet (1.000,00 EUR), te predviđeni iznos za isplatu vjerovnicima I. višeg isplatnog reda (27.031,98 EUR), iako su navodno već namireni. Smatra se da je time prekršen Stečajni zakon (čl. 155. i 156. SZ-a) koji nalaže namirenje troškova stečajne mase prije vjerovnika viših isplatnih redova, te se predlaže ukidanje pobijanog rješenja.",
+            "decisionDate": "17. prosinca 2025.",
+            "parties": [
+              {
+                "name": "KERUM društvo s ograničenom odgovornošću, za unutarnju i vanjsku trgovinu, promet i usluge u stečaju",
+                "oib": "66124057408",
+                "address": "Zrinjsko Frankopanska 68, 21000 Split, Hrvatska",
+                "role": "DUŽNIK"
+              }
+            ]
+          },
+          {
+            "index": 11,
+            "fileName": null,
+            "filePath": "/home/oxioxi/proj/our_chattie/backend/uploads/1774957657743_Dokument_objave.pdf",
+            "error": null,
+            "summary": "Trgovački sud u Splitu je u stečajnom postupku nad dužnikom KERUM d.o.o. u stečaju, otvorenim 2. studenog 2018., dana 17. prosinca 2025. donio rješenje kojim se daje suglasnost stečajnoj upraviteljici Nataliji Mladineo za provedbu završne diobe. Prema zaprimljenom završnom diobnom popisu, objavljenom 14. listopada 2025. na e-Oglasnoj ploči sudova, vjerovnici Drugog višeg isplatnog reda bit će namireni za ukupan iznos od 266.988,78 EUR, što predstavlja 1,23% od utvrđenih tražbina. Završno ročište određeno je za 27. siječnja 2026. u 12:00 sati u prostorijama suda, na kojem će se raspravljati o završnom računu stečajne upraviteljice i podnositi prigovori na završni popis.",
+            "decisionDate": "17. prosinca 2025.",
+            "parties": [
+              {
+                "name": "KERUM društvo s ograničenom odgovornošću, za unutarnju i vanjsku trgovinu, promet i usluge u stečaju",
+                "oib": "66124057408",
+                "address": "Zrinjsko Frankopanska 68, 21000 Split, Hrvatska",
+                "role": "DUŽNIK"
+              }
+            ]
+          },
+          {
+            "index": 12,
+            "fileName": null,
+            "filePath": "/home/oxioxi/proj/our_chattie/backend/uploads/1774957661073_Dokument_objave.pdf",
+            "error": null,
+            "summary": "Ovo je očitovanje stečajne upraviteljice Natalije Mladineo povodom prigovora društva Adria Rijeka d.o.o. na Završni diobeni popis stečajnih vjerovnika drugog isplatnog reda. Adria Rijeka d.o.o. traži naknadu troškova zastupanja u parnici poslovnog broja P-170/2023 (ranije P-287/2019), gdje je osporena tražbina stečajne mase iza Town d.o.o. u stečaju u iznosu od 8.417.719,95 kn / 1.117.223,43 eura. Stečajna upraviteljica ističe da Adria Rijeka d.o.o. nije vjerovnik stečajne mase te da uvjeti za naknadu troškova iz članka 181. stavka 3. Stečajnog zakona (SZ/96) nisu ispunjeni. Parnica nije vođena bez sudjelovanja stečajne upraviteljice, a dosuđeni troškovi postupka u iznosu od 67.145,00 EUR pripadaju tuženiku (Kerum d.o.o. u stečaju), a ne Adria Rijeka d.o.o., niti su naplaćeni. Nadalje, matematičkim izračunom je utvrđeno da vođenjem ove parnice nije ostvarena značajna korist za stečajnu masu. Da tražbina nije bila osporena, stečajnoj masi iza Town d.o.o. u stečaju isplatio bi se iznos od 13.639,06 eura. Nakon djelomičnog osporavanja od strane stečajne upraviteljice (za 595.791,91 eura), potencijalna korist od preostalog osporavanja (od Adria Rijeka d.o.o.) iznosi samo 6.365,64 eura. Stoga bi isplata troškova zastupanja u iznosu od 84.150,00 eura društvu Adria Rijeka d.o.o. na teret stečajne mase bila nepravična i nelogična, s obzirom na neznatnu ostvarenu korist. Stečajna upraviteljica zaključuje da nema osnove za naknadu troškova društvu Adria Rijeka d.o.o. i da ono nije vjerovnik stečajne mase.",
+            "decisionDate": "07.11.2025.",
+            "parties": [
+              {
+                "name": "KERUM društvo s ograničenom odgovornošću, za unutarnju i vanjsku trgovinu, promet i usluge u stečaju",
+                "oib": "66124057408",
+                "address": "Zrinjsko Frankopanska 68, 21000 Split, Hrvatska",
+                "role": "DUŽNIK"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "comparativeAnalysis": "Ovo je pregled stanja u stečajnom postupku nad stečajnim dužnikom **KERUM d.o.o.**, koji je otvoren 2. studenog 2018. godine, fokusirajući se na rješavanje parničnih troškova te na sporove oko završne diobe stečajne mase.\n\n**1. Rješavanje Parničnih Troškova za Vjerovnike CRO GO d.o.o. i KGH TEHNIKA d.o.o.**\n\nStečajna upraviteljica Natalija Mladineo suglasna je s prijedlogom za prijeboj parničnih troškova proizašlih iz pravomoćne presude Visokog trgovačkog suda RH za stečajnog vjerovnika **CRO GO d.o.o.** U tom postupku, stečajnom dužniku dosuđeno je 185,48 EUR, dok je CRO GO d.o.o. dosuđeno 248,86 EUR. Nakon prijeboja, iz stečajne mase će se CRO GO d.o.o. isplatiti preostali iznos od 63,38 EUR (ili 63,68 EUR, ovisno o zaokruživanju u izvornim dokumentima).\n\nNadalje, stečajna upraviteljica je suglasna s prijedlogom za rezerviranje iznosa od 1.033,25 EUR iz stečajne mase za namirenje budućih pretpostavljenih parničnih troškova za **KGH TEHNIKA d.o.o.** u postupku koji još nije pravomoćno okončan. Oba vjerovnika su se, naime, odrekla glavnih tužbenih zahtjeva u parnicama jer su im tražbine pravomoćno priznate u stečajnom postupku, ali su zadržali pravo na naknadu parničnih troškova nastalih nakon otvaranja stečaja.\n\n**2. Sporovi Oko Završne Diobe i Žalba Adria Rijeka d.o.o.**\n\nTrgovački sud u Splitu donio je rješenje poslovni broj St-2/2013-1182 od 17. prosinca 2025. godine, kojim je dana suglasnost stečajnoj upraviteljici za završnu diobu. Prema prvotnom diobnom popisu, vjerovnici Drugog višeg isplatnog reda trebali su biti namireni za ukupan iznos od 266.988,78 EUR, što predstavlja 1,23% od utvrđenih tražbina. Međutim, Sud je kasnije ispravio to rješenje, precizirajući da je ispravan iznos za namirenje Drugog višeg isplatnog reda 1.200.000,00 EUR, što odgovara 1,20% od utvrđenih tražbina, sukladno prijedlogu stečajne upraviteljice. Završno ročište bilo je zakazano za 27. siječnja 2026. godine.\n\nNa to rješenje žalbu je podnijela tvrtka **ADRIA RIJEKA d.o.o.**, kao vjerovnik stečajne mase. Žalba se temelji na pogrešno i nepotpuno utvrđenom činjeničnom stanju, pogrešnoj primjeni materijalnog prava te bitnoj povredi postupka. Adria Rijeka d.o.o. posebno ističe da nisu predviđeni troškovi stečajne mase u iznosu od 84.150,00 EUR, koji su joj dosuđeni u sporu u kojem je navodno ostvarena korist za stečajnu masu. Također osporava druge rezervacije i plaćanja u završnom računu (npr. za knjigovodstvo, arhiviranje, odvjetničke troškove, te namirenje vjerovnika I. višeg isplatnog reda).\n\n**Stečajna upraviteljica** i stečajni vjerovnik **TENANT d.o.o.** podnijeli su očitovanja protiv žalbe Adria Rijeka d.o.o., predlažući njezino odbacivanje kao nedopuštene. Argumentiraju da Adria Rijeka d.o.o. nema pravni položaj stečajnog vjerovnika niti vjerovnika stečajne mase, te da je odluka o diobi odluka o upravljanju postupkom protiv koje žalba nije dopuštena. Stečajna upraviteljica dodatno pojašnjava da navedena parnica, u kojoj Adria Rijeka d.o.o. traži naknadu troškova, nije vođena bez njezinog sudjelovanja te da nije ostvarena značajna korist za stečajnu masu koja bi opravdala isplatu 84.150,00 EUR.\n\nZbog ove žalbe, završno ročište, prvotno zakazano za 27. siječnja 2026., odgođeno je do donošenja odluke Visokog trgovačkog suda Republike Hrvatske po žalbi protiv rješenja Trgovačkog suda u Splitu.\n\n**Sljedeći koraci za uključene strane:**\n\n1.  **Odluka Visokog trgovačkog suda RH (VTSRH):** Najvažniji i prvi sljedeći korak je odluka Visokog trgovačkog suda RH o žalbi tvrtke Adria Rijeka d.o.o. Stečajna upraviteljica i vjerovnik Tenant d.o.o. aktivno se protive toj žalbi, tvrdeći da je nedopuštena i neosnovana.\n    *   **Mogući ishod 1 (vjerojatnije):** Ako VTSRH odbaci žalbu kao nedopuštenu ili je odbije kao neosnovanu, rješenje Trgovačkog suda u Splitu o završnoj diobi (s ispravljenim iznosima) postat će pravomoćno.\n    *   **Mogući ishod 2 (manje vjerojatno):** Ako VTSRH usvoji žalbu Adria Rijeka d.o.o., to bi značilo da će se dio stečajnog postupka vezan uz diobu, a možda i završni račun, morati ponoviti ili preinačiti u skladu s odlukom višeg suda. To bi značajno prolongiralo cijeli stečajni postupak.\n\n2.  **Ponovno zakazivanje i održavanje završnog ročišta:** Nakon što VTSRH donese odluku o žalbi i ona postane konačna, Trgovački sud u Splitu zakazat će novi datum završnog ročišta. Na tom će ročištu stečajni vjerovnici imati priliku iznijeti primjedbe na završni račun stečajne upraviteljice i diobni popis, ali samo u opsegu koji nije obuhvaćen pravomoćnom odlukom VTSRH-a.\n\n3.  **Provedba diobe:** Tek nakon što se sve primjedbe na završnom ročištu riješe i diobni popis postane konačan i pravomoćan, pristupit će se stvarnoj isplati sredstava stečajnim vjerovnicima sukladno utvrđenim postocima namirenja (1,20% za vjerovnike Drugog višeg isplatnog reda, s ukupnim iznosom od 1.200.000,00 EUR).\n\n4.  **Isplata parničnih troškova:** Isplata 63,38 EUR za CRO GO d.o.o. i rezerviranje 1.033,25 EUR za KGH TEHNIKA d.o.o. bit će provedeni nakon finalizacije diobe, budući da su ti iznosi već usuglašeni ili predviđeni u stečajnoj masi.\n\n5.  **Zatvaranje stečajnog postupka:** Po okončanju svih isplata i rješavanju svih preostalih proceduralnih pitanja, Trgovački sud u Splitu donijet će rješenje o zaključenju stečajnog postupka nad KERUM d.o.o.\n\n```mermaid\nflowchart TD\n    subgraph \"Tijek novca\"\n        SM[\"Stečajna masa\"]\n        CROGO[\"CRO GO d.o.o.\"]\n        KGH[\"KGH TEHNIKA d.o.o.\"]\n        VDR[\"Vjerovnici Drugog višeg isplatnog reda\"]\n        ADRIA_CLAIM[\"Adria Rijeka d.o.o. (Osporava troškove)\"]\n\n        SM -- \"Isplata 63,38 EUR (nakon prijeboja)\" --> CROGO\n        SM -- \"Rezervacija 1.033,25 EUR\" --> KGH\n        SM -- \"Namirenje 1.200.000,00 EUR (1,20%)\" --> VDR\n        ADRIA_CLAIM -- \"Potražuje 84.150,00 EUR (osporeno)\" --> SM\n        ADRIA_CLAIM -- \"Osporava druge rezervacije/plaćanja\" --> SM\n    end\n\n    subgraph \"Kronologija i napredak\"\n        A[\"Stečajni postupak KERUM d.o.o. otvoren (2.11.2018.)\"]\n        B[\"TS Split donio rješenje o završnoj diobi (17.12.2025.)\"]\n        C[\"TS Split ispravio rješenje (Iznos 1.200.000 EUR za II. red)\"]\n        D[\"Završno ročište zakazano (27.01.2026.)\"]\n        E[\"Adria Rijeka d.o.o. podnijela žalbu\"]\n        F[\"Stečajna upraviteljica i TENANT d.o.o. očitovali se protiv žalbe\"]\n        G[\"Završno ročište odgođeno\"]\n        H[\"Odluka VTSRH o žalbi Adria Rijeka d.o.o.\"]`\n        H1[\"VTSRH odbacuje/odbija žalbu\"]\n        H2[\"VTSRH usvaja žalbu\"]\n        I[\"Rješenje TS Split o diobi postaje pravomoćno\"]\n        J[\"Dio diobe/završnog računa se ponavlja/preinačuje\"]\n        K[\"Ponovno zakazivanje i održavanje završnog ročišta\"]\n        L[\"Provedba diobe\"]\n        M[\"Isplata parničnih troškova (CRO GO, KGH TEHNIKA)\"]\n        N[\"Zatvaranje stečajnog postupka\"]\n\n        A --> B\n        B --> C\n        C --> D\n        D -- \"Odgođeno zbog\" --> E\n        E --> F\n        F --> G\n        G --> H\n        H -- \"Ishod 1 (vjerojatnije)\" --> H1\n        H -- \"Ishod 2 (manje vjerojatno)\" --> H2\n        H1 --> I\n        I --> K\n        H2 --> J\n        J --> K\n        K --> L\n        L --> M\n        M --> N\n    end\n```",
+    "visualization": null,
+    "rawResult": {
+      "processedCases": [
+        {
+          "caseResult": {
+            "title": "Podnesak od 29.01.2026.",
+            "detailLink": "https://e-oglasna.pravosudje.hr/objave/49cee34b-fb43-43ce-918a-8b88b89b3235",
+            "caseNumber": "ST-2/2013",
+            "court": "Trgovački sud u Splitu",
+            "date": "29.01.2026. 09:19",
+            "documentDownloadLink": "https://e-oglasna.pravosudje.hr/objave/dokument/b4db8bc4-1213-4c76-a68f-c2502d16964c/preuzimanje",
+            "documentLinkText": "Dokument objave",
+            "participants": [
+              {
+                "name": "KERUM društvo s ograničenom odgovornošću, za unutarnju i vanjsku trgovinu, promet i usluge u stečaju",
+                "oib": "66124057408",
+                "address": "Zrinjsko Frankopanska 68, 21000 Split, Hrvatska",
+                "role": "DUŽNIK"
+              }
+            ]
+          },
+          "files": [
+            {
+              "filePath": "/home/oxioxi/proj/our_chattie/backend/uploads/1774957627133_Dokument_objave.pdf",
+              "url": "https://e-oglasna.pravosudje.hr/objave/dokument/b4db8bc4-1213-4c76-a68f-c2502d16964c/preuzimanje",
+              "text": "Dokument objave"
+            },
+            {
+              "filePath": "/home/oxioxi/proj/our_chattie/backend/uploads/1774957632292_Dokumenti_objave.zip",
+              "url": "https://e-oglasna.pravosudje.hr/objave/a95490cf-11b2-4542-a9cc-79778d6ad31b/dokumenti/preuzimanje",
+              "text": "Dokumenti objave"
+            },
+            {
+              "filePath": "/home/oxioxi/proj/our_chattie/backend/uploads/1774957645278_Dokument_objave.pdf",
+              "url": "https://e-oglasna.pravosudje.hr/objave/dokument/1186b5e1-20c2-45d7-9a55-6ea6552a4f05/preuzimanje",
+              "text": "Dokument objave"
+            },
+            {
+              "filePath": "/home/oxioxi/proj/our_chattie/backend/uploads/1774957648136_Dokument_objave.pdf",
+              "url": "https://e-oglasna.pravosudje.hr/objave/dokument/e61f258c-5c88-41fb-af47-a07e3bac9665/preuzimanje",
+              "text": "Dokument objave"
+            },
+            {
+              "filePath": "/home/oxioxi/proj/our_chattie/backend/uploads/1774957651063_Dokument_objave.pdf",
+              "url": "https://e-oglasna.pravosudje.hr/objave/dokument/522e5304-a886-41cf-a565-1be5cd051be8/preuzimanje",
+              "text": "Dokument objave"
+            },
+            {
+              "filePath": "/home/oxioxi/proj/our_chattie/backend/uploads/1774957654061_Dokument_objave.pdf",
+              "url": "https://e-oglasna.pravosudje.hr/objave/dokument/b9aaec1a-caed-4db0-8660-a9f18d8f5e88/preuzimanje",
+              "text": "Dokument objave"
+            },
+            {
+              "filePath": "/home/oxioxi/proj/our_chattie/backend/uploads/1774957656782_Dokument_objave.pdf",
+              "url": "https://e-oglasna.pravosudje.hr/objave/dokument/96e4cb04-97ab-4e48-ac85-6cfa945a7397/preuzimanje",
+              "text": "Dokument objave"
+            },
+            {
+              "filePath": "/home/oxioxi/proj/our_chattie/backend/uploads/1774957657743_Dokument_objave.pdf",
+              "url": "https://e-oglasna.pravosudje.hr/objave/dokument/376e8654-af13-481d-8cf0-b2f41dd15552/preuzimanje",
+              "text": "Dokument objave"
+            },
+            {
+              "filePath": "/home/oxioxi/proj/our_chattie/backend/uploads/1774957661073_Dokument_objave.pdf",
+              "url": "https://e-oglasna.pravosudje.hr/objave/dokument/3a7d832a-7925-4da7-8f8a-d7f74b00caa7/preuzimanje",
+              "text": "Dokument objave"
+            }
+          ],
+          "analysis": {
+            "individualAnalyses": [
+              {
+                "filePath": "/home/oxioxi/proj/our_chattie/backend/uploads/1774957627133_Dokument_objave.pdf",
+                "url": "https://e-oglasna.pravosudje.hr/objave/dokument/b4db8bc4-1213-4c76-a68f-c2502d16964c/preuzimanje",
+                "text": "Dokument objave",
+                "aiResult": {
+                  "caseNumber": "4.St-2/2013",
+                  "decisionDate": "28.01.2026.",
+                  "summary": "Stečajna upraviteljica Natalija Mladineo podnijela je očitovanje u predmetu stečajnog dužnika KERUM d.o.o., a povodom podneska odvjetnika Ante Kukoča, punomoćnika stečajnih vjerovnika CRO GO doo i KGH Tehnika doo. Upraviteljica je suglasna s prijedlogom za prijeboj parničnih troškova proizašlih iz pravomoćne presude VTSRH posl.br.Pž-2889/2022-2. Na temelju te presude, tužitelju je dosuđeno platiti tuženiku 185,48 EUR, dok je stečajnom dužniku dosuđeno platiti tužitelju 248,86 EUR. Nakon provedenog prijeboja, sa računa stečajnog dužnika bit će isplaćeno 63,68 EUR stečajnom vjerovniku CRO GO doo. Također, upraviteljica je suglasna s prijedlogom da se iz stečajne mase rezervira iznos od 1.033,25 EUR za namirenje budućih pretpostavljenih parničnih troškova u postupku posl.br.Povrv-297/2020 u pravnoj stvari tužitelja KGH Tehnika doo, s obzirom na očekivanje da će stečajni dužnik imati obvezu plaćanja troškova u tom, još uvijek nepravomoćno okončanom postupku.",
+                  "parties": [
+                    {
+                      "name": "KERUM društvo s ograničenom odgovornošću, za unutarnju i vanjsku trgovinu, promet i usluge u stečaju",
+                      "oib": "66124057408",
+                      "address": "Zrinjsko Frankopanska 68, 21000 Split, Hrvatska",
+                      "role": "DUŽNIK"
+                    }
+                  ]
+                }
+              },
+              {
+                "filePath": "/home/oxioxi/proj/our_chattie/backend/uploads/Troškovnik.pdf",
+                "text": "Troškovnik.pdf",
+                "url": "https://e-oglasna.pravosudje.hr/objave/a95490cf-11b2-4542-a9cc-79778d6ad31b/dokumenti/preuzimanje",
+                "aiResult": {
+                  "caseNumber": "St-2/2013",
+                  "decisionDate": "26. siječnja 2026.",
+                  "summary": "U ovom predmetu stečajnog dužnika KERUM d.o.o. u stečaju, stečajni vjerovnici CRO-GO d.o.o. i KGH TEHNIKA d.o.o. podnijeli su zajednički podnesak sa zahtjevom za isplatu parničnog troška i izdvajanje sredstava. Vjerovnik CRO-GO d.o.o. potražuje iznos od 63,38 € (što je rezultat prijeboja tražbine od 248,86 € ili 1.875,00 kn, s protutražbinom dužnika od 185,48 € ili 1.397,50 kn) na ime parničnog troška kao obvezu stečajne mase. Nadalje, vjerovnik KGH TEHNIKA d.o.o. zahtijeva izdvajanje sredstava iz stečajne mase u visini od 1.033,25 € (7.786,25 kn) radi buduće namire popisanih troškova parničnog postupka koji se vodi pred Trgovačkim sudom u Splitu, a za koje još nije donesena presuda o troškovima.",
+                  "parties": [
+                    {
+                      "name": "KERUM društvo s ograničenom odgovornošću, za unutarnju i vanjsku trgovinu, promet i usluge u stečaju",
+                      "oib": "66124057408",
+                      "address": "Zrinjsko Frankopanska 68, 21000 Split, Hrvatska",
+                      "role": "DUŽNIK"
+                    }
+                  ]
+                }
+              },
+              {
+                "filePath": "/home/oxioxi/proj/our_chattie/backend/uploads/Prilog St-2_2013-1196-1 - CroGo-Kerum_I°-2.pdf",
+                "text": "Prilog St-2_2013-1196-1 - CroGo-Kerum_I°-2.pdf",
+                "url": "https://e-oglasna.pravosudje.hr/objave/a95490cf-11b2-4542-a9cc-79778d6ad31b/dokumenti/preuzimanje",
+                "aiResult": {
+                  "caseNumber": "10 Povrv-772/2021-10",
+                  "decisionDate": "11. svibnja 2022.",
+                  "summary": "Trgovački sud u Splitu je u postupku između tužitelja CRO-GO d.o.o. i tuženika KERUM d.o.o. u stečaju, povodom tužbenog zahtjeva za utvrđenje tražbine zateznih kamata, donio presudu na temelju odricanja i rješenje. Tužitelj je u ovoj parnici prvotno tražio utvrđivanje tražbine zateznih kamata u iznosu od 122.029,88 kn, dospjelih do dana otvaranja stečajnog postupka nad tuženikom. Međutim, tužbeni zahtjev u tom dijelu je odbijen kao neosnovan, s obzirom na to da je tužitelj obavijestio sud da mu je ista tražbina u iznosu od 122.029,88 kn, vezana za obračunate zakonske zatezne kamate na glavno potraživanje, pravomoćno priznata u stečajnom postupku nad tuženikom dana 28. travnja 2022. Zbog toga se tužitelj odrekao glavnog tužbenog zahtjeva u ovoj parnici.  Nadalje, ukinut je platni nalog javnog bilježnika u dijelu kojim se nalaže tuženiku isplata glavnice od 171.128,90 kn i troškova ovršnog postupka pred javnim bilježnikom u iznosu od 6.089,11 kn, jer je tužba u tom dijelu povučena. Sud je naložio tuženiku da tužitelju nadoknadi troškove parničnog postupka u iznosu od 13.467,54 kn, dok je zahtjev tužitelja za više traženu naknadu troškova u iznosu od 7.058,71 kn odbijen. Odluka o troškovima je donesena primjenom članka 158. stavka 2. ZPP-a, budući da se tužitelj odrekao tužbenog zahtjeva nakon što je tuženik udovoljio zahtjevu priznavši tražbinu zateznih kamata u stečajnom postupku.",
+                  "parties": [
+                    {
+                      "name": "KERUM društvo s ograničenom odgovornošću, za unutarnju i vanjsku trgovinu, promet i usluge u stečaju",
+                      "oib": "66124057408",
+                      "address": "Zrinjsko Frankopanska 68, 21000 Split, Hrvatska",
+                      "role": "DUŽNIK"
+                    }
+                  ]
+                }
+              },
+              {
+                "filePath": "/home/oxioxi/proj/our_chattie/backend/uploads/Prilog St-2_2013-1196-2 - CroGo-Kerum_II°-2.pdf",
+                "text": "Prilog St-2_2013-1196-2 - CroGo-Kerum_II°-2.pdf",
+                "url": "https://e-oglasna.pravosudje.hr/objave/a95490cf-11b2-4542-a9cc-79778d6ad31b/dokumenti/preuzimanje",
+                "aiResult": {
+                  "caseNumber": "3 Pž-2889/2022-2",
+                  "decisionDate": "2022-09-07",
+                  "summary": "Visoki trgovački sud Republike Hrvatske donio je rješenje u pravnoj stvari tužitelja CRO-GO d.o.o. protiv tuženika KERUM d.o.o. u stečaju, vezano za isplatu i troškove parničnog postupka. Sud je djelomično odbio žalbu tuženika, potvrđujući rješenje Trgovačkog suda u Splitu u dijelu kojim je tuženiku naloženo naknaditi tužitelju trošak parničnog postupka u iznosu od **1.875,00 kn (248,86 EUR)**. Istovremeno, sud je djelomično uvažio tuženikovu žalbu i preinačio prvostupanjsko rješenje u dijelu kojim je tuženiku naloženo naknaditi tužitelju trošak od **11.592,54 kn (1.538,59 EUR)**, odbivši taj tužiteljev zahtjev kao neosnovan. Nadalje, tužitelju je naloženo da tuženiku naknadi trošak žalbenog postupka u iznosu od **1.397,50 kn (185,48 EUR)**, dok je tuženikov zahtjev za naknadu troška žalbenog postupka u iznosu od **1.165,00 kn (154,62 EUR)** odbijen. Predmet spora bili su troškovi parničnog postupka nakon što je tužiteljeva tražbina utvrđena i priznata u stečajnom postupku nad tuženikom, a sud je razmatrao primjenu odredbi Zakona o parničnom postupku i Stečajnog zakona vezano za pojam 'udovoljenja zahtjevu' i obračun troškova.",
+                  "parties": [
+                    {
+                      "name": "KERUM društvo s ograničenom odgovornošću, za unutarnju i vanjsku trgovinu, promet i usluge u stečaju",
+                      "oib": "66124057408",
+                      "address": "Zrinjsko Frankopanska 68, 21000 Split, Hrvatska",
+                      "role": "DUŽNIK"
+                    }
+                  ]
+                }
+              },
+              {
+                "filePath": "/home/oxioxi/proj/our_chattie/backend/uploads/Prilog St-2_2013-1196-3 - KGH-T_KERUM_u_stč-pdn_tr.pdf",
+                "text": "Prilog St-2_2013-1196-3 - KGH-T_KERUM_u_stč-pdn_tr.pdf",
+                "url": "https://e-oglasna.pravosudje.hr/objave/a95490cf-11b2-4542-a9cc-79778d6ad31b/dokumenti/preuzimanje",
+                "aiResult": {
+                  "caseNumber": "Povrv-297/2020",
+                  "decisionDate": "28. travnja 2022.g.",
+                  "summary": "U ovom predmetu, tužitelj KGH TEHNIKA d.o.o. podnio je podnesak kojim se u cijelosti odriče od glavnog tužbenog zahtjeva postavljenog 4. rujna 2020. godine. Razlog za odricanje je pravomoćno rješenje Stečajnog suda, broj 4. St-2/2013-747 od 11. travnja 2022. godine, kojim je priznata tražbina tužitelja kao stečajnog vjerovnika. S obzirom na to da je navedeno rješenje postalo pravomoćno na dan podnošenja ovog podneska, tužitelj je odlučio odustati od daljnjeg parničnog postupka za tu tražbinu. Istovremeno, tužitelj traži od tuženika, KERUM d.o.o. u stečaju (čiji je stečaj otvoren 2. studenog 2018. godine), naknadu parničnih troškova nastalih nakon otvaranja stečaja, sukladno članku 158. stavku 2. Zakona o parničnom postupku, čiji popis je priložen uz podnesak.",
+                  "parties": [
+                    {
+                      "name": "KERUM društvo s ograničenom odgovornošću, za unutarnju i vanjsku trgovinu, promet i usluge u stečaju",
+                      "oib": "66124057408",
+                      "address": "Zrinjsko Frankopanska 68, 21000 Split, Hrvatska",
+                      "role": "DUŽNIK"
+                    }
+                  ]
+                }
+              },
+              {
+                "filePath": "/home/oxioxi/proj/our_chattie/backend/uploads/Prilog St-2_2013-1196-4 - KGH-T_tr.pdf",
+                "text": "Prilog St-2_2013-1196-4 - KGH-T_tr.pdf",
+                "url": "https://e-oglasna.pravosudje.hr/objave/a95490cf-11b2-4542-a9cc-79778d6ad31b/dokumenti/preuzimanje",
+                "aiResult": {
+                  "caseNumber": "Povrv-297/2020",
+                  "decisionDate": "28. travnja 2022.",
+                  "summary": "Ovaj dokument predstavlja popis troškova tužitelja pred Trgovačkim sudom u Splitu, vezan uz predmet spora čija je vrijednost 33.994,72 kn. Popis detaljno specificira nagradu opunomoćeniku tužitelja, koja ukupno iznosi 5.125,00 kn bez PDV-a, odnosno 6.406,25 kn uključujući PDV od 1.281,25 kn. Navedeni su troškovi za sastav žalbe protiv rješenja o odbačaju tužbe u iznosu od 3.125,00 kn te dva obrazložena podneska, svaki u iznosu od 1.000,00 kn. Osim odvjetničkih nagrada, tužitelj potražuje i sudske pristojbe za žalbu u iznosu od 1.380,00 kn. Ukupni troškovi tužitelja, koji obuhvaćaju nagradu opunomoćeniku i sudske pristojbe, iznose 7.786,25 kn. Obračun je izvršen prema Tarifi o nagradama i naknadi troškova za rad odvjetnika.",
+                  "parties": [
+                    {
+                      "name": "KERUM društvo s ograničenom odgovornošću, za unutarnju i vanjsku trgovinu, promet i usluge u stečaju",
+                      "oib": "66124057408",
+                      "address": "Zrinjsko Frankopanska 68, 21000 Split, Hrvatska",
+                      "role": "DUŽNIK"
+                    }
+                  ]
+                }
+              },
+              {
+                "filePath": "/home/oxioxi/proj/our_chattie/backend/uploads/1774957645278_Dokument_objave.pdf",
+                "url": "https://e-oglasna.pravosudje.hr/objave/dokument/1186b5e1-20c2-45d7-9a55-6ea6552a4f05/preuzimanje",
+                "text": "Dokument objave",
+                "aiResult": {
+                  "caseNumber": "St-2/2013-1194",
+                  "decisionDate": "26. siječnja 2026.",
+                  "summary": "Trgovački sud u Splitu, po sutkinji Katarini Mikulić, donio je rješenje u stečajnom postupku nad stečajnim dužnikom KERUM d.o.o. u stečaju. Sud je odlučio odgoditi završno ročište, prvotno zakazano za 27. siječnja 2026. u 12:00 sati, u sobi broj 118/I (sudnica broj 4) Trgovačkog suda u Splitu. Odgoda je donesena do donošenja odluke Visokog trgovačkog suda Republike Hrvatske o žalbi protiv rješenja Trgovačkog suda u Splitu poslovni broj: St-2/2013-1182 od 17. prosinca 2025. U ovom dokumentu nisu navedeni nikakvi novčani iznosi.",
+                  "parties": [
+                    {
+                      "name": "KERUM društvo s ograničenom odgovornošću, za unutarnju i vanjsku trgovinu, promet i usluge u stečaju",
+                      "oib": "66124057408",
+                      "address": "Zrinjsko Frankopanska 68, 21000 Split, Hrvatska",
+                      "role": "DUŽNIK"
+                    }
+                  ]
+                }
+              },
+              {
+                "filePath": "/home/oxioxi/proj/our_chattie/backend/uploads/1774957648136_Dokument_objave.pdf",
+                "url": "https://e-oglasna.pravosudje.hr/objave/dokument/e61f258c-5c88-41fb-af47-a07e3bac9665/preuzimanje",
+                "text": "Dokument objave",
+                "aiResult": {
+                  "caseNumber": "St-2/2013-1191",
+                  "decisionDate": "2026-01-13",
+                  "summary": "Trgovački sud u Splitu je rješenjem od 13. siječnja 2026. godine ispravio svoje ranije rješenje poslovnog broja St-2/2013-1182 od 17. prosinca 2025. godine, doneseno u stečajnom postupku nad dužnikom KERUM d.o.o. u stečaju. Ispravak se odnosi na točku I. izreke, gdje se precizira iznos i postotak namirenja vjerovnika Drugog višeg isplatnog reda. Umjesto prvotno navedenog iznosa od 266.988,78 eura, koji je predstavljao 1,23% od utvrđene tražbine, ispravno je naveden iznos od 1.200.000,00 eura, što odgovara 1,20% od utvrđene tražbine.",
+                  "parties": [
+                    {
+                      "name": "KERUM društvo s ograničenom odgovornošću, za unutarnju i vanjsku trgovinu, promet i usluge u stečaju",
+                      "oib": "66124057408",
+                      "address": "Zrinjsko Frankopanska 68, 21000 Split, Hrvatska",
+                      "role": "DUŽNIK"
+                    }
+                  ]
+                }
+              },
+              {
+                "filePath": "/home/oxioxi/proj/our_chattie/backend/uploads/1774957651063_Dokument_objave.pdf",
+                "url": "https://e-oglasna.pravosudje.hr/objave/dokument/522e5304-a886-41cf-a565-1be5cd051be8/preuzimanje",
+                "text": "Dokument objave",
+                "aiResult": {
+                  "caseNumber": "St-2/2013",
+                  "decisionDate": "09.01.2026",
+                  "summary": "Ovo očitovanje, datirano 9. siječnja 2026. godine, podneseno je u vezi sa žalbom društva Adria Rijeka d.o.o. protiv Rješenja Trgovačkog suda u Splitu, poslovni broj St-2/2013-1182 od 17. prosinca 2025., u stečajnom postupku nad dužnikom Kerum d.o.o. Stečajna upraviteljica predlaže odbacivanje žalbe kao nedopuštene jer žalitelj nema pravni položaj stečajnog vjerovnika niti vjerovnika stečajne mase, a prvostupanjsko rješenje o završnoj diobi i određivanju završnog ročišta vjerovnika predstavlja odluku o upravljanju postupkom protiv koje žalba nije dopuštena. Također se ističe da su žalbeni navodi, koji se tiču prigovora na završni račun, završno izvješće i diobni popis, preuranjeni jer su to pitanja o kojima će se raspravljati na završnom ročištu vjerovnika. Posebno se naglašava da je žalitelj netočno naveo da će se stečajni vjerovnici drugog višeg isplatnog reda namiriti u iznosu od 266.988,78 EUR, dok je stečajna upraviteljica predložila namirenje u ukupnom iznosu od 1.200.000,00 EUR. Raspravlja se i o prigovorima na troškove knjigovodstva i arhiviranja, gdje je za arhiviranje 160 registratora tražbina i dvadesetak registratora knjigovodstvene dokumentacije procijenjen trošak od 109,73 EUR po registratoru s PDV-om. Konačno, pojašnjava se stavka namirenja stečajnih vjerovnika prvog višeg isplatnog reda u iznosu od 27.031,98 EUR, te se spominje iznos ostalih obveza stečajne mase od 180.953,76 EUR.",
+                  "parties": [
+                    {
+                      "name": "KERUM društvo s ograničenom odgovornošću, za unutarnju i vanjsku trgovinu, promet i usluge u stečaju",
+                      "oib": "66124057408",
+                      "address": "Zrinjsko Frankopanska 68, 21000 Split, Hrvatska",
+                      "role": "DUŽNIK"
+                    }
+                  ]
+                }
+              },
+              {
+                "filePath": "/home/oxioxi/proj/our_chattie/backend/uploads/1774957654061_Dokument_objave.pdf",
+                "url": "https://e-oglasna.pravosudje.hr/objave/dokument/b9aaec1a-caed-4db0-8660-a9f18d8f5e88/preuzimanje",
+                "text": "Dokument objave",
+                "aiResult": {
+                  "caseNumber": "St – 2/2013",
+                  "decisionDate": "2026-01-09",
+                  "summary": "Ovaj podnesak, datiran 9. siječnja 2026., predstavlja očitovanje stečajnog vjerovnika Tenant d.o.o. na žalbu društva Adria Rijeka d.o.o. podnesenu protiv Rješenja Trgovačkog suda u Splitu, poslovni broj St-2/2013-1182 od 17. prosinca 2025. Navedenim je rješenjem dana suglasnost stečajnoj upraviteljici Nataliji Mladineo za završnu diobu, prema kojoj će se vjerovnici drugog višeg isplatnog reda namiriti za ukupan iznos od **266.988,78 EUR**, što čini 1,23% od utvrđene tražbine, te je određeno završno ročište za 27. siječnja 2026. Stečajni vjerovnik Tenant d.o.o. predlaže odbacivanje žalbe Adria Rijeka d.o.o. kao nedopuštene, tvrdeći da žalitelj nema pravni položaj stečajnog vjerovnika niti vjerovnika stečajne mase. Dodatno, ističe se da je odluka o davanju suglasnosti za diobu i sazivanju završnog ročišta odluka o upravljanju postupkom, protiv koje žalba nije dopuštena. Eventualne primjedbe na završni račun i diobni popis trebaju se raspravljati na samom završnom ročištu.",
+                  "parties": [
+                    {
+                      "name": "KERUM društvo s ograničenom odgovornošću, za unutarnju i vanjsku trgovinu, promet i usluge u stečaju",
+                      "oib": "66124057408",
+                      "address": "Zrinjsko Frankopanska 68, 21000 Split, Hrvatska",
+                      "role": "DUŽNIK"
+                    }
+                  ]
+                }
+              },
+              {
+                "filePath": "/home/oxioxi/proj/our_chattie/backend/uploads/1774957656782_Dokument_objave.pdf",
+                "url": "https://e-oglasna.pravosudje.hr/objave/dokument/96e4cb04-97ab-4e48-ac85-6cfa945a7397/preuzimanje",
+                "text": "Dokument objave",
+                "aiResult": {
+                  "caseNumber": "St-2/2013",
+                  "decisionDate": "17. prosinca 2025.",
+                  "summary": "Ovo je žalba vjerovnika stečajne mase, tvrtke ADRIA RIJEKA d.o.o., protiv rješenja Trgovačkog suda u Splitu posl. br. St-2/2013-1182 od 17. prosinca 2025. godine. Spomenutim rješenjem data je suglasnost stečajnoj upraviteljici dužnika KERUM d.o.o. u stečaju za završnu diobu, kojom bi se vjerovnici drugog višeg isplatnog reda namirili za ukupan iznos od 266.988,78 EUR, odnosno 1,23% utvrđene tražbine. Žalba se podnosi zbog pogrešno i nepotpuno utvrđenog činjeničnog stanja, pogrešne primjene materijalnog prava te bitne povrede postupka. Adria Rijeka d.o.o. ističe da je sud u potpunosti zanemario njezin prigovor na diobni popis i završni račun. Posebno se naglašava da nisu predviđeni troškovi stečajne mase, uključujući parnične troškove od 84.150,00 EUR dosuđene stečajnom dužniku u sporu koji je uspješno vodila Adria Rijeka d.o.o., čime je ostvarena korist za stečajnu masu. Vjerovnik osporava i rezervacije i plaćanja u završnom računu u ukupnom iznosu od 45.647,85 EUR, uključujući nespecificiranu rezervaciju odvjetničkih troškova (3.115,87 EUR), nerealno procijenjene rezervacije za knjigovodstvo (4.500,00 EUR), arhiviranje (10.000,00 EUR) i platni promet (1.000,00 EUR), te predviđeni iznos za isplatu vjerovnicima I. višeg isplatnog reda (27.031,98 EUR), iako su navodno već namireni. Smatra se da je time prekršen Stečajni zakon (čl. 155. i 156. SZ-a) koji nalaže namirenje troškova stečajne mase prije vjerovnika viših isplatnih redova, te se predlaže ukidanje pobijanog rješenja.",
+                  "parties": [
+                    {
+                      "name": "KERUM društvo s ograničenom odgovornošću, za unutarnju i vanjsku trgovinu, promet i usluge u stečaju",
+                      "oib": "66124057408",
+                      "address": "Zrinjsko Frankopanska 68, 21000 Split, Hrvatska",
+                      "role": "DUŽNIK"
+                    }
+                  ]
+                }
+              },
+              {
+                "filePath": "/home/oxioxi/proj/our_chattie/backend/uploads/1774957657743_Dokument_objave.pdf",
+                "url": "https://e-oglasna.pravosudje.hr/objave/dokument/376e8654-af13-481d-8cf0-b2f41dd15552/preuzimanje",
+                "text": "Dokument objave",
+                "aiResult": {
+                  "caseNumber": "St-2/2013-1182",
+                  "decisionDate": "17. prosinca 2025.",
+                  "summary": "Trgovački sud u Splitu je u stečajnom postupku nad dužnikom KERUM d.o.o. u stečaju, otvorenim 2. studenog 2018., dana 17. prosinca 2025. donio rješenje kojim se daje suglasnost stečajnoj upraviteljici Nataliji Mladineo za provedbu završne diobe. Prema zaprimljenom završnom diobnom popisu, objavljenom 14. listopada 2025. na e-Oglasnoj ploči sudova, vjerovnici Drugog višeg isplatnog reda bit će namireni za ukupan iznos od 266.988,78 EUR, što predstavlja 1,23% od utvrđenih tražbina. Završno ročište određeno je za 27. siječnja 2026. u 12:00 sati u prostorijama suda, na kojem će se raspravljati o završnom računu stečajne upraviteljice i podnositi prigovori na završni popis.",
+                  "parties": [
+                    {
+                      "name": "KERUM društvo s ograničenom odgovornošću, za unutarnju i vanjsku trgovinu, promet i usluge u stečaju",
+                      "oib": "66124057408",
+                      "address": "Zrinjsko Frankopanska 68, 21000 Split, Hrvatska",
+                      "role": "DUŽNIK"
+                    }
+                  ]
+                }
+              },
+              {
+                "filePath": "/home/oxioxi/proj/our_chattie/backend/uploads/1774957661073_Dokument_objave.pdf",
+                "url": "https://e-oglasna.pravosudje.hr/objave/dokument/3a7d832a-7925-4da7-8f8a-d7f74b00caa7/preuzimanje",
+                "text": "Dokument objave",
+                "aiResult": {
+                  "caseNumber": "4.St-2/2013",
+                  "decisionDate": "07.11.2025.",
+                  "summary": "Ovo je očitovanje stečajne upraviteljice Natalije Mladineo povodom prigovora društva Adria Rijeka d.o.o. na Završni diobeni popis stečajnih vjerovnika drugog isplatnog reda. Adria Rijeka d.o.o. traži naknadu troškova zastupanja u parnici poslovnog broja P-170/2023 (ranije P-287/2019), gdje je osporena tražbina stečajne mase iza Town d.o.o. u stečaju u iznosu od 8.417.719,95 kn / 1.117.223,43 eura. Stečajna upraviteljica ističe da Adria Rijeka d.o.o. nije vjerovnik stečajne mase te da uvjeti za naknadu troškova iz članka 181. stavka 3. Stečajnog zakona (SZ/96) nisu ispunjeni. Parnica nije vođena bez sudjelovanja stečajne upraviteljice, a dosuđeni troškovi postupka u iznosu od 67.145,00 EUR pripadaju tuženiku (Kerum d.o.o. u stečaju), a ne Adria Rijeka d.o.o., niti su naplaćeni. Nadalje, matematičkim izračunom je utvrđeno da vođenjem ove parnice nije ostvarena značajna korist za stečajnu masu. Da tražbina nije bila osporena, stečajnoj masi iza Town d.o.o. u stečaju isplatio bi se iznos od 13.639,06 eura. Nakon djelomičnog osporavanja od strane stečajne upraviteljice (za 595.791,91 eura), potencijalna korist od preostalog osporavanja (od Adria Rijeka d.o.o.) iznosi samo 6.365,64 eura. Stoga bi isplata troškova zastupanja u iznosu od 84.150,00 eura društvu Adria Rijeka d.o.o. na teret stečajne mase bila nepravična i nelogična, s obzirom na neznatnu ostvarenu korist. Stečajna upraviteljica zaključuje da nema osnove za naknadu troškova društvu Adria Rijeka d.o.o. i da ono nije vjerovnik stečajne mase.",
+                  "parties": [
+                    {
+                      "name": "KERUM društvo s ograničenom odgovornošću, za unutarnju i vanjsku trgovinu, promet i usluge u stečaju",
+                      "oib": "66124057408",
+                      "address": "Zrinjsko Frankopanska 68, 21000 Split, Hrvatska",
+                      "role": "DUŽNIK"
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          "groupMetadata": {
+            "entryCount": 9,
+            "isAnonymous": false
+          }
+        }
+      ],
+      "comparativeAnalysis": "Ovo je pregled stanja u stečajnom postupku nad stečajnim dužnikom **KERUM d.o.o.**, koji je otvoren 2. studenog 2018. godine, fokusirajući se na rješavanje parničnih troškova te na sporove oko završne diobe stečajne mase.\n\n**1. Rješavanje Parničnih Troškova za Vjerovnike CRO GO d.o.o. i KGH TEHNIKA d.o.o.**\n\nStečajna upraviteljica Natalija Mladineo suglasna je s prijedlogom za prijeboj parničnih troškova proizašlih iz pravomoćne presude Visokog trgovačkog suda RH za stečajnog vjerovnika **CRO GO d.o.o.** U tom postupku, stečajnom dužniku dosuđeno je 185,48 EUR, dok je CRO GO d.o.o. dosuđeno 248,86 EUR. Nakon prijeboja, iz stečajne mase će se CRO GO d.o.o. isplatiti preostali iznos od 63,38 EUR (ili 63,68 EUR, ovisno o zaokruživanju u izvornim dokumentima).\n\nNadalje, stečajna upraviteljica je suglasna s prijedlogom za rezerviranje iznosa od 1.033,25 EUR iz stečajne mase za namirenje budućih pretpostavljenih parničnih troškova za **KGH TEHNIKA d.o.o.** u postupku koji još nije pravomoćno okončan. Oba vjerovnika su se, naime, odrekla glavnih tužbenih zahtjeva u parnicama jer su im tražbine pravomoćno priznate u stečajnom postupku, ali su zadržali pravo na naknadu parničnih troškova nastalih nakon otvaranja stečaja.\n\n**2. Sporovi Oko Završne Diobe i Žalba Adria Rijeka d.o.o.**\n\nTrgovački sud u Splitu donio je rješenje poslovni broj St-2/2013-1182 od 17. prosinca 2025. godine, kojim je dana suglasnost stečajnoj upraviteljici za završnu diobu. Prema prvotnom diobnom popisu, vjerovnici Drugog višeg isplatnog reda trebali su biti namireni za ukupan iznos od 266.988,78 EUR, što predstavlja 1,23% od utvrđenih tražbina. Međutim, Sud je kasnije ispravio to rješenje, precizirajući da je ispravan iznos za namirenje Drugog višeg isplatnog reda 1.200.000,00 EUR, što odgovara 1,20% od utvrđenih tražbina, sukladno prijedlogu stečajne upraviteljice. Završno ročište bilo je zakazano za 27. siječnja 2026. godine.\n\nNa to rješenje žalbu je podnijela tvrtka **ADRIA RIJEKA d.o.o.**, kao vjerovnik stečajne mase. Žalba se temelji na pogrešno i nepotpuno utvrđenom činjeničnom stanju, pogrešnoj primjeni materijalnog prava te bitnoj povredi postupka. Adria Rijeka d.o.o. posebno ističe da nisu predviđeni troškovi stečajne mase u iznosu od 84.150,00 EUR, koji su joj dosuđeni u sporu u kojem je navodno ostvarena korist za stečajnu masu. Također osporava druge rezervacije i plaćanja u završnom računu (npr. za knjigovodstvo, arhiviranje, odvjetničke troškove, te namirenje vjerovnika I. višeg isplatnog reda).\n\n**Stečajna upraviteljica** i stečajni vjerovnik **TENANT d.o.o.** podnijeli su očitovanja protiv žalbe Adria Rijeka d.o.o., predlažući njezino odbacivanje kao nedopuštene. Argumentiraju da Adria Rijeka d.o.o. nema pravni položaj stečajnog vjerovnika niti vjerovnika stečajne mase, te da je odluka o diobi odluka o upravljanju postupkom protiv koje žalba nije dopuštena. Stečajna upraviteljica dodatno pojašnjava da navedena parnica, u kojoj Adria Rijeka d.o.o. traži naknadu troškova, nije vođena bez njezinog sudjelovanja te da nije ostvarena značajna korist za stečajnu masu koja bi opravdala isplatu 84.150,00 EUR.\n\nZbog ove žalbe, završno ročište, prvotno zakazano za 27. siječnja 2026., odgođeno je do donošenja odluke Visokog trgovačkog suda Republike Hrvatske po žalbi protiv rješenja Trgovačkog suda u Splitu.\n\n**Sljedeći koraci za uključene strane:**\n\n1.  **Odluka Visokog trgovačkog suda RH (VTSRH):** Najvažniji i prvi sljedeći korak je odluka Visokog trgovačkog suda RH o žalbi tvrtke Adria Rijeka d.o.o. Stečajna upraviteljica i vjerovnik Tenant d.o.o. aktivno se protive toj žalbi, tvrdeći da je nedopuštena i neosnovana.\n    *   **Mogući ishod 1 (vjerojatnije):** Ako VTSRH odbaci žalbu kao nedopuštenu ili je odbije kao neosnovanu, rješenje Trgovačkog suda u Splitu o završnoj diobi (s ispravljenim iznosima) postat će pravomoćno.\n    *   **Mogući ishod 2 (manje vjerojatno):** Ako VTSRH usvoji žalbu Adria Rijeka d.o.o., to bi značilo da će se dio stečajnog postupka vezan uz diobu, a možda i završni račun, morati ponoviti ili preinačiti u skladu s odlukom višeg suda. To bi značajno prolongiralo cijeli stečajni postupak.\n\n2.  **Ponovno zakazivanje i održavanje završnog ročišta:** Nakon što VTSRH donese odluku o žalbi i ona postane konačna, Trgovački sud u Splitu zakazat će novi datum završnog ročišta. Na tom će ročištu stečajni vjerovnici imati priliku iznijeti primjedbe na završni račun stečajne upraviteljice i diobni popis, ali samo u opsegu koji nije obuhvaćen pravomoćnom odlukom VTSRH-a.\n\n3.  **Provedba diobe:** Tek nakon što se sve primjedbe na završnom ročištu riješe i diobni popis postane konačan i pravomoćan, pristupit će se stvarnoj isplati sredstava stečajnim vjerovnicima sukladno utvrđenim postocima namirenja (1,20% za vjerovnike Drugog višeg isplatnog reda, s ukupnim iznosom od 1.200.000,00 EUR).\n\n4.  **Isplata parničnih troškova:** Isplata 63,38 EUR za CRO GO d.o.o. i rezerviranje 1.033,25 EUR za KGH TEHNIKA d.o.o. bit će provedeni nakon finalizacije diobe, budući da su ti iznosi već usuglašeni ili predviđeni u stečajnoj masi.\n\n5.  **Zatvaranje stečajnog postupka:** Po okončanju svih isplata i rješavanju svih preostalih proceduralnih pitanja, Trgovački sud u Splitu donijet će rješenje o zaključenju stečajnog postupka nad KERUM d.o.o.\n\n```mermaid\nflowchart TD\n    subgraph \"Tijek novca\"\n        SM[\"Stečajna masa\"]\n        CROGO[\"CRO GO d.o.o.\"]\n        KGH[\"KGH TEHNIKA d.o.o.\"]\n        VDR[\"Vjerovnici Drugog višeg isplatnog reda\"]\n        ADRIA_CLAIM[\"Adria Rijeka d.o.o. (Osporava troškove)\"]\n\n        SM -- \"Isplata 63,38 EUR (nakon prijeboja)\" --> CROGO\n        SM -- \"Rezervacija 1.033,25 EUR\" --> KGH\n        SM -- \"Namirenje 1.200.000,00 EUR (1,20%)\" --> VDR\n        ADRIA_CLAIM -- \"Potražuje 84.150,00 EUR (osporeno)\" --> SM\n        ADRIA_CLAIM -- \"Osporava druge rezervacije/plaćanja\" --> SM\n    end\n\n    subgraph \"Kronologija i napredak\"\n        A[\"Stečajni postupak KERUM d.o.o. otvoren (2.11.2018.)\"]\n        B[\"TS Split donio rješenje o završnoj diobi (17.12.2025.)\"]\n        C[\"TS Split ispravio rješenje (Iznos 1.200.000 EUR za II. red)\"]\n        D[\"Završno ročište zakazano (27.01.2026.)\"]\n        E[\"Adria Rijeka d.o.o. podnijela žalbu\"]\n        F[\"Stečajna upraviteljica i TENANT d.o.o. očitovali se protiv žalbe\"]\n        G[\"Završno ročište odgođeno\"]\n        H[\"Odluka VTSRH o žalbi Adria Rijeka d.o.o.\"]`\n        H1[\"VTSRH odbacuje/odbija žalbu\"]\n        H2[\"VTSRH usvaja žalbu\"]\n        I[\"Rješenje TS Split o diobi postaje pravomoćno\"]\n        J[\"Dio diobe/završnog računa se ponavlja/preinačuje\"]\n        K[\"Ponovno zakazivanje i održavanje završnog ročišta\"]\n        L[\"Provedba diobe\"]\n        M[\"Isplata parničnih troškova (CRO GO, KGH TEHNIKA)\"]\n        N[\"Zatvaranje stečajnog postupka\"]\n\n        A --> B\n        B --> C\n        C --> D\n        D -- \"Odgođeno zbog\" --> E\n        E --> F\n        F --> G\n        G --> H\n        H -- \"Ishod 1 (vjerojatnije)\" --> H1\n        H -- \"Ishod 2 (manje vjerojatno)\" --> H2\n        H1 --> I\n        I --> K\n        H2 --> J\n        J --> K\n        K --> L\n        L --> M\n        M --> N\n    end\n```"
+    }
+  },
+  "uploads": {
+    "before": [
+      "1770653001375_Dokument_objave.pdf",
+      "1770653012213_Dokumenti_objave.zip",
+      "1771245424605_Dokument_objave.pdf",
+      "1771245435590_Dokumenti_objave.zip",
+      "1771505541848_Dokument_objave.pdf",
+      "1771505552708_Dokumenti_objave.zip",
+      "1771597517527_Dokument_objave.pdf",
+      "1771597528386_Dokumenti_objave.zip",
+      "1771598223796_Dokument_objave.pdf",
+      "1771598234729_Dokumenti_objave.zip",
+      "case_number-identifier-tradeoff.png"
+    ],
+    "after": [
+      "1770653001375_Dokument_objave.pdf",
+      "1770653012213_Dokumenti_objave.zip",
+      "1771245424605_Dokument_objave.pdf",
+      "1771245435590_Dokumenti_objave.zip",
+      "1771505541848_Dokument_objave.pdf",
+      "1771505552708_Dokumenti_objave.zip",
+      "1771597517527_Dokument_objave.pdf",
+      "1771597528386_Dokumenti_objave.zip",
+      "1771598223796_Dokument_objave.pdf",
+      "1771598234729_Dokumenti_objave.zip",
+      "case_number-identifier-tradeoff.png"
+    ],
+    "newFilesStillPresent": [],
+    "referencedPaths": [
+      "/home/oxioxi/proj/our_chattie/backend/uploads/1774957627133_Dokument_objave.pdf",
+      "/home/oxioxi/proj/our_chattie/backend/uploads/1774957632292_Dokumenti_objave.zip",
+      "/home/oxioxi/proj/our_chattie/backend/uploads/1774957645278_Dokument_objave.pdf",
+      "/home/oxioxi/proj/our_chattie/backend/uploads/1774957648136_Dokument_objave.pdf",
+      "/home/oxioxi/proj/our_chattie/backend/uploads/1774957651063_Dokument_objave.pdf",
+      "/home/oxioxi/proj/our_chattie/backend/uploads/1774957654061_Dokument_objave.pdf",
+      "/home/oxioxi/proj/our_chattie/backend/uploads/1774957656782_Dokument_objave.pdf",
+      "/home/oxioxi/proj/our_chattie/backend/uploads/1774957657743_Dokument_objave.pdf",
+      "/home/oxioxi/proj/our_chattie/backend/uploads/1774957661073_Dokument_objave.pdf",
+      "/home/oxioxi/proj/our_chattie/backend/uploads/Prilog St-2_2013-1196-1 - CroGo-Kerum_I°-2.pdf",
+      "/home/oxioxi/proj/our_chattie/backend/uploads/Prilog St-2_2013-1196-2 - CroGo-Kerum_II°-2.pdf",
+      "/home/oxioxi/proj/our_chattie/backend/uploads/Prilog St-2_2013-1196-3 - KGH-T_KERUM_u_stč-pdn_tr.pdf",
+      "/home/oxioxi/proj/our_chattie/backend/uploads/Prilog St-2_2013-1196-4 - KGH-T_tr.pdf",
+      "/home/oxioxi/proj/our_chattie/backend/uploads/Troškovnik.pdf"
+    ]
+  }
+}
