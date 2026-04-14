@@ -119,6 +119,132 @@ function selectClustersForProcessing(allClusters, rawCaseLimit) {
     return scored.slice(0, caseLimit).map(item => item.cluster);
 }
 
+function collectClusterParticipantSignals(cluster) {
+    const participantNames = new Set();
+    const oibs = new Set();
+
+    for (const entry of cluster.entries || []) {
+        for (const participant of entry?.caseInfo?.participants || []) {
+            if (participant?.name) {
+                participantNames.add(participant.name.trim());
+            }
+
+            const oib = typeof participant?.oib === 'string' ? participant.oib.trim() : '';
+            if (oib && oib !== 'N/A') {
+                oibs.add(oib);
+            }
+        }
+    }
+
+    return {
+        participantNames: Array.from(participantNames),
+        oibs: Array.from(oibs)
+    };
+}
+
+function determineIdentityConsistency(cluster, query) {
+    const { participantNames, oibs } = collectClusterParticipantSignals(cluster);
+
+    if (query?.type === 'oib' && query?.value) {
+        if (oibs.length === 1 && oibs[0] === query.value) {
+            return { identityConsistency: 'consistent', identityNotes: [] };
+        }
+
+        if (oibs.length === 0) {
+            return {
+                identityConsistency: 'unresolved',
+                identityNotes: [`Queried OIB ${query.value} is not visible in captured participant metadata.`]
+            };
+        }
+
+        return {
+            identityConsistency: 'ambiguous',
+            identityNotes: [`Captured participant OIBs (${oibs.join(', ')}) do not cleanly match queried OIB ${query.value}.`]
+        };
+    }
+
+    if (oibs.length > 1) {
+        return {
+            identityConsistency: 'ambiguous',
+            identityNotes: [`Multiple participant OIBs detected in cluster: ${oibs.join(', ')}.`]
+        };
+    }
+
+    if (oibs.length === 1) {
+        return {
+            identityConsistency: 'consistent',
+            identityNotes: query?.type === 'text'
+                ? ['Text query matched a single visible OIB in captured entries; same-name matches alone are not treated as proof beyond this cluster.']
+                : []
+        };
+    }
+
+    return {
+        identityConsistency: 'unresolved',
+        identityNotes: participantNames.length > 0
+            ? ['Identity remains name-based only because participant OIB data is missing in captured entries.']
+            : ['Identity could not be validated because participant metadata is missing in captured entries.']
+    };
+}
+
+function summarizeCluster(cluster, index, query) {
+    const entries = Array.isArray(cluster.entries) ? cluster.entries : [];
+    const timestamps = entries
+        .map(entry => parseCaseDateToTimestamp(entry?.caseInfo?.date || entry?.caseInfo?.datePublished))
+        .filter(ts => ts !== null)
+        .sort((a, b) => a - b);
+
+    const oldestTimestamp = timestamps.length > 0 ? timestamps[0] : null;
+    const newestTimestamp = timestamps.length > 0 ? timestamps[timestamps.length - 1] : null;
+    const documentCount = entries.reduce((sum, entry) => {
+        return sum + (Array.isArray(entry?.documentLinks) ? entry.documentLinks.length : 0);
+    }, 0);
+    const { identityConsistency, identityNotes } = determineIdentityConsistency(cluster, query);
+
+    return {
+        clusterId: cluster.caseNumber || `anonymous-${index + 1}`,
+        primaryCaseNumber: cluster.caseNumber || 'N/A',
+        entryCount: entries.length,
+        documentCount,
+        oldestEntryDate: oldestTimestamp === null ? null : new Date(oldestTimestamp).toISOString(),
+        newestEntryDate: newestTimestamp === null ? null : new Date(newestTimestamp).toISOString(),
+        entryDateSpanDays: oldestTimestamp !== null && newestTimestamp !== null
+            ? Math.round((newestTimestamp - oldestTimestamp) / (24 * 60 * 60 * 1000))
+            : 0,
+        score: entries.length * 100 + documentCount,
+        selectionReason: 'ranked by recency first, then document coverage, then entry count',
+        identityConsistency,
+        identityNotes
+    };
+}
+
+function buildDiscoverySummary(allClusters, selectedClusters, query) {
+    const clusters = allClusters.map((cluster, index) => summarizeCluster(cluster, index, query));
+    const primaryCluster = selectedClusters[0];
+    const primaryClusterId = primaryCluster ? (primaryCluster.caseNumber || 'anonymous-1') : null;
+    const totalEntries = clusters.reduce((sum, cluster) => sum + cluster.entryCount, 0);
+    const primaryClusterSummary = clusters.find(cluster => cluster.clusterId === primaryClusterId) || null;
+
+    return {
+        query: query || null,
+        discoveryMode: 'search-window',
+        totalResults: null,
+        totalPages: null,
+        pagesScanned: null,
+        rawEntryCount: totalEntries,
+        capturedDistinctCaseCount: clusters.length,
+        clusters,
+        dominantClusterRatio: primaryClusterSummary
+            ? Number((primaryClusterSummary.entryCount / Math.max(1, totalEntries)).toFixed(2))
+            : 0,
+        coverageConfidence: primaryClusterSummary ? 'partial' : 'low',
+        recommendedPrimaryClusterId: primaryClusterId,
+        secondaryClusterIds: clusters
+            .map(cluster => cluster.clusterId)
+            .filter(clusterId => clusterId !== primaryClusterId)
+    };
+}
+
 function resolveAnalysisArgs(caseLimitOrOptions, maybeProgressCallback) {
     if (typeof caseLimitOrOptions === 'function') {
         return {
@@ -145,6 +271,7 @@ function resolveAnalysisArgs(caseLimitOrOptions, maybeProgressCallback) {
             caseLimit,
             scrapeLimit: computeRawScrapeLimit(caseLimit),
             enableVisualizer: caseLimitOrOptions.enableVisualizer !== false,
+            query: caseLimitOrOptions.query || null,
             progressCallback: maybeProgressCallback,
         };
     }
@@ -153,6 +280,7 @@ function resolveAnalysisArgs(caseLimitOrOptions, maybeProgressCallback) {
         caseLimit: DEFAULT_CASE_LIMIT,
         scrapeLimit: computeRawScrapeLimit(DEFAULT_CASE_LIMIT),
         enableVisualizer: true,
+        query: null,
         progressCallback: maybeProgressCallback,
     };
 }
@@ -184,6 +312,7 @@ async function runCourtAnalysis(searchTerm, caseLimitOrOptions, progressCallback
         const result = await processScrapedCases(casesToProcess, callback, {
             caseLimit: resolved.caseLimit,
             enableVisualizer: resolved.enableVisualizer,
+            query: resolved.query || { value: searchTerm },
         });
         return result;
 
@@ -220,6 +349,7 @@ async function runCourtAnalysisWithExistingAutomator(searchTerm, caseLimitOrOpti
         const result = await processScrapedCases(casesToProcess, callback, {
             caseLimit: resolved.caseLimit,
             enableVisualizer: resolved.enableVisualizer,
+            query: resolved.query || { value: searchTerm },
         });
         return result;
 
@@ -269,6 +399,8 @@ async function processScrapedCases(casesToProcess, progressCallback, options = {
         // 2) better-covered clusters next (more document links, then more entries)
         // 3) preserve original discovery order as final tie-break
         const clusters = selectClustersForProcessing(allClusters, resolvedOptions.caseLimit);
+        const discoverySummary = buildDiscoverySummary(allClusters, clusters, resolvedOptions.query);
+        const primaryClusterId = discoverySummary.recommendedPrimaryClusterId;
 
         const totalCases = clusters.length;
 
@@ -280,6 +412,8 @@ async function processScrapedCases(casesToProcess, progressCallback, options = {
         // Loop through each case CLUSTER
         for (let i = 0; i < totalCases; i++) {
             const cluster = clusters[i];
+            const clusterId = cluster.caseNumber || `anonymous-${i + 1}`;
+            const clusterSummary = discoverySummary.clusters.find((summary) => summary.clusterId === clusterId);
             
             // Use the first entry as the primary metadata source (most recent usually)
             const primaryEntry = cluster.entries[0];
@@ -334,7 +468,19 @@ async function processScrapedCases(casesToProcess, progressCallback, options = {
 
             if (filesForAnalysis.length === 0) {
                  console.warn(`No files to analyze for case ${caseInfo.title}. Skipping analysis.`);
-                 allProcessedCases.push({ caseResult: caseInfo, analysis: { individualAnalyses: [], finalSummary: "Nema dokumenata za analizu." } });
+                 allProcessedCases.push({
+                    caseResult: caseInfo,
+                    analysis: { individualAnalyses: [], finalSummary: "Nema dokumenata za analizu." },
+                    groupMetadata: {
+                        clusterId,
+                        primaryCaseNumber: clusterSummary?.primaryCaseNumber || cluster.caseNumber || 'N/A',
+                        entryCount: cluster.entries.length,
+                        isAnonymous: cluster.isAnonymous,
+                        identityConsistency: clusterSummary?.identityConsistency || 'unresolved',
+                        identityNotes: clusterSummary?.identityNotes || [],
+                        selectedForReasoning: clusterId === primaryClusterId
+                    }
+                 });
                  continue;
             }
 
@@ -349,8 +495,13 @@ async function processScrapedCases(casesToProcess, progressCallback, options = {
                 analysis: analysis,
                 // Add metadata about the grouping for debugging/UI
                 groupMetadata: {
+                    clusterId,
+                    primaryCaseNumber: clusterSummary?.primaryCaseNumber || cluster.caseNumber || 'N/A',
                     entryCount: cluster.entries.length,
-                    isAnonymous: cluster.isAnonymous
+                    isAnonymous: cluster.isAnonymous,
+                    identityConsistency: clusterSummary?.identityConsistency || 'unresolved',
+                    identityNotes: clusterSummary?.identityNotes || [],
+                    selectedForReasoning: clusterId === primaryClusterId
                 }
             });
         }
@@ -378,7 +529,10 @@ async function processScrapedCases(casesToProcess, progressCallback, options = {
 
         return {
             processedCases: allProcessedCases,
-            comparativeAnalysis: comparativeAnalysis
+            comparativeAnalysis: comparativeAnalysis,
+            discoverySummary,
+            primaryCluster: discoverySummary.clusters.find((cluster) => cluster.clusterId === primaryClusterId) || null,
+            secondaryClusters: discoverySummary.clusters.filter((cluster) => cluster.clusterId !== primaryClusterId)
         };
 
     } catch (error) {

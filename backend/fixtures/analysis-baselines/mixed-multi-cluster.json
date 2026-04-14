@@ -1,0 +1,122 @@
+{
+  "query": {
+    "type": "text",
+    "value": "KERUM"
+  },
+  "casesToProcess": [
+    {
+      "caseInfo": {
+        "caseNumber": "ST-100/2023",
+        "title": "Rješenje od 15.03.2025.",
+        "date": "15.03.2025.",
+        "participants": [
+          {
+            "name": "KERUM d.o.o.",
+            "oib": "11111111111",
+            "role": "Dužnik"
+          }
+        ]
+      },
+      "documentLinks": [
+        {
+          "url": "https://example.test/st100-1"
+        }
+      ]
+    },
+    {
+      "caseInfo": {
+        "caseNumber": "ST-100/2023",
+        "title": "Podnesak od 01.02.2025.",
+        "date": "01.02.2025.",
+        "participants": [
+          {
+            "name": "KERUM d.o.o.",
+            "oib": "11111111111",
+            "role": "Dužnik"
+          }
+        ]
+      },
+      "documentLinks": [
+        {
+          "url": "https://example.test/st100-2"
+        }
+      ]
+    },
+    {
+      "caseInfo": {
+        "caseNumber": "ST-100/2023",
+        "title": "Zaključak od 10.01.2024.",
+        "date": "10.01.2024.",
+        "participants": [
+          {
+            "name": "KERUM d.o.o.",
+            "oib": "11111111111",
+            "role": "Dužnik"
+          }
+        ]
+      },
+      "documentLinks": [
+        {
+          "url": "https://example.test/st100-3"
+        }
+      ]
+    },
+    {
+      "caseInfo": {
+        "caseNumber": "ST-200/2021",
+        "title": "Rješenje od 05.04.2024.",
+        "date": "05.04.2024.",
+        "participants": [
+          {
+            "name": "KERUM d.o.o.",
+            "oib": "22222222222",
+            "role": "Dužnik"
+          }
+        ]
+      },
+      "documentLinks": [
+        {
+          "url": "https://example.test/st200-1"
+        }
+      ]
+    },
+    {
+      "caseInfo": {
+        "caseNumber": "ST-200/2021",
+        "title": "Podnesak od 20.01.2023.",
+        "date": "20.01.2023.",
+        "participants": [
+          {
+            "name": "KERUM d.o.o.",
+            "oib": "22222222222",
+            "role": "Dužnik"
+          }
+        ]
+      },
+      "documentLinks": [
+        {
+          "url": "https://example.test/st200-2"
+        }
+      ]
+    },
+    {
+      "caseInfo": {
+        "caseNumber": "ST-300/2020",
+        "title": "Obavijest od 11.11.2022.",
+        "date": "11.11.2022.",
+        "participants": [
+          {
+            "name": "KERUM d.o.o.",
+            "oib": "N/A",
+            "role": "Dužnik"
+          }
+        ]
+      },
+      "documentLinks": [
+        {
+          "url": "https://example.test/st300-1"
+        }
+      ]
+    }
+  ]
+}

@@ -74,7 +74,7 @@ describe('processScrapedCases Grouping Integration', () => {
 
         const progressCallback = jest.fn();
         
-        const result = await processScrapedCases(casesToProcess, progressCallback);
+        const result = await processScrapedCases(casesToProcess, progressCallback, { enableVisualizer: false });
         
         // Expect 2 processed cases (clusters) because ST-1/23 are grouped
         expect(result.processedCases).toHaveLength(2);
@@ -98,9 +98,11 @@ describe('processScrapedCases Grouping Integration', () => {
         expect(links).toContain('http://doc2');
 
         // Check that result includes groupMetadata
-        expect(cluster1.groupMetadata).toEqual({
-            entryCount: 2,
-            isAnonymous: false
-        });
+        expect(cluster1.groupMetadata.entryCount).toBe(2);
+        expect(cluster1.groupMetadata.isAnonymous).toBe(false);
+        expect(cluster1.groupMetadata.clusterId).toBe('ST-1/23');
+        expect(cluster1.groupMetadata.primaryCaseNumber).toBe('ST-1/23');
+        expect(cluster1.groupMetadata.identityConsistency).toBe('unresolved');
+        expect(cluster1.groupMetadata.selectedForReasoning).toBe(true);
     });
 });

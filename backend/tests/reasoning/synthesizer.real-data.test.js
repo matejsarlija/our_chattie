@@ -106,4 +106,40 @@ describe('Synthesizer Integration with Real Data', () => {
         expect(report.narrative).toContain('Sud je odbio zahtjev');
         expect(report.claims.length).toBeGreaterThan(0); // Should retain input claims
     });
+
+    test('packages only one selected cluster instead of flattening multiple processed cases', () => {
+        const secondaryCaseData = {
+            caseResult: {
+                caseNumber: 'St-445/2018',
+                participants: [
+                    { name: 'OTHER d.o.o.', role: 'Dužnik' }
+                ]
+            },
+            groupMetadata: {
+                clusterId: 'St-445/2018',
+                identityConsistency: 'ambiguous',
+                identityNotes: ['OIB missing on secondary cluster']
+            },
+            analysis: {
+                individualAnalyses: [
+                    {
+                        filePath: 'backend/uploads/other.pdf',
+                        aiResult: {
+                            summary: 'Drugi predmet s drugim činjeničnim stanjem.',
+                            decisionDate: '2024-01-10'
+                        }
+                    }
+                ]
+            }
+        };
+
+        const evidence = createEvidenceFromProcessedCases([realCaseData, secondaryCaseData]);
+
+        expect(evidence.meta.caseNumber).toBe('St-2/2013');
+        expect(evidence.meta.clusterId).toBe('St-2/2013');
+        expect(evidence.meta.parties).toContain('CRO-GO d.o.o.');
+        expect(evidence.meta.parties).not.toContain('OTHER d.o.o.');
+        expect(evidence.claims).toHaveLength(2);
+        expect(evidence.claims.some(claim => claim.text.includes('Drugi predmet'))).toBe(false);
+    });
 });

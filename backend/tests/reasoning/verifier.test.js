@@ -29,11 +29,17 @@ describe('Verifier', () => {
 
     const mockReport = {
         schemaVersion: SCHEMA_VERSION,
-        claims: [
-            { id: 'c1', text: 'Defendant paid the debt', confidence: 'medium', evidence: [] },
-            { id: 'c2', text: 'Case was dismissed', confidence: 'medium', evidence: [] }
+        findings: [
+            { text: 'Defendant paid the debt', confidence: 'medium', citations: [] },
+            { text: 'Case was dismissed', confidence: 'medium', citations: [] }
         ],
-        meta: { openQuestions: [] }
+        claims: [
+            { id: 'c1', text: 'Raw extracted claim: debt payment mentioned in source', confidence: 'medium', evidence: [] },
+            { id: 'c2', text: 'Raw extracted claim: dismissal not yet verified', confidence: 'medium', evidence: [] }
+        ],
+        openQuestions: [],
+        conflicts: [],
+        meta: {}
     };
 
     const mockEvidence = {
@@ -56,13 +62,14 @@ describe('Verifier', () => {
 
         const verifiedReport = await verifyReport(mockReport, mockEvidence);
 
-        expect(verifiedReport.claims).toHaveLength(1); // Only c1 supported
-        expect(verifiedReport.claims[0].id).toBe('c1');
-        expect(verifiedReport.claims[0].confidence).toBe('high');
-        expect(verifiedReport.claims[0].evidence[0].text).toContain('Timeline mentions debt paid');
+        expect(verifiedReport.findings).toHaveLength(1); // Only supported synthesized finding remains
+        expect(verifiedReport.findings[0].text).toBe('Defendant paid the debt');
+        expect(verifiedReport.findings[0].confidence).toBe('high');
+        expect(verifiedReport.findings[0].citations[0].text).toContain('Timeline mentions debt paid');
 
-        expect(verifiedReport.meta.openQuestions).toHaveLength(1);
-        expect(verifiedReport.meta.openQuestions[0]).toContain('Unverified claim: Case was dismissed');
+        expect(verifiedReport.claims).toEqual(mockReport.claims);
+        expect(verifiedReport.openQuestions).toHaveLength(1);
+        expect(verifiedReport.openQuestions[0]).toContain('Unverified finding: Case was dismissed');
     });
 
     test('handles contradictions correctly', async () => {
@@ -78,18 +85,16 @@ describe('Verifier', () => {
 
         const verifiedReport = await verifyReport(mockReport, mockEvidence);
 
-        // Contradicted claim is kept but marked low confidence and flagged
-        expect(verifiedReport.claims[0].id).toBe('c1');
-        expect(verifiedReport.claims[0].confidence).toBe('low');
+        expect(verifiedReport.findings[0].text).toBe('Defendant paid the debt');
+        expect(verifiedReport.findings[0].confidence).toBe('low');
         
-        // Check conflicts array (new field)
-        expect(verifiedReport.meta.conflicts).toHaveLength(1);
-        expect(verifiedReport.meta.conflicts[0].claim).toContain('Defendant paid the debt');
-        expect(verifiedReport.meta.conflicts[0].conflict).toContain('Evidence says debt NOT paid');
+        expect(verifiedReport.conflicts).toHaveLength(1);
+        expect(verifiedReport.conflicts[0].finding).toContain('Defendant paid the debt');
+        expect(verifiedReport.conflicts[0].reason).toContain('Evidence says debt NOT paid');
     });
 
     test('handles empty report gracefully', async () => {
-        const emptyReport = { schemaVersion: SCHEMA_VERSION, claims: [], meta: {} };
+        const emptyReport = { schemaVersion: SCHEMA_VERSION, claims: [], findings: [], meta: {} };
         const result = await verifyReport(emptyReport, mockEvidence);
         expect(result).toBe(emptyReport);
     });

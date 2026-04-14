@@ -74,24 +74,36 @@ async function synthesizeReport(evidencePackage) {
             throw new Error("Synthesizer returned invalid JSON.");
         }
 
-        // Map to our strict schema
+        const findings = (parsed.findings || []).map((finding, index) => ({
+            id: finding.id || `finding-${index + 1}`,
+            text: finding.text || finding.claim || "Untitled Finding",
+            confidence: finding.confidence || "medium",
+            citations: Array.isArray(finding.citations) ? finding.citations : []
+        }));
+
         const finalReport = {
             schemaVersion: SCHEMA_VERSION,
             narrative: parsed.narrative,
             openQuestions: parsed.openQuestions || [],
             nextSteps: parsed.nextSteps || [],
-            claims: claims.length > 0 ? claims : (parsed.findings || []).map((f, i) => ({
-                id: `finding-${i+1}`,
-                text: f.text || f.claim || "Untitled Finding",
-                confidence: f.confidence || "medium",
-                evidence: []
+            conflicts: [],
+            claims,
+            findings: findings.length > 0 ? findings : claims.map((claim, index) => ({
+                id: `finding-${index + 1}`,
+                text: claim.text,
+                confidence: claim.confidence || 'medium',
+                citations: claim.evidence || []
             })),
-            findings: parsed.findings || [],
             meta: {
                 ...meta,
                 generatedAt: new Date().toISOString()
             }
         };
+
+        const validation = validateReport(finalReport);
+        if (!validation.valid) {
+            throw new Error(validation.error);
+        }
 
         return finalReport;
 
@@ -109,68 +121,91 @@ function createEmptyReport(message) {
         findings: [],
         openQuestions: [],
         nextSteps: [],
+        conflicts: [],
         meta: {
             generatedAt: new Date().toISOString()
         }
     };
 }
 
+function resolveSelectedProcessedCase(processedCases, options = {}) {
+    if (!Array.isArray(processedCases) || processedCases.length === 0) {
+        return null;
+    }
+
+    if (options.selectedClusterId) {
+        const matched = processedCases.find((processedCase) => {
+            const clusterId = processedCase?.groupMetadata?.clusterId || processedCase?.caseResult?.caseNumber;
+            return clusterId === options.selectedClusterId;
+        });
+
+        if (matched) {
+            return matched;
+        }
+    }
+
+    return processedCases[0];
+}
+
 /**
  * Helper to convert raw pipeline output into an evidence package for synthesis.
  * @param {Array<object>} processedCases 
+ * @param {object} [options]
  * @returns {object} evidencePackage
  */
-function createEvidenceFromProcessedCases(processedCases) {
+function createEvidenceFromProcessedCases(processedCases, options = {}) {
     if (!Array.isArray(processedCases)) return { timeline: [], claims: [], meta: {} };
 
     const timeline = [];
     const claims = [];
     const parties = new Set();
     let primaryCaseNumber = null;
+    const selectedProcessedCase = resolveSelectedProcessedCase(processedCases, options);
 
-    processedCases.forEach(pc => {
-        const caseInfo = pc.caseResult || {};
-        if (caseInfo.caseNumber) primaryCaseNumber = caseInfo.caseNumber;
-        
-        // Collect parties
-        if (Array.isArray(caseInfo.participants)) {
-            caseInfo.participants.forEach(p => parties.add(p.name));
-        }
+    if (!selectedProcessedCase) {
+        return { timeline: [], claims: [], meta: {} };
+    }
 
-        // Process analysis results
-        const analyses = pc.analysis?.individualAnalyses || [];
-        analyses.forEach(analysis => {
-            if (analysis.aiResult) {
-                const res = analysis.aiResult;
-                
-                // Add to timeline if dated
-                if (res.decisionDate) {
-                    timeline.push({
-                        date: res.decisionDate,
-                        description: `Document Analysis: ${res.summary ? res.summary.slice(0, 100) + '...' : 'No summary'}`,
-                        evidence: [{ sourceId: analysis.filePath || 'unknown', text: res.summary || '' }]
-                    });
-                }
+    const caseInfo = selectedProcessedCase.caseResult || {};
+    if (caseInfo.caseNumber) primaryCaseNumber = caseInfo.caseNumber;
+    
+    if (Array.isArray(caseInfo.participants)) {
+        caseInfo.participants.forEach(p => parties.add(p.name));
+    }
 
-                // Treat summary as a claim for now
-                if (res.summary) {
-                    claims.push({
-                        id: `claim-${claims.length + 1}`,
-                        text: res.summary,
-                        confidence: 'medium', // Default
-                        evidence: [{ sourceId: analysis.filePath || 'unknown', text: res.summary }]
-                    });
-                }
+    const analyses = selectedProcessedCase.analysis?.individualAnalyses || [];
+    analyses.forEach(analysis => {
+        if (analysis.aiResult) {
+            const res = analysis.aiResult;
+            
+            if (res.decisionDate) {
+                timeline.push({
+                    date: res.decisionDate,
+                    description: `Document Analysis: ${res.summary ? res.summary.slice(0, 100) + '...' : 'No summary'}`,
+                    evidence: [{ sourceId: analysis.filePath || 'unknown', text: res.summary || '' }]
+                });
             }
-        });
+
+            if (res.summary) {
+                claims.push({
+                    id: `claim-${claims.length + 1}`,
+                    text: res.summary,
+                    confidence: 'medium',
+                    evidence: [{ sourceId: analysis.filePath || 'unknown', text: res.summary }]
+                });
+            }
+        }
     });
 
     return {
         timeline,
         claims,
         meta: {
+            clusterId: selectedProcessedCase.groupMetadata?.clusterId || primaryCaseNumber,
             caseNumber: primaryCaseNumber,
-            parties: Array.from(parties)
+            parties: Array.from(parties),
+            identityConsistency: selectedProcessedCase.groupMetadata?.identityConsistency,
+            identityNotes: selectedProcessedCase.groupMetadata?.identityNotes || []
         }
     };
 }

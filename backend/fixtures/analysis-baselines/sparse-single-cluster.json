@@ -1,0 +1,40 @@
+{
+  "query": {
+    "type": "case_number",
+    "value": "ST-2/2013"
+  },
+  "processedCases": [
+    {
+      "caseResult": {
+        "caseNumber": "ST-2/2013",
+        "participants": [
+          {
+            "name": "CRO-GO d.o.o.",
+            "role": "Vjerovnik"
+          },
+          {
+            "name": "KERUM d.o.o. u stečaju",
+            "role": "Dužnik"
+          }
+        ]
+      },
+      "groupMetadata": {
+        "clusterId": "ST-2/2013",
+        "entryCount": 1,
+        "identityConsistency": "consistent",
+        "identityNotes": []
+      },
+      "analysis": {
+        "individualAnalyses": [
+          {
+            "filePath": "backend/uploads/Prilog.pdf",
+            "aiResult": {
+              "summary": "Sud je odbio tužbeni zahtjev vjerovnika.",
+              "decisionDate": "2022-05-11"
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

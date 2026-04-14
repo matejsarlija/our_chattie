@@ -1,4 +1,5 @@
 const SCHEMA_VERSION = '1.0.0';
+const VALID_CONFIDENCE_LEVELS = ['high', 'medium', 'low'];
 
 /**
  * Validates an Evidence object.
@@ -41,9 +42,8 @@ function validateClaim(claim, options = {}) {
         return { valid: false, error: 'Claim must have a string text.' };
     }
 
-    const validConfidence = ['high', 'medium', 'low'];
-    if (!claim.confidence || !validConfidence.includes(claim.confidence)) {
-        return { valid: false, error: `Claim confidence must be one of: ${validConfidence.join(', ')}.` };
+    if (!claim.confidence || !VALID_CONFIDENCE_LEVELS.includes(claim.confidence)) {
+        return { valid: false, error: `Claim confidence must be one of: ${VALID_CONFIDENCE_LEVELS.join(', ')}.` };
     }
 
     if (!Array.isArray(claim.evidence)) {
@@ -59,6 +59,26 @@ function validateClaim(claim, options = {}) {
         if (!evResult.valid) {
             return { valid: false, error: `Invalid evidence in claim ${claim.id}: ${evResult.error}` };
         }
+    }
+
+    return { valid: true };
+}
+
+function validateFinding(finding) {
+    if (!finding || typeof finding !== 'object') {
+        return { valid: false, error: 'Finding must be an object.' };
+    }
+
+    if (!finding.text || typeof finding.text !== 'string') {
+        return { valid: false, error: 'Finding must have a string text.' };
+    }
+
+    if (finding.confidence && !VALID_CONFIDENCE_LEVELS.includes(finding.confidence)) {
+        return { valid: false, error: `Finding confidence must be one of: ${VALID_CONFIDENCE_LEVELS.join(', ')}.` };
+    }
+
+    if (finding.citations !== undefined && !Array.isArray(finding.citations)) {
+        return { valid: false, error: 'Finding citations must be an array if present.' };
     }
 
     return { valid: true };
@@ -91,6 +111,25 @@ function validateReport(report) {
 
     if (!Array.isArray(report.findings)) {
         return { valid: false, error: 'Report must have a findings array.' };
+    }
+
+    for (const finding of report.findings) {
+        const findingResult = validateFinding(finding);
+        if (!findingResult.valid) {
+            return { valid: false, error: `Invalid finding in report: ${findingResult.error}` };
+        }
+    }
+
+    if (report.openQuestions !== undefined && !Array.isArray(report.openQuestions)) {
+        return { valid: false, error: 'Report openQuestions must be an array if present.' };
+    }
+
+    if (report.nextSteps !== undefined && !Array.isArray(report.nextSteps)) {
+        return { valid: false, error: 'Report nextSteps must be an array if present.' };
+    }
+
+    if (report.conflicts !== undefined && !Array.isArray(report.conflicts)) {
+        return { valid: false, error: 'Report conflicts must be an array if present.' };
     }
 
     // Optional meta check
@@ -138,6 +177,7 @@ module.exports = {
     SCHEMA_VERSION,
     validateEvidence,
     validateClaim,
+    validateFinding,
     validateReport,
     validateEvent
 };
