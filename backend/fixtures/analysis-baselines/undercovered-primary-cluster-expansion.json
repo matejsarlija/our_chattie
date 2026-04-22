@@ -1,0 +1,212 @@
+{
+  "query": {
+    "type": "text",
+    "value": "JADRAN"
+  },
+  "discoveryMetadata": {
+    "discoveryMode": "search-window",
+    "acquisitionModes": [
+      "search-window"
+    ],
+    "searchWindows": [
+      {
+        "mode": "search-window",
+        "currentPage": 1,
+        "pagesScanned": 1,
+        "hasNextPage": true,
+        "rawParsedEntryCount": 4
+      }
+    ],
+    "totalResults": 21,
+    "totalPages": 4,
+    "pagesScanned": 1,
+    "currentPage": 1,
+    "hasNextPage": true,
+    "rawParsedEntryCount": 4
+  },
+  "clusterExpansion": {
+    "maxPasses": 1,
+    "batches": [
+      {
+        "clusterId": "ST-700/2024",
+        "pass": 1,
+        "reason": "promising-under-covered-primary-cluster",
+        "strategy": "detail-link-follow-up",
+        "entries": [
+          {
+            "caseInfo": {
+              "caseNumber": "ST-700/2024",
+              "title": "Dopuna od 15.09.2024.",
+              "date": "15.09.2024.",
+              "participants": [
+                {
+                  "name": "JADRAN d.o.o.",
+                  "oib": "88888888888",
+                  "role": "Dužnik"
+                }
+              ]
+            },
+            "acquisition": {
+              "mode": "cluster-expansion",
+              "sourceCaseNumber": "ST-700/2024",
+              "pass": 1,
+              "reason": "promising-under-covered-primary-cluster",
+              "strategy": "detail-link-follow-up"
+            },
+            "documentLinks": [
+              {
+                "url": "https://example.test/st700-3"
+              }
+            ]
+          },
+          {
+            "caseInfo": {
+              "caseNumber": "ST-700/2024",
+              "title": "Objava od 20.05.2024.",
+              "date": "20.05.2024.",
+              "participants": [
+                {
+                  "name": "JADRAN d.o.o.",
+                  "oib": "88888888888",
+                  "role": "Dužnik"
+                }
+              ]
+            },
+            "acquisition": {
+              "mode": "cluster-expansion",
+              "sourceCaseNumber": "ST-700/2024",
+              "pass": 1,
+              "reason": "promising-under-covered-primary-cluster",
+              "strategy": "detail-link-follow-up"
+            },
+            "documentLinks": [
+              {
+                "url": "https://example.test/st700-4"
+              }
+            ]
+          },
+          {
+            "caseInfo": {
+              "caseNumber": "ST-555/2022",
+              "title": "Nepovezana objava od 11.01.2022.",
+              "date": "11.01.2022.",
+              "participants": [
+                {
+                  "name": "JADRAN d.o.o.",
+                  "oib": "99999999999",
+                  "role": "Dužnik"
+                }
+              ]
+            },
+            "acquisition": {
+              "mode": "cluster-expansion",
+              "sourceCaseNumber": "ST-700/2024",
+              "pass": 1,
+              "reason": "promising-under-covered-primary-cluster",
+              "strategy": "detail-link-follow-up"
+            },
+            "documentLinks": [
+              {
+                "url": "https://example.test/st555-1"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "casesToProcess": [
+    {
+      "caseInfo": {
+        "caseNumber": "ST-700/2024",
+        "title": "Rješenje od 10.02.2025.",
+        "date": "10.02.2025.",
+        "participants": [
+          {
+            "name": "JADRAN d.o.o.",
+            "oib": "88888888888",
+            "role": "Dužnik"
+          }
+        ]
+      },
+      "acquisition": {
+        "mode": "search-window",
+        "currentPage": 1
+      },
+      "documentLinks": [
+        {
+          "url": "https://example.test/st700-1"
+        }
+      ]
+    },
+    {
+      "caseInfo": {
+        "caseNumber": "ST-700/2024",
+        "title": "Zaključak od 12.01.2025.",
+        "date": "12.01.2025.",
+        "participants": [
+          {
+            "name": "JADRAN d.o.o.",
+            "oib": "88888888888",
+            "role": "Dužnik"
+          }
+        ]
+      },
+      "acquisition": {
+        "mode": "search-window",
+        "currentPage": 1
+      },
+      "documentLinks": [
+        {
+          "url": "https://example.test/st700-2"
+        }
+      ]
+    },
+    {
+      "caseInfo": {
+        "caseNumber": "ST-123/2026",
+        "title": "Rješenje od 04.04.2026.",
+        "date": "04.04.2026.",
+        "participants": [
+          {
+            "name": "JADRAN d.o.o.",
+            "oib": "11111111111",
+            "role": "Dužnik"
+          }
+        ]
+      },
+      "acquisition": {
+        "mode": "search-window",
+        "currentPage": 1
+      },
+      "documentLinks": [
+        {
+          "url": "https://example.test/st123-1"
+        }
+      ]
+    },
+    {
+      "caseInfo": {
+        "caseNumber": "ST-123/2026",
+        "title": "Dopuna od 20.03.2026.",
+        "date": "20.03.2026.",
+        "participants": [
+          {
+            "name": "JADRAN d.o.o.",
+            "oib": "22222222222",
+            "role": "Dužnik"
+          }
+        ]
+      },
+      "acquisition": {
+        "mode": "search-window",
+        "currentPage": 1
+      },
+      "documentLinks": [
+        {
+          "url": "https://example.test/st123-2"
+        }
+      ]
+    }
+  ]
+}

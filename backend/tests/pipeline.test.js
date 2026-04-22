@@ -1,4 +1,5 @@
 const mockSearchAndGetLatestCasesWithDocuments = jest.fn();
+const mockSearchAndGetLatestCases = jest.fn();
 const mockInit = jest.fn();
 const mockClose = jest.fn();
 const mockDownloadCall = jest.fn();
@@ -9,6 +10,7 @@ jest.mock('../scraper/courtSearchPuppeteer', () => {
     return jest.fn().mockImplementation(() => ({
         init: mockInit,
         close: mockClose,
+        searchAndGetLatestCases: mockSearchAndGetLatestCases,
         searchAndGetLatestCasesWithDocuments: mockSearchAndGetLatestCasesWithDocuments,
     }));
 });
@@ -48,7 +50,7 @@ jest.mock('fs', () => ({
     unlink: jest.fn((path, cb) => cb && cb(null)),
 }));
 
-const { runCourtAnalysis } = require('../court-analysis/pipeline');
+const { runCourtAnalysis, runCourtDiscovery } = require('../court-analysis/pipeline');
 
 describe('runCourtAnalysis pipeline (deterministic)', () => {
     beforeEach(() => {
@@ -62,6 +64,24 @@ describe('runCourtAnalysis pipeline (deterministic)', () => {
             { caseInfo: { caseNumber: 'C3', title: 'T3-A', participants: [] }, documentLinks: [{ url: 'u3a' }] },
             { caseInfo: { caseNumber: 'C4', title: 'T4-A', participants: [] }, documentLinks: [{ url: 'u4a' }] },
         ]);
+        mockSearchAndGetLatestCases.mockResolvedValue({
+            casesToProcess: [
+                { caseInfo: { caseNumber: 'C1', title: 'T1-A', participants: [] }, documentLinks: [{ url: 'u1a' }] },
+                { caseInfo: { caseNumber: 'C1', title: 'T1-B', participants: [] }, documentLinks: [{ url: 'u1b' }] },
+                { caseInfo: { caseNumber: 'C2', title: 'T2-A', participants: [] }, documentLinks: [] },
+            ],
+            discoveryMetadata: {
+                discoveryMode: 'search-window',
+                acquisitionModes: ['search-window'],
+                searchWindows: [{ mode: 'search-window', currentPage: 1, pagesScanned: 1, hasNextPage: true, rawParsedEntryCount: 3 }],
+                totalResults: 3,
+                totalPages: 1,
+                pagesScanned: 1,
+                currentPage: 1,
+                hasNextPage: false,
+                rawParsedEntryCount: 3
+            }
+        });
 
         mockDownloadCall.mockImplementation(({ documentLinks }) => Promise.resolve(
             documentLinks.map((link, idx) => ({ filePath: `/tmp/pipeline_${idx}.pdf`, url: link.url })),
@@ -85,5 +105,86 @@ describe('runCourtAnalysis pipeline (deterministic)', () => {
     test('enables visualizer by default when only caseLimit is provided', async () => {
         await runCourtAnalysis('66124057408', { caseLimit: 1 }, jest.fn());
         expect(mockVisualizerCall).toHaveBeenCalledTimes(1);
+    });
+
+    test('runCourtDiscovery stops after discovery and returns authoritative metadata without invoking analysis tools', async () => {
+        mockSearchAndGetLatestCases.mockResolvedValue({
+            casesToProcess: [
+                { caseInfo: { caseNumber: 'C1', title: 'T1-A', participants: [{ name: 'KERUM d.o.o.', oib: '11111111111' }] }, acquisition: { mode: 'search-window', currentPage: 1 }, documentLinks: [{ url: 'u1a' }] },
+                { caseInfo: { caseNumber: 'C1', title: 'T1-B', participants: [{ name: 'KERUM d.o.o.', oib: '11111111111' }] }, acquisition: { mode: 'search-window', currentPage: 1 }, documentLinks: [{ url: 'u1b' }] },
+                { caseInfo: { caseNumber: 'C2', title: 'T2-A', participants: [{ name: 'KERUM d.o.o.', oib: 'N/A' }] }, acquisition: { mode: 'search-window', currentPage: 1 }, documentLinks: [{ url: 'u2a' }] },
+            ],
+            discoveryMetadata: {
+                discoveryMode: 'search-window',
+                acquisitionModes: ['search-window'],
+                searchWindows: [{ mode: 'search-window', currentPage: 1, pagesScanned: 1, hasNextPage: true, rawParsedEntryCount: 4 }],
+                totalResults: 12,
+                totalPages: 3,
+                pagesScanned: 1,
+                currentPage: 1,
+                hasNextPage: true,
+                rawParsedEntryCount: 4
+            }
+        });
+
+        const result = await runCourtDiscovery('66124057408', { caseLimit: 2 }, jest.fn());
+
+        expect(mockSearchAndGetLatestCases).toHaveBeenCalledWith('66124057408');
+        expect(result.discoverySummary.totalResults).toBe(12);
+        expect(result.discoverySummary.totalPages).toBe(3);
+        expect(result.discoverySummary.rawEntryCount).toBe(4);
+        expect(result.discoverySummary.recommendedPrimaryClusterId).toBe('C1');
+        expect(result.primaryCluster.participantOibs).toEqual(['11111111111']);
+        expect(mockDownloadCall).not.toHaveBeenCalled();
+        expect(mockAnalyzeCall).not.toHaveBeenCalled();
+        expect(mockVisualizerCall).not.toHaveBeenCalled();
+    });
+
+    test('runCourtDiscovery bases discovery on the full search window even when entries lack download links', async () => {
+        mockSearchAndGetLatestCases.mockResolvedValue({
+            casesToProcess: [
+                { caseInfo: { caseNumber: 'C-NO-DOC-1', title: 'No Doc 1', participants: [] }, acquisition: { mode: 'search-window', currentPage: 1 }, documentLinks: [] },
+                { caseInfo: { caseNumber: 'C-NO-DOC-2', title: 'No Doc 2', participants: [] }, acquisition: { mode: 'search-window', currentPage: 1 }, documentLinks: [] },
+            ],
+            discoveryMetadata: {
+                discoveryMode: 'search-window',
+                acquisitionModes: ['search-window'],
+                searchWindows: [{ mode: 'search-window', currentPage: 1, pagesScanned: 1, hasNextPage: true, rawParsedEntryCount: 2 }],
+                totalResults: 27,
+                totalPages: 5,
+                pagesScanned: 1,
+                currentPage: 1,
+                hasNextPage: true,
+                rawParsedEntryCount: 2
+            }
+        });
+
+        const result = await runCourtDiscovery('bez-dokumenata', { caseLimit: 2 }, jest.fn());
+
+        expect(result.discoverySummary.totalResults).toBe(27);
+        expect(result.discoverySummary.capturedDistinctCaseCount).toBe(2);
+        expect(result.primaryCluster.clusterId).toBe('C-NO-DOC-1');
+        expect(result.secondaryClusters.map(cluster => cluster.clusterId)).toEqual(['C-NO-DOC-2']);
+    });
+
+    test('runCourtDiscovery forwards clusterExpansion through the public options object', async () => {
+        const fixture = require('../fixtures/analysis-baselines/undercovered-primary-cluster-expansion.json');
+
+        mockSearchAndGetLatestCases.mockResolvedValue({
+            casesToProcess: fixture.casesToProcess,
+            discoveryMetadata: fixture.discoveryMetadata
+        });
+
+        const result = await runCourtDiscovery('KERUM', {
+            caseLimit: 1,
+            query: fixture.query,
+            clusterExpansion: fixture.clusterExpansion
+        }, jest.fn());
+
+        expect(result.discoverySummary.expansion).toEqual(expect.objectContaining({
+            status: 'applied',
+            expandedClusterId: 'ST-700/2024',
+            appendedEntryCount: 2
+        }));
     });
 });

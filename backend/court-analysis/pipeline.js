@@ -12,6 +12,7 @@ const {
     MAX_CASE_LIMIT,
 } = require('../helpers/courtAnalysisRequest');
 const { groupEntriesByCase } = require('./utils/grouping');
+const { normalizeCaseNumber } = require('./utils/caseNumber');
 const fs = require('fs');
 const path = require('path');
 const AdmZip = require('adm-zip');
@@ -25,6 +26,19 @@ function clampCaseLimit(rawLimit) {
 }
 
 const RAW_SCRAPE_MULTIPLIER = 3;
+const CLUSTER_SELECTION_DEFAULTS = {
+    entryCountScoreWeight: 0.35,
+    entryDateSpanScoreWeight: 0.30,
+    recencyScoreWeight: 0.20,
+    dominanceScoreWeight: 0.10,
+    documentScoreWeight: 0.05,
+    targetPrimaryClusterEntries: 10,
+    strongPrimaryClusterSpanDays: 730,
+};
+const CLUSTER_EXPANSION_DEFAULTS = {
+    sufficientPrimaryClusterSpanDays: 365,
+    maxClusterExpansionPasses: 2,
+};
 
 function computeRawScrapeLimit(caseLimit) {
     const normalizedLimit = clampCaseLimit(caseLimit);
@@ -60,65 +74,6 @@ function parseCaseDateToTimestamp(rawDate) {
     return Number.isNaN(fallbackTs) ? null : fallbackTs;
 }
 
-function selectClustersForProcessing(allClusters, rawCaseLimit) {
-    if (!Array.isArray(allClusters) || allClusters.length === 0) {
-        return [];
-    }
-
-    if (typeof rawCaseLimit !== 'number' || Number.isNaN(rawCaseLimit)) {
-        return allClusters;
-    }
-
-    const caseLimit = clampCaseLimit(rawCaseLimit);
-    if (caseLimit >= allClusters.length) {
-        return allClusters;
-    }
-
-    const scored = allClusters.map((cluster, originalIndex) => {
-        const entries = Array.isArray(cluster.entries) ? cluster.entries : [];
-        const recencyTimestamp = entries.reduce((maxTs, entry) => {
-            const dateCandidate = entry?.caseInfo?.date || entry?.caseInfo?.datePublished;
-            const ts = parseCaseDateToTimestamp(dateCandidate);
-            if (ts === null) return maxTs;
-            if (maxTs === null) return ts;
-            return ts > maxTs ? ts : maxTs;
-        }, null);
-
-        const documentCount = entries.reduce((sum, entry) => {
-            const links = Array.isArray(entry?.documentLinks) ? entry.documentLinks.length : 0;
-            return sum + links;
-        }, 0);
-
-        return {
-            cluster,
-            originalIndex,
-            recencyTimestamp,
-            documentCount,
-            entryCount: entries.length,
-        };
-    });
-
-    scored.sort((a, b) => {
-        if (a.recencyTimestamp !== null && b.recencyTimestamp !== null && a.recencyTimestamp !== b.recencyTimestamp) {
-            return b.recencyTimestamp - a.recencyTimestamp;
-        }
-        if (a.recencyTimestamp !== null && b.recencyTimestamp === null) return -1;
-        if (a.recencyTimestamp === null && b.recencyTimestamp !== null) return 1;
-
-        if (a.documentCount !== b.documentCount) {
-            return b.documentCount - a.documentCount;
-        }
-
-        if (a.entryCount !== b.entryCount) {
-            return b.entryCount - a.entryCount;
-        }
-
-        return a.originalIndex - b.originalIndex;
-    });
-
-    return scored.slice(0, caseLimit).map(item => item.cluster);
-}
-
 function collectClusterParticipantSignals(cluster) {
     const participantNames = new Set();
     const oibs = new Set();
@@ -139,6 +94,61 @@ function collectClusterParticipantSignals(cluster) {
     return {
         participantNames: Array.from(participantNames),
         oibs: Array.from(oibs)
+    };
+}
+
+function collectClusterAcquisitionSignals(cluster) {
+    const acquisitionModes = new Set();
+    const acquisitionProvenance = [];
+    const seen = new Set();
+
+    for (const entry of cluster.entries || []) {
+        const acquisition = entry?.acquisition || entry?.caseInfo?.acquisition;
+        if (!acquisition || !acquisition.mode) continue;
+
+        acquisitionModes.add(acquisition.mode);
+        const key = JSON.stringify({
+            mode: acquisition.mode,
+            currentPage: acquisition.currentPage ?? null,
+            sourceCaseNumber: entry?.caseNumber || entry?.caseInfo?.caseNumber || null,
+            pass: acquisition.pass ?? null,
+            strategy: acquisition.strategy ?? null,
+            reason: acquisition.reason ?? null
+        });
+
+        if (!seen.has(key)) {
+            seen.add(key);
+            acquisitionProvenance.push({
+                mode: acquisition.mode,
+                currentPage: acquisition.currentPage ?? null,
+                sourceCaseNumber: entry?.caseNumber || entry?.caseInfo?.caseNumber || null,
+                pass: acquisition.pass ?? null,
+                strategy: acquisition.strategy ?? null,
+                reason: acquisition.reason ?? null
+            });
+        }
+    }
+
+    return {
+        acquisitionModes: Array.from(acquisitionModes),
+        acquisitionProvenance
+    };
+}
+
+function collectClusterAcquisitionModeCounts(cluster) {
+    const entryCountsByAcquisitionMode = {};
+    const documentCountsByAcquisitionMode = {};
+
+    for (const entry of cluster.entries || []) {
+        const mode = entry?.acquisition?.mode || entry?.caseInfo?.acquisition?.mode || 'unknown';
+        entryCountsByAcquisitionMode[mode] = (entryCountsByAcquisitionMode[mode] || 0) + 1;
+        documentCountsByAcquisitionMode[mode] = (documentCountsByAcquisitionMode[mode] || 0)
+            + (Array.isArray(entry?.documentLinks) ? entry.documentLinks.length : 0);
+    }
+
+    return {
+        entryCountsByAcquisitionMode,
+        documentCountsByAcquisitionMode
     };
 }
 
@@ -200,9 +210,12 @@ function summarizeCluster(cluster, index, query) {
         return sum + (Array.isArray(entry?.documentLinks) ? entry.documentLinks.length : 0);
     }, 0);
     const { identityConsistency, identityNotes } = determineIdentityConsistency(cluster, query);
+    const { participantNames, oibs } = collectClusterParticipantSignals(cluster);
+    const { acquisitionModes, acquisitionProvenance } = collectClusterAcquisitionSignals(cluster);
+    const { entryCountsByAcquisitionMode, documentCountsByAcquisitionMode } = collectClusterAcquisitionModeCounts(cluster);
 
     return {
-        clusterId: cluster.caseNumber || `anonymous-${index + 1}`,
+        clusterId: cluster.clusterId || cluster.caseNumber || `anonymous-${index + 1}`,
         primaryCaseNumber: cluster.caseNumber || 'N/A',
         entryCount: entries.length,
         documentCount,
@@ -211,27 +224,168 @@ function summarizeCluster(cluster, index, query) {
         entryDateSpanDays: oldestTimestamp !== null && newestTimestamp !== null
             ? Math.round((newestTimestamp - oldestTimestamp) / (24 * 60 * 60 * 1000))
             : 0,
-        score: entries.length * 100 + documentCount,
-        selectionReason: 'ranked by recency first, then document coverage, then entry count',
+        score: 0,
+        selectionReason: 'ranked by deterministic coverage-aware selection policy',
+        participantNames,
+        participantOibs: oibs,
         identityConsistency,
-        identityNotes
+        identityNotes,
+        acquisitionModes,
+        acquisitionProvenance,
+        entryCountsByAcquisitionMode,
+        documentCountsByAcquisitionMode
     };
 }
 
-function buildDiscoverySummary(allClusters, selectedClusters, query) {
-    const clusters = allClusters.map((cluster, index) => summarizeCluster(cluster, index, query));
+function scoreRecency(newestTimestamp, oldestNewestTimestamp, latestNewestTimestamp) {
+    if (newestTimestamp === null) return 0;
+    if (oldestNewestTimestamp === null || latestNewestTimestamp === null) return 0;
+    if (latestNewestTimestamp === oldestNewestTimestamp) return 1;
+    return (newestTimestamp - oldestNewestTimestamp) / (latestNewestTimestamp - oldestNewestTimestamp);
+}
+
+function getIdentitySelectionMultiplier(identityConsistency, queryType) {
+    if (queryType === 'oib') {
+        if (identityConsistency === 'consistent') return 1;
+        if (identityConsistency === 'unresolved') return 0.6;
+        return 0.2;
+    }
+
+    if (queryType === 'text') {
+        if (identityConsistency === 'consistent') return 1;
+        if (identityConsistency === 'unresolved') return 0.75;
+        return 0.35;
+    }
+
+    return 1;
+}
+
+function buildClusterSummaries(allClusters, query) {
+    const baseSummaries = allClusters.map((cluster, index) => summarizeCluster(cluster, index, query));
+    const totalEntries = baseSummaries.reduce((sum, cluster) => sum + cluster.entryCount, 0);
+    const newestTimestamps = baseSummaries
+        .map((cluster) => cluster.newestEntryDate ? Date.parse(cluster.newestEntryDate) : null)
+        .filter((timestamp) => timestamp !== null && !Number.isNaN(timestamp));
+    const oldestNewestTimestamp = newestTimestamps.length > 0 ? Math.min(...newestTimestamps) : null;
+    const latestNewestTimestamp = newestTimestamps.length > 0 ? Math.max(...newestTimestamps) : null;
+
+    return baseSummaries.map((summary) => {
+        const newestTimestamp = summary.newestEntryDate ? Date.parse(summary.newestEntryDate) : null;
+        const entryCoverageScore = Math.min(
+            summary.entryCount / CLUSTER_SELECTION_DEFAULTS.targetPrimaryClusterEntries,
+            1
+        );
+        const spanCoverageScore = Math.min(
+            summary.entryDateSpanDays / CLUSTER_SELECTION_DEFAULTS.strongPrimaryClusterSpanDays,
+            1
+        );
+        const recencyScore = scoreRecency(newestTimestamp, oldestNewestTimestamp, latestNewestTimestamp);
+        const dominanceScore = totalEntries > 0 ? summary.entryCount / totalEntries : 0;
+        const documentCoverageScore = Math.min(
+            summary.documentCount / CLUSTER_SELECTION_DEFAULTS.targetPrimaryClusterEntries,
+            1
+        );
+        const weightedScore =
+            (entryCoverageScore * CLUSTER_SELECTION_DEFAULTS.entryCountScoreWeight) +
+            (spanCoverageScore * CLUSTER_SELECTION_DEFAULTS.entryDateSpanScoreWeight) +
+            (recencyScore * CLUSTER_SELECTION_DEFAULTS.recencyScoreWeight) +
+            (dominanceScore * CLUSTER_SELECTION_DEFAULTS.dominanceScoreWeight) +
+            (documentCoverageScore * CLUSTER_SELECTION_DEFAULTS.documentScoreWeight);
+        const identityMultiplier = getIdentitySelectionMultiplier(summary.identityConsistency, query?.type);
+
+        return {
+            ...summary,
+            score: Number((weightedScore * identityMultiplier).toFixed(4)),
+            selectionReason: 'ranked by deterministic coverage-aware selection policy (entry count, date span, recency, dominance, document coverage, and identity confidence when query intent is entity-oriented)'
+        };
+    });
+}
+
+function selectClustersForProcessing(allClusters, clusterSummaries, rawCaseLimit) {
+    if (!Array.isArray(allClusters) || allClusters.length === 0) {
+        return [];
+    }
+
+    const scoreByClusterId = new Map(
+        (clusterSummaries || []).map((summary) => [summary.clusterId, summary])
+    );
+
+    const scored = allClusters.map((cluster, originalIndex) => {
+        const clusterId = cluster.clusterId || cluster.caseNumber || `anonymous-${originalIndex + 1}`;
+        const summary = scoreByClusterId.get(clusterId);
+        const newestTimestamp = summary?.newestEntryDate ? Date.parse(summary.newestEntryDate) : null;
+
+        return {
+            cluster,
+            originalIndex,
+            score: summary?.score ?? 0,
+            newestTimestamp,
+            documentCount: summary?.documentCount ?? 0,
+        };
+    });
+
+    scored.sort((a, b) => {
+        if (a.score !== b.score) {
+            return b.score - a.score;
+        }
+
+        if (a.newestTimestamp !== null && b.newestTimestamp !== null && a.newestTimestamp !== b.newestTimestamp) {
+            return b.newestTimestamp - a.newestTimestamp;
+        }
+        if (a.newestTimestamp !== null && b.newestTimestamp === null) return -1;
+        if (a.newestTimestamp === null && b.newestTimestamp !== null) return 1;
+
+        if (a.documentCount !== b.documentCount) {
+            return b.documentCount - a.documentCount;
+        }
+
+        return a.originalIndex - b.originalIndex;
+    });
+
+    if (typeof rawCaseLimit !== 'number' || Number.isNaN(rawCaseLimit)) {
+        return scored.map((item) => item.cluster);
+    }
+
+    const caseLimit = clampCaseLimit(rawCaseLimit);
+    return scored.slice(0, caseLimit).map((item) => item.cluster);
+}
+
+function buildDiscoverySummary(clusterSummaries, selectedClusters, query, discoveryMetadata = null) {
+    const clusters = Array.isArray(clusterSummaries) ? clusterSummaries : [];
     const primaryCluster = selectedClusters[0];
-    const primaryClusterId = primaryCluster ? (primaryCluster.caseNumber || 'anonymous-1') : null;
+    const primaryClusterId = primaryCluster
+        ? (primaryCluster.clusterId || primaryCluster.caseNumber || 'anonymous-1')
+        : null;
     const totalEntries = clusters.reduce((sum, cluster) => sum + cluster.entryCount, 0);
     const primaryClusterSummary = clusters.find(cluster => cluster.clusterId === primaryClusterId) || null;
+    const normalizedDiscoveryMetadata = discoveryMetadata && typeof discoveryMetadata === 'object'
+        ? discoveryMetadata
+        : {};
+    const acquisitionModes = Array.from(new Set([
+        ...(Array.isArray(normalizedDiscoveryMetadata.acquisitionModes)
+            ? normalizedDiscoveryMetadata.acquisitionModes
+            : []),
+        ...clusters.flatMap(cluster => cluster.acquisitionModes || [])
+    ]));
+    const queryLevelAcquisitionProvenance = [
+        ...(Array.isArray(normalizedDiscoveryMetadata.searchWindows)
+            ? normalizedDiscoveryMetadata.searchWindows
+            : []),
+        ...clusters.flatMap(cluster => cluster.acquisitionProvenance || [])
+            .filter((provenance) => provenance.mode === 'cluster-expansion')
+    ];
 
     return {
         query: query || null,
-        discoveryMode: 'search-window',
-        totalResults: null,
-        totalPages: null,
-        pagesScanned: null,
-        rawEntryCount: totalEntries,
+        discoveryMode: normalizedDiscoveryMetadata.discoveryMode || 'search-window',
+        acquisitionModes,
+        acquisitionProvenance: queryLevelAcquisitionProvenance,
+        totalResults: normalizedDiscoveryMetadata.totalResults ?? null,
+        totalPages: normalizedDiscoveryMetadata.totalPages ?? null,
+        pagesScanned: normalizedDiscoveryMetadata.pagesScanned ?? null,
+        currentPage: normalizedDiscoveryMetadata.currentPage ?? null,
+        hasNextPage: normalizedDiscoveryMetadata.hasNextPage ?? null,
+        rawEntryCount: normalizedDiscoveryMetadata.rawParsedEntryCount ?? totalEntries,
         capturedDistinctCaseCount: clusters.length,
         clusters,
         dominantClusterRatio: primaryClusterSummary
@@ -242,6 +396,224 @@ function buildDiscoverySummary(allClusters, selectedClusters, query) {
         secondaryClusterIds: clusters
             .map(cluster => cluster.clusterId)
             .filter(clusterId => clusterId !== primaryClusterId)
+    };
+}
+
+function normalizeScraperResult(scrapeResult) {
+    if (Array.isArray(scrapeResult)) {
+        return {
+            casesToProcess: scrapeResult,
+            discoveryMetadata: null
+        };
+    }
+
+    return {
+        casesToProcess: Array.isArray(scrapeResult?.casesToProcess) ? scrapeResult.casesToProcess : [],
+        discoveryMetadata: scrapeResult?.discoveryMetadata || null
+    };
+}
+
+function normalizeEntryForGrouping(entry) {
+    const normalizedCaseNumber = normalizeCaseNumber(entry?.caseInfo?.caseNumber || entry?.caseNumber) || 'N/A';
+
+    return {
+        ...entry,
+        caseNumber: normalizedCaseNumber,
+        caseInfo: entry?.caseInfo
+            ? {
+                ...entry.caseInfo,
+                caseNumber: normalizedCaseNumber
+            }
+            : entry.caseInfo
+    };
+}
+
+function resolveClusterExpansionConfig(options = {}) {
+    const configuredExpansion = options.clusterExpansion || options.discoveryMetadata?.clusterExpansion;
+
+    if (!configuredExpansion || typeof configuredExpansion !== 'object') {
+        return null;
+    }
+
+    return {
+        maxPasses: Number.isFinite(configuredExpansion.maxPasses)
+            ? Math.max(0, configuredExpansion.maxPasses)
+            : CLUSTER_EXPANSION_DEFAULTS.maxClusterExpansionPasses,
+        batches: Array.isArray(configuredExpansion.batches) ? configuredExpansion.batches : []
+    };
+}
+
+function shouldExpandPrimaryCluster(primaryClusterSummary) {
+    if (!primaryClusterSummary) {
+        return false;
+    }
+
+    return (
+        primaryClusterSummary.entryCount < CLUSTER_SELECTION_DEFAULTS.targetPrimaryClusterEntries
+        || primaryClusterSummary.entryDateSpanDays < CLUSTER_EXPANSION_DEFAULTS.sufficientPrimaryClusterSpanDays
+    );
+}
+
+function applyConfiguredClusterExpansion(entriesForGrouping, initialDiscoverySummary, options = {}) {
+    const expansionConfig = resolveClusterExpansionConfig(options);
+
+    if (!expansionConfig) {
+        return {
+            entriesForGrouping,
+            expansion: null
+        };
+    }
+
+    const expandedClusterId = initialDiscoverySummary?.recommendedPrimaryClusterId || null;
+    const primaryClusterSummary = initialDiscoverySummary?.clusters?.find(
+        (cluster) => cluster.clusterId === expandedClusterId
+    ) || null;
+
+    if (!shouldExpandPrimaryCluster(primaryClusterSummary)) {
+        return {
+            entriesForGrouping,
+            expansion: {
+                status: 'skipped',
+                expandedClusterId,
+                appliedPasses: 0,
+                appendedEntryCount: 0,
+                skippedEntryCount: 0,
+                reason: 'primary-cluster-already-sufficient'
+            }
+        };
+    }
+
+    const normalizedClusterId = normalizeCaseNumber(expandedClusterId);
+    const eligibleBatches = expansionConfig.batches
+        .filter((batch) => normalizeCaseNumber(batch?.clusterId) === normalizedClusterId)
+        .slice(0, expansionConfig.maxPasses);
+
+    if (eligibleBatches.length === 0) {
+        return {
+            entriesForGrouping,
+            expansion: {
+                status: 'skipped',
+                expandedClusterId,
+                appliedPasses: 0,
+                appendedEntryCount: 0,
+                skippedEntryCount: 0,
+                reason: 'no-eligible-expansion-batches'
+            }
+        };
+    }
+
+    const appendedEntries = [];
+    let skippedEntryCount = 0;
+
+    eligibleBatches.forEach((batch, batchIndex) => {
+        const pass = batch?.pass ?? (batchIndex + 1);
+
+        for (const rawEntry of batch?.entries || []) {
+            const normalizedEntry = normalizeEntryForGrouping(rawEntry);
+
+            if (normalizedEntry.caseNumber !== normalizedClusterId) {
+                skippedEntryCount += 1;
+                continue;
+            }
+
+            appendedEntries.push({
+                ...normalizedEntry,
+                acquisition: {
+                    ...(normalizedEntry.acquisition || {}),
+                    mode: 'cluster-expansion',
+                    sourceCaseNumber: normalizedClusterId,
+                    pass,
+                    reason: batch?.reason || normalizedEntry?.acquisition?.reason || null,
+                    strategy: batch?.strategy || normalizedEntry?.acquisition?.strategy || null
+                }
+            });
+        }
+    });
+
+    if (appendedEntries.length === 0) {
+        return {
+            entriesForGrouping,
+            expansion: {
+                status: 'skipped',
+                expandedClusterId,
+                appliedPasses: 0,
+                appendedEntryCount: 0,
+                skippedEntryCount,
+                reason: 'no-same-cluster-entries-appended'
+            }
+        };
+    }
+
+    return {
+        entriesForGrouping: [...entriesForGrouping, ...appendedEntries],
+        expansion: {
+            status: 'applied',
+            expandedClusterId,
+            appliedPasses: eligibleBatches.length,
+            appendedEntryCount: appendedEntries.length,
+            skippedEntryCount,
+            reason: 'bounded-cluster-expansion-applied'
+        }
+    };
+}
+
+function buildDiscoveryResult(casesToProcess, options = {}, progressCallback) {
+    if (!casesToProcess || casesToProcess.length === 0) {
+        throw new Error('Nije pronađen nijedan predmet za traženi pojam.');
+    }
+
+    progressCallback?.({ step: 'grouping', progress: 15, message: 'Grupiram pronađene objave po predmetima...' });
+
+    const entriesForGrouping = casesToProcess.map(normalizeEntryForGrouping);
+    const initialAllClusters = groupEntriesByCase(entriesForGrouping);
+    const initialClusterSummaries = buildClusterSummaries(initialAllClusters, options.query);
+    const initialClusters = selectClustersForProcessing(initialAllClusters, initialClusterSummaries, options.caseLimit);
+    const initialDiscoverySummary = buildDiscoverySummary(
+        initialClusterSummaries,
+        initialClusters,
+        options.query,
+        options.discoveryMetadata
+    );
+    const expansionResult = applyConfiguredClusterExpansion(entriesForGrouping, initialDiscoverySummary, options);
+    const allClusters = groupEntriesByCase(expansionResult.entriesForGrouping);
+    const clusterSummaries = buildClusterSummaries(allClusters, options.query);
+    const clusters = selectClustersForProcessing(allClusters, clusterSummaries, options.caseLimit);
+    const discoverySummary = buildDiscoverySummary(
+        clusterSummaries,
+        clusters,
+        options.query,
+        options.discoveryMetadata
+    );
+
+    if (expansionResult.expansion) {
+        discoverySummary.expansion = expansionResult.expansion;
+        discoverySummary.clusters = discoverySummary.clusters.map((cluster) => {
+            if (cluster.clusterId !== expansionResult.expansion.expandedClusterId) {
+                return cluster;
+            }
+
+            return {
+                ...cluster,
+                expansion: expansionResult.expansion
+            };
+        });
+    }
+
+    const primaryClusterId = discoverySummary.recommendedPrimaryClusterId;
+
+    progressCallback?.({
+        step: 'grouping',
+        progress: 20,
+        message: `Pronađeno ${clusters.length} jedinstvenih predmeta (odabrano od ${allClusters.length} grupa iz ${casesToProcess.length} objava) za analizu.`
+    });
+
+    return {
+        allClusters,
+        clusters,
+        discoverySummary,
+        primaryClusterId,
+        primaryCluster: discoverySummary.clusters.find((cluster) => cluster.clusterId === primaryClusterId) || null,
+        secondaryClusters: discoverySummary.clusters.filter((cluster) => cluster.clusterId !== primaryClusterId)
     };
 }
 
@@ -272,6 +644,7 @@ function resolveAnalysisArgs(caseLimitOrOptions, maybeProgressCallback) {
             scrapeLimit: computeRawScrapeLimit(caseLimit),
             enableVisualizer: caseLimitOrOptions.enableVisualizer !== false,
             query: caseLimitOrOptions.query || null,
+            clusterExpansion: caseLimitOrOptions.clusterExpansion || null,
             progressCallback: maybeProgressCallback,
         };
     }
@@ -302,7 +675,8 @@ async function runCourtAnalysis(searchTerm, caseLimitOrOptions, progressCallback
         // 1. Scrape for the N latest cases
         callback?.({ step: 'discovering', progress: 10, message: 'Pretražujem sudske zapise za nedavne objave...' });
         await automator.init();
-        const casesToProcess = await automator.searchAndGetLatestCasesWithDocuments(searchTerm, resolved.scrapeLimit);
+        const scrapeResult = await automator.searchAndGetLatestCasesWithDocuments(searchTerm, resolved.scrapeLimit);
+        const { casesToProcess, discoveryMetadata } = normalizeScraperResult(scrapeResult);
         
         if (!casesToProcess || casesToProcess.length === 0) {
             throw new Error('Nije pronađen nijedan predmet s dostupnim dokumentima za traženi pojam.');
@@ -313,6 +687,8 @@ async function runCourtAnalysis(searchTerm, caseLimitOrOptions, progressCallback
             caseLimit: resolved.caseLimit,
             enableVisualizer: resolved.enableVisualizer,
             query: resolved.query || { value: searchTerm },
+            clusterExpansion: resolved.clusterExpansion,
+            discoveryMetadata,
         });
         return result;
 
@@ -323,6 +699,31 @@ async function runCourtAnalysis(searchTerm, caseLimitOrOptions, progressCallback
         // Always close automator here - simpler logic
         await automator.close();
         await cleanupFiles(allFilesToCleanup);
+    }
+}
+
+async function runCourtDiscovery(searchTerm, caseLimitOrOptions, progressCallback) {
+    const resolved = resolveAnalysisArgs(caseLimitOrOptions, progressCallback);
+    const callback = resolved.progressCallback;
+    const automator = new CourtSearchPuppeteer();
+
+    try {
+        callback?.({ step: 'discovering', progress: 10, message: 'Pretražujem sudske zapise za nedavne objave...' });
+        await automator.init();
+        const scrapeResult = await automator.searchAndGetLatestCases(searchTerm);
+        const { casesToProcess, discoveryMetadata } = normalizeScraperResult(scrapeResult);
+
+        return buildDiscoveryResult(casesToProcess, {
+            caseLimit: resolved.caseLimit,
+            query: resolved.query || { value: searchTerm },
+            clusterExpansion: resolved.clusterExpansion,
+            discoveryMetadata
+        }, callback);
+    } catch (error) {
+        callback?.({ step: 'error', progress: 100, message: error.message });
+        throw error;
+    } finally {
+        await automator.close();
     }
 }
 
@@ -339,7 +740,8 @@ async function runCourtAnalysisWithExistingAutomator(searchTerm, caseLimitOrOpti
     try {
         // 1. Use the existing automator to scrape (no init/close needed)
         callback?.({ step: 'discovering', progress: 10, message: 'Pretražujem sudske zapise za nedavne objave...' });
-        const casesToProcess = await existingAutomator.searchAndGetLatestCasesWithDocuments(searchTerm, resolved.scrapeLimit);
+        const scrapeResult = await existingAutomator.searchAndGetLatestCasesWithDocuments(searchTerm, resolved.scrapeLimit);
+        const { casesToProcess, discoveryMetadata } = normalizeScraperResult(scrapeResult);
 
         if (!casesToProcess || casesToProcess.length === 0) {
             throw new Error('Nije pronađen nijedan predmet s dostupnim dokumentima za traženi pojam.');
@@ -350,6 +752,8 @@ async function runCourtAnalysisWithExistingAutomator(searchTerm, caseLimitOrOpti
             caseLimit: resolved.caseLimit,
             enableVisualizer: resolved.enableVisualizer,
             query: resolved.query || { value: searchTerm },
+            clusterExpansion: resolved.clusterExpansion,
+            discoveryMetadata,
         });
         return result;
 
@@ -382,29 +786,19 @@ async function processScrapedCases(casesToProcess, progressCallback, options = {
             throw new Error('Nije pronađen nijedan predmet s dostupnim dokumentima za traženi pojam.');
         }
 
-        // --- GROUPING STEP (A-05) ---
-        progressCallback?.({ step: 'grouping', progress: 15, message: 'Grupiram pronađene objave po predmetima...' });
-        
-        // Prepare entries for grouping by lifting caseNumber to top level
-        const entriesForGrouping = casesToProcess.map(c => ({
-            ...c,
-            caseNumber: c.caseInfo ? c.caseInfo.caseNumber : 'N/A'
-        }));
-        
-        const allClusters = groupEntriesByCase(entriesForGrouping);
-        
-        // --- SELECTION STEP (A-06) ---
-        // Selection policy:
-        // 1) newer clusters first (by parsed entry dates when available)
-        // 2) better-covered clusters next (more document links, then more entries)
-        // 3) preserve original discovery order as final tie-break
-        const clusters = selectClustersForProcessing(allClusters, resolvedOptions.caseLimit);
-        const discoverySummary = buildDiscoverySummary(allClusters, clusters, resolvedOptions.query);
-        const primaryClusterId = discoverySummary.recommendedPrimaryClusterId;
-
+        // --- GROUPING + DISCOVERY SUMMARY ---
+        // Selection policy (B-08):
+        // 1) rank clusters by deterministic weighted coverage score
+        // 2) use newest entry date, then document count, then discovery order as tie-breakers
+        // 3) apply explicit identity-confidence penalties for entity-oriented queries
+        const {
+            clusters,
+            discoverySummary,
+            primaryClusterId,
+            primaryCluster,
+            secondaryClusters
+        } = buildDiscoveryResult(casesToProcess, resolvedOptions, progressCallback);
         const totalCases = clusters.length;
-
-        progressCallback?.({ step: 'grouping', progress: 20, message: `Pronađeno ${totalCases} jedinstvenih predmeta (odabrano od ${allClusters.length} grupa iz ${casesToProcess.length} objava) za analizu.` });
 
         const downloadTool = new DownloadDocumentsTool();
         const analyzeTool = new AnalyzeDocumentsTool();
@@ -412,7 +806,7 @@ async function processScrapedCases(casesToProcess, progressCallback, options = {
         // Loop through each case CLUSTER
         for (let i = 0; i < totalCases; i++) {
             const cluster = clusters[i];
-            const clusterId = cluster.caseNumber || `anonymous-${i + 1}`;
+            const clusterId = cluster.clusterId || cluster.caseNumber || `anonymous-${i + 1}`;
             const clusterSummary = discoverySummary.clusters.find((summary) => summary.clusterId === clusterId);
             
             // Use the first entry as the primary metadata source (most recent usually)
@@ -478,6 +872,13 @@ async function processScrapedCases(casesToProcess, progressCallback, options = {
                         isAnonymous: cluster.isAnonymous,
                         identityConsistency: clusterSummary?.identityConsistency || 'unresolved',
                         identityNotes: clusterSummary?.identityNotes || [],
+                        participantNames: clusterSummary?.participantNames || [],
+                        participantOibs: clusterSummary?.participantOibs || [],
+                        acquisitionModes: clusterSummary?.acquisitionModes || [],
+                        acquisitionProvenance: clusterSummary?.acquisitionProvenance || [],
+                        entryCountsByAcquisitionMode: clusterSummary?.entryCountsByAcquisitionMode || {},
+                        documentCountsByAcquisitionMode: clusterSummary?.documentCountsByAcquisitionMode || {},
+                        expansion: clusterSummary?.expansion || null,
                         selectedForReasoning: clusterId === primaryClusterId
                     }
                  });
@@ -501,6 +902,13 @@ async function processScrapedCases(casesToProcess, progressCallback, options = {
                     isAnonymous: cluster.isAnonymous,
                     identityConsistency: clusterSummary?.identityConsistency || 'unresolved',
                     identityNotes: clusterSummary?.identityNotes || [],
+                    participantNames: clusterSummary?.participantNames || [],
+                    participantOibs: clusterSummary?.participantOibs || [],
+                    acquisitionModes: clusterSummary?.acquisitionModes || [],
+                    acquisitionProvenance: clusterSummary?.acquisitionProvenance || [],
+                    entryCountsByAcquisitionMode: clusterSummary?.entryCountsByAcquisitionMode || {},
+                    documentCountsByAcquisitionMode: clusterSummary?.documentCountsByAcquisitionMode || {},
+                    expansion: clusterSummary?.expansion || null,
                     selectedForReasoning: clusterId === primaryClusterId
                 }
             });
@@ -531,8 +939,8 @@ async function processScrapedCases(casesToProcess, progressCallback, options = {
             processedCases: allProcessedCases,
             comparativeAnalysis: comparativeAnalysis,
             discoverySummary,
-            primaryCluster: discoverySummary.clusters.find((cluster) => cluster.clusterId === primaryClusterId) || null,
-            secondaryClusters: discoverySummary.clusters.filter((cluster) => cluster.clusterId !== primaryClusterId)
+            primaryCluster,
+            secondaryClusters
         };
 
     } catch (error) {
@@ -557,4 +965,4 @@ async function cleanupFiles(filePaths) {
     }
 }
 
-module.exports = { runCourtAnalysis, runCourtAnalysisWithExistingAutomator, processScrapedCases };
+module.exports = { runCourtAnalysis, runCourtDiscovery, runCourtAnalysisWithExistingAutomator, processScrapedCases };

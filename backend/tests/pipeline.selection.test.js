@@ -102,10 +102,12 @@ describe('processScrapedCases Selection Policy', () => {
         expect(result.processedCases.map(c => c.caseResult.caseNumber)).toEqual(['C1', 'C2', 'C3']);
     });
 
-    test('prefers more recent clusters when limiting selection', async () => {
+    test('prefers broader coverage over a slight recency edge when limiting selection', async () => {
         const casesToProcess = [
-            { caseInfo: { caseNumber: 'C_OLD', title: 'Old', date: '01.01.2022' }, documentLinks: [{ url: 'u-old' }] },
-            { caseInfo: { caseNumber: 'C_NEW', title: 'New', date: '01.01.2025' }, documentLinks: [{ url: 'u-new' }] },
+            { caseInfo: { caseNumber: 'C_COVERED', title: 'Covered A', date: '15.03.2025' }, documentLinks: [{ url: 'u-covered-1' }] },
+            { caseInfo: { caseNumber: 'C_COVERED', title: 'Covered B', date: '20.10.2024' }, documentLinks: [{ url: 'u-covered-2' }] },
+            { caseInfo: { caseNumber: 'C_COVERED', title: 'Covered C', date: '05.05.2024' }, documentLinks: [{ url: 'u-covered-3' }] },
+            { caseInfo: { caseNumber: 'C_NEW', title: 'New', date: '01.04.2025' }, documentLinks: [{ url: 'u-new' }] },
             { caseInfo: { caseNumber: 'C_MID', title: 'Mid', date: '01.01.2024' }, documentLinks: [{ url: 'u-mid' }] },
         ];
 
@@ -115,7 +117,7 @@ describe('processScrapedCases Selection Policy', () => {
             { caseLimit: 2, enableVisualizer: false },
         );
 
-        expect(result.processedCases.map(c => c.caseResult.caseNumber)).toEqual(['C_NEW', 'C_MID']);
+        expect(result.processedCases.map(c => c.caseResult.caseNumber)).toEqual(['C_COVERED', 'C_NEW']);
     });
 
     test('parses trailing-dot Croatian dates for recency ranking', async () => {
@@ -194,5 +196,55 @@ describe('processScrapedCases Selection Policy', () => {
         await processScrapedCases(casesToProcess, jest.fn(), { caseLimit: 1, enableVisualizer: false });
 
         expect(mockVisualizerCall).not.toHaveBeenCalled();
+    });
+
+    test('does not append unrelated expansion entries into the selected primary cluster', async () => {
+        const fixture = require('../fixtures/analysis-baselines/undercovered-primary-cluster-expansion.json');
+
+        const result = await processScrapedCases(
+            fixture.casesToProcess,
+            jest.fn(),
+            {
+                caseLimit: 1,
+                enableVisualizer: false,
+                query: fixture.query,
+                discoveryMetadata: fixture.discoveryMetadata,
+                clusterExpansion: fixture.clusterExpansion
+            },
+        );
+
+        expect(result.processedCases).toHaveLength(1);
+        expect(result.processedCases[0].caseResult.caseNumber).toBe('ST-700/2024');
+        expect(result.discoverySummary.secondaryClusterIds).toEqual(['ST-123/2026']);
+        expect(result.discoverySummary.clusters.map(cluster => cluster.clusterId)).toEqual(['ST-700/2024', 'ST-123/2026']);
+        expect(result.discoverySummary.expansion.skippedEntryCount).toBe(1);
+    });
+
+    test('keeps anonymous clusters uniquely addressable during selection', async () => {
+        const casesToProcess = [
+            { caseInfo: { caseNumber: 'N/A', title: 'Anon older', date: '01.01.2024', participants: [] }, documentLinks: [{ url: 'u-anon-1' }] },
+            { caseInfo: { caseNumber: 'N/A', title: 'Anon newer', date: '15.03.2025', participants: [] }, documentLinks: [{ url: 'u-anon-2' }] },
+            { caseInfo: { caseNumber: 'C_TRACKED', title: 'Tracked', date: '01.02.2025', participants: [] }, documentLinks: [{ url: 'u-tracked-1' }] },
+            { caseInfo: { caseNumber: 'C_TRACKED', title: 'Tracked 2', date: '05.02.2025', participants: [] }, documentLinks: [{ url: 'u-tracked-2' }] },
+        ];
+
+        const result = await processScrapedCases(
+            casesToProcess,
+            jest.fn(),
+            { caseLimit: 3, enableVisualizer: false },
+        );
+
+        const anonymousOne = result.discoverySummary.clusters.find(cluster => cluster.clusterId === 'anonymous-1');
+        const anonymousTwo = result.discoverySummary.clusters.find(cluster => cluster.clusterId === 'anonymous-2');
+
+        expect(result.discoverySummary.recommendedPrimaryClusterId).toBe('C_TRACKED');
+        expect(anonymousOne.newestEntryDate).toBe('2024-01-01T00:00:00.000Z');
+        expect(anonymousTwo.newestEntryDate).toBe('2025-03-15T00:00:00.000Z');
+        expect(anonymousOne.score).not.toBe(anonymousTwo.score);
+        expect(result.processedCases.map(cluster => cluster.groupMetadata.clusterId)).toEqual([
+            'C_TRACKED',
+            'anonymous-2',
+            'anonymous-1'
+        ]);
     });
 });

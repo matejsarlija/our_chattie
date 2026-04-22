@@ -16,13 +16,17 @@ function groupEntriesByCase(entries) {
     const clustersMap = new Map();
     const result = [];
 
+    let anonymousCounter = 0;
+
     for (const entry of entries) {
         // Assume entry.caseNumber is already normalized by courtSearchPuppeteer
         const caseKey = entry.caseNumber;
         
         // Treat missing or N/A case numbers as unique/anonymous clusters
         if (!caseKey || caseKey === 'N/A') {
+            anonymousCounter += 1;
             result.push({
+                clusterId: `anonymous-${anonymousCounter}`,
                 caseNumber: 'N/A', // or 'Nepoznat predmet'
                 entries: [entry],
                 isAnonymous: true
@@ -32,6 +36,7 @@ function groupEntriesByCase(entries) {
 
         if (!clustersMap.has(caseKey)) {
             const newCluster = {
+                clusterId: caseKey,
                 caseNumber: caseKey,
                 entries: [],
                 isAnonymous: false

@@ -1,0 +1,57 @@
+{
+  "query": {
+    "type": "case_number",
+    "value": "ST-2/2013"
+  },
+  "discoveryMetadata": {
+    "discoveryMode": "search-window",
+    "acquisitionModes": [
+      "search-window"
+    ],
+    "searchWindows": [
+      {
+        "mode": "search-window",
+        "currentPage": 1,
+        "pagesScanned": 1,
+        "hasNextPage": false,
+        "rawParsedEntryCount": 2
+      }
+    ],
+    "totalResults": 2,
+    "totalPages": 1,
+    "pagesScanned": 1,
+    "currentPage": 1,
+    "hasNextPage": false,
+    "rawParsedEntryCount": 2
+  },
+  "casesToProcess": [
+    {
+      "caseInfo": {
+        "caseNumber": "ST-2/2013",
+        "title": "Rješenje od 11.05.2022.",
+        "date": "11.05.2022.",
+        "participants": [
+          {
+            "name": "KERUM d.o.o. u stečaju",
+            "oib": "N/A",
+            "role": "Dužnik"
+          },
+          {
+            "name": "CRO-GO d.o.o.",
+            "oib": "N/A",
+            "role": "Vjerovnik"
+          }
+        ]
+      },
+      "acquisition": {
+        "mode": "search-window",
+        "currentPage": 1
+      },
+      "documentLinks": [
+        {
+          "url": "https://example.test/st2-2013-1"
+        }
+      ]
+    }
+  ]
+}

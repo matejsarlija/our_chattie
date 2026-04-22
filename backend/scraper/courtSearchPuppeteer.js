@@ -100,6 +100,60 @@ class CourtSearchPuppeteer {
 
     // --- LOW-LEVEL AND HELPER METHODS ---
 
+    normalizeSearchMetadata(rawSearchMetadata, rawParsedEntryCount) {
+        const totalResults = Number.isFinite(rawSearchMetadata?.totalResults)
+            ? rawSearchMetadata.totalResults
+            : null;
+        const totalPages = Number.isFinite(rawSearchMetadata?.totalPages)
+            ? rawSearchMetadata.totalPages
+            : null;
+        const currentPage = Number.isFinite(rawSearchMetadata?.currentPage)
+            ? rawSearchMetadata.currentPage
+            : 1;
+        const hasNextPage = typeof rawSearchMetadata?.hasNextPage === 'boolean'
+            ? rawSearchMetadata.hasNextPage
+            : (totalPages !== null ? currentPage < totalPages : false);
+
+        return {
+            discoveryMode: 'search-window',
+            acquisitionModes: ['search-window'],
+            searchWindows: [
+                {
+                    mode: 'search-window',
+                    currentPage,
+                    pagesScanned: 1,
+                    hasNextPage,
+                    rawParsedEntryCount
+                }
+            ],
+            totalResults,
+            totalPages,
+            pagesScanned: 1,
+            currentPage,
+            hasNextPage,
+            rawParsedEntryCount
+        };
+    }
+
+    mapSearchResultsToPipelineEntries(results, searchMetadata, limit = null) {
+        const normalizedLimit = Number.isFinite(limit) ? Math.max(0, limit) : null;
+        const effectiveResults = normalizedLimit === null ? results : results.slice(0, normalizedLimit);
+
+        return effectiveResults.map((caseInfo) => ({
+            caseInfo,
+            acquisition: caseInfo.acquisition || {
+                mode: 'search-window',
+                currentPage: searchMetadata.currentPage || 1
+            },
+            documentLinks: caseInfo.documentDownloadLink
+                ? [{
+                    url: caseInfo.documentDownloadLink,
+                    text: caseInfo.documentLinkText || `Dokumenti za ${caseInfo.caseNumber}`
+                }]
+                : []
+        }));
+    }
+
     async performSearch(searchTerm) {
         if (!searchTerm) throw new Error('No search term provided');
         console.log(`[performSearch] Performing search for: ${searchTerm}`);
@@ -320,13 +374,13 @@ class CourtSearchPuppeteer {
     /**
      * Parses all search results from the current page, now including the direct document link.
      * This is the most efficient approach.
-     * @returns {Promise<Array<object>>}
+     * @returns {Promise<{results: Array<object>, searchMetadata: object}>}
      */
-    async parseSearchResults() {
+    async parseSearchResultsPage() {
         try {
             console.log('[parseSearchResults] Waiting for results to appear...');
             await this.page.waitForSelector('li.item.row', { timeout: 15000 });
-            const results = await this.page.evaluate(() => {
+            const pagePayload = await this.page.evaluate(() => {
                 const items = [];
                 document.querySelectorAll('li.item.row').forEach(element => {
                     const titleEl = element.querySelector('a[href*="/objave/"][target="_blank"]');
@@ -399,19 +453,87 @@ class CourtSearchPuppeteer {
                         participants: participants // Add the new participants array
                     });
                 });
-                return items;
+
+                const parseFirstInteger = (text) => {
+                    if (!text) return null;
+                    const match = text.match(/(\d[\d.\s]*)/);
+                    if (!match) return null;
+                    return Number.parseInt(match[1].replace(/[.\s]/g, ''), 10);
+                };
+
+                const currentPageFromUrl = Number.parseInt(new URL(window.location.href).searchParams.get('page') || '1', 10);
+                const activePageEl = document.querySelector('.pagination .active, .paginationjs .active, .page-item.active');
+                const currentPage = parseFirstInteger(activePageEl?.textContent) || currentPageFromUrl || 1;
+
+                let totalPages = null;
+                const pageCandidates = Array.from(
+                    document.querySelectorAll('.pagination a, .pagination button, .paginationjs-pages a, .paginationjs-pages li')
+                )
+                    .map(el => parseFirstInteger(el.textContent))
+                    .filter(value => Number.isFinite(value));
+                if (pageCandidates.length > 0) {
+                    totalPages = Math.max(...pageCandidates);
+                }
+
+                let hasNextPage = false;
+                const nextPageEl = Array.from(document.querySelectorAll('a, button')).find((el) => {
+                    const text = (el.textContent || '').trim().toLowerCase();
+                    return text === 'sljedeća' || text === 'next' || text === '>';
+                });
+                if (nextPageEl) {
+                    const disabled = nextPageEl.hasAttribute('disabled')
+                        || nextPageEl.getAttribute('aria-disabled') === 'true'
+                        || nextPageEl.classList.contains('disabled')
+                        || nextPageEl.parentElement?.classList?.contains('disabled');
+                    hasNextPage = !disabled;
+                } else if (totalPages !== null) {
+                    hasNextPage = currentPage < totalPages;
+                }
+
+                const bodyText = document.body?.textContent || '';
+                const resultCountCandidates = [
+                    bodyText.match(/ukupno\s+(\d[\d.\s]*)\s+rezultata/i),
+                    bodyText.match(/pronađeno\s+(\d[\d.\s]*)\s+rezultata/i),
+                    bodyText.match(/(\d[\d.\s]*)\s+rezultata/i)
+                ]
+                    .filter(Boolean)
+                    .map(match => Number.parseInt(match[1].replace(/[.\s]/g, ''), 10))
+                    .filter(value => Number.isFinite(value));
+                const totalResults = resultCountCandidates.length > 0 ? resultCountCandidates[0] : null;
+
+                return {
+                    items,
+                    searchMetadata: {
+                        totalResults,
+                        totalPages,
+                        currentPage,
+                        hasNextPage
+                    }
+                };
             });
 
+            const rawItems = Array.isArray(pagePayload) ? pagePayload : (Array.isArray(pagePayload?.items) ? pagePayload.items : []);
+            const rawSearchMetadata = Array.isArray(pagePayload) ? {} : (pagePayload?.searchMetadata || {});
+
             // Normalize case numbers immediately after extraction
-            results.forEach(item => {
+            rawItems.forEach(item => {
                 const normalized = normalizeCaseNumber(item.caseNumber);
                 if (normalized) {
                     item.caseNumber = normalized;
                 }
+                item.acquisition = {
+                    mode: 'search-window',
+                    currentPage: Number.isFinite(rawSearchMetadata?.currentPage) ? rawSearchMetadata.currentPage : 1
+                };
             });
 
-            console.log(`[parseSearchResults] Parsed ${results.length} results from the page.`);
-            return results;
+            const searchMetadata = this.normalizeSearchMetadata(rawSearchMetadata, rawItems.length);
+
+            console.log(`[parseSearchResults] Parsed ${rawItems.length} results from the page.`);
+            return {
+                results: rawItems,
+                searchMetadata
+            };
         } catch (error) {
             console.warn('[parseSearchResults] Could not find or parse search results on the page.', error.message);
             try {
@@ -420,8 +542,16 @@ class CourtSearchPuppeteer {
             } catch (screenshotError) {
                 console.error('[parseSearchResults] Could not save screenshot:', screenshotError.message);
             }
-            return [];
+            return {
+                results: [],
+                searchMetadata: this.normalizeSearchMetadata({}, 0)
+            };
         }
+    }
+
+    async parseSearchResults() {
+        const parsed = await this.parseSearchResultsPage();
+        return parsed.results;
     }
 
     // --- HIGH-LEVEL ORCHESTRATOR FOR YOUR PIPELINE ---
@@ -434,7 +564,7 @@ class CourtSearchPuppeteer {
     async searchAndGetFirstCaseWithDocuments(searchTerm) {
         console.log('[searchAndGetFirstCaseWithDocuments] Starting search...');
         await this.performSearch(searchTerm);
-        const allResults = await this.parseSearchResults();
+        const { results: allResults } = await this.parseSearchResultsPage();
 
         if (allResults.length === 0) {
             console.warn('[searchAndGetFirstCaseWithDocuments] Search yielded no results.');
@@ -472,11 +602,14 @@ class CourtSearchPuppeteer {
     async searchAndGetLatestCasesWithDocuments(searchTerm, limit = 2) {
         console.log('[searchAndGetLatestCasesWithDocuments] Starting search...');
         await this.performSearch(searchTerm);
-        const allResults = await this.parseSearchResults();
+        const { results: allResults, searchMetadata } = await this.parseSearchResultsPage();
 
         if (allResults.length === 0) {
             console.warn('[searchAndGetLatestCasesWithDocuments] Search yielded no results.');
-            return [];
+            return {
+                casesToProcess: [],
+                discoveryMetadata: searchMetadata
+            };
         }
 
         // Filter for results that actually have a download link
@@ -484,7 +617,10 @@ class CourtSearchPuppeteer {
 
         if (resultsWithDocs.length === 0) {
             console.warn('[searchAndGetLatestCasesWithDocuments] Searched all results, but none had a direct document download button.');
-            return [];
+            return {
+                casesToProcess: [],
+                discoveryMetadata: searchMetadata
+            };
         }
 
         console.log(`[searchAndGetLatestCasesWithDocuments] Success! Found ${resultsWithDocs.length} case(s) with direct download links.`);
@@ -494,14 +630,29 @@ class CourtSearchPuppeteer {
         console.log(`[searchAndGetLatestCasesWithDocuments] Processing the latest ${limitedResults.length} case(s).`);
 
         // Map them to the format your pipeline expects
-        return limitedResults.map(caseInfo => ({
-            caseInfo,
-            documentLinks: [{
-                url: caseInfo.documentDownloadLink,
-                // Make the text more descriptive for the user
-                text: caseInfo.documentLinkText || `Dokumenti za ${caseInfo.caseNumber}`
-            }]
-        }));
+        return {
+            casesToProcess: this.mapSearchResultsToPipelineEntries(limitedResults, searchMetadata),
+            discoveryMetadata: searchMetadata
+        };
+    }
+
+    async searchAndGetLatestCases(searchTerm, limit = null) {
+        console.log('[searchAndGetLatestCases] Starting search...');
+        await this.performSearch(searchTerm);
+        const { results: allResults, searchMetadata } = await this.parseSearchResultsPage();
+
+        if (allResults.length === 0) {
+            console.warn('[searchAndGetLatestCases] Search yielded no results.');
+            return {
+                casesToProcess: [],
+                discoveryMetadata: searchMetadata
+            };
+        }
+
+        return {
+            casesToProcess: this.mapSearchResultsToPipelineEntries(allResults, searchMetadata, limit),
+            discoveryMetadata: searchMetadata
+        };
     }
 }
 

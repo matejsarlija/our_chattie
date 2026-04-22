@@ -12,7 +12,7 @@
   "artifactCaptureErrors": [
     "screenshot: Protocol error (Page.captureScreenshot): Cannot take screenshot with 0 width."
   ],
-  "capturedAt": "2026-03-08T11:43:38.154Z",
+  "capturedAt": "2026-04-22T14:29:28.420Z",
   "testName": "frontend app root loads without fatal crash",
   "frontendUrl": "http://127.0.0.1:5173",
   "backendHealthUrl": "http://127.0.0.1:3001/health"
