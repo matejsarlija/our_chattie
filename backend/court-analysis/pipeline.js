@@ -13,6 +13,8 @@ const {
 } = require('../helpers/courtAnalysisRequest');
 const { groupEntriesByCase } = require('./utils/grouping');
 const { normalizeCaseNumber } = require('./utils/caseNumber');
+const { buildClusterEvidencePackage } = require('./reasoning/evidencePackage');
+const { synthesizeReport } = require('./reasoning/synthesizer');
 const fs = require('fs');
 const path = require('path');
 const AdmZip = require('adm-zip');
@@ -38,6 +40,16 @@ const CLUSTER_SELECTION_DEFAULTS = {
 const CLUSTER_EXPANSION_DEFAULTS = {
     sufficientPrimaryClusterSpanDays: 365,
     maxClusterExpansionPasses: 2,
+};
+const DISCOVERY_HEURISTICS_DEFAULTS = {
+    maxPagesScanned: 5,
+    minEntriesBeforeStop: 8,
+    targetPrimaryClusterEntries: 10,
+    noNewClusterPageLimit: 2,
+    maxClusterExpansionPasses: 2,
+    sufficientPrimaryClusterSpanDays: 365,
+    strongPrimaryClusterSpanDays: 730,
+    dominantClusterRatioThreshold: 0.65
 };
 
 function computeRawScrapeLimit(caseLimit) {
@@ -292,11 +304,24 @@ function buildClusterSummaries(allClusters, query) {
             (dominanceScore * CLUSTER_SELECTION_DEFAULTS.dominanceScoreWeight) +
             (documentCoverageScore * CLUSTER_SELECTION_DEFAULTS.documentScoreWeight);
         const identityMultiplier = getIdentitySelectionMultiplier(summary.identityConsistency, query?.type);
+        const rawWeightedScore = Number(weightedScore.toFixed(4));
+        const finalSelectionScore = Number((weightedScore * identityMultiplier).toFixed(4));
 
         return {
             ...summary,
-            score: Number((weightedScore * identityMultiplier).toFixed(4)),
-            selectionReason: 'ranked by deterministic coverage-aware selection policy (entry count, date span, recency, dominance, document coverage, and identity confidence when query intent is entity-oriented)'
+            score: finalSelectionScore,
+            selectionReason: 'ranked by deterministic coverage-aware selection policy (entry count, date span, recency, dominance, document coverage, and identity confidence when query intent is entity-oriented)',
+            selectionDiagnostics: {
+                queryType: query?.type || null,
+                rawWeightedScore,
+                identityMultiplier,
+                finalSelectionScore,
+                entryCoverageScore: Number(entryCoverageScore.toFixed(4)),
+                spanCoverageScore: Number(spanCoverageScore.toFixed(4)),
+                recencyScore: Number(recencyScore.toFixed(4)),
+                dominanceScore: Number(dominanceScore.toFixed(4)),
+                documentCoverageScore: Number(documentCoverageScore.toFixed(4))
+            }
         };
     });
 }
@@ -350,6 +375,185 @@ function selectClustersForProcessing(allClusters, clusterSummaries, rawCaseLimit
     return scored.slice(0, caseLimit).map((item) => item.cluster);
 }
 
+function evaluateDiscoveryHeuristics(summary, query) {
+    const pagesScanned = summary.pagesScanned || 0;
+    const hasNextPage = summary.hasNextPage || false;
+    const capturedDistinctCaseCount = summary.capturedDistinctCaseCount || 0;
+    
+    const primaryClusterId = summary.recommendedPrimaryClusterId;
+    const primaryClusterSummary = summary.clusters.find(c => c.clusterId === primaryClusterId) || null;
+    const dominantClusterRatio = summary.dominantClusterRatio || 0;
+
+    if (pagesScanned >= DISCOVERY_HEURISTICS_DEFAULTS.maxPagesScanned) {
+        return { action: 'stop', reason: 'max-pages-reached', details: { pagesScanned } };
+    }
+
+    if (!primaryClusterSummary) {
+        return hasNextPage 
+            ? { action: 'paginate', reason: 'no-primary-cluster-found-yet', details: {} }
+            : { action: 'stop', reason: 'no-more-pages-and-no-cluster', details: {} };
+    }
+
+    const primaryEntryCount = primaryClusterSummary.entryCount || 0;
+    const primarySpanDays = primaryClusterSummary.entryDateSpanDays || 0;
+
+    if (capturedDistinctCaseCount === 1) {
+        if (primaryEntryCount >= DISCOVERY_HEURISTICS_DEFAULTS.targetPrimaryClusterEntries &&
+            primarySpanDays >= DISCOVERY_HEURISTICS_DEFAULTS.sufficientPrimaryClusterSpanDays) {
+            return { action: 'stop', reason: 'single-cluster-sufficient-coverage', details: { primaryEntryCount, primarySpanDays } };
+        }
+        if (hasNextPage) {
+            return { action: 'paginate', reason: 'single-cluster-under-covered', details: { primaryEntryCount, primarySpanDays } };
+        }
+    }
+
+    if (dominantClusterRatio >= DISCOVERY_HEURISTICS_DEFAULTS.dominantClusterRatioThreshold &&
+        primarySpanDays >= DISCOVERY_HEURISTICS_DEFAULTS.strongPrimaryClusterSpanDays) {
+        return { action: 'stop', reason: 'dominant-cluster-strong-coverage', details: { dominantClusterRatio, primarySpanDays } };
+    }
+
+    if ((primaryEntryCount < DISCOVERY_HEURISTICS_DEFAULTS.targetPrimaryClusterEntries ||
+         primarySpanDays < DISCOVERY_HEURISTICS_DEFAULTS.sufficientPrimaryClusterSpanDays) && 
+        !hasNextPage) {
+        return { action: 'expand', reason: 'promising-cluster-under-covered-after-search-window', details: { primaryEntryCount, primarySpanDays } };
+    }
+
+    if (hasNextPage) {
+        return { action: 'paginate', reason: 'continue-search-window', details: { pagesScanned } };
+    }
+
+    return { action: 'stop', reason: 'exhausted-search-window', details: {} };
+}
+
+function evaluateClusterExpansionEligibility(primaryClusterSummary, summary = {}, query = null) {
+    const thresholds = {
+        targetPrimaryClusterEntries: CLUSTER_SELECTION_DEFAULTS.targetPrimaryClusterEntries,
+        sufficientPrimaryClusterSpanDays: CLUSTER_EXPANSION_DEFAULTS.sufficientPrimaryClusterSpanDays,
+        dominantClusterRatioThreshold: DISCOVERY_HEURISTICS_DEFAULTS.dominantClusterRatioThreshold,
+        maxClusterExpansionPasses: CLUSTER_EXPANSION_DEFAULTS.maxClusterExpansionPasses
+    };
+
+    if (!primaryClusterSummary) {
+        return {
+            eligible: false,
+            triggerReasons: [],
+            blockerReasons: ['no-primary-cluster'],
+            thresholds,
+            metrics: {}
+        };
+    }
+
+    const metrics = {
+        primaryEntryCount: primaryClusterSummary.entryCount || 0,
+        primarySpanDays: primaryClusterSummary.entryDateSpanDays || 0,
+        dominantClusterRatio: summary.dominantClusterRatio || 0,
+        capturedDistinctCaseCount: summary.capturedDistinctCaseCount || 0,
+        hasNextPage: summary.hasNextPage ?? null,
+        queryType: query?.type || null
+    };
+    const triggerReasons = [];
+
+    if (metrics.primaryEntryCount < thresholds.targetPrimaryClusterEntries) {
+        triggerReasons.push('entry-count-below-target');
+    }
+
+    if (metrics.primarySpanDays < thresholds.sufficientPrimaryClusterSpanDays) {
+        triggerReasons.push('date-span-below-sufficient');
+    }
+
+    if (
+        metrics.dominantClusterRatio >= thresholds.dominantClusterRatioThreshold &&
+        triggerReasons.length > 0
+    ) {
+        triggerReasons.push('dominant-cluster-under-covered');
+    }
+
+    if (
+        query?.type === 'case_number' &&
+        metrics.primaryEntryCount < thresholds.targetPrimaryClusterEntries
+    ) {
+        triggerReasons.push('case-number-query-under-covered');
+    }
+
+    const blockerReasons = triggerReasons.length === 0
+        ? ['primary-cluster-already-sufficient']
+        : [];
+
+    return {
+        eligible: triggerReasons.length > 0,
+        triggerReasons,
+        blockerReasons,
+        thresholds,
+        metrics
+    };
+}
+
+function buildClusterExpansionPlan(primaryClusterSummary, eligibility, query = null) {
+    if (!eligibility?.eligible || !primaryClusterSummary) {
+        return null;
+    }
+
+    const targetClusterId = primaryClusterSummary.clusterId || primaryClusterSummary.primaryCaseNumber || null;
+    const blockedReasonCodes = [];
+    let executable = true;
+    let identityGuard = {
+        mode: 'advisory',
+        status: 'not-required',
+        requiredOib: null,
+        notes: []
+    };
+
+    if (query?.type === 'oib') {
+        identityGuard = {
+            mode: 'required',
+            status: primaryClusterSummary.identityConsistency === 'consistent'
+                ? 'satisfied'
+                : 'ambiguous',
+            requiredOib: query.value || null,
+            notes: primaryClusterSummary.identityNotes || []
+        };
+
+        if (identityGuard.status !== 'satisfied') {
+            executable = false;
+            blockedReasonCodes.push('oib-identity-guard-not-satisfied');
+        }
+    } else if (query?.type === 'text') {
+        identityGuard = {
+            mode: 'advisory',
+            status: primaryClusterSummary.identityConsistency || 'unresolved',
+            requiredOib: null,
+            notes: primaryClusterSummary.identityNotes || []
+        };
+    } else if (query?.type === 'case_number') {
+        identityGuard = {
+            mode: 'case-lineage',
+            status: 'case-number-required',
+            requiredOib: null,
+            notes: ['Expansion must preserve normalized case-number lineage.']
+        };
+    } else if (primaryClusterSummary.identityConsistency === 'unresolved') {
+        identityGuard = {
+            mode: 'unavailable',
+            status: 'missing-identity-signals',
+            requiredOib: null,
+            notes: primaryClusterSummary.identityNotes || []
+        };
+    }
+
+    return {
+        targetClusterId,
+        executable,
+        maxPasses: eligibility.thresholds?.maxClusterExpansionPasses ?? CLUSTER_EXPANSION_DEFAULTS.maxClusterExpansionPasses,
+        strategies: [
+            'case-number-follow-up-search',
+            'detail-link-follow-up'
+        ],
+        reasonCodes: eligibility.triggerReasons || [],
+        blockedReasonCodes,
+        identityGuard
+    };
+}
+
 function buildDiscoverySummary(clusterSummaries, selectedClusters, query, discoveryMetadata = null) {
     const clusters = Array.isArray(clusterSummaries) ? clusterSummaries : [];
     const primaryCluster = selectedClusters[0];
@@ -374,8 +578,12 @@ function buildDiscoverySummary(clusterSummaries, selectedClusters, query, discov
         ...clusters.flatMap(cluster => cluster.acquisitionProvenance || [])
             .filter((provenance) => provenance.mode === 'cluster-expansion')
     ];
+    const annotatedClusters = clusters.map((cluster) => ({
+        ...cluster,
+        selectedForReasoning: cluster.clusterId === primaryClusterId
+    }));
 
-    return {
+    const baseSummary = {
         query: query || null,
         discoveryMode: normalizedDiscoveryMetadata.discoveryMode || 'search-window',
         acquisitionModes,
@@ -387,16 +595,35 @@ function buildDiscoverySummary(clusterSummaries, selectedClusters, query, discov
         hasNextPage: normalizedDiscoveryMetadata.hasNextPage ?? null,
         rawEntryCount: normalizedDiscoveryMetadata.rawParsedEntryCount ?? totalEntries,
         capturedDistinctCaseCount: clusters.length,
-        clusters,
+        clusters: annotatedClusters,
         dominantClusterRatio: primaryClusterSummary
             ? Number((primaryClusterSummary.entryCount / Math.max(1, totalEntries)).toFixed(2))
             : 0,
         coverageConfidence: primaryClusterSummary ? 'partial' : 'low',
+        reasoningScope: 'single-cluster',
+        reasoningClusterId: primaryClusterId,
         recommendedPrimaryClusterId: primaryClusterId,
         secondaryClusterIds: clusters
             .map(cluster => cluster.clusterId)
             .filter(clusterId => clusterId !== primaryClusterId)
     };
+
+    baseSummary.heuristics = evaluateDiscoveryHeuristics(baseSummary, query);
+    baseSummary.expansionEligibility = evaluateClusterExpansionEligibility(primaryClusterSummary, baseSummary, query);
+    baseSummary.expansionPlan = buildClusterExpansionPlan(primaryClusterSummary, baseSummary.expansionEligibility, query);
+    baseSummary.clusters = baseSummary.clusters.map((cluster) => {
+        if (cluster.clusterId !== primaryClusterId) {
+            return cluster;
+        }
+
+        return {
+            ...cluster,
+            expansionEligibility: baseSummary.expansionEligibility,
+            expansionPlan: baseSummary.expansionPlan
+        };
+    });
+
+    return baseSummary;
 }
 
 function normalizeScraperResult(scrapeResult) {
@@ -443,15 +670,14 @@ function resolveClusterExpansionConfig(options = {}) {
     };
 }
 
-function shouldExpandPrimaryCluster(primaryClusterSummary) {
-    if (!primaryClusterSummary) {
-        return false;
-    }
-
-    return (
-        primaryClusterSummary.entryCount < CLUSTER_SELECTION_DEFAULTS.targetPrimaryClusterEntries
-        || primaryClusterSummary.entryDateSpanDays < CLUSTER_EXPANSION_DEFAULTS.sufficientPrimaryClusterSpanDays
+function shouldExpandPrimaryCluster(primaryClusterSummary, discoverySummary = {}, query = null) {
+    const plan = discoverySummary.expansionPlan || buildClusterExpansionPlan(
+        primaryClusterSummary,
+        evaluateClusterExpansionEligibility(primaryClusterSummary, discoverySummary, query),
+        query
     );
+
+    return plan?.executable === true;
 }
 
 function applyConfiguredClusterExpansion(entriesForGrouping, initialDiscoverySummary, options = {}) {
@@ -468,8 +694,15 @@ function applyConfiguredClusterExpansion(entriesForGrouping, initialDiscoverySum
     const primaryClusterSummary = initialDiscoverySummary?.clusters?.find(
         (cluster) => cluster.clusterId === expandedClusterId
     ) || null;
+    const expansionEligibility = initialDiscoverySummary?.expansionEligibility
+        || evaluateClusterExpansionEligibility(primaryClusterSummary, initialDiscoverySummary, options.query);
+    const expansionPlan = initialDiscoverySummary?.expansionPlan || buildClusterExpansionPlan(
+        primaryClusterSummary,
+        expansionEligibility,
+        options.query
+    );
 
-    if (!shouldExpandPrimaryCluster(primaryClusterSummary)) {
+    if (!shouldExpandPrimaryCluster(primaryClusterSummary, initialDiscoverySummary, options.query)) {
         return {
             entriesForGrouping,
             expansion: {
@@ -478,15 +711,17 @@ function applyConfiguredClusterExpansion(entriesForGrouping, initialDiscoverySum
                 appliedPasses: 0,
                 appendedEntryCount: 0,
                 skippedEntryCount: 0,
-                reason: 'primary-cluster-already-sufficient'
+                reason: expansionPlan?.blockedReasonCodes?.[0] || 'primary-cluster-already-sufficient',
+                expansionPlan
             }
         };
     }
 
     const normalizedClusterId = normalizeCaseNumber(expandedClusterId);
+    const maxPasses = Math.min(expansionConfig.maxPasses, expansionPlan.maxPasses);
     const eligibleBatches = expansionConfig.batches
         .filter((batch) => normalizeCaseNumber(batch?.clusterId) === normalizedClusterId)
-        .slice(0, expansionConfig.maxPasses);
+        .slice(0, maxPasses);
 
     if (eligibleBatches.length === 0) {
         return {
@@ -497,7 +732,8 @@ function applyConfiguredClusterExpansion(entriesForGrouping, initialDiscoverySum
                 appliedPasses: 0,
                 appendedEntryCount: 0,
                 skippedEntryCount: 0,
-                reason: 'no-eligible-expansion-batches'
+                reason: 'no-eligible-expansion-batches',
+                expansionPlan
             }
         };
     }
@@ -539,7 +775,8 @@ function applyConfiguredClusterExpansion(entriesForGrouping, initialDiscoverySum
                 appliedPasses: 0,
                 appendedEntryCount: 0,
                 skippedEntryCount,
-                reason: 'no-same-cluster-entries-appended'
+                reason: 'no-same-cluster-entries-appended',
+                expansionPlan
             }
         };
     }
@@ -552,7 +789,8 @@ function applyConfiguredClusterExpansion(entriesForGrouping, initialDiscoverySum
             appliedPasses: eligibleBatches.length,
             appendedEntryCount: appendedEntries.length,
             skippedEntryCount,
-            reason: 'bounded-cluster-expansion-applied'
+            reason: 'bounded-cluster-expansion-applied',
+            expansionPlan
         }
     };
 }
@@ -798,14 +1036,29 @@ async function processScrapedCases(casesToProcess, progressCallback, options = {
             primaryCluster,
             secondaryClusters
         } = buildDiscoveryResult(casesToProcess, resolvedOptions, progressCallback);
-        const totalCases = clusters.length;
+        const reasoningClusters = primaryClusterId
+            ? clusters.filter((cluster) => (cluster.clusterId || cluster.caseNumber) === primaryClusterId)
+            : clusters.slice(0, 1);
+        const selectedReasoningCluster = reasoningClusters[0] || null;
+        const selectedClusterSummary = selectedReasoningCluster
+            ? discoverySummary.clusters.find((summary) => summary.clusterId === (
+                selectedReasoningCluster.clusterId || selectedReasoningCluster.caseNumber
+            ))
+            : null;
+        const clusterEvidencePackage = buildClusterEvidencePackage({
+            cluster: selectedReasoningCluster,
+            clusterSummary: selectedClusterSummary,
+            discoverySummary,
+            query: resolvedOptions.query || null
+        });
+        const totalCases = reasoningClusters.length;
 
         const downloadTool = new DownloadDocumentsTool();
         const analyzeTool = new AnalyzeDocumentsTool();
 
-        // Loop through each case CLUSTER
+        // Reason only over the selected primary cluster. Other clusters remain discovery outputs.
         for (let i = 0; i < totalCases; i++) {
-            const cluster = clusters[i];
+            const cluster = reasoningClusters[i];
             const clusterId = cluster.clusterId || cluster.caseNumber || `anonymous-${i + 1}`;
             const clusterSummary = discoverySummary.clusters.find((summary) => summary.clusterId === clusterId);
             
@@ -870,6 +1123,10 @@ async function processScrapedCases(casesToProcess, progressCallback, options = {
                         primaryCaseNumber: clusterSummary?.primaryCaseNumber || cluster.caseNumber || 'N/A',
                         entryCount: cluster.entries.length,
                         isAnonymous: cluster.isAnonymous,
+                        selectionScore: clusterSummary?.score ?? 0,
+                        selectionDiagnostics: clusterSummary?.selectionDiagnostics || null,
+                        expansionEligibility: clusterSummary?.expansionEligibility || null,
+                        expansionPlan: clusterSummary?.expansionPlan || null,
                         identityConsistency: clusterSummary?.identityConsistency || 'unresolved',
                         identityNotes: clusterSummary?.identityNotes || [],
                         participantNames: clusterSummary?.participantNames || [],
@@ -900,6 +1157,10 @@ async function processScrapedCases(casesToProcess, progressCallback, options = {
                     primaryCaseNumber: clusterSummary?.primaryCaseNumber || cluster.caseNumber || 'N/A',
                     entryCount: cluster.entries.length,
                     isAnonymous: cluster.isAnonymous,
+                    selectionScore: clusterSummary?.score ?? 0,
+                    selectionDiagnostics: clusterSummary?.selectionDiagnostics || null,
+                    expansionEligibility: clusterSummary?.expansionEligibility || null,
+                    expansionPlan: clusterSummary?.expansionPlan || null,
                     identityConsistency: clusterSummary?.identityConsistency || 'unresolved',
                     identityNotes: clusterSummary?.identityNotes || [],
                     participantNames: clusterSummary?.participantNames || [],
@@ -916,7 +1177,8 @@ async function processScrapedCases(casesToProcess, progressCallback, options = {
 
         // 3. Final Comparative Analysis
         progressCallback?.({ step: 'reasoning', progress: 85, message: 'Generiram usporednu analizu i zaključak...' });
-        let comparativeAnalysis = await generateComparativeAnalysis(allProcessedCases);
+        let comparativeAnalysis = await generateComparativeAnalysis(allProcessedCases, { clusterEvidencePackage });
+        const report = await synthesizeReport(clusterEvidencePackage);
 
         // --- VISUALIZATION STEP ---
         if (resolvedOptions.enableVisualizer && comparativeAnalysis) {
@@ -940,7 +1202,9 @@ async function processScrapedCases(casesToProcess, progressCallback, options = {
             comparativeAnalysis: comparativeAnalysis,
             discoverySummary,
             primaryCluster,
-            secondaryClusters
+            secondaryClusters,
+            clusterEvidencePackage,
+            report
         };
 
     } catch (error) {
@@ -965,4 +1229,12 @@ async function cleanupFiles(filePaths) {
     }
 }
 
-module.exports = { runCourtAnalysis, runCourtDiscovery, runCourtAnalysisWithExistingAutomator, processScrapedCases };
+module.exports = {
+    runCourtAnalysis,
+    runCourtDiscovery,
+    runCourtAnalysisWithExistingAutomator,
+    processScrapedCases,
+    evaluateDiscoveryHeuristics,
+    evaluateClusterExpansionEligibility,
+    buildClusterExpansionPlan
+};

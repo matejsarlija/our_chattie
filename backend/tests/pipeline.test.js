@@ -5,6 +5,7 @@ const mockClose = jest.fn();
 const mockDownloadCall = jest.fn();
 const mockAnalyzeCall = jest.fn();
 const mockVisualizerCall = jest.fn();
+const mockSynthesizeReport = jest.fn();
 
 jest.mock('../scraper/courtSearchPuppeteer', () => {
     return jest.fn().mockImplementation(() => ({
@@ -32,6 +33,10 @@ jest.mock('../court-analysis/agents/visualizer-agent', () => ({
     VisualizerTool: jest.fn().mockImplementation(() => ({
         _call: mockVisualizerCall,
     })),
+}));
+
+jest.mock('../court-analysis/reasoning/synthesizer', () => ({
+    synthesizeReport: mockSynthesizeReport,
 }));
 
 jest.mock('../court-registry/enricher', () => ({
@@ -88,15 +93,31 @@ describe('runCourtAnalysis pipeline (deterministic)', () => {
         ));
         mockAnalyzeCall.mockResolvedValue({ individualAnalyses: [], finalSummary: 'Analysis' });
         mockVisualizerCall.mockResolvedValue('graph TD; A-->B');
+        mockSynthesizeReport.mockResolvedValue({
+            schemaVersion: '1.0.0',
+            narrative: 'Structured report',
+            claims: [],
+            findings: [],
+            openQuestions: [],
+            nextSteps: [],
+            conflicts: [],
+            meta: { clusterId: 'C1' },
+        });
     });
 
-    test('preserves unique-case limit after grouping duplicate scraped entries', async () => {
+    test('keeps discovery breadth but reasons only over the selected primary cluster', async () => {
         const progress = jest.fn();
         const result = await runCourtAnalysis('66124057408', { caseLimit: 3, enableVisualizer: false }, progress);
 
         expect(mockSearchAndGetLatestCasesWithDocuments).toHaveBeenCalledWith('66124057408', 9);
-        expect(result.processedCases).toHaveLength(3);
-        expect(result.processedCases.map(c => c.caseResult.caseNumber)).toEqual(['C1', 'C2', 'C3']);
+        expect(result.discoverySummary.capturedDistinctCaseCount).toBe(4);
+        expect(result.discoverySummary.recommendedPrimaryClusterId).toBe('C1');
+        expect(result.discoverySummary.secondaryClusterIds).toEqual(['C2', 'C3', 'C4']);
+        expect(result.discoverySummary.reasoningScope).toBe('single-cluster');
+        expect(result.processedCases).toHaveLength(1);
+        expect(result.processedCases.map(c => c.caseResult.caseNumber)).toEqual(['C1']);
+        expect(mockDownloadCall).toHaveBeenCalledTimes(1);
+        expect(mockAnalyzeCall).toHaveBeenCalledTimes(1);
         expect(progress).toHaveBeenCalledWith(expect.objectContaining({ step: 'grouping' }));
         expect(progress).toHaveBeenCalledWith(expect.objectContaining({ step: 'complete', progress: 100 }));
         expect(mockClose).toHaveBeenCalledTimes(1);
@@ -105,6 +126,25 @@ describe('runCourtAnalysis pipeline (deterministic)', () => {
     test('enables visualizer by default when only caseLimit is provided', async () => {
         await runCourtAnalysis('66124057408', { caseLimit: 1 }, jest.fn());
         expect(mockVisualizerCall).toHaveBeenCalledTimes(1);
+    });
+
+    test('threads resolved typed query into discovery and the selected-cluster evidence package', async () => {
+        const query = { type: 'oib', value: '66124057408' };
+
+        const result = await runCourtAnalysis(
+            query.value,
+            { caseLimit: 3, enableVisualizer: false, query },
+            jest.fn()
+        );
+
+        expect(result.discoverySummary.query).toEqual(query);
+        expect(result.clusterEvidencePackage.query).toEqual(query);
+        expect(result.clusterEvidencePackage.clusterId).toBe(result.discoverySummary.reasoningClusterId);
+        expect(mockSynthesizeReport).toHaveBeenCalledWith(result.clusterEvidencePackage);
+        expect(result.report).toEqual(expect.objectContaining({
+            schemaVersion: '1.0.0',
+            narrative: 'Structured report',
+        }));
     });
 
     test('runCourtDiscovery stops after discovery and returns authoritative metadata without invoking analysis tools', async () => {

@@ -1,6 +1,7 @@
 const { ChatGoogleGenerativeAI } = require("@langchain/google-genai");
 const { withGeminiRetry } = require("../../helpers/geminiRetry");
 const { SCHEMA_VERSION, validateReport } = require("./schema");
+const { validateClusterEvidencePackage } = require("./evidencePackage");
 require("dotenv").config();
 
 const gemini = new ChatGoogleGenerativeAI({
@@ -18,11 +19,16 @@ const gemini = new ChatGoogleGenerativeAI({
  * @returns {Promise<object>} The structured report.
  */
 async function synthesizeReport(evidencePackage) {
-    if (!evidencePackage || (!evidencePackage.timeline && !evidencePackage.claims)) {
+    if (!evidencePackage) {
         return createEmptyReport("Nema dovoljno dokaza za generiranje izvješća.");
     }
 
-    const { timeline = [], claims = [], meta = {} } = evidencePackage;
+    const normalizedEvidence = normalizeReasoningEvidence(evidencePackage);
+    if (!normalizedEvidence || (!normalizedEvidence.timeline && !normalizedEvidence.claims)) {
+        return createEmptyReport("Nema dovoljno dokaza za generiranje izvješća.");
+    }
+
+    const { timeline = [], claims = [], meta = {} } = normalizedEvidence;
 
     // 1. Prepare Context
     const timelineText = timeline.map(e => `- ${e.date || 'Undated'}: ${e.description}`).join('\n');
@@ -113,6 +119,14 @@ async function synthesizeReport(evidencePackage) {
     }
 }
 
+function normalizeReasoningEvidence(evidencePackage) {
+    if (evidencePackage?.packageType === 'ClusterEvidencePackage') {
+        return createReasoningEvidenceFromPackage(evidencePackage);
+    }
+
+    return evidencePackage;
+}
+
 function createEmptyReport(message) {
     return {
         schemaVersion: SCHEMA_VERSION,
@@ -145,6 +159,88 @@ function resolveSelectedProcessedCase(processedCases, options = {}) {
     }
 
     return processedCases[0];
+}
+
+function collectPackageParties(pkg) {
+    const parties = new Set(pkg.identity?.participantNames || []);
+
+    for (const entry of pkg.entries || []) {
+        for (const participant of entry.participants || []) {
+            if (participant?.name) {
+                parties.add(participant.name);
+            }
+        }
+    }
+
+    return Array.from(parties);
+}
+
+function buildPackageMeta(pkg) {
+    return {
+        packageType: pkg.packageType,
+        packageSchemaVersion: pkg.schemaVersion,
+        clusterId: pkg.clusterId,
+        caseNumber: pkg.primaryCaseNumber || pkg.clusterId,
+        parties: collectPackageParties(pkg),
+        query: pkg.query || null,
+        identityConsistency: pkg.identity?.consistency,
+        identityNotes: pkg.identity?.notes || [],
+        participantOibs: pkg.identity?.participantOibs || [],
+        discovery: {
+            reasoningClusterId: pkg.discovery?.reasoningClusterId || null,
+            recommendedPrimaryClusterId: pkg.discovery?.recommendedPrimaryClusterId || null,
+            secondaryClusterIds: pkg.discovery?.secondaryClusterIds || [],
+            discoveryMode: pkg.discovery?.discoveryMode || null,
+            totalResults: pkg.discovery?.totalResults ?? null,
+            totalPages: pkg.discovery?.totalPages ?? null,
+            pagesScanned: pkg.discovery?.pagesScanned ?? null,
+            rawEntryCount: pkg.discovery?.rawEntryCount ?? null,
+            capturedDistinctCaseCount: pkg.discovery?.capturedDistinctCaseCount ?? null
+        },
+        selection: pkg.selection || null,
+        expansion: pkg.expansion || null,
+        acquisition: pkg.acquisition || null,
+        documentLinks: (pkg.documentLinks || []).map((link) => ({
+            id: link.id,
+            url: link.url,
+            text: link.text,
+            sourceProvenance: link.sourceProvenance || null
+        }))
+    };
+}
+
+function createReasoningEvidenceFromPackage(pkg) {
+    const validation = validateClusterEvidencePackage(pkg);
+    if (!validation.valid) {
+        throw new Error(validation.error);
+    }
+
+    const timeline = (pkg.entries || []).map((entry, index) => ({
+        date: entry.date || null,
+        description: `${entry.title || 'Objava'} (${entry.caseNumber || pkg.clusterId})`,
+        evidence: [{
+            sourceId: entry.detailLink || `${pkg.clusterId}:entry-${index + 1}`,
+            text: entry.title || entry.detailLink || 'Objava bez naslova',
+            provenance: entry.acquisition || null
+        }]
+    }));
+
+    const claims = (pkg.documentLinks || []).map((link, index) => ({
+        id: `document-${index + 1}`,
+        text: `Dokument "${link.text || link.url || `#${index + 1}`}" pripada odabranom predmetu ${pkg.primaryCaseNumber || pkg.clusterId}.`,
+        confidence: 'medium',
+        evidence: [{
+            sourceId: link.id || link.url || `${pkg.clusterId}:document-${index + 1}`,
+            text: link.text || link.url || 'Dokument bez naziva',
+            provenance: link.sourceProvenance || link.acquisition || null
+        }]
+    }));
+
+    return {
+        timeline,
+        claims,
+        meta: buildPackageMeta(pkg)
+    };
 }
 
 /**
@@ -210,4 +306,9 @@ function createEvidenceFromProcessedCases(processedCases, options = {}) {
     };
 }
 
-module.exports = { synthesizeReport, createEvidenceFromProcessedCases };
+module.exports = {
+    synthesizeReport,
+    createEvidenceFromProcessedCases,
+    createReasoningEvidenceFromPackage,
+    normalizeReasoningEvidence
+};

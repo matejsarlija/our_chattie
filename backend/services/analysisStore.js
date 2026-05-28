@@ -3,6 +3,11 @@ function isMissingTypedQueryColumnError(error) {
   return message.includes('query_type') || message.includes('query_value');
 }
 
+function isMissingResultJsonColumnError(error) {
+  const message = String(error?.message || '').toLowerCase();
+  return message.includes('result_json');
+}
+
 async function insertAnalysisRunRow({ supabase, payload }) {
   return supabase
     .from('analysis_runs')
@@ -58,16 +63,38 @@ async function appendAnalysisEvent({ supabase, analysisId, eventType, message, m
   }
 }
 
-async function completeAnalysisRun({ supabase, analysisId, resultText }) {
-  const { error } = await supabase
+async function updateAnalysisRunCompletion({ supabase, analysisId, payload }) {
+  return supabase
     .from('analysis_runs')
-    .update({
-      status: 'done',
-      result_text: resultText,
-      result_format: 'markdown',
-      completed_at: new Date().toISOString(),
-    })
+    .update(payload)
     .eq('id', analysisId);
+}
+
+async function completeAnalysisRun({ supabase, analysisId, resultText, resultJson = null }) {
+  const basePayload = {
+    status: 'done',
+    result_text: resultText,
+    result_format: 'markdown',
+    completed_at: new Date().toISOString(),
+  };
+
+  let error;
+  ({ error } = await updateAnalysisRunCompletion({
+    supabase,
+    analysisId,
+    payload: {
+      ...basePayload,
+      result_json: resultJson,
+    },
+  }));
+
+  if (error && isMissingResultJsonColumnError(error)) {
+    ({ error } = await updateAnalysisRunCompletion({
+      supabase,
+      analysisId,
+      payload: basePayload,
+    }));
+  }
 
   if (error) {
     throw new Error(`Failed to complete analysis run: ${error.message}`);

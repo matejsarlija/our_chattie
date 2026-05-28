@@ -16,6 +16,7 @@ create table if not exists analysis_runs (
   query_value text,
   status text not null default 'running',
   result_text text,
+  result_json jsonb,
   result_format text default 'markdown',
   error text,
   created_at timestamptz not null default now(),
@@ -24,6 +25,8 @@ create table if not exists analysis_runs (
 
 create index if not exists analysis_runs_user_id_idx on analysis_runs(user_id);
 create index if not exists analysis_runs_created_at_idx on analysis_runs(created_at desc);
+alter table analysis_runs
+  add column if not exists result_json jsonb;
 alter table analysis_runs
   drop constraint if exists analysis_runs_query_type_check;
 alter table analysis_runs

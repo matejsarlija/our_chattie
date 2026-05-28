@@ -18,8 +18,12 @@ jest.mock("../../helpers/geminiRetry", () => ({
 
 // Import the synthesizer (which we will write next)
 // We use a relative path assuming the test file is in backend/tests/reasoning
-const { synthesizeReport } = require('../../court-analysis/reasoning/synthesizer');
+const {
+    synthesizeReport,
+    createReasoningEvidenceFromPackage
+} = require('../../court-analysis/reasoning/synthesizer');
 const { SCHEMA_VERSION, validateReport } = require('../../court-analysis/reasoning/schema');
+const { validateClusterEvidencePackage } = require('../../court-analysis/reasoning/evidencePackage');
 
 describe('Synthesizer', () => {
     beforeEach(() => {
@@ -105,5 +109,162 @@ describe('Synthesizer', () => {
         mockInvoke.mockResolvedValue({ content: "This is not JSON" });
 
         await expect(synthesizeReport(mockEvidence)).rejects.toThrow(); 
+    });
+
+    test('validates single-cluster evidence package invariants', () => {
+        const validPackage = {
+            packageType: 'ClusterEvidencePackage',
+            reasoningScope: 'single-cluster',
+            selectedClusterIds: ['ST-700/2024'],
+            clusterId: 'ST-700/2024',
+            primaryCaseNumber: 'ST-700/2024',
+            discovery: {
+                reasoningClusterId: 'ST-700/2024',
+                secondaryClusterIds: ['ST-123/2026']
+            },
+            entries: [{ caseNumber: 'ST-700/2024', title: 'Objava' }],
+            documentLinks: [{ caseNumber: 'ST-700/2024', url: 'https://example.test/doc.pdf' }]
+        };
+
+        expect(validateClusterEvidencePackage(validPackage)).toEqual({ valid: true });
+        expect(validateClusterEvidencePackage({
+            ...validPackage,
+            selectedClusterIds: ['ST-700/2024', 'ST-123/2026']
+        }).valid).toBe(false);
+        expect(validateClusterEvidencePackage({
+            ...validPackage,
+            discovery: { reasoningClusterId: 'ST-999/2026' }
+        }).valid).toBe(false);
+        expect(validateClusterEvidencePackage({
+            ...validPackage,
+            entries: [{ caseNumber: 'ST-123/2026', title: 'Secondary' }]
+        }).valid).toBe(false);
+    });
+
+    test('creates reasoning evidence from the selected-cluster package without flattening secondary clusters', () => {
+        const packageInput = {
+            packageType: 'ClusterEvidencePackage',
+            schemaVersion: 1,
+            reasoningScope: 'single-cluster',
+            selectedClusterIds: ['ST-700/2024'],
+            clusterId: 'ST-700/2024',
+            primaryCaseNumber: 'ST-700/2024',
+            query: { type: 'text', value: 'JADRAN' },
+            identity: {
+                consistency: 'consistent',
+                notes: [],
+                participantNames: ['JADRAN d.o.o.'],
+                participantOibs: ['88888888888']
+            },
+            discovery: {
+                reasoningClusterId: 'ST-700/2024',
+                recommendedPrimaryClusterId: 'ST-700/2024',
+                secondaryClusterIds: ['ST-123/2026'],
+                discoveryMode: 'search-window',
+                totalResults: 21,
+                pagesScanned: 1
+            },
+            selection: {
+                score: 0.72,
+                diagnostics: { finalSelectionScore: 0.72 }
+            },
+            expansion: {
+                plan: { targetClusterId: 'ST-700/2024', executable: true }
+            },
+            acquisition: {
+                modes: ['search-window', 'cluster-expansion']
+            },
+            entries: [
+                {
+                    caseNumber: 'ST-700/2024',
+                    title: 'Rješenje od 10.02.2025.',
+                    date: '10.02.2025.',
+                    participants: [{ name: 'JADRAN d.o.o.' }],
+                    acquisition: { mode: 'search-window', currentPage: 1 }
+                }
+            ],
+            documentLinks: [
+                {
+                    id: 'ST-700/2024::entry-1::doc-1',
+                    caseNumber: 'ST-700/2024',
+                    url: 'https://example.test/st700-1',
+                    text: 'st700-1.pdf',
+                    sourceProvenance: {
+                        acquisitionMode: 'search-window',
+                        sourceCaseNumber: 'ST-700/2024'
+                    }
+                }
+            ]
+        };
+
+        const evidence = createReasoningEvidenceFromPackage(packageInput);
+
+        expect(evidence.meta.clusterId).toBe('ST-700/2024');
+        expect(evidence.meta.discovery.reasoningClusterId).toBe('ST-700/2024');
+        expect(evidence.meta.discovery.secondaryClusterIds).toEqual(['ST-123/2026']);
+        expect(evidence.meta.selection.score).toBe(0.72);
+        expect(evidence.meta.expansion.plan.targetClusterId).toBe('ST-700/2024');
+        expect(evidence.meta.documentLinks[0].sourceProvenance).toEqual({
+            acquisitionMode: 'search-window',
+            sourceCaseNumber: 'ST-700/2024'
+        });
+        expect(evidence.timeline).toHaveLength(1);
+        expect(evidence.claims).toHaveLength(1);
+        expect(evidence.claims[0].evidence[0].provenance.acquisitionMode).toBe('search-window');
+        expect(evidence.claims.some((claim) => claim.text.includes('ST-123/2026'))).toBe(false);
+    });
+
+    test('synthesizes reports directly from ClusterEvidencePackage and keeps package metadata in report.meta', async () => {
+        mockInvoke.mockResolvedValue({
+            content: `{
+                "narrative": "Predmet ST-700/2024 obrađen je iz odabranog paketa dokaza.",
+                "findings": [
+                    { "text": "Dokument pripada odabranom predmetu", "confidence": "medium" }
+                ],
+                "openQuestions": [],
+                "nextSteps": []
+            }`
+        });
+
+        const report = await synthesizeReport({
+            packageType: 'ClusterEvidencePackage',
+            schemaVersion: 1,
+            reasoningScope: 'single-cluster',
+            selectedClusterIds: ['ST-700/2024'],
+            clusterId: 'ST-700/2024',
+            primaryCaseNumber: 'ST-700/2024',
+            identity: { participantNames: ['JADRAN d.o.o.'], participantOibs: ['88888888888'] },
+            discovery: {
+                reasoningClusterId: 'ST-700/2024',
+                recommendedPrimaryClusterId: 'ST-700/2024',
+                secondaryClusterIds: ['ST-123/2026']
+            },
+            entries: [
+                { caseNumber: 'ST-700/2024', title: 'Rješenje', date: '10.02.2025.' }
+            ],
+            documentLinks: [
+                {
+                    id: 'doc-1',
+                    caseNumber: 'ST-700/2024',
+                    text: 'st700.pdf',
+                    url: 'https://example.test/st700.pdf',
+                    sourceProvenance: { acquisitionMode: 'search-window', sourceCaseNumber: 'ST-700/2024' }
+                }
+            ]
+        });
+
+        const prompt = mockInvoke.mock.calls[0][0];
+
+        expect(prompt).toContain('ST-700/2024');
+        expect(prompt).toContain('JADRAN d.o.o.');
+        expect(report.schemaVersion).toBe(SCHEMA_VERSION);
+        expect(report.meta.packageType).toBe('ClusterEvidencePackage');
+        expect(report.meta.clusterId).toBe('ST-700/2024');
+        expect(report.meta.discovery.reasoningClusterId).toBe('ST-700/2024');
+        expect(report.meta.discovery.secondaryClusterIds).toEqual(['ST-123/2026']);
+        expect(report.claims[0].evidence[0].provenance).toEqual({
+            acquisitionMode: 'search-window',
+            sourceCaseNumber: 'ST-700/2024'
+        });
     });
 });

@@ -13,8 +13,8 @@ const { requireSupabaseAuth, optionalSupabaseAuth } = require('./middleware/supa
 const { validateDocumentEditPayload } = require('./helpers/documentEditValidation');
 const { buildSseData, buildSseEvent } = require('./helpers/sse');
 const { createAnalysisRunStreamHandler } = require('./helpers/analysisStreamHandler');
+const { buildCourtAnalysisPayload } = require('./helpers/courtAnalysisPayload');
 const { parsePagination } = require('./helpers/pagination');
-const { sanitizeMarkdown } = require('./helpers/sanitize');
 const { parseCourtAnalysisRequest } = require('./helpers/courtAnalysisRequest');
 const { normalizeAnalysisProgressEvent } = require('./helpers/analysisStage');
 const { DEFAULT_TRIAL_LIMIT, isTrialAllowed } = require('./helpers/trial');
@@ -27,7 +27,6 @@ const {
 } = require('./helpers/analysisStream');
 const { CourtSearchPuppeteer } = require('./scraper/courtSearchPuppeteer');
 const rateLimiter = require('./court-analysis/utils/rateLimiter');
-const { deriveEntryDisplayId } = require('./court-analysis/utils/entryDisplayId');
 const { runCourtAnalysis } = require('./court-analysis/pipeline');
 const { getSupabaseAdminClient } = require('./services/supabase');
 const {
@@ -618,48 +617,21 @@ async function startServer() {
 
         const finalResult = await runCourtAnalysis(
           parsedRequest.query.value,
-          { caseLimit: parsedRequest.options.caseLimit },
+          {
+            caseLimit: parsedRequest.options.caseLimit,
+            query: parsedRequest.query,
+          },
           safeProgress
         );
 
-        // --- NEW: Construct the optimized final payload ---
-        const finalPayload = {
-          // We now have an array of processed cases
-          processedCases: finalResult.processedCases.map(pCase => ({
-            caseResult: { // Keep case info lean
-              title: pCase.caseResult.title,
-              caseNumber: pCase.caseResult.caseNumber,
-              court: pCase.caseResult.court,
-              date: pCase.caseResult.date,
-              detailLink: pCase.caseResult.detailLink,
-              entryDisplayId: deriveEntryDisplayId(pCase.caseResult.detailLink),
-              participants: pCase.caseResult.participants,
-            },
-            // Send back simplified file info, including the main download link
-            files: pCase.files.map(f => ({ url: f.url, text: f.text })),
-            // The individual analyses for this specific case entry
-            analysis: {
-              individualAnalyses: pCase.analysis.individualAnalyses.map(indAn => ({
-                fileName: indAn.text,
-                aiResult: indAn.aiResult,
-                error: indAn.error
-              }))
-            }
-          })),
-          // The new top-level comparative analysis
-          comparativeAnalysis: finalResult.comparativeAnalysis
-        };
-
-        //console.log('Final payload constructed:', finalPayload);
-        //console.log('Participants:', finalPayload.processedCases.map(p => p.caseResult.participants));
-
-        const sanitizedResult = sanitizeMarkdown(finalResult.comparativeAnalysis || '');
-        finalPayload.comparativeAnalysis = sanitizedResult;
+        const finalPayload = buildCourtAnalysisPayload(finalResult);
+        const sanitizedResult = finalPayload.comparativeAnalysis;
         if (isAuthed) {
           await completeAnalysisRun({
             supabase: req.supabase,
             analysisId: analysisRun.id,
             resultText: sanitizedResult,
+            resultJson: finalPayload,
           });
         } else {
           await completeTrialRun({

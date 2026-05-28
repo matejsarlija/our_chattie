@@ -4,6 +4,7 @@ const mockClose = jest.fn();
 const mockDownloadCall = jest.fn();
 const mockAnalyzeCall = jest.fn();
 const mockVisualizerCall = jest.fn();
+const mockSynthesizeReport = jest.fn();
 
 jest.mock('../scraper/courtSearchPuppeteer', () => {
   return jest.fn().mockImplementation(() => ({
@@ -30,6 +31,10 @@ jest.mock('../court-analysis/agents/visualizer-agent', () => ({
   VisualizerTool: jest.fn().mockImplementation(() => ({
     _call: mockVisualizerCall,
   })),
+}));
+
+jest.mock('../court-analysis/reasoning/synthesizer', () => ({
+  synthesizeReport: mockSynthesizeReport,
 }));
 
 jest.mock('../court-registry/enricher', () => ({
@@ -62,6 +67,16 @@ describe('runCourtAnalysis visualizer defaults', () => {
     mockDownloadCall.mockResolvedValue([{ filePath: '/tmp/fake_1.pdf', url: 'u1' }]);
     mockAnalyzeCall.mockResolvedValue({ individualAnalyses: [], finalSummary: 'Analysis' });
     mockVisualizerCall.mockResolvedValue('graph TD; A-->B');
+    mockSynthesizeReport.mockResolvedValue({
+      schemaVersion: '1.0.0',
+      narrative: 'Structured report',
+      claims: [],
+      findings: [],
+      openQuestions: [],
+      nextSteps: [],
+      conflicts: [],
+      meta: {},
+    });
   });
 
   test('keeps visualizer enabled when options include only caseLimit', async () => {

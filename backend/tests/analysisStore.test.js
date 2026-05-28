@@ -1,4 +1,4 @@
-const { getAnalysisRunFull } = require('../services/analysisStore');
+const { completeAnalysisRun, getAnalysisRunFull } = require('../services/analysisStore');
 
 function buildSupabaseStub({ run, events }) {
   return {
@@ -75,5 +75,88 @@ describe('analysisStore.getAnalysisRunFull', () => {
     };
 
     await expect(getAnalysisRunFull({ supabase, id: 'missing' })).rejects.toThrow('Analysis run not found');
+  });
+});
+
+describe('analysisStore.completeAnalysisRun', () => {
+  function buildCompletionSupabaseStub(updateResults) {
+    const update = jest.fn();
+    const eq = jest.fn();
+
+    updateResults.forEach((result) => {
+      eq.mockResolvedValueOnce(result);
+    });
+
+    update.mockReturnValue({ eq });
+
+    return {
+      update,
+      eq,
+      supabase: {
+        from: jest.fn((table) => {
+          if (table !== 'analysis_runs') {
+            throw new Error(`Unexpected table: ${table}`);
+          }
+
+          return { update };
+        }),
+      },
+    };
+  }
+
+  test('persists markdown and structured result_json on completion', async () => {
+    const resultJson = {
+      comparativeAnalysis: 'Sažetak',
+      discoverySummary: {
+        reasoningScope: 'single-cluster',
+        reasoningClusterId: 'ST-100/2023',
+      },
+      processedCases: [
+        {
+          groupMetadata: {
+            clusterId: 'ST-100/2023',
+            selectedForReasoning: true,
+          },
+        },
+      ],
+    };
+    const { supabase, update, eq } = buildCompletionSupabaseStub([{ error: null }]);
+
+    await completeAnalysisRun({
+      supabase,
+      analysisId: 'run-1',
+      resultText: 'Sažetak',
+      resultJson,
+    });
+
+    expect(update).toHaveBeenCalledWith(expect.objectContaining({
+      status: 'done',
+      result_text: 'Sažetak',
+      result_format: 'markdown',
+      result_json: resultJson,
+    }));
+    expect(eq).toHaveBeenCalledWith('id', 'run-1');
+  });
+
+  test('falls back to markdown-only completion when result_json column is unavailable', async () => {
+    const { supabase, update } = buildCompletionSupabaseStub([
+      { error: { message: 'column "result_json" of relation "analysis_runs" does not exist' } },
+      { error: null },
+    ]);
+
+    await completeAnalysisRun({
+      supabase,
+      analysisId: 'run-legacy',
+      resultText: 'Sažetak',
+      resultJson: { discoverySummary: { reasoningScope: 'single-cluster' } },
+    });
+
+    expect(update).toHaveBeenCalledTimes(2);
+    expect(update).toHaveBeenNthCalledWith(1, expect.objectContaining({
+      result_json: { discoverySummary: { reasoningScope: 'single-cluster' } },
+    }));
+    expect(update).toHaveBeenNthCalledWith(2, expect.not.objectContaining({
+      result_json: expect.anything(),
+    }));
   });
 });

@@ -1,9 +1,9 @@
-const { processScrapedCases } = require('../court-analysis/pipeline');
 const path = require('path');
 
 // Setup spies
 const mockDownloadCall = jest.fn();
 const mockAnalyzeCall = jest.fn();
+const mockSynthesizeReport = jest.fn();
 
 // Mock dependencies
 jest.mock('../court-analysis/agents/download-agent', () => ({
@@ -28,6 +28,10 @@ jest.mock('../court-analysis/agents/visualizer-agent', () => ({
     VisualizerTool: jest.fn()
 }));
 
+jest.mock('../court-analysis/reasoning/synthesizer', () => ({
+    synthesizeReport: mockSynthesizeReport
+}));
+
 jest.mock('adm-zip', () => {
     return jest.fn().mockImplementation(() => ({
         getEntries: jest.fn().mockReturnValue([]),
@@ -39,6 +43,8 @@ jest.mock('fs', () => ({
     ...jest.requireActual('fs'),
     unlink: jest.fn((path, cb) => cb && cb(null))
 }));
+
+const { processScrapedCases } = require('../court-analysis/pipeline');
 
 describe('processScrapedCases Grouping Integration', () => {
     beforeEach(() => {
@@ -54,6 +60,16 @@ describe('processScrapedCases Grouping Integration', () => {
         });
         
         mockAnalyzeCall.mockResolvedValue({ individualAnalyses: [], finalSummary: 'Analysis' });
+        mockSynthesizeReport.mockResolvedValue({
+            schemaVersion: '1.0.0',
+            narrative: 'Structured report',
+            claims: [],
+            findings: [],
+            openQuestions: [],
+            nextSteps: [],
+            conflicts: [],
+            meta: {}
+        });
     });
 
     test('groups entries and processes them as clusters', async () => {
@@ -76,17 +92,16 @@ describe('processScrapedCases Grouping Integration', () => {
         
         const result = await processScrapedCases(casesToProcess, progressCallback, { enableVisualizer: false });
         
-        // Expect 2 processed cases (clusters) because ST-1/23 are grouped
-        expect(result.processedCases).toHaveLength(2);
+        expect(result.discoverySummary.clusters.map(cluster => cluster.clusterId)).toEqual(['ST-1/23', 'ST-2/23']);
+        expect(result.discoverySummary.secondaryClusterIds).toEqual(['ST-2/23']);
+        expect(result.processedCases).toHaveLength(1);
         
         // Verify cluster 1 (ST-1/23)
         const cluster1 = result.processedCases.find(c => c.caseResult.caseNumber === 'ST-1/23');
         expect(cluster1).toBeDefined();
         expect(cluster1.groupMetadata.entryCount).toBe(2);
         
-        // Verify DownloadDocumentsTool calls
-        // It should be called twice (once per cluster)
-        expect(mockDownloadCall).toHaveBeenCalledTimes(2);
+        expect(mockDownloadCall).toHaveBeenCalledTimes(1);
         
         // Check that the ST-1/23 cluster call got both document links
         // We look for the call that had 2 links
