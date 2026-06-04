@@ -31,6 +31,8 @@ All notable changes to this project will be documented in this file.
 - **Court Analysis API Testing (A-07/A-08)**: Added `analysisStage.test.js` and `analysisStore.createRun.test.js` for canonical stage normalization and typed-query persistence with backward-compatible fallback.
 
 ### Fixed
+- **Court Analysis Reasoning Report Service**: Normalized `ClusterEvidencePackage` once, enriched that reasoning evidence with retrieved source matches before synthesis, and verified the report against the same enriched evidence shape so retrieval, synthesis, and verification stay aligned.
+- **Court Analysis Structured Results Persistence**: Wired cluster-scoped structured report generation into completed pipeline results and added `analysis_runs.result_json` to the Supabase schema so structured payloads can be persisted and reloaded alongside legacy markdown.
 - **Court Analysis API Query Handoff**: Forwarded the backend-resolved typed query from `/api/court-analysis` into the pipeline so runtime discovery, identity-aware selection, and evidence packaging use the authoritative query contract instead of a value-only fallback.
 - **Document Edit (DE-101)**: Fixed duplicate text insertion issue by enforcing single-writer pattern in BubbleMenu.
 - **Document Edit (DE-102)**: Added explicit submit button and Enter key support for custom commands.

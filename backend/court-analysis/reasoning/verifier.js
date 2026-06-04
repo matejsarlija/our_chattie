@@ -113,6 +113,7 @@ async function verifyReport(report, evidencePackage) {
         return {
             ...report,
             findings: verifiedFindings,
+            verifiedFindings,
             openQuestions,
             conflicts
         };

@@ -132,6 +132,7 @@ describe('Reasoning Schema Validator', () => {
                 schemaVersion: SCHEMA_VERSION,
                 claims: [],
                 findings: [],
+                verifiedFindings: [],
                 meta: { caseLimit: 5 }
             };
             const result = validateReport(validReport);
@@ -160,6 +161,21 @@ describe('Reasoning Schema Validator', () => {
             const result = validateReport(invalidReport);
             expect(result.valid).toBe(false);
             expect(result.error).toMatch(/claims/);
+        });
+
+        test('rejects malformed verified findings', () => {
+            const invalidReport = {
+                schemaVersion: SCHEMA_VERSION,
+                claims: [],
+                findings: [],
+                verifiedFindings: [{ confidence: 'certain' }],
+                meta: {}
+            };
+
+            const result = validateReport(invalidReport);
+
+            expect(result.valid).toBe(false);
+            expect(result.error).toMatch(/verified finding/);
         });
     });
 });

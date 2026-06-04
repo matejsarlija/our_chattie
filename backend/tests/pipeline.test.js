@@ -6,6 +6,12 @@ const mockDownloadCall = jest.fn();
 const mockAnalyzeCall = jest.fn();
 const mockVisualizerCall = jest.fn();
 const mockSynthesizeReport = jest.fn();
+const mockVerifyReport = jest.fn((report) => Promise.resolve(report));
+const mockNormalizeReasoningEvidence = jest.fn((evidencePackage) => ({
+    timeline: [],
+    claims: [],
+    meta: { clusterId: evidencePackage?.clusterId }
+}));
 
 jest.mock('../scraper/courtSearchPuppeteer', () => {
     return jest.fn().mockImplementation(() => ({
@@ -37,6 +43,11 @@ jest.mock('../court-analysis/agents/visualizer-agent', () => ({
 
 jest.mock('../court-analysis/reasoning/synthesizer', () => ({
     synthesizeReport: mockSynthesizeReport,
+    normalizeReasoningEvidence: mockNormalizeReasoningEvidence,
+}));
+
+jest.mock('../court-analysis/reasoning/verifier', () => ({
+    verifyReport: mockVerifyReport,
 }));
 
 jest.mock('../court-registry/enricher', () => ({
@@ -119,6 +130,7 @@ describe('runCourtAnalysis pipeline (deterministic)', () => {
         expect(mockDownloadCall).toHaveBeenCalledTimes(1);
         expect(mockAnalyzeCall).toHaveBeenCalledTimes(1);
         expect(progress).toHaveBeenCalledWith(expect.objectContaining({ step: 'grouping' }));
+        expect(progress).toHaveBeenCalledWith(expect.objectContaining({ step: 'verifying' }));
         expect(progress).toHaveBeenCalledWith(expect.objectContaining({ step: 'complete', progress: 100 }));
         expect(mockClose).toHaveBeenCalledTimes(1);
     });
@@ -140,7 +152,12 @@ describe('runCourtAnalysis pipeline (deterministic)', () => {
         expect(result.discoverySummary.query).toEqual(query);
         expect(result.clusterEvidencePackage.query).toEqual(query);
         expect(result.clusterEvidencePackage.clusterId).toBe(result.discoverySummary.reasoningClusterId);
-        expect(mockSynthesizeReport).toHaveBeenCalledWith(result.clusterEvidencePackage);
+        expect(mockSynthesizeReport).toHaveBeenCalledWith(expect.objectContaining({
+            meta: expect.objectContaining({
+                clusterId: result.clusterEvidencePackage.clusterId,
+                retrieval: expect.any(Object),
+            }),
+        }));
         expect(result.report).toEqual(expect.objectContaining({
             schemaVersion: '1.0.0',
             narrative: 'Structured report',

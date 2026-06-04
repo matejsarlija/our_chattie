@@ -5,6 +5,12 @@ const mockDownloadCall = jest.fn();
 const mockAnalyzeCall = jest.fn();
 const mockVisualizerCall = jest.fn();
 const mockSynthesizeReport = jest.fn();
+const mockVerifyReport = jest.fn((report) => Promise.resolve(report));
+const mockNormalizeReasoningEvidence = jest.fn((evidencePackage) => ({
+  timeline: [],
+  claims: [],
+  meta: { clusterId: evidencePackage?.clusterId },
+}));
 
 jest.mock('../scraper/courtSearchPuppeteer', () => {
   return jest.fn().mockImplementation(() => ({
@@ -35,6 +41,11 @@ jest.mock('../court-analysis/agents/visualizer-agent', () => ({
 
 jest.mock('../court-analysis/reasoning/synthesizer', () => ({
   synthesizeReport: mockSynthesizeReport,
+  normalizeReasoningEvidence: mockNormalizeReasoningEvidence,
+}));
+
+jest.mock('../court-analysis/reasoning/verifier', () => ({
+  verifyReport: mockVerifyReport,
 }));
 
 jest.mock('../court-registry/enricher', () => ({

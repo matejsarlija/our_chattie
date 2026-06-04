@@ -120,6 +120,19 @@ function validateReport(report) {
         }
     }
 
+    if (report.verifiedFindings !== undefined) {
+        if (!Array.isArray(report.verifiedFindings)) {
+            return { valid: false, error: 'Report verifiedFindings must be an array if present.' };
+        }
+
+        for (const finding of report.verifiedFindings) {
+            const findingResult = validateFinding(finding);
+            if (!findingResult.valid) {
+                return { valid: false, error: `Invalid verified finding in report: ${findingResult.error}` };
+            }
+        }
+    }
+
     if (report.openQuestions !== undefined && !Array.isArray(report.openQuestions)) {
         return { valid: false, error: 'Report openQuestions must be an array if present.' };
     }

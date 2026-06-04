@@ -14,7 +14,7 @@ const {
 const { groupEntriesByCase } = require('./utils/grouping');
 const { normalizeCaseNumber } = require('./utils/caseNumber');
 const { buildClusterEvidencePackage } = require('./reasoning/evidencePackage');
-const { synthesizeReport } = require('./reasoning/synthesizer');
+const { generateClusterReport } = require('./reasoning/reportService');
 const fs = require('fs');
 const path = require('path');
 const AdmZip = require('adm-zip');
@@ -1178,7 +1178,9 @@ async function processScrapedCases(casesToProcess, progressCallback, options = {
         // 3. Final Comparative Analysis
         progressCallback?.({ step: 'reasoning', progress: 85, message: 'Generiram usporednu analizu i zaključak...' });
         let comparativeAnalysis = await generateComparativeAnalysis(allProcessedCases, { clusterEvidencePackage });
-        const report = await synthesizeReport(clusterEvidencePackage);
+        const report = await generateClusterReport(clusterEvidencePackage, {
+            onStage: (event) => progressCallback?.(event)
+        });
 
         // --- VISUALIZATION STEP ---
         if (resolvedOptions.enableVisualizer && comparativeAnalysis) {
