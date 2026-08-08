@@ -57,6 +57,12 @@ backend/
 - [x] Add structured logging for all major actions and errors.
 - [ ] Add authentication or API key protection if needed.
 
+### 5. Live Reasoning Verification (Phase 2)
+- [ ] Re-run `npm run verify:reasoning` once a paid Gemini API key is configured.
+  - Script: `scripts/verify-live-reasoning.js` — builds `ClusterEvidencePackage` from the frozen `fixtures/analysis-baselines/66124057408-baseline.json` (ST-2/2013 Kerum), runs `generateClusterReport` against live Gemini, validates the report, writes `test-artifacts/live-reasoning-report.json`.
+  - Blocked by the free-tier 20 requests/day cap on `gemini-2.5-flash`; the quota dashboard can show 100% available while the API still returns 429.
+  - Known bug: `@langchain/google-genai` `invoke` hangs on 429 instead of rejecting, so `withGeminiRetry` never fires — add a timeout/abort to the model config when this is unblocked.
+
 ---
 
 **The backend is now modular, observable, and ready for production with Gemini-powered analysis, robust rate limiting, and automatic temp file cleanup.**
