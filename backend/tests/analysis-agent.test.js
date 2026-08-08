@@ -48,35 +48,37 @@ describe('AnalyzeDocumentsTool', () => {
         // Mock Gemini
         const tool = new AnalyzeDocumentsTool();
         tool._call = jest.fn(async ({ files }) => {
-            return files.map(f => ({ ...f, aiResult: { summary: 'Mock summary', extracted: { caseNumber: '12345' } } }));
+            return {
+                individualAnalyses: files.map(f => ({ ...f, aiResult: { summary: 'Mock summary', extracted: { caseNumber: '12345' } } }))
+            };
         });
         const files = [{ filePath: testPdfPath, url: 'mock', text: 'Test PDF' }];
         const result = await tool._call({ files });
-        expect(result[0].aiResult).toHaveProperty('summary');
-        expect(result[0].aiResult).toHaveProperty('extracted');
+        expect(result.individualAnalyses[0].aiResult).toHaveProperty('summary');
+        expect(result.individualAnalyses[0].aiResult).toHaveProperty('extracted');
     });
 
     it('returns error for missing file', async () => {
         const tool = new AnalyzeDocumentsTool();
         const files = [{ filePath: 'nonexistent.pdf', url: 'mock', text: 'Missing PDF' }];
         const result = await tool._call({ files });
-        expect(result[0].aiResult).toBeNull();
-        expect(result[0].error).toMatch(/no such file|not found|ENOENT/i);
+        expect(result.individualAnalyses[0].aiResult).toBeNull();
+        expect(result.individualAnalyses[0].error).toMatch(/Could not extract text|no such file|not found|ENOENT/i);
     });
 
     it('extracts text from a DOCX file', async () => {
         const tool = new AnalyzeDocumentsTool();
         const files = [{ filePath: testDocxPath, url: 'mock', text: 'Test DOCX' }];
         const result = await tool._call({ files });
-        expect(result[0].aiResult).toBeDefined();
-        expect(typeof result[0].aiResult).toBe('object');
+        expect(result.individualAnalyses[0].aiResult).toBeDefined();
+        expect(typeof result.individualAnalyses[0].aiResult).toBe('object');
     });
 
     it('extracts text from a TXT file', async () => {
         const tool = new AnalyzeDocumentsTool();
         const files = [{ filePath: testTxtPath, url: 'mock', text: 'Test TXT' }];
         const result = await tool._call({ files });
-        expect(result[0].aiResult).toBeDefined();
-        expect(typeof result[0].aiResult).toBe('object');
+        expect(result.individualAnalyses[0].aiResult).toBeDefined();
+        expect(typeof result.individualAnalyses[0].aiResult).toBe('object');
     });
 });

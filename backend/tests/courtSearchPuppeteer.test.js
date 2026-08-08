@@ -1,8 +1,11 @@
 const CourtSearchPuppeteer = require('../scraper/courtSearchPuppeteer');
 
-jest.setTimeout(30000); // Increase timeout for slow browser tests
+jest.setTimeout(60000); // Increase timeout for slow browser tests
 
-describe('CourtSearchPuppeteer', () => {
+const KERUM_OIB = '66124057408';
+const describeIfPuppeteer = process.env.RUN_PUPPETEER_INTEGRATION === '1' ? describe : describe.skip;
+
+describeIfPuppeteer('CourtSearchPuppeteer (live browser)', () => {
     let automator;
     beforeAll(async () => {
         automator = new CourtSearchPuppeteer();
@@ -13,25 +16,20 @@ describe('CourtSearchPuppeteer', () => {
     });
 
     it('should return results for a known OIB', async () => {
-        const result = await automator.searchByOIB('66124057408');
-        expect(result).toHaveProperty('results');
-        expect(Array.isArray(result.results)).toBe(true);
+        const result = await automator.searchAndGetLatestCases(KERUM_OIB);
+        expect(result).toHaveProperty('casesToProcess');
+        expect(Array.isArray(result.casesToProcess)).toBe(true);
     });
 
-    it('should return first result with documents or null', async () => {
-        const result = await automator.searchFirstWithDocuments('66124057408');
-        expect(result === null || (result.hasDocuments && Array.isArray(result.documentLinks))).toBe(true);
+    it('should return cases with documents or empty result', async () => {
+        const result = await automator.searchAndGetLatestCasesWithDocuments(KERUM_OIB);
+        expect(result).toHaveProperty('casesToProcess');
+        expect(Array.isArray(result.casesToProcess)).toBe(true);
+        expect(result).toHaveProperty('discoveryMetadata');
     });
 
-    it('should return results for a known case number', async () => {
-        const result = await automator.searchByCaseNumber('St-2/2013');
-        expect(result).toHaveProperty('results');
-        expect(Array.isArray(result.results)).toBe(true);
-    });
-
-    it('should return results for a known subject name', async () => {
-        const result = await automator.searchBySubjectName('Kerum');
-        expect(result).toHaveProperty('results');
-        expect(Array.isArray(result.results)).toBe(true);
+    it('should find the first case with documents or null', async () => {
+        const result = await automator.searchAndGetFirstCaseWithDocuments(KERUM_OIB);
+        expect(result === null || (result.caseInfo && Array.isArray(result.documentLinks))).toBe(true);
     });
 });

@@ -16,7 +16,7 @@ describe('downloadDocuments', () => {
         axios.mockImplementation(() => {
             const stream = new PassThrough();
             process.nextTick(() => stream.end('PDFDATA'));
-            return Promise.resolve({ data: stream });
+            return Promise.resolve({ data: stream, headers: { 'content-type': 'application/pdf' } });
         });
     });
 
