@@ -54,7 +54,7 @@ backend/
   - Usage examples for devs and users
 
 ### 4. Observability & Security
-- [ ] Add structured logging for all major actions and errors.
+- [x] Add structured logging for all major actions and errors.
 - [ ] Add authentication or API key protection if needed.
 
 ---

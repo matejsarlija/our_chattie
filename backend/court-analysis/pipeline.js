@@ -18,6 +18,7 @@ const { generateClusterReport } = require('./reasoning/reportService');
 const fs = require('fs');
 const path = require('path');
 const AdmZip = require('adm-zip');
+const logger = require('../helpers/logger');
 
 function clampCaseLimit(rawLimit) {
     const numeric = Number.parseInt(String(rawLimit), 10);
@@ -839,6 +840,14 @@ function buildDiscoveryResult(casesToProcess, options = {}, progressCallback) {
 
     const primaryClusterId = discoverySummary.recommendedPrimaryClusterId;
 
+    logger.info('pipeline.buildDiscoveryResult', 'Discovery completed', {
+        clusters,
+        allClusters: allClusters.length,
+        primaryClusterId: primaryClusterId || null,
+        queryType: options.query?.type || null,
+        expansionApplied: Boolean(expansionResult.expansion),
+    });
+
     progressCallback?.({
         step: 'grouping',
         progress: 20,
@@ -911,6 +920,11 @@ async function runCourtAnalysis(searchTerm, caseLimitOrOptions, progressCallback
 
     try {
         // 1. Scrape for the N latest cases
+        logger.info('pipeline.runCourtAnalysis', 'Starting court analysis', {
+            queryType: resolved.query?.type || null,
+            caseLimit: resolved.caseLimit,
+            scrapeLimit: resolved.scrapeLimit,
+        });
         callback?.({ step: 'discovering', progress: 10, message: 'Pretražujem sudske zapise za nedavne objave...' });
         await automator.init();
         const scrapeResult = await automator.searchAndGetLatestCasesWithDocuments(searchTerm, resolved.scrapeLimit);
@@ -919,6 +933,10 @@ async function runCourtAnalysis(searchTerm, caseLimitOrOptions, progressCallback
         if (!casesToProcess || casesToProcess.length === 0) {
             throw new Error('Nije pronađen nijedan predmet s dostupnim dokumentima za traženi pojam.');
         }
+        logger.info('pipeline.runCourtAnalysis', 'Scrape completed', {
+            cases: casesToProcess.length,
+            discoveryMode: discoveryMetadata?.discoveryMode || null,
+        });
 
         // Process the scraped cases using the separate function
         const result = await processScrapedCases(casesToProcess, callback, {
@@ -931,6 +949,7 @@ async function runCourtAnalysis(searchTerm, caseLimitOrOptions, progressCallback
         return result;
 
     } catch (error) {
+        logger.error('pipeline.runCourtAnalysis', 'Court analysis failed', { error: error.message });
         callback?.({ step: 'error', progress: 100, message: error.message });
         throw error;
     } finally {
@@ -1053,6 +1072,14 @@ async function processScrapedCases(casesToProcess, progressCallback, options = {
         });
         const totalCases = reasoningClusters.length;
 
+        logger.info('pipeline.processScrapedCases', 'Discovery grouped', {
+            clusters: clusters.length,
+            reasoningClusters: totalCases,
+            primaryClusterId: primaryClusterId || null,
+            secondaryClusters: secondaryClusters.length,
+            queryType: resolvedOptions.query?.type || null,
+        });
+
         const downloadTool = new DownloadDocumentsTool();
         const analyzeTool = new AnalyzeDocumentsTool();
 
@@ -1145,6 +1172,12 @@ async function processScrapedCases(casesToProcess, progressCallback, options = {
             // 2c. Analyze THIS case's documents
             progressCallback?.({ step: 'reasoning', message: `Analiziram ${filesForAnalysis.length} datoteka za predmet ${i + 1}...` });
             const analysis = await analyzeTool._call({ files: filesForAnalysis, caseInfo: caseInfo, progressCallback: null });
+            logger.info('pipeline.processScrapedCases', 'Case analyzed', {
+                caseIndex: i + 1,
+                totalCases,
+                filesAnalyzed: filesForAnalysis.length,
+                individualAnalyses: Array.isArray(analysis?.individualAnalyses) ? analysis.individualAnalyses.length : 0,
+            });
 
             // Store the fully processed case data
             allProcessedCases.push({
@@ -1181,6 +1214,11 @@ async function processScrapedCases(casesToProcess, progressCallback, options = {
         const report = await generateClusterReport(clusterEvidencePackage, {
             onStage: (event) => progressCallback?.(event)
         });
+        logger.info('pipeline.processScrapedCases', 'Reasoning report generated', {
+            processedCases: allProcessedCases.length,
+            reportFindings: Array.isArray(report?.findings) ? report.findings.length : 0,
+            verificationStatus: report?.verification?.status || null,
+        });
 
         // --- VISUALIZATION STEP ---
         if (resolvedOptions.enableVisualizer && comparativeAnalysis) {
@@ -1198,6 +1236,10 @@ async function processScrapedCases(casesToProcess, progressCallback, options = {
         // -------------------------
 
         progressCallback?.({ step: 'complete', progress: 100, message: 'Analiza je završena!' });
+        logger.info('pipeline.processScrapedCases', 'Analysis complete', {
+            processedCases: allProcessedCases.length,
+            hasReport: Boolean(report),
+        });
 
         return {
             processedCases: allProcessedCases,
