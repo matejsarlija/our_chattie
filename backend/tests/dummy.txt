@@ -1,1 +1,1 @@
-Just some text
+dummy fixture file

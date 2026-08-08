@@ -1,4 +1,5 @@
 const { splitTextIntoChunks, computeChunkId } = require('../court-analysis/reasoning/chunker');
+const fc = require('fast-check');
 
 describe('Chunker', () => {
     describe('computeChunkId', () => {
@@ -87,6 +88,137 @@ describe('Chunker', () => {
             // "Paragraph 1." is 12 chars. "Paragraph 2 is longer." is 22 chars.
             // Expect P1 to be its own chunk.
             expect(chunks[0].text).toBe("Paragraph 1.");
+        });
+    });
+
+    describe('splitTextIntoChunks property-based invariants', () => {
+        const textArbitrary = fc.array(
+            fc.oneof(
+                fc.constant('a'),
+                fc.constant(' '),
+                fc.constant('\n'),
+                fc.constant('.'),
+                fc.constant('-'),
+                fc.constant('č'),
+                fc.constant('š'),
+                fc.constant('ž'),
+            ),
+            { maxLength: 4000 },
+        ).map((parts) => parts.join(''));
+
+        test('loses no non-whitespace content across arbitrary texts and sizes', () => {
+            fc.assert(
+                fc.property(
+                    textArbitrary,
+                    fc.integer({ min: 1, max: 2000 }),
+                    fc.integer({ min: 0, max: 500 }),
+                    (text, chunkSize, chunkOverlap) => {
+                        const chunks = splitTextIntoChunks(text, { chunkSize, chunkOverlap, docId: 'prop' });
+                        const covered = new Array(text.length).fill(false);
+                        for (const chunk of chunks) {
+                            for (let i = chunk.metadata.startIndex; i < chunk.metadata.endIndex; i += 1) {
+                                covered[i] = true;
+                            }
+                        }
+                        for (let i = 0; i < text.length; i += 1) {
+                            if (text[i].trim() !== '' && !covered[i]) {
+                                return false;
+                            }
+                        }
+                        return true;
+                    },
+                ),
+            );
+        });
+
+        test('every chunk text exactly matches its reported source span', () => {
+            fc.assert(
+                fc.property(
+                    textArbitrary,
+                    fc.integer({ min: 1, max: 2000 }),
+                    fc.integer({ min: 0, max: 500 }),
+                    (text, chunkSize, chunkOverlap) => {
+                        const chunks = splitTextIntoChunks(text, { chunkSize, chunkOverlap, docId: 'prop' });
+                        return chunks.every((chunk) => {
+                            const { startIndex, endIndex } = chunk.metadata;
+                            return text.slice(startIndex, endIndex) === chunk.text;
+                        });
+                    },
+                ),
+            );
+        });
+
+        test('no chunk exceeds the requested chunk size', () => {
+            fc.assert(
+                fc.property(
+                    textArbitrary,
+                    fc.integer({ min: 1, max: 2000 }),
+                    fc.integer({ min: 0, max: 500 }),
+                    (text, chunkSize, chunkOverlap) => {
+                        const chunks = splitTextIntoChunks(text, { chunkSize, chunkOverlap, docId: 'prop' });
+                        return chunks.every((chunk) => chunk.text.length <= chunkSize);
+                    },
+                ),
+            );
+        });
+
+        test('chunks are ordered by monotonically increasing start index', () => {
+            fc.assert(
+                fc.property(
+                    textArbitrary,
+                    fc.integer({ min: 1, max: 2000 }),
+                    fc.integer({ min: 0, max: 500 }),
+                    (text, chunkSize, chunkOverlap) => {
+                        const chunks = splitTextIntoChunks(text, { chunkSize, chunkOverlap, docId: 'prop' });
+                        for (let i = 1; i < chunks.length; i += 1) {
+                            if (chunks[i].metadata.startIndex < chunks[i - 1].metadata.startIndex) {
+                                return false;
+                            }
+                        }
+                        return true;
+                    },
+                ),
+            );
+        });
+
+        test('chunks bound all non-whitespace content from first to last chunk', () => {
+            fc.assert(
+                fc.property(
+                    textArbitrary,
+                    fc.integer({ min: 1, max: 2000 }),
+                    fc.integer({ min: 0, max: 500 }),
+                    (text, chunkSize, chunkOverlap) => {
+                        const chunks = splitTextIntoChunks(text, { chunkSize, chunkOverlap, docId: 'prop' });
+                        const nonWhitespace = text.replace(/\s+/g, '');
+                        if (nonWhitespace.length === 0) return true;
+                        if (chunks.length === 0) return false;
+                        const first = chunks[0].metadata.startIndex;
+                        const last = chunks[chunks.length - 1].metadata.endIndex;
+                        // Every non-whitespace char must fall within [first, last].
+                        for (let i = 0; i < text.length; i += 1) {
+                            if (text[i].trim() !== '' && (i < first || i >= last)) {
+                                return false;
+                            }
+                        }
+                        return true;
+                    },
+                ),
+            );
+        });
+
+        test('creates deterministic chunk ids for the same document', () => {
+            fc.assert(
+                fc.property(
+                    textArbitrary,
+                    fc.integer({ min: 1, max: 500 }),
+                    (text, chunkSize) => {
+                        const a = splitTextIntoChunks(text, { chunkSize, chunkOverlap: 10, docId: 'doc-x' });
+                        const b = splitTextIntoChunks(text, { chunkSize, chunkOverlap: 10, docId: 'doc-x' });
+                        expect(a.map((c) => c.id)).toEqual(b.map((c) => c.id));
+                        return true;
+                    },
+                ),
+            );
         });
     });
 });
