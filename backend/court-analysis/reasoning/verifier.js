@@ -1,5 +1,5 @@
 const { ChatGoogleGenerativeAI } = require("@langchain/google-genai");
-const { withGeminiRetry } = require("../../helpers/geminiRetry");
+const { withGeminiRetry, withGeminiTimeout } = require("../../helpers/geminiRetry");
 require("dotenv").config();
 
 const gemini = new ChatGoogleGenerativeAI({
@@ -73,7 +73,7 @@ async function verifyReport(report, evidencePackage) {
     `;
 
     try {
-        const response = await withGeminiRetry(() => gemini.invoke(prompt));
+        const response = await withGeminiRetry(() => withGeminiTimeout((signal) => gemini.invoke(prompt, { signal })));
         const cleanJson = response.content.replace(/```json\n?|```/g, "").trim();
         const verificationResults = JSON.parse(cleanJson);
 

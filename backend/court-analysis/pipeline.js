@@ -20,6 +20,32 @@ const path = require('path');
 const AdmZip = require('adm-zip');
 const logger = require('../helpers/logger');
 
+/**
+ * Error carrying whatever partial results were accumulated before a pipeline stage
+ * failed. Allows the API layer to persist discovery/partial data alongside a
+ * transparent error instead of discarding everything.
+ */
+class PartialAnalysisError extends Error {
+    constructor(message, partialResult = null, options = {}) {
+        super(message);
+        this.name = 'PartialAnalysisError';
+        this.partialResult = partialResult || null;
+        this.stage = options.stage || null;
+    }
+}
+
+function buildEmptyPartialResult() {
+    return {
+        processedCases: [],
+        comparativeAnalysis: null,
+        discoverySummary: null,
+        primaryCluster: null,
+        secondaryClusters: [],
+        clusterEvidencePackage: null,
+        report: null
+    };
+}
+
 function clampCaseLimit(rawLimit) {
     const numeric = Number.parseInt(String(rawLimit), 10);
     if (Number.isNaN(numeric)) return DEFAULT_CASE_LIMIT;
@@ -1037,6 +1063,14 @@ async function processScrapedCases(casesToProcess, progressCallback, options = {
     };
     const allProcessedCases = [];
     let allFilesToCleanup = [];
+    let lastStage = null;
+
+    const stageAwareProgress = (event) => {
+        if (event?.step) lastStage = event.step;
+        progressCallback?.(event);
+    };
+
+    let partialResult = buildEmptyPartialResult();
 
     try {
         if (!casesToProcess || casesToProcess.length === 0) {
@@ -1054,7 +1088,13 @@ async function processScrapedCases(casesToProcess, progressCallback, options = {
             primaryClusterId,
             primaryCluster,
             secondaryClusters
-        } = buildDiscoveryResult(casesToProcess, resolvedOptions, progressCallback);
+        } = buildDiscoveryResult(casesToProcess, resolvedOptions, stageAwareProgress);
+        partialResult = {
+            ...partialResult,
+            discoverySummary,
+            primaryCluster,
+            secondaryClusters
+        };
         const reasoningClusters = primaryClusterId
             ? clusters.filter((cluster) => (cluster.clusterId || cluster.caseNumber) === primaryClusterId)
             : clusters.slice(0, 1);
@@ -1070,6 +1110,7 @@ async function processScrapedCases(casesToProcess, progressCallback, options = {
             discoverySummary,
             query: resolvedOptions.query || null
         });
+        partialResult.clusterEvidencePackage = clusterEvidencePackage;
         const totalCases = reasoningClusters.length;
 
         logger.info('pipeline.processScrapedCases', 'Discovery grouped', {
@@ -1099,11 +1140,11 @@ async function processScrapedCases(casesToProcess, progressCallback, options = {
             let downloadedFiles = [];
             let extractedFilePaths = [];
 
-            progressCallback?.({ step: 'downloading', progress: 25 + (i / totalCases) * 50, message: `Obrađujem predmet ${i + 1} od ${totalCases}: ${caseInfo.caseNumber} (${cluster.entries.length} objava)` });
+            stageAwareProgress?.({ step: 'downloading', progress: 25 + (i / totalCases) * 50, message: `Obrađujem predmet ${i + 1} od ${totalCases}: ${caseInfo.caseNumber} (${cluster.entries.length} objava)` });
 
             // --- ENRICHMENT STEP ---
             if (caseInfo.participants && caseInfo.participants.length > 0) {
-                progressCallback?.({ step: 'discovering', message: `Dohvaćam podatke iz Sudskog registra za sudionike...` });
+                stageAwareProgress?.({ step: 'discovering', message: `Dohvaćam podatke iz Sudskog registra za sudionike...` });
                 try {
                     caseInfo.participants = await enrichParticipants(caseInfo.participants);
                 } catch (err) {
@@ -1113,11 +1154,11 @@ async function processScrapedCases(casesToProcess, progressCallback, options = {
             // -----------------------
 
             // 2a. Download
-            progressCallback?.({ step: 'downloading', message: `Preuzimam arhivu za predmet ${i + 1} (${documentLinks.length} linkova)...` });
+            stageAwareProgress?.({ step: 'downloading', message: `Preuzimam arhivu za predmet ${i + 1} (${documentLinks.length} linkova)...` });
             downloadedFiles = await downloadTool._call({ documentLinks, progressCallback: null });
 
             // 2b. Unzip
-            progressCallback?.({ step: 'extracting', message: `Raspakiram datoteke za predmet ${i + 1}...` });
+            stageAwareProgress?.({ step: 'extracting', message: `Raspakiram datoteke za predmet ${i + 1}...` });
             const filesForAnalysis = [];
             for (const file of downloadedFiles) {
                 extractedFilePaths.push(file.filePath);
@@ -1170,7 +1211,7 @@ async function processScrapedCases(casesToProcess, progressCallback, options = {
             }
 
             // 2c. Analyze THIS case's documents
-            progressCallback?.({ step: 'reasoning', message: `Analiziram ${filesForAnalysis.length} datoteka za predmet ${i + 1}...` });
+            stageAwareProgress?.({ step: 'reasoning', message: `Analiziram ${filesForAnalysis.length} datoteka za predmet ${i + 1}...` });
             const analysis = await analyzeTool._call({ files: filesForAnalysis, caseInfo: caseInfo, progressCallback: null });
             logger.info('pipeline.processScrapedCases', 'Case analyzed', {
                 caseIndex: i + 1,
@@ -1209,11 +1250,14 @@ async function processScrapedCases(casesToProcess, progressCallback, options = {
         }
 
         // 3. Final Comparative Analysis
-        progressCallback?.({ step: 'reasoning', progress: 85, message: 'Generiram usporednu analizu i zaključak...' });
+        partialResult.processedCases = allProcessedCases;
+        stageAwareProgress?.({ step: 'reasoning', progress: 85, message: 'Generiram usporednu analizu i zaključak...' });
         let comparativeAnalysis = await generateComparativeAnalysis(allProcessedCases, { clusterEvidencePackage });
+        partialResult.comparativeAnalysis = comparativeAnalysis;
         const report = await generateClusterReport(clusterEvidencePackage, {
-            onStage: (event) => progressCallback?.(event)
+            onStage: (event) => stageAwareProgress?.(event)
         });
+        partialResult.report = report;
         logger.info('pipeline.processScrapedCases', 'Reasoning report generated', {
             processedCases: allProcessedCases.length,
             reportFindings: Array.isArray(report?.findings) ? report.findings.length : 0,
@@ -1222,7 +1266,7 @@ async function processScrapedCases(casesToProcess, progressCallback, options = {
 
         // --- VISUALIZATION STEP ---
         if (resolvedOptions.enableVisualizer && comparativeAnalysis) {
-            progressCallback?.({ step: 'reasoning', progress: 95, message: 'Generiram vizualizaciju tijeka predmeta...' });
+            stageAwareProgress?.({ step: 'reasoning', progress: 95, message: 'Generiram vizualizaciju tijeka predmeta...' });
             try {
                 const visualizerTool = new VisualizerTool();
                 const diagramCode = await visualizerTool._call(comparativeAnalysis);
@@ -1235,7 +1279,7 @@ async function processScrapedCases(casesToProcess, progressCallback, options = {
         }
         // -------------------------
 
-        progressCallback?.({ step: 'complete', progress: 100, message: 'Analiza je završena!' });
+        stageAwareProgress?.({ step: 'complete', progress: 100, message: 'Analiza je završena!' });
         logger.info('pipeline.processScrapedCases', 'Analysis complete', {
             processedCases: allProcessedCases.length,
             hasReport: Boolean(report),
@@ -1252,8 +1296,10 @@ async function processScrapedCases(casesToProcess, progressCallback, options = {
         };
 
     } catch (error) {
-        // Re-throw the error for the calling function (orchestrator) to handle.
-        throw error;
+        // Re-throw wrapped with whatever partial results were accumulated before the
+        // failing stage, so the API layer can persist discovery data + a transparent
+        // error instead of discarding everything.
+        throw new PartialAnalysisError(error.message, partialResult, { stage: lastStage });
     } finally {
         // The cleanup function needs to be available in the scope of this file.
         await cleanupFiles(allFilesToCleanup);
@@ -1278,6 +1324,9 @@ module.exports = {
     runCourtDiscovery,
     runCourtAnalysisWithExistingAutomator,
     processScrapedCases,
+    buildDiscoveryResult,
+    PartialAnalysisError,
+    buildEmptyPartialResult,
     evaluateDiscoveryHeuristics,
     evaluateClusterExpansionEligibility,
     buildClusterExpansionPlan

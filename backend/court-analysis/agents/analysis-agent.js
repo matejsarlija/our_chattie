@@ -18,7 +18,7 @@ const gemini = new ChatGoogleGenerativeAI({
 });
 
 const pdfjsLib = require("pdfjs-dist/legacy/build/pdf.js");
-const { withGeminiRetry } = require("../../helpers/geminiRetry");
+const { withGeminiRetry, withGeminiTimeout } = require("../../helpers/geminiRetry");
 
 // 2. Explicitly set the path to the worker script for Node.js
 pdfjsLib.GlobalWorkerOptions.workerSrc =
@@ -188,7 +188,7 @@ async function extractTextViaOCR(filePath, progressCallback) {
             });
 
             const response = await withGeminiRetry(
-                () => gemini.invoke([message]),
+                () => withGeminiTimeout((signal) => gemini.invoke([message], { signal })),
                 {
                     onRetry: ({ attempt, delayMs }) => {
                         progressCallback &&
@@ -286,7 +286,7 @@ class AnalyzeDocumentsTool extends Tool {
                 Do include any important figures (currency amounts) you find in the summary. Provide ONLY the json object and nothing else. Text:\n\n${analysisInput.analysisText}`;
 
                 const response = await withGeminiRetry(
-                    () => gemini.invoke(prompt),
+                    () => withGeminiTimeout((signal) => gemini.invoke(prompt, { signal })),
                     {
                         onRetry: ({ attempt, delayMs }) => {
                             progressCallback &&
@@ -404,7 +404,7 @@ async function generateComparativeAnalysis(allProcessedCases) {
         //const prompt = `This is the only recent court entry found. Synthesize the following document summaries into a single, coherent, and detailed overview IN CROATIAN. Explain the significance of this entry in the context of the case. Based on the information, what are the likely next steps for the parties involved?\n\nSUMMARIES:\n${successfulSummaries}`;
 
         try {
-            const response = await withGeminiRetry(() => gemini.invoke(prompt));
+            const response = await withGeminiRetry(() => withGeminiTimeout((signal) => gemini.invoke(prompt, { signal })));
             return response.content;
         } catch (err) {
             console.error("Failed to generate summary for single case:", err);
@@ -444,7 +444,7 @@ async function generateComparativeAnalysis(allProcessedCases) {
     //console.log("Comparative context contains the following data:", comparativeContext);
 
     try {
-        const response = await withGeminiRetry(() => gemini.invoke(prompt));
+        const response = await withGeminiRetry(() => withGeminiTimeout((signal) => gemini.invoke(prompt, { signal })));
         return response.content;
     } catch (err) {
         console.error("Failed to generate comparative analysis:", err);

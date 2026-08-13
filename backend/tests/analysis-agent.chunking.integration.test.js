@@ -14,6 +14,7 @@ jest.mock('@langchain/google-genai', () => ({
 
 jest.mock('../helpers/geminiRetry', () => ({
   withGeminiRetry: (...args) => mockWithGeminiRetry(...args),
+  withGeminiTimeout: (callable) => callable(undefined),
 }));
 
 jest.mock('../court-analysis/reasoning/chunker', () => ({

@@ -145,9 +145,56 @@ function validateReport(report) {
         return { valid: false, error: 'Report conflicts must be an array if present.' };
     }
 
+    if (report.timeline !== undefined) {
+        if (!Array.isArray(report.timeline)) {
+            return { valid: false, error: 'Report timeline must be an array if present.' };
+        }
+
+        for (const event of report.timeline) {
+            const eventResult = validateTimelineItem(event);
+            if (!eventResult.valid) {
+                return { valid: false, error: `Invalid timeline event in report: ${eventResult.error}` };
+            }
+        }
+    }
+
     // Optional meta check
     if (report.meta && typeof report.meta !== 'object') {
         return { valid: false, error: 'Report meta must be an object if present.' };
+    }
+
+    return { valid: true };
+}
+
+/**
+ * Validates a Timeline event item in a report (citations-based shape).
+ * Events produced by the synthesizer carry `{ date, description, citations }`.
+ * @param {object} event
+ * @returns {{valid: boolean, error?: string}}
+ */
+function validateTimelineItem(event) {
+    if (!event || typeof event !== 'object') {
+        return { valid: false, error: 'Timeline event must be an object.' };
+    }
+
+    if (!event.description || typeof event.description !== 'string') {
+        return { valid: false, error: 'Timeline event must have a description string.' };
+    }
+
+    // date can be null (undated) or a string (ISO or partial)
+    if (event.date !== null && typeof event.date !== 'string') {
+        return { valid: false, error: 'Timeline event date must be a string or null.' };
+    }
+
+    const citations = event.citations !== undefined ? event.citations : event.evidence;
+    if (citations !== undefined && !Array.isArray(citations)) {
+        return { valid: false, error: 'Timeline event citations must be an array if present.' };
+    }
+
+    for (const citation of citations || []) {
+        if (!citation || typeof citation !== 'object') {
+            return { valid: false, error: 'Timeline event citation must be an object.' };
+        }
     }
 
     return { valid: true };
@@ -192,5 +239,6 @@ module.exports = {
     validateClaim,
     validateFinding,
     validateReport,
-    validateEvent
+    validateEvent,
+    validateTimelineItem
 };

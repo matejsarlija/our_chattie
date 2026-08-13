@@ -1,4 +1,4 @@
-const { validateClaim, validateEvidence, validateReport, validateEvent, SCHEMA_VERSION } = require('../../court-analysis/reasoning/schema');
+const { validateClaim, validateEvidence, validateReport, validateEvent, validateTimelineItem, SCHEMA_VERSION } = require('../../court-analysis/reasoning/schema');
 
 describe('Reasoning Schema Validator', () => {
     describe('Evidence Validation', () => {
@@ -126,6 +126,49 @@ describe('Reasoning Schema Validator', () => {
         });
     });
 
+    describe('Report Timeline Item Validation', () => {
+        test('accepts a report timeline event with citations', () => {
+            const event = {
+                date: '2023-10-01',
+                description: 'Case filed.',
+                citations: [{ source: 'd1', text: 'quote' }]
+            };
+            const result = validateTimelineItem(event);
+            expect(result.valid).toBe(true);
+        });
+
+        test('accepts a report timeline event with empty citations', () => {
+            const event = {
+                date: null,
+                description: 'Undated event.',
+                citations: []
+            };
+            const result = validateTimelineItem(event);
+            expect(result.valid).toBe(true);
+        });
+
+        test('rejects a report timeline event without description', () => {
+            const event = {
+                date: '2023-10-01',
+                citations: []
+            };
+            const result = validateTimelineItem(event);
+            expect(result.valid).toBe(false);
+            expect(result.error).toMatch(/description/);
+        });
+
+        test('rejects a report timeline event with non-array citations', () => {
+            const event = {
+                date: '2023-10-01',
+                description: 'Case filed.',
+                citations: { source: 'd1' }
+            };
+            const result = validateTimelineItem(event);
+            expect(result.valid).toBe(false);
+            expect(result.error).toMatch(/citations/);
+        });
+    });
+
     describe('Report Validation', () => {
         test('accepts valid report structure', () => {
             const validReport = {
@@ -176,6 +219,35 @@ describe('Reasoning Schema Validator', () => {
 
             expect(result.valid).toBe(false);
             expect(result.error).toMatch(/verified finding/);
+        });
+
+        test('accepts report with a valid timeline', () => {
+            const validReport = {
+                schemaVersion: SCHEMA_VERSION,
+                claims: [],
+                findings: [],
+                timeline: [
+                    { date: '2023-10-01', description: 'Case filed.', citations: [{ source: 'd1', text: 'quote' }] }
+                ],
+                meta: {}
+            };
+
+            const result = validateReport(validReport);
+            expect(result.valid).toBe(true);
+        });
+
+        test('rejects report with malformed timeline', () => {
+            const invalidReport = {
+                schemaVersion: SCHEMA_VERSION,
+                claims: [],
+                findings: [],
+                timeline: [{ date: '2023-10-01', citations: 'not-an-array' }],
+                meta: {}
+            };
+
+            const result = validateReport(invalidReport);
+            expect(result.valid).toBe(false);
+            expect(result.error).toMatch(/timeline/);
         });
     });
 });

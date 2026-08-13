@@ -19,7 +19,8 @@ const { verifyReport } = require('../../court-analysis/reasoning/verifier');
 
 // Mock retry helper
 jest.mock("../../helpers/geminiRetry", () => ({
-    withGeminiRetry: jest.fn((fn) => fn())
+    withGeminiRetry: jest.fn((fn) => fn()),
+    withGeminiTimeout: jest.fn((callable) => callable(undefined))
 }));
 
 describe('Verifier', () => {
@@ -39,6 +40,9 @@ describe('Verifier', () => {
         ],
         openQuestions: [],
         conflicts: [],
+        timeline: [
+            { date: '2023-01-01', description: 'Debt was paid in full', citations: [{ source: 'd1', text: 'quote' }] }
+        ],
         meta: {}
     };
 
@@ -70,6 +74,7 @@ describe('Verifier', () => {
         expect(verifiedReport.claims).toEqual(mockReport.claims);
         expect(verifiedReport.openQuestions).toHaveLength(1);
         expect(verifiedReport.openQuestions[0]).toContain('Unverified finding: Case was dismissed');
+        expect(verifiedReport.timeline).toEqual(mockReport.timeline);
     });
 
     test('handles contradictions correctly', async () => {

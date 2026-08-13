@@ -52,7 +52,7 @@ jest.mock('fs', () => ({
     unlink: jest.fn((filePath, cb) => cb && cb(null))
 }));
 
-const { processScrapedCases } = require('../court-analysis/pipeline');
+const { processScrapedCases, buildDiscoveryResult, PartialAnalysisError } = require('../court-analysis/pipeline');
 
 describe('processScrapedCases discovery reconciliation', () => {
     beforeEach(() => {
@@ -392,5 +392,94 @@ describe('processScrapedCases discovery reconciliation', () => {
         expect(result.processedCases[0].groupMetadata.expansionPlan).toEqual(primaryCluster.expansionPlan);
         expect(result.processedCases[0].groupMetadata.acquisitionModes).toEqual(['search-window', 'cluster-expansion']);
         expect(result.processedCases[0].groupMetadata.selectedForReasoning).toBe(true);
+    });
+
+    test('attaches partial discovery results when a later analysis stage fails', async () => {
+        const fixture = require('../fixtures/analysis-baselines/mixed-multi-cluster.json');
+
+        mockAnalyzeCall.mockRejectedValue(new Error('Dokument se ne može analizirati (HTTP 500)'));
+        mockSynthesizeReport.mockClear();
+
+        const error = await processScrapedCases(
+            fixture.casesToProcess,
+            jest.fn(),
+            {
+                caseLimit: 3,
+                enableVisualizer: false,
+                query: fixture.query,
+                discoveryMetadata: fixture.discoveryMetadata
+            }
+        ).catch((err) => err);
+
+        expect(error).toBeInstanceOf(Error);
+        expect(error).toBeInstanceOf(PartialAnalysisError);
+        expect(error.name).toBe('PartialAnalysisError');
+        expect(error.stage).toBe('reasoning');
+        expect(error.partialResult).toBeDefined();
+        expect(error.partialResult.discoverySummary).toEqual(expect.objectContaining({
+            reasoningClusterId: 'ST-100/2023',
+            recommendedPrimaryClusterId: 'ST-100/2023',
+            secondaryClusterIds: ['ST-200/2021', 'ST-300/2020'],
+            capturedDistinctCaseCount: 3
+        }));
+        expect(error.partialResult.primaryCluster.clusterId).toBe('ST-100/2023');
+        expect(error.partialResult.clusterEvidencePackage).toEqual(expect.objectContaining({
+            packageType: 'ClusterEvidencePackage',
+            clusterId: 'ST-100/2023'
+        }));
+        expect(error.partialResult.secondaryClusters.map(cluster => cluster.clusterId)).toEqual(['ST-200/2021', 'ST-300/2020']);
+        expect(error.partialResult.comparativeAnalysis).toBeNull();
+        expect(error.partialResult.report).toBeNull();
+        expect(mockSynthesizeReport).not.toHaveBeenCalled();
+    });
+
+    test('attaches partially processed cases and narrative when the reasoning report stage fails', async () => {
+        const fixture = require('../fixtures/analysis-baselines/mixed-multi-cluster.json');
+
+        mockSynthesizeReport.mockRejectedValue(new Error('Dnevni limit AI analize je iscrpljen.'));
+        const progress = jest.fn();
+
+        const error = await processScrapedCases(
+            fixture.casesToProcess,
+            progress,
+            {
+                caseLimit: 3,
+                enableVisualizer: false,
+                query: fixture.query,
+                discoveryMetadata: fixture.discoveryMetadata
+            }
+        ).catch((err) => err);
+
+        expect(error).toBeInstanceOf(PartialAnalysisError);
+        expect(error.stage).toBe('reasoning');
+        expect(error.partialResult.processedCases).toHaveLength(1);
+        expect(error.partialResult.processedCases[0].caseResult.caseNumber).toBe('ST-100/2023');
+        expect(error.partialResult.comparativeAnalysis).toBe('Comparative Analysis');
+        expect(error.partialResult.report).toBeNull();
+        expect(error.partialResult.clusterEvidencePackage.clusterId).toBe('ST-100/2023');
+    });
+});
+
+describe('buildDiscoveryResult on frozen 66124057408 baseline (CI, no Gemini)', () => {
+    test('groups the 9 real captured e-Oglasna entries into the recorded ST-2/2013 cluster', () => {
+        const fixture = require('../fixtures/analysis-baselines/66124057408-baseline.json');
+
+        const result = buildDiscoveryResult(fixture.discovery.entries, {
+            caseLimit: 5,
+            query: { type: 'oib', value: '66124057408' }
+        });
+
+        expect(fixture.discovery.entries).toHaveLength(9);
+        expect(fixture.discovery.count).toBe(9);
+        expect(fixture.discovery.caseNumbers).toEqual(['ST-2/2013']);
+
+        expect(result.primaryClusterId).toBe('ST-2/2013');
+        expect(result.clusters).toHaveLength(1);
+        expect(result.clusters[0].caseNumber || result.clusters[0].clusterId).toBe('ST-2/2013');
+        expect(result.clusters[0].entries).toHaveLength(9);
+        expect(result.secondaryClusters).toHaveLength(0);
+        expect(result.discoverySummary.capturedDistinctCaseCount).toBe(1);
+        expect(result.discoverySummary.reasoningClusterId).toBe('ST-2/2013');
+        expect(result.discoverySummary.recommendedPrimaryClusterId).toBe('ST-2/2013');
     });
 });

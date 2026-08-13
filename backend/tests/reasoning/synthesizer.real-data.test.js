@@ -19,7 +19,8 @@ const { synthesizeReport, createEvidenceFromProcessedCases } = require('../../co
 
 // Mock retry helper
 jest.mock("../../helpers/geminiRetry", () => ({
-    withGeminiRetry: jest.fn((fn) => fn())
+    withGeminiRetry: jest.fn((fn) => fn()),
+    withGeminiTimeout: jest.fn((callable) => callable(undefined))
 }));
 
 describe('Synthesizer Integration with Real Data', () => {

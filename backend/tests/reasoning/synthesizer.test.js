@@ -13,7 +13,8 @@ jest.mock("@langchain/google-genai", () => {
 
 // Mock retry helper
 jest.mock("../../helpers/geminiRetry", () => ({
-    withGeminiRetry: jest.fn((fn) => fn())
+    withGeminiRetry: jest.fn((fn) => fn()),
+    withGeminiTimeout: jest.fn((callable) => callable(undefined))
 }));
 
 // Import the synthesizer (which we will write next)
@@ -33,7 +34,7 @@ describe('Synthesizer', () => {
     const mockEvidence = {
         timeline: [
             { date: '2023-01-01', description: 'Case started', evidence: [] },
-            { date: '2023-02-01', description: 'Hearing held', evidence: [] }
+            { date: '2023-02-01', description: 'Hearing held', evidence: [{ sourceId: 'd1', text: 'quote', provenance: { acquisitionMode: 'search-window' } }] }
         ],
         claims: [
             { id: 'c1', text: 'Defendant is liable', confidence: 'high', evidence: [{ sourceId: 'd1', text: 'quote' }] }
@@ -75,6 +76,13 @@ describe('Synthesizer', () => {
         const validation = validateReport(report);
         expect(validation.valid).toBe(true);
 
+        // Timeline conformance: report.timeline is populated from evidence with citations
+        expect(report.timeline).toHaveLength(2);
+        expect(report.timeline[0]).toMatchObject({ date: '2023-01-01', description: 'Case started', citations: [] });
+        expect(report.timeline[1].citations).toEqual([
+            { source: 'd1', text: 'quote', provenance: { acquisitionMode: 'search-window' } }
+        ]);
+
         // Check if the prompt contained key info
         const lastCallArgs = mockInvoke.mock.calls[0][0];
         // lastCallArgs should be a string or array of messages. 
@@ -103,6 +111,35 @@ describe('Synthesizer', () => {
         
         expect(report.narrative).toContain("Nema dovoljno informacija");
         expect(report.findings).toEqual([]);
+        expect(report.timeline).toEqual([]);
+    });
+
+    test('populates report.timeline from the evidence timeline with citations', async () => {
+        mockInvoke.mockResolvedValue({
+            content: `{
+                "narrative": "Sažetak temeljen na vremenskoj crti.",
+                "findings": [],
+                "openQuestions": [],
+                "nextSteps": []
+            }`
+        });
+
+        const report = await synthesizeReport(mockEvidence);
+
+        expect(report.timeline).toBeDefined();
+        expect(report.timeline).toHaveLength(2);
+        expect(report.timeline[0]).toEqual({
+            date: '2023-01-01',
+            description: 'Case started',
+            citations: []
+        });
+        expect(report.timeline[1].citations).toHaveLength(1);
+        expect(report.timeline[1].citations[0]).toEqual({
+            source: 'd1',
+            text: 'quote',
+            provenance: { acquisitionMode: 'search-window' }
+        });
+        expect(validateReport(report).valid).toBe(true);
     });
 
     test('throws/handles invalid JSON from LLM', async () => {
@@ -266,5 +303,10 @@ describe('Synthesizer', () => {
             acquisitionMode: 'search-window',
             sourceCaseNumber: 'ST-700/2024'
         });
+        expect(report.timeline).toHaveLength(1);
+        expect(report.timeline[0].date).toBe('10.02.2025.');
+        expect(report.timeline[0].description).toContain('ST-700/2024');
+        expect(report.timeline[0].citations).toHaveLength(1);
+        expect(report.timeline[0].citations[0].source).toBe('ST-700/2024:entry-1');
     });
 });

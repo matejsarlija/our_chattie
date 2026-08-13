@@ -1,5 +1,5 @@
 const { ChatGoogleGenerativeAI } = require("@langchain/google-genai");
-const { withGeminiRetry } = require("../../helpers/geminiRetry");
+const { withGeminiRetry, withGeminiTimeout } = require("../../helpers/geminiRetry");
 const { SCHEMA_VERSION, validateReport } = require("./schema");
 const { validateClusterEvidencePackage } = require("./evidencePackage");
 require("dotenv").config();
@@ -69,7 +69,7 @@ async function synthesizeReport(evidencePackage) {
     `;
 
     try {
-        const response = await withGeminiRetry(() => gemini.invoke(prompt));
+        const response = await withGeminiRetry(() => withGeminiTimeout((signal) => gemini.invoke(prompt, { signal })));
         const cleanJson = response.content.replace(/```json\n?|```/g, "").trim();
         
         let parsed;
@@ -100,6 +100,7 @@ async function synthesizeReport(evidencePackage) {
                 confidence: claim.confidence || 'medium',
                 citations: claim.evidence || []
             })),
+            timeline: buildReportTimeline(timeline),
             meta: {
                 ...meta,
                 generatedAt: new Date().toISOString()
@@ -127,6 +128,27 @@ function normalizeReasoningEvidence(evidencePackage) {
     return evidencePackage;
 }
 
+function buildReportTimeline(timeline) {
+    if (!Array.isArray(timeline)) return [];
+
+    return timeline.map((event) => {
+        const citations = (event.evidence || []).map((evidence) => {
+            const citation = {};
+            if (evidence.sourceId) citation.source = evidence.sourceId;
+            if (evidence.text) citation.text = evidence.text;
+            if (evidence.url) citation.url = evidence.url;
+            if (evidence.provenance) citation.provenance = evidence.provenance;
+            return citation;
+        });
+
+        return {
+            date: event.date ?? null,
+            description: event.description || 'Objava',
+            citations
+        };
+    });
+}
+
 function createEmptyReport(message) {
     return {
         schemaVersion: SCHEMA_VERSION,
@@ -136,6 +158,7 @@ function createEmptyReport(message) {
         openQuestions: [],
         nextSteps: [],
         conflicts: [],
+        timeline: [],
         meta: {
             generatedAt: new Date().toISOString()
         }

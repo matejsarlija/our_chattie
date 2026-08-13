@@ -1,7 +1,7 @@
 // backend/court-analysis/agents/visualizer-agent.js
 const { Tool } = require("@langchain/core/tools");
 const { ChatGoogleGenerativeAI } = require("@langchain/google-genai");
-const { withGeminiRetry } = require("../../helpers/geminiRetry");
+const { withGeminiRetry, withGeminiTimeout } = require("../../helpers/geminiRetry");
 
 const gemini = new ChatGoogleGenerativeAI({
     model: "gemini-2.5-flash", // Consistent with analysis agent
@@ -49,7 +49,7 @@ class VisualizerTool extends Tool {
         `;
 
         try {
-            const response = await withGeminiRetry(() => gemini.invoke(prompt));
+            const response = await withGeminiRetry(() => withGeminiTimeout((signal) => gemini.invoke(prompt, { signal })));
             console.log("[VisualizerTool] Raw Mermaid Output:\n", response.content);
             return response.content;
         } catch (err) {

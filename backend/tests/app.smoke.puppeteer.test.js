@@ -6,7 +6,7 @@ jest.setTimeout(60000);
 
 const describeIfSmoke = process.env.RUN_PUPPETEER_SMOKE === '1' ? describe : describe.skip;
 
-const FRONTEND_URL = process.env.SMOKE_FRONTEND_URL || 'http://127.0.0.1:5173';
+const FRONTEND_URL = process.env.SMOKE_FRONTEND_URL || 'http://127.0.0.1:3000';
 const BACKEND_HEALTH_URL = process.env.SMOKE_BACKEND_HEALTH_URL || 'http://127.0.0.1:3001/health';
 const ARTIFACT_DIR = process.env.SMOKE_ARTIFACT_DIR || path.join(process.cwd(), 'test-artifacts', 'puppeteer-smoke');
 
@@ -138,6 +138,73 @@ describeIfSmoke('Puppeteer smoke (live)', () => {
 
       const body = await page.evaluate(() => document.body.innerText || '');
       expect(body).not.toMatch(/Cannot GET|Internal Server Error|Application error/i);
+    });
+  });
+
+  test('analysis detail renders the report timeline annex with dates and citations', async () => {
+    await runWithFailureArtifacts('analysis detail renders the report timeline annex with dates and citations', async () => {
+      // Seed a run directly into the backend's data dir so the detail page has
+      // a persisted result_json.report.timeline to render (backend reads files per request).
+      const { createLocalStore } = require('../services/localStore');
+      const store = createLocalStore();
+      const run = await store.createAnalysisRun({
+        oib: '12345678901',
+        queryType: 'oib',
+        queryValue: '12345678901',
+        status: 'done',
+      });
+      await store.completeAnalysisRun({
+        analysisId: run.id,
+        resultText: '## Testni nalaz\n\n- točka',
+        resultJson: {
+          processedCases: [],
+          report: {
+            schemaVersion: '1.0.0',
+            narrative: 'Sažetak predmeta.',
+            findings: [],
+            timeline: [
+              {
+                date: '10.02.2025.',
+                description: 'Rješenje (ST-700/2024)',
+                citations: [{ source: 'ST-700/2024:entry-1', text: 'Rješenje od 10.02.2025.' }],
+              },
+            ],
+            conflicts: [],
+            openQuestions: [],
+            nextSteps: [],
+            meta: { generatedAt: new Date().toISOString() },
+          },
+        },
+      });
+
+      try {
+        const detailUrl = `${FRONTEND_URL}/dashboard/runs/${run.id}`;
+        const response = await page.goto(detailUrl, { waitUntil: 'networkidle2' });
+        expect(response).toBeTruthy();
+        expect(response.status()).toBeLessThan(400);
+
+        await page.waitForFunction(
+          (expected) => document.body.innerText.includes(expected),
+          { timeout: 15000 },
+          'Vremenska crta'
+        );
+
+        const body = await page.evaluate(() => document.body.innerText || '');
+        expect(body).toContain('Vremenska crta');
+        expect(body).toContain('10.02.2025.');
+        expect(body).toContain('Rješenje (ST-700/2024)');
+        expect(body).toContain('ST-700/2024:entry-1');
+        expect(pageErrors).toEqual([]);
+      } finally {
+        // Best-effort cleanup so the smoke lane does not leave seeded runs behind.
+        const runsFile = path.join(store.dataDir, 'runs.json');
+        try {
+          const runs = JSON.parse(fs.readFileSync(runsFile, 'utf8'));
+          fs.writeFileSync(runsFile, JSON.stringify(runs.filter((item) => item.id !== run.id), null, 2), 'utf8');
+        } catch (cleanupError) {
+          console.warn('Smoke timeline test cleanup skipped:', cleanupError.message);
+        }
+      }
     });
   });
 });

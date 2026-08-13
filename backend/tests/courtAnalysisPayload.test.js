@@ -75,6 +75,13 @@ describe('buildCourtAnalysisPayload', () => {
                         citations: [{ sourceId: 'doc-1.pdf' }]
                     }
                 ],
+                timeline: [
+                    {
+                        date: '15.03.2025',
+                        description: 'Objava (ST-100/2023)',
+                        citations: [{ source: 'ST-100/2023:entry-1', text: 'Predmet A' }]
+                    }
+                ],
                 meta: {
                     discoverySummaryRef: 'ST-100/2023'
                 }
@@ -89,6 +96,14 @@ describe('buildCourtAnalysisPayload', () => {
         expect(payload.secondaryClusters).toEqual(finalResult.secondaryClusters);
         expect(payload.clusterEvidencePackage).toEqual(finalResult.clusterEvidencePackage);
         expect(payload.report).toEqual(finalResult.report);
+        expect(payload.report.timeline).toEqual(finalResult.report.timeline);
+        expect(payload.report.timeline[0]).toMatchObject({
+            date: '15.03.2025',
+            description: 'Objava (ST-100/2023)'
+        });
+        expect(payload.report.timeline[0].citations).toEqual([
+            { source: 'ST-100/2023:entry-1', text: 'Predmet A' }
+        ]);
         expect(payload.processedCases).toEqual([
             {
                 caseResult: {

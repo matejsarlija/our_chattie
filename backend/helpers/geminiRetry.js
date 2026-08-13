@@ -2,6 +2,42 @@ const DEFAULT_MAX_RETRIES = 3;
 const BASE_DELAY_MS = 1500;
 const MAX_DELAY_MS = 15000;
 
+// Fail-fast guard against the Google GenAI free-tier 429 hang:
+// @langchain/google-genai `invoke` can pend forever on a rate-limit response
+// instead of rejecting, which stalls `withGeminiRetry` (it only reacts to thrown
+// errors) and therefore the whole single-concurrency analysis queue. Each request
+// is capped with a timer-driven AbortSignal so quota spikes reject promptly and
+// the pipeline can surface a transparent error + persist partial results.
+const GEMINI_REQUEST_TIMEOUT_MS = Number(process.env.GEMINI_REQUEST_TIMEOUT_MS) || 30000;
+
+async function withGeminiTimeout(callable, { timeoutMs = GEMINI_REQUEST_TIMEOUT_MS } = {}) {
+    if (!timeoutMs || timeoutMs <= 0) {
+        return Promise.resolve().then(() => callable(undefined));
+    }
+
+    const controller = new AbortController();
+    let rejectOnAbort;
+    const aborted = new Promise((_, reject) => {
+        rejectOnAbort = () => {
+            const error = new Error(`Gemini request timed out after ${timeoutMs}ms`);
+            error.name = 'AbortError';
+            reject(error);
+        };
+        controller.signal.addEventListener('abort', rejectOnAbort, { once: true });
+    });
+
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+        return await Promise.race([
+            Promise.resolve().then(() => callable(controller.signal)),
+            aborted
+        ]);
+    } finally {
+        clearTimeout(timer);
+        controller.signal.removeEventListener('abort', rejectOnAbort);
+    }
+}
+
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -70,6 +106,8 @@ async function withGeminiRetry(fn, options = {}) {
 }
 
 module.exports = {
-  withGeminiRetry,
-  parseRetryAfterMs,
+    withGeminiRetry,
+    withGeminiTimeout,
+    parseRetryAfterMs,
+    GEMINI_REQUEST_TIMEOUT_MS,
 };
