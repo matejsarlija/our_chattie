@@ -5,11 +5,9 @@
 import React from 'react';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import NewAnalysisModal from '../NewAnalysisModal';
-import { useStreamingAPI } from '../../../hooks/useStreamingAPI';
-import { useAuth } from '../../../contexts/AuthContext';
+import { useCourtAnalysisStream } from '../../../hooks/useCourtAnalysisStream';
 
 const mockNavigate = jest.fn();
-const mockOpenAuthModal = jest.fn();
 const mockStreamCourtAnalysis = jest.fn();
 
 jest.mock('react-router-dom', () => ({
@@ -17,22 +15,14 @@ jest.mock('react-router-dom', () => ({
   useNavigate: () => mockNavigate,
 }));
 
-jest.mock('../../../hooks/useStreamingAPI', () => ({
-  useStreamingAPI: jest.fn(),
-}));
-
-jest.mock('../../../contexts/AuthContext', () => ({
-  useAuth: jest.fn(),
+jest.mock('../../../hooks/useCourtAnalysisStream', () => ({
+  useCourtAnalysisStream: jest.fn(),
 }));
 
 describe('NewAnalysisModal', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    useAuth.mockReturnValue({
-      accessToken: 'token-1',
-      openAuthModal: mockOpenAuthModal,
-    });
-    useStreamingAPI.mockReturnValue({
+    useCourtAnalysisStream.mockReturnValue({
       isLoading: false,
       streamCourtAnalysis: mockStreamCourtAnalysis,
     });
@@ -66,9 +56,9 @@ describe('NewAnalysisModal', () => {
     });
   });
 
-  test('opens auth modal when backend returns AUTH_REQUIRED', async () => {
+  test('shows error message when streaming fails', async () => {
     mockStreamCourtAnalysis.mockImplementation(async (_searchTerm, callbacks) => {
-      callbacks.onError('Please sign in to continue.', { code: 'AUTH_REQUIRED' });
+      callbacks.onError('Neuspjelo pokretanje analize.', { status: 500 });
     });
 
     render(<NewAnalysisModal isOpen onClose={jest.fn()} />);
@@ -76,10 +66,6 @@ describe('NewAnalysisModal', () => {
     fireEvent.change(screen.getByPlaceholderText(/12345678901/i), { target: { value: '12345678901' } });
     fireEvent.click(screen.getByRole('button', { name: /pokreni/i }));
 
-    await waitFor(() => {
-      expect(mockOpenAuthModal).toHaveBeenCalled();
-    });
-
-    expect(await screen.findByText(/please sign in to continue/i)).toBeInTheDocument();
+    expect(await screen.findByText(/neuspjelo pokretanje analize/i)).toBeInTheDocument();
   });
 });

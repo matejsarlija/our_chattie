@@ -13,7 +13,6 @@ function createAnalysisRunStreamHandler({
     let currentState;
     try {
       currentState = await getAnalysisRunFull({
-        supabase: req.supabase,
         id: req.params.id,
       });
     } catch (error) {
@@ -101,7 +100,6 @@ function createAnalysisRunStreamHandler({
 
       try {
         const latest = await getAnalysisRunFull({
-          supabase: req.supabase,
           id: req.params.id,
         });
 

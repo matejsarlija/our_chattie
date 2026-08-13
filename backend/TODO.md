@@ -3,7 +3,6 @@
 ## Current Folder & File Structure
 ```
 backend/
-├── chatAgent.js
 ├── court-analysis/
 │   ├── agents/
 │   │   ├── analysis-agent.js   # LangChain Tool, Gemini LLM
@@ -14,13 +13,14 @@ backend/
 │       ├── file-helpers.js
 │       ├── progress-tracker.js
 │       └── rateLimiter.js      # Token bucket rate limiter middleware
-├── helpers/
-│   └── helpers.js
+├── court-registry/             # Sudreg enrichment client
+├── helpers/                    # Analysis stage/stream, SSE, payload, retry helpers
 ├── scraper/
 │   └── courtSearchPuppeteer.js # Puppeteer scraper (Browserless ready)
+├── services/
+│   └── localStore.js           # JSON-file persistence for runs + events
 ├── server.js                   # Express API, SSE, rate limiting
-├── uploads/                    # Temp downloaded files
-├── package.json
+├── tests/                      # Jest unit + integration + smoke suites
 └── .env
 ```
 

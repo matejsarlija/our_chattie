@@ -6,9 +6,9 @@ describe('buildSseData', () => {
     expect(result).toBe('data: {"content":"Hello"}\n\n');
   });
 
-  test('supports done event payloads', () => {
-    const result = buildSseData({ done: true, mode: 'preview' });
-    expect(result).toBe('data: {"done":true,"mode":"preview"}\n\n');
+  test('supports progress payloads', () => {
+    const result = buildSseData({ step: 'starting', progress: 5 });
+    expect(result).toBe('data: {"step":"starting","progress":5}\n\n');
   });
 
   test('supports error payloads', () => {

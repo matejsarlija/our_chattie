@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { apiFetch } from '../lib/apiClient';
 
-export function useAnalysisRuns({ token, limit = 10, enabled = true }) {
+export function useAnalysisRuns({ limit = 10, enabled = true }) {
   const [runs, setRuns] = useState([]);
   const [count, setCount] = useState(0);
   const [offset, setOffset] = useState(0);
@@ -9,7 +9,7 @@ export function useAnalysisRuns({ token, limit = 10, enabled = true }) {
   const [error, setError] = useState('');
 
   const loadRuns = useCallback(async (nextOffset = offset) => {
-    if (!token || !enabled) return;
+    if (!enabled) return;
 
     setLoading(true);
     setError('');
@@ -20,9 +20,7 @@ export function useAnalysisRuns({ token, limit = 10, enabled = true }) {
         offset: String(nextOffset),
       });
 
-      const data = await apiFetch(`/api/analysis/runs?${query.toString()}`, {
-        token,
-      });
+      const data = await apiFetch(`/api/analysis/runs?${query.toString()}`);
 
       setRuns(data?.runs || []);
       setCount(data?.count || 0);
@@ -32,12 +30,12 @@ export function useAnalysisRuns({ token, limit = 10, enabled = true }) {
     } finally {
       setLoading(false);
     }
-  }, [enabled, limit, offset, token]);
+  }, [enabled, limit, offset]);
 
   useEffect(() => {
-    if (!enabled || !token) return;
+    if (!enabled) return;
     loadRuns(0);
-  }, [enabled, token, loadRuns]);
+  }, [enabled, loadRuns]);
 
   const nextPage = useCallback(() => {
     const nextOffset = offset + limit;

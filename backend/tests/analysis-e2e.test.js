@@ -2,55 +2,22 @@ const axios = require('axios');
 const crypto = require('crypto');
 
 const baseUrl = process.env.E2E_BASE_URL;
-const token = process.env.E2E_SUPABASE_ACCESS_TOKEN;
 
 const describeIfE2E = baseUrl ? describe : describe.skip;
-const describeIfAuthed = baseUrl && token ? describe : describe.skip;
 
-function authHeaders() {
-  return {
-    Authorization: `Bearer ${token}`,
-  };
-}
-
-describeIfE2E('analysis auth (unauthenticated)', () => {
-  test('requires auth for analysis runs list', async () => {
-    await expect(
-      axios.get(`${baseUrl}/api/analysis/runs`),
-    ).rejects.toMatchObject({
-      response: {
-        status: 401,
-      },
-    });
-  });
-
-  test('requires auth for analysis run full detail', async () => {
-    await expect(
-      axios.get(`${baseUrl}/api/analysis/runs/${crypto.randomUUID()}/full`),
-    ).rejects.toMatchObject({
-      response: {
-        status: 401,
-      },
-    });
-  });
-});
-
-describeIfAuthed('analysis e2e (supabase)', () => {
-  test('lists analysis runs for the authenticated user', async () => {
-    const response = await axios.get(`${baseUrl}/api/analysis/runs`, {
-      headers: authHeaders(),
-    });
+describeIfE2E('analysis runs API (local store)', () => {
+  test('lists analysis runs without authentication', async () => {
+    const response = await axios.get(`${baseUrl}/api/analysis/runs`);
 
     expect(response.status).toBe(200);
     expect(response.data).toHaveProperty('runs');
     expect(Array.isArray(response.data.runs)).toBe(true);
+    expect(response.data).toHaveProperty('count');
   });
 
   test('returns 404 for unknown analysis run full detail', async () => {
     await expect(
-      axios.get(`${baseUrl}/api/analysis/runs/${crypto.randomUUID()}/full`, {
-        headers: authHeaders(),
-      }),
+      axios.get(`${baseUrl}/api/analysis/runs/${crypto.randomUUID()}/full`),
     ).rejects.toMatchObject({
       response: {
         status: 404,
@@ -59,9 +26,7 @@ describeIfAuthed('analysis e2e (supabase)', () => {
   });
 
   test('returns run + events shape for existing run full detail', async () => {
-    const listResponse = await axios.get(`${baseUrl}/api/analysis/runs?limit=1&offset=0`, {
-      headers: authHeaders(),
-    });
+    const listResponse = await axios.get(`${baseUrl}/api/analysis/runs?limit=1&offset=0`);
 
     expect(listResponse.status).toBe(200);
     expect(Array.isArray(listResponse.data?.runs)).toBe(true);
@@ -71,9 +36,7 @@ describeIfAuthed('analysis e2e (supabase)', () => {
       return;
     }
 
-    const detailResponse = await axios.get(`${baseUrl}/api/analysis/runs/${runId}/full`, {
-      headers: authHeaders(),
-    });
+    const detailResponse = await axios.get(`${baseUrl}/api/analysis/runs/${runId}/full`);
 
     expect(detailResponse.status).toBe(200);
     expect(detailResponse.data).toHaveProperty('run');

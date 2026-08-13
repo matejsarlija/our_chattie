@@ -5,13 +5,8 @@
 import React from 'react';
 import { render, screen } from '@testing-library/react';
 import AnalysisRunDetailPage from '../AnalysisRunDetailPage';
-import { useAuth } from '../../../contexts/AuthContext';
 import { useAnalysisRunDetail } from '../../../hooks/useAnalysisRunDetail';
 import { useAnalysisEvents } from '../../../hooks/useAnalysisEvents';
-
-jest.mock('../../../contexts/AuthContext', () => ({
-  useAuth: jest.fn(),
-}));
 
 jest.mock('../../../hooks/useAnalysisRunDetail', () => ({
   useAnalysisRunDetail: jest.fn(),
@@ -46,13 +41,6 @@ jest.mock('react-router-dom', () => ({
 describe('AnalysisRunDetailPage metadata modules', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-
-    useAuth.mockReturnValue({
-      user: { id: 'u1' },
-      accessToken: 'token-1',
-      loading: false,
-      openAuthModal: jest.fn(),
-    });
 
     useAnalysisEvents.mockReturnValue({
       timeline: [],
@@ -283,6 +271,7 @@ describe('AnalysisRunDetailPage metadata modules', () => {
     expect(screen.getByText('Utvrden je kontinuitet postupanja.')).toBeInTheDocument();
     expect(screen.getByText('Vremenska crta')).toBeInTheDocument();
     expect(screen.getByText('Otvoren postupak.')).toBeInTheDocument();
+    expect(screen.getByText('2026-01-10')).toBeInTheDocument();
     expect(screen.getByText('Konflikti')).toBeInTheDocument();
     expect(screen.getByText('Nesklad u navodu o datumu dospijeca.')).toBeInTheDocument();
   });
@@ -496,5 +485,162 @@ describe('AnalysisRunDetailPage metadata modules', () => {
 
     expect(screen.getByText('Nalaz bez valjanih citata.')).toBeInTheDocument();
     expect(screen.queryByText('Citati')).not.toBeInTheDocument();
+  });
+
+  test('renders annex sections for backend-native report shapes (string open questions, finding/reason conflicts)', () => {
+    useAnalysisRunDetail.mockReturnValue({
+      run: {
+        id: 'run-1',
+        status: 'done',
+        oib: '12345678901',
+        result_text: 'Narativ',
+        result_json: {
+          processedCases: [],
+          report: {
+            schemaVersion: '1.0.0',
+            narrative: 'Narativ',
+            findings: [{ id: 'f1', text: 'Utvrdena aktivna parnica.', confidence: 'high', citations: [] }],
+            openQuestions: ['Nedostaje datum dospijeća glavnog potraživanja.'],
+            nextSteps: ['Podnijeti tužbu.'],
+            conflicts: [{ finding: 'Nesklad datuma.', reason: 'Dva različita datuma u dokumentima.' }],
+          },
+        },
+      },
+      events: [],
+      loading: false,
+      eventsLoading: false,
+      error: '',
+      isRunning: false,
+      connectionMode: 'idle',
+      lastUpdatedAt: '2026-02-27T12:00:00.000Z',
+      refresh: jest.fn(),
+    });
+
+    render(<AnalysisRunDetailPage />);
+
+    expect(screen.getByText('Utvrdena aktivna parnica.')).toBeInTheDocument();
+    expect(screen.getByText('Nedostaje datum dospijeća glavnog potraživanja.')).toBeInTheDocument();
+    expect(screen.getByText('Dva različita datuma u dokumentima.')).toBeInTheDocument();
+  });
+
+  test('renders a transparent error banner with the persisted friendly message for failed runs', () => {
+    useAnalysisRunDetail.mockReturnValue({
+      run: {
+        id: 'run-1',
+        status: 'error',
+        oib: '12345678901',
+        error: 'Analiza nije uspjela tijekom faze analize i sintetiziranja izvješća. Dnevni limit AI analize je iscrpljen.',
+        result_text: '',
+        result_json: { processedCases: [] },
+      },
+      events: [],
+      loading: false,
+      eventsLoading: false,
+      error: '',
+      isRunning: false,
+      connectionMode: 'idle',
+      lastUpdatedAt: '2026-02-27T12:00:00.000Z',
+      refresh: jest.fn(),
+    });
+
+    render(<AnalysisRunDetailPage />);
+
+    expect(
+      screen.getByText(/Analiza nije uspjela tijekom faze analize i sintetiziranja izvješća\./)
+    ).toBeInTheDocument();
+  });
+
+  test('does not duplicate the banner when the hook-level error is also present', () => {
+    useAnalysisRunDetail.mockReturnValue({
+      run: {
+        id: 'run-1',
+        status: 'error',
+        oib: '12345678901',
+        error: 'Analiza nije uspjela tijekom faze analize i sintetiziranja izvješća.',
+        result_text: '',
+        result_json: { processedCases: [] },
+      },
+      events: [],
+      loading: false,
+      eventsLoading: false,
+      error: 'Mrežna greška pri učitavanju detalja analize.',
+      isRunning: false,
+      connectionMode: 'idle',
+      lastUpdatedAt: '2026-02-27T12:00:00.000Z',
+      refresh: jest.fn(),
+    });
+
+    render(<AnalysisRunDetailPage />);
+
+    expect(screen.queryByText(/Analiza nije uspjela/)).not.toBeInTheDocument();
+    expect(screen.getByText(/Mrežna greška pri učitavanju/)).toBeInTheDocument();
+  });
+
+  test('renders partial discovery results alongside the error when an errored run carries result_json', () => {
+    useAnalysisRunDetail.mockReturnValue({
+      run: {
+        id: 'run-1',
+        status: 'error',
+        oib: '12345678901',
+        error: 'Analiza nije uspjela tijekom faze analize i sintetiziranja izvješća. Djelomični rezultati su sačuvani i prikazani su niže na ovoj stranici.',
+        result_text: '',
+        result_json: {
+          processedCases: [
+            {
+              caseResult: {
+                title: 'Objava 14/2026 - Stecaj duznika',
+                caseNumber: 'St-357/2013',
+                detailLink: 'https://e-oglasna.pravosudje.hr/objave/128734',
+              },
+            },
+          ],
+          discoverySummary: {
+            reasoningClusterId: 'St-357/2013',
+            capturedDistinctCaseCount: 1,
+          },
+        },
+      },
+      events: [],
+      loading: false,
+      eventsLoading: false,
+      error: '',
+      isRunning: false,
+      connectionMode: 'idle',
+      lastUpdatedAt: '2026-02-27T12:00:00.000Z',
+      refresh: jest.fn(),
+    });
+
+    render(<AnalysisRunDetailPage />);
+
+    expect(screen.getByText(/Djelomični rezultati su sačuvani/)).toBeInTheDocument();
+    expect(screen.getByText('Objava 14/2026 - Stecaj duznika')).toBeInTheDocument();
+    expect(screen.getByText('St-357/2013')).toBeInTheDocument();
+  });
+
+  test('shows an error-aware result empty state when an errored run has no partial result_text', () => {
+    useAnalysisRunDetail.mockReturnValue({
+      run: {
+        id: 'run-1',
+        status: 'error',
+        oib: '12345678901',
+        error: 'Analiza nije uspjela tijekom faze preuzimanja dokumenata.',
+        result_text: '',
+        result_json: { processedCases: [] },
+      },
+      events: [],
+      loading: false,
+      eventsLoading: false,
+      error: '',
+      isRunning: false,
+      connectionMode: 'idle',
+      lastUpdatedAt: '2026-02-27T12:00:00.000Z',
+      refresh: jest.fn(),
+    });
+
+    render(<AnalysisRunDetailPage />);
+
+    expect(
+      screen.getByText(/Rezultat analize nije dostupan jer obrada nije uspješno dovršena\./)
+    ).toBeInTheDocument();
   });
 });

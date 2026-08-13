@@ -44,24 +44,20 @@ export const resolveApiUrl = (url) => {
   return `${apiPrefix}${url.slice(4)}`;
 };
 
-const buildHeaders = ({ token, headers = {}, isJson = true }) => {
+const buildHeaders = ({ headers = {}, isJson = true }) => {
   const out = { ...headers };
 
   if (isJson && !out['Content-Type']) {
     out['Content-Type'] = 'application/json';
   }
 
-  if (token) {
-    out.Authorization = `Bearer ${token}`;
-  }
-
   return out;
 };
 
-export const apiFetch = async (url, { method = 'GET', body, token, headers, isJson = true, signal } = {}) => {
+export const apiFetch = async (url, { method = 'GET', body, headers, isJson = true, signal } = {}) => {
   const response = await fetch(resolveApiUrl(url), {
     method,
-    headers: buildHeaders({ token, headers, isJson }),
+    headers: buildHeaders({ headers, isJson }),
     body: body === undefined ? undefined : isJson ? JSON.stringify(body) : body,
     signal,
   });

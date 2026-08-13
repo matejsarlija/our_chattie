@@ -8,7 +8,6 @@ import RunProgressStepper from './RunProgressStepper';
 import RunEventTimeline from './RunEventTimeline';
 import AnalysisReportAnnex from './AnalysisReportAnnex';
 import DashboardShell from './DashboardShell';
-import { useAuth } from '../../contexts/AuthContext';
 import { useAnalysisRunDetail } from '../../hooks/useAnalysisRunDetail';
 import { useAnalysisEvents } from '../../hooks/useAnalysisEvents';
 import { env } from '../../lib/env';
@@ -66,7 +65,6 @@ const formatDate = (iso) => {
 
 export default function AnalysisRunDetailPage() {
   const { id } = useParams();
-  const { user, accessToken, loading: authLoading, openAuthModal } = useAuth();
   const [showFullTimeline, setShowFullTimeline] = useState(false);
   const CONNECTION_LABELS = {
     live: 'Live',
@@ -76,8 +74,6 @@ export default function AnalysisRunDetailPage() {
 
   const { run, events, loading, eventsLoading, error, isRunning, connectionMode, lastUpdatedAt, refresh } = useAnalysisRunDetail({
     runId: id,
-    token: accessToken,
-    enabled: Boolean(user),
     streamEnabled: env.analysisDetailSseEnabled,
   });
 
@@ -111,32 +107,6 @@ export default function AnalysisRunDetailPage() {
     });
   }, [parsedResult, run]);
 
-  if (authLoading) {
-    return (
-      <DashboardShell>
-        <main className="mx-auto max-w-6xl px-4 py-8 text-sm text-[var(--text-muted)]">Provjeravam prijavu…</main>
-      </DashboardShell>
-    );
-  }
-
-  if (!user) {
-    return (
-      <DashboardShell>
-        <main className="mx-auto max-w-3xl px-4 py-12">
-          <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-8 text-center">
-            <p className="text-[var(--text)]">Za prikaz detalja analize potrebna je prijava.</p>
-            <button
-              onClick={openAuthModal}
-              className="mt-4 rounded-lg bg-[var(--accent)] px-4 py-2 text-sm text-white"
-            >
-              Prijava
-            </button>
-          </div>
-        </main>
-      </DashboardShell>
-    );
-  }
-
   return (
     <DashboardShell>
       <main className="mx-auto max-w-6xl px-4 py-8">
@@ -159,6 +129,10 @@ export default function AnalysisRunDetailPage() {
 
         {error && (
           <div className="mb-4 rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">{error}</div>
+        )}
+
+        {!error && run?.status === 'error' && run?.error && (
+          <div className="mb-4 rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">{run.error}</div>
         )}
 
         {loading ? (
@@ -241,7 +215,11 @@ export default function AnalysisRunDetailPage() {
 
               {!resultMarkdown ? (
                 <p className="text-sm text-[var(--text-muted)]">
-                  {isRunning ? 'Analiza je u tijeku, rezultat će biti prikazan po završetku.' : 'Rezultat još nije dostupan.'}
+                  {isRunning
+                    ? 'Analiza je u tijeku, rezultat će biti prikazan po završetku.'
+                    : run?.status === 'error'
+                      ? 'Rezultat analize nije dostupan jer obrada nije uspješno dovršena. Djelomični podaci, ako ih ima, prikazani su niže.'
+                      : 'Rezultat još nije dostupan.'}
                 </p>
               ) : (
                 <ErrorBoundary>

@@ -35,7 +35,7 @@ const nextBackoffMs = ({ currentMs, pollMs, retryAfterMs }) => {
   return Math.min(stepped, MAX_BACKOFF_MS);
 };
 
-export function useAnalysisRunDetail({ runId, token, pollMs = 5000, enabled = true, streamEnabled = false }) {
+export function useAnalysisRunDetail({ runId, pollMs = 5000, enabled = true, streamEnabled = false }) {
   const [run, setRun] = useState(null);
   const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -66,7 +66,7 @@ export function useAnalysisRunDetail({ runId, token, pollMs = 5000, enabled = tr
   useEffect(() => {
     setStreamFallback(false);
     setStreamError('');
-  }, [runId, token]);
+  }, [runId]);
 
   useEffect(() => {
     if (typeof document === 'undefined') return undefined;
@@ -79,7 +79,7 @@ export function useAnalysisRunDetail({ runId, token, pollMs = 5000, enabled = tr
   }, []);
 
   const loadDetail = useCallback(async ({ silent = false } = {}) => {
-    if (!enabled || !token || !runId) return { ok: false, run: null };
+    if (!enabled || !runId) return { ok: false, run: null };
 
     if (!silent) {
       setLoading(true);
@@ -87,7 +87,7 @@ export function useAnalysisRunDetail({ runId, token, pollMs = 5000, enabled = tr
     }
 
     try {
-      const data = await apiFetch(`/api/analysis/runs/${runId}/full`, { token });
+      const data = await apiFetch(`/api/analysis/runs/${runId}/full`);
       const nextRun = data?.run || null;
       const nextEvents = data?.events || [];
 
@@ -115,13 +115,13 @@ export function useAnalysisRunDetail({ runId, token, pollMs = 5000, enabled = tr
         setEventsLoading(false);
       }
     }
-  }, [enabled, runId, token, pollMs]);
+  }, [enabled, runId, pollMs]);
 
   useEffect(() => {
-    if (!enabled || !token || !runId) return;
+    if (!enabled || !runId) return;
     clearTimer();
     void loadDetail();
-  }, [enabled, runId, token, loadDetail, clearTimer]);
+  }, [enabled, runId, loadDetail, clearTimer]);
 
   const isRunning = useMemo(() => {
     const status = String(run?.status || '').toLowerCase();
@@ -130,7 +130,6 @@ export function useAnalysisRunDetail({ runId, token, pollMs = 5000, enabled = tr
 
   const shouldUseStream = streamEnabled
     && enabled
-    && Boolean(token)
     && Boolean(runId)
     && isRunning
     && isVisible
@@ -138,7 +137,6 @@ export function useAnalysisRunDetail({ runId, token, pollMs = 5000, enabled = tr
 
   const { connected: streamConnected } = useAnalysisRunStream({
     runId,
-    token,
     enabled: shouldUseStream,
     onSnapshot: (payload) => {
       setRun(payload?.run || null);
@@ -182,13 +180,13 @@ export function useAnalysisRunDetail({ runId, token, pollMs = 5000, enabled = tr
   });
 
   useEffect(() => {
-    if (!streamFallback || !enabled || !token || !runId || !isRunning || !isVisible) return undefined;
+    if (!streamFallback || !enabled || !runId || !isRunning || !isVisible) return undefined;
     const retryTimer = setTimeout(() => {
       setStreamFallback(false);
       setStreamError('');
     }, 15_000);
     return () => clearTimeout(retryTimer);
-  }, [streamFallback, enabled, token, runId, isRunning, isVisible, streamEnabled]);
+  }, [streamFallback, enabled, runId, isRunning, isVisible, streamEnabled]);
 
   const lastUpdatedAt = useMemo(
     () => run?.completed_at || run?.updated_at || run?.created_at || null,
@@ -203,7 +201,7 @@ export function useAnalysisRunDetail({ runId, token, pollMs = 5000, enabled = tr
 
   useEffect(() => {
     clearTimer();
-    if (!enabled || !token || !runId || !isRunning || !isVisible || shouldUseStream) return undefined;
+    if (!enabled || !runId || !isRunning || !isVisible || shouldUseStream) return undefined;
 
     let cancelled = false;
 
@@ -235,10 +233,10 @@ export function useAnalysisRunDetail({ runId, token, pollMs = 5000, enabled = tr
       cancelled = true;
       clearTimer();
     };
-  }, [enabled, token, runId, isRunning, isVisible, shouldUseStream, pollMs, loadDetail, clearTimer]);
+  }, [enabled, runId, isRunning, isVisible, shouldUseStream, pollMs, loadDetail, clearTimer]);
 
   useEffect(() => {
-    if (!enabled || !token || !runId) {
+    if (!enabled || !runId) {
       previousVisibleRef.current = isVisible;
       return;
     }
@@ -248,7 +246,7 @@ export function useAnalysisRunDetail({ runId, token, pollMs = 5000, enabled = tr
     if (!becameVisible) return;
 
     void loadDetail({ silent: true });
-  }, [enabled, token, runId, isVisible, loadDetail]);
+  }, [enabled, runId, isVisible, loadDetail]);
 
   return {
     run,

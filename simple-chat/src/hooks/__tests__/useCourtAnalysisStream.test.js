@@ -1,8 +1,7 @@
 import React, { useEffect } from 'react';
 import { render, waitFor } from '@testing-library/react';
-import { useStreamingAPI } from '../useStreamingAPI';
+import { useCourtAnalysisStream } from '../useCourtAnalysisStream';
 
-jest.unmock('../useStreamingAPI');
 jest.mock('../../lib/env', () => ({
   env: {
     courtAnalysisUrl: '/api/court-analysis',
@@ -13,7 +12,7 @@ const createDoneReader = () => ({
   read: jest.fn(() => Promise.resolve({ done: true, value: undefined })),
 });
 
-describe('useStreamingAPI court-analysis request builder', () => {
+describe('useCourtAnalysisStream request builder', () => {
   beforeEach(() => {
     global.fetch = jest.fn(() =>
       Promise.resolve({
@@ -27,7 +26,7 @@ describe('useStreamingAPI court-analysis request builder', () => {
 
   test('sends typed oib query and legacy searchTerm for OIB input', async () => {
     function Harness() {
-      const api = useStreamingAPI();
+      const api = useCourtAnalysisStream();
 
       useEffect(() => {
         api.streamCourtAnalysis('12345678901', {
@@ -59,7 +58,7 @@ describe('useStreamingAPI court-analysis request builder', () => {
 
   test('classifies case-number strings as case_number', async () => {
     function Harness() {
-      const api = useStreamingAPI();
+      const api = useCourtAnalysisStream();
 
       useEffect(() => {
         api.streamCourtAnalysis('St-357/2013', {
@@ -86,7 +85,7 @@ describe('useStreamingAPI court-analysis request builder', () => {
 
   test('accepts explicit typed query object without reclassification', async () => {
     function Harness() {
-      const api = useStreamingAPI();
+      const api = useCourtAnalysisStream();
 
       useEffect(() => {
         api.streamCourtAnalysis({ type: 'text', value: 'adriatic osiguranje' }, {
@@ -120,7 +119,7 @@ describe('useStreamingAPI court-analysis request builder', () => {
     });
 
     function Harness() {
-      const api = useStreamingAPI();
+      const api = useCourtAnalysisStream();
 
       useEffect(() => {
         api.streamCourtAnalysis('12345678901', {
@@ -149,11 +148,9 @@ describe('useStreamingAPI court-analysis request builder', () => {
 
   test('classifies 6-letter case-number prefix correctly (A-02b parity)', async () => {
     function Harness() {
-      const api = useStreamingAPI();
+      const api = useCourtAnalysisStream();
 
       useEffect(() => {
-        // Test a 6-letter prefix e.g. "Abcdef-123/2023"
-        // eslint-disable-next-line react-hooks/exhaustive-deps
         api.streamCourtAnalysis('Abcdef-123/2023', {
           onComplete: () => {},
           onError: () => {},
@@ -173,5 +170,52 @@ describe('useStreamingAPI court-analysis request builder', () => {
     const payload = JSON.parse(call[1].body);
 
     expect(payload.query).toEqual({ type: 'case_number', value: 'Abcdef-123/2023' });
+  });
+
+  test('forwards progress events from SSE stream', async () => {
+    const encoder = new TextEncoder();
+    const chunks = [
+      'data: {"step":"starting","progress":5,"message":"start"}\n\n',
+      'data: {"step":"complete","progress":100,"message":"done","data":{"comparativeAnalysis":"ok"}}\n\n',
+    ];
+    let index = 0;
+    global.fetch = jest.fn(() =>
+      Promise.resolve({
+        ok: true,
+        body: {
+          getReader: () => ({
+            read: jest.fn(() => {
+              if (index >= chunks.length) {
+                return Promise.resolve({ done: true, value: undefined });
+              }
+              return Promise.resolve({ done: false, value: encoder.encode(chunks[index++]) });
+            }),
+          }),
+        },
+      }),
+    );
+
+    const onProgress = jest.fn();
+    const onComplete = jest.fn();
+
+    function Harness() {
+      const api = useCourtAnalysisStream();
+
+      useEffect(() => {
+        api.streamCourtAnalysis('66124057408', { onProgress, onComplete, onError: () => {} });
+      }, [api]);
+
+      return null;
+    }
+
+    render(<Harness />);
+
+    await waitFor(() => {
+      expect(onProgress).toHaveBeenCalledWith(expect.objectContaining({ step: 'starting', progress: 5 }));
+    });
+
+    await waitFor(() => {
+      expect(onComplete).toHaveBeenCalledWith(expect.objectContaining({ comparativeAnalysis: 'ok' }));
+    });
   });
 });

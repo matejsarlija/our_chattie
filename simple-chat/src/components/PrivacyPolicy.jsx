@@ -1,123 +1,93 @@
 import React from 'react';
-import { Link } from 'react-router-dom';
+import DashboardShell from './Dashboard/DashboardShell';
 
 export default function PrivacyPolicy() {
   return (
-    <div className="flex flex-col min-h-screen bg-slate-50">
-      {/* Header - same as main app for consistency */}
-      <div className="bg-white p-4 shadow-sm border-b border-slate-200">
-        <div className="max-w-6xl mx-auto flex justify-between items-center">
-          <h1 className="text-slate-800 text-xl font-medium font-main">
-          <Link to="/">
-                        Pravni Asistent
-                        </Link>
-          </h1>
-          <div className="flex gap-6">
-          <Link to="/" className="text-slate-600 hover:text-slate-800 transition-colors">
-              Povratak na chat
-            </Link>
-            <Link to="/o-nama" className="text-slate-600 hover:text-slate-800 transition-colors">
-                            O nama
-                        </Link>
-          </div>
-        </div>
-      </div>
+    <DashboardShell>
+      <main className="mx-auto max-w-4xl px-4 py-8">
+        <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-6">
+          <h1 className="mb-6 text-2xl font-bold text-[var(--text)]">Pravila privatnosti</h1>
 
-      {/* Main Content */}
-      <div className="flex-1">
-        <div className="max-w-4xl mx-auto p-6 my-8 bg-white rounded-lg shadow-sm border border-slate-100">
-          <h1 className="text-2xl font-bold mb-6">Pravila privatnosti</h1>
-          
           <section className="mb-8">
-            <h2 className="text-xl font-semibold mb-3">1. Uvod</h2>
-            <p className="mb-3">
-              Dobrodošli na Pravila privatnosti za pravnog asistenta i web-stranicu alimentacija.info. Ova pravila opisuju kako prikupljamo, koristimo i štitimo vaše osobne podatke prilikom korištenja naše usluge.
+            <h2 className="mb-3 text-xl font-semibold text-[var(--text)]">1. Uvod</h2>
+            <p className="mb-3 text-[var(--text-muted)]">
+              Dobrodošli na Pravila privatnosti za uslugu alimentacija.info. Ova pravila opisuju kako prikupljamo, koristimo i štitimo vaše osobne podatke prilikom korištenja naše usluge.
             </p>
-            <p>
-              Korištenjem pravnog asistenta pristajete na prikupljanje i korištenje informacija u skladu s ovim pravilima privatnosti.
+            <p className="text-[var(--text-muted)]">
+              Korištenjem usluge pristajete na prikupljanje i korištenje informacija u skladu s ovim pravilima privatnosti.
             </p>
           </section>
-          
+
           <section className="mb-8">
-            <h2 className="text-xl font-semibold mb-3">2. Koje podatke prikupljamo</h2>
-            <p className="mb-3">
+            <h2 className="mb-3 text-xl font-semibold text-[var(--text)]">2. Koje podatke prikupljamo</h2>
+            <p className="mb-3 text-[var(--text-muted)]">
               Prikupljamo sljedeće vrste podataka:
             </p>
-            <ul className="list-disc pl-6 mb-3 space-y-2">
-              <li>Tekstualni sadržaj vaših razgovora s pravnim asistentom</li>
-              <li>Postavke korisničkog sučelja (kao što je veličina teksta)</li>
+            <ul className="mb-3 space-y-2 list-disc pl-6 text-[var(--text-muted)]">
+              <li>Upit za analizu koji unesete (OIB, broj predmeta ili tekstualni pojam)</li>
+              <li>Rezultate analize javno dostupnih sudskih objava</li>
               <li>Osnovne podatke o korištenju usluge</li>
             </ul>
-            <p>
-              Razgovori se pohranjuju lokalno u vašem pregledniku putem funkcionalosti samog preglednika, s ograničenjem na posljednjih 50 poruka.
+            <p className="text-[var(--text-muted)]">
+              Pokrenute analize i pripadajući događaji pohranjuju se lokalno na poslužitelju u obliku JSON datoteka radi prikaza povijesti analiza na nadzornoj ploči.
             </p>
           </section>
-          
+
           <section className="mb-8">
-            <h2 className="text-xl font-semibold mb-3">3. Kako koristimo vaše podatke</h2>
-            <p className="mb-3">
+            <h2 className="mb-3 text-xl font-semibold text-[var(--text)]">3. Kako koristimo vaše podatke</h2>
+            <p className="mb-3 text-[var(--text-muted)]">
               Prikupljene podatke koristimo za:
             </p>
-            <ul className="list-disc pl-6 mb-3 space-y-2">
-              <li>Pružanje i održavanje usluge pravnog asistenta</li>
+            <ul className="mb-3 space-y-2 list-disc pl-6 text-[var(--text-muted)]">
+              <li>Pružanje i održavanje usluge analize sudskih objava</li>
+              <li>Prikaz povijesti pokrenutih analiza</li>
               <li>Poboljšanje korisničkog iskustva</li>
-              <li>Spremanje vaših preferenci (npr. veličina teksta)</li>
-              <li>Analiziranje korištenja usluge kako bismo je unaprijedili</li>
             </ul>
           </section>
-          
+
           <section className="mb-8">
-            <h2 className="text-xl font-semibold mb-3">4. Sigurnost podataka</h2>
-            <p className="mb-3">
+            <h2 className="mb-3 text-xl font-semibold text-[var(--text)]">4. Sigurnost podataka</h2>
+            <p className="mb-3 text-[var(--text-muted)]">
               Predani smo zaštiti vaših osobnih podataka. Implementirali smo odgovarajuće tehničke i organizacijske mjere kako bismo zaštitili vaše podatke.
             </p>
-            <p>
+            <p className="text-[var(--text-muted)]">
               Imajte na umu da nijedan način prijenosa putem interneta ili metoda elektroničke pohrane nije 100% siguran, pa iako koristimo komercijalno prihvatljiva sredstva za zaštitu vaših podataka, ne možemo jamčiti njihovu apsolutnu sigurnost.
             </p>
           </section>
-          
+
           <section className="mb-8">
-            <h2 className="text-xl font-semibold mb-3">5. Ograničenje odgovornosti</h2>
-            <p className="mb-3">
-              Pravni Asistent pruža opće pravne informacije i ne predstavlja pravni savjet. Ne postoji odvjetničko-klijentski odnos između korisnika i pružatelja usluge.
+            <h2 className="mb-3 text-xl font-semibold text-[var(--text)]">5. Ograničenje odgovornosti</h2>
+            <p className="mb-3 text-[var(--text-muted)]">
+              Usluga pruža opće informacije o javno dostupnim sudskim objavama i ne predstavlja pravni savjet. Ne postoji odvjetničko-klijentski odnos između korisnika i pružatelja usluge.
             </p>
-            <p>
+            <p className="text-[var(--text-muted)]">
               Za konkretne pravne probleme i savjete prilagođene vašoj situaciji, obratite se kvalificiranom pravnom stručnjaku ili odvjetniku.
             </p>
           </section>
-          
+
           <section className="mb-8">
-            <h2 className="text-xl font-semibold mb-3">6. Kolačići i tehnologije praćenja</h2>
-            <p className="mb-3">
+            <h2 className="mb-3 text-xl font-semibold text-[var(--text)]">6. Kolačići i tehnologije praćenja</h2>
+            <p className="mb-3 text-[var(--text-muted)]">
               Naša usluga može koristiti kolačiće za poboljšanje korisničkog iskustva i prikupljanje analitičkih podataka. Možete podesiti svoj preglednik da odbije sve kolačiće ili da vas upozori kada se kolačići šalju.
             </p>
           </section>
-          
+
           <section className="mb-8">
-            <h2 className="text-xl font-semibold mb-3">7. Izmjene ovih pravila privatnosti</h2>
-            <p className="mb-3">
+            <h2 className="mb-3 text-xl font-semibold text-[var(--text)]">7. Izmjene ovih pravila privatnosti</h2>
+            <p className="mb-3 text-[var(--text-muted)]">
               Povremeno možemo ažurirati naša pravila privatnosti. Savjetujemo vam da povremeno pregledavate ovu stranicu za eventualne promjene.
             </p>
           </section>
-          
+
           <section>
-            <h2 className="text-xl font-semibold mb-3">8. Kontakt</h2>
-            <p className="mb-3">
+            <h2 className="mb-3 text-xl font-semibold text-[var(--text)]">8. Kontakt</h2>
+            <p className="mb-3 text-[var(--text-muted)]">
               Za sva pitanja, možete nas kontaktirati putem:
             </p>
-            <p>Email: admin@alimentacija.info</p>
+            <p className="text-[var(--text-muted)]">Email: admin@alimentacija.info</p>
           </section>
         </div>
-      </div>
-      {/* Footer */}
-      <footer className="bg-white p-4 border-t border-slate-200 mt-auto">
-        <div className="max-w-4xl mx-auto text-center text-slate-600 text-sm">
-          <p>© {new Date().getFullYear()} Alimentacija.info</p>
-          <p className="mt-1">
-            Sve informacije pružene putem ove usluge su informativne prirode i ne predstavljaju pravni savjet.
-          </p>
-        </div>
-      </footer>
-    </div>
+      </main>
+    </DashboardShell>
   );
 }

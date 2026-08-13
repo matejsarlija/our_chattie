@@ -18,14 +18,12 @@ jest.mock('../useAnalysisRunStream', () => ({
 
 function Harness({
   runId,
-  token,
   pollMs = 5000,
   streamEnabled = false,
   onValue,
 }) {
   const value = useAnalysisRunDetail({
     runId,
-    token,
     pollMs,
     enabled: true,
     streamEnabled,
@@ -74,19 +72,19 @@ describe('useAnalysisRunDetail polling', () => {
         events: [{ id: 'e1', event_type: 'starting', created_at: '2025-01-01', message: 'Start' }],
       });
 
-    render(<Harness runId="r1" token="tkn" pollMs={25} onValue={() => {}} />);
+    render(<Harness runId="r1" pollMs={25} onValue={() => {}} />);
 
     await waitFor(() => {
       expect(apiFetch).toHaveBeenCalledTimes(2);
     }, { timeout: 3000 });
-    expect(apiFetch).toHaveBeenNthCalledWith(1, '/api/analysis/runs/r1/full', { token: 'tkn' });
-    expect(apiFetch).toHaveBeenNthCalledWith(2, '/api/analysis/runs/r1/full', { token: 'tkn' });
+    expect(apiFetch).toHaveBeenNthCalledWith(1, '/api/analysis/runs/r1/full');
+    expect(apiFetch).toHaveBeenNthCalledWith(2, '/api/analysis/runs/r1/full');
   });
 
   test('does not poll when run is already terminal', async () => {
     apiFetch.mockResolvedValueOnce({ run: { id: 'r2', status: 'done' }, events: [] });
 
-    render(<Harness runId="r2" token="tkn" pollMs={20} onValue={() => {}} />);
+    render(<Harness runId="r2" pollMs={20} onValue={() => {}} />);
 
     await waitFor(() => {
       expect(apiFetch).toHaveBeenCalledTimes(1);
@@ -113,7 +111,7 @@ describe('useAnalysisRunDetail polling', () => {
       return Promise.resolve({ run: { id: 'r3', status: 'running' }, events: [] });
     });
 
-    render(<Harness runId="r3" token="tkn" pollMs={20} onValue={() => {}} />);
+    render(<Harness runId="r3" pollMs={20} onValue={() => {}} />);
 
     await waitFor(() => {
       expect(apiFetch).toHaveBeenCalledTimes(3);
@@ -136,7 +134,6 @@ describe('useAnalysisRunDetail polling', () => {
     render(
       <Harness
         runId="r4"
-        token="tkn"
         pollMs={100000}
         streamEnabled
         onValue={(value) => {

@@ -1,8 +1,7 @@
 import { useEffect, useState } from 'react';
 import { z } from 'zod';
 import { useNavigate } from 'react-router-dom';
-import { useStreamingAPI } from '../../hooks/useStreamingAPI';
-import { useAuth } from '../../contexts/AuthContext';
+import { useCourtAnalysisStream } from '../../hooks/useCourtAnalysisStream';
 
 const oibSchema = z
   .string()
@@ -11,8 +10,7 @@ const oibSchema = z
 
 export default function NewAnalysisModal({ isOpen, onClose }) {
   const navigate = useNavigate();
-  const { accessToken, openAuthModal } = useAuth();
-  const streamingAPI = useStreamingAPI();
+  const streamingAPI = useCourtAnalysisStream();
 
   const [oib, setOib] = useState('');
   const [error, setError] = useState('');
@@ -55,14 +53,9 @@ export default function NewAnalysisModal({ isOpen, onClose }) {
           }
         },
         onError: (message, err) => {
-          if (err?.code === 'AUTH_REQUIRED') {
-            openAuthModal();
-          }
           streamError = message || 'Neuspjelo pokretanje analize.';
         },
         onComplete: () => {},
-      }, {
-        token: accessToken,
       });
 
       if (streamError) {

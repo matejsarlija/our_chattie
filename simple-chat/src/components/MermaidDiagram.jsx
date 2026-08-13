@@ -16,7 +16,6 @@ mermaid.initialize({
 
 const MermaidDiagram = ({ chart }) => {
   const containerRef = useRef(null);
-  const svgRef = useRef(null);
   const [svg, setSvg] = useState('');
   const [error, setError] = useState(null);
   const [showRaw, setShowRaw] = useState(false);
@@ -50,6 +49,7 @@ const MermaidDiagram = ({ chart }) => {
 
   useEffect(() => {
     renderDiagram();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chart]);
 
   const downloadPNG = () => {

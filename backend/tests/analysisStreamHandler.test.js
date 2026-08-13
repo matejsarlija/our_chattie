@@ -28,7 +28,6 @@ describe('analysisStreamHandler', () => {
 
     const req = new EventEmitter();
     req.params = { id: 'r1' };
-    req.supabase = {};
 
     const res = {
       writableEnded: false,

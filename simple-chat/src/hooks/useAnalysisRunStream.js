@@ -4,7 +4,6 @@ import { resolveApiUrl } from '../lib/apiClient';
 
 export function useAnalysisRunStream({
   runId,
-  token,
   enabled = true,
   onSnapshot,
   onRunUpdated,
@@ -36,7 +35,7 @@ export function useAnalysisRunStream({
   }, [onSnapshot, onRunUpdated, onEventCreated, onTerminal, onHeartbeat, onError]);
 
   useEffect(() => {
-    if (!enabled || !token || !runId) {
+    if (!enabled || !runId) {
       setConnected(false);
       return undefined;
     }
@@ -83,9 +82,6 @@ export function useAnalysisRunStream({
       try {
         const response = await fetch(resolveApiUrl(`/api/analysis/runs/${runId}/stream`), {
           method: 'GET',
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
           signal: controller.signal,
         });
 
@@ -140,7 +136,7 @@ export function useAnalysisRunStream({
       setConnected(false);
       controller.abort();
     };
-  }, [enabled, runId, token]);
+  }, [enabled, runId]);
 
   return {
     connected,

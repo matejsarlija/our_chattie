@@ -11,8 +11,8 @@ jest.mock('../../lib/apiClient', () => ({
   apiFetch: jest.fn(),
 }));
 
-function Harness({ token, enabled = true, onValue }) {
-  const value = useAnalysisRuns({ token, enabled, limit: 2 });
+function Harness({ enabled = true, onValue }) {
+  const value = useAnalysisRuns({ enabled, limit: 2 });
 
   useEffect(() => {
     onValue(value);
@@ -34,10 +34,10 @@ describe('useAnalysisRuns', () => {
       .mockResolvedValueOnce({ runs: [{ id: 'r3', oib: '999', status: 'running', created_at: '2025-01-02' }], count: 5, offset: 2 })
       .mockResolvedValueOnce({ runs: [{ id: 'r1', oib: '123', status: 'done', created_at: '2025-01-01' }], count: 5, offset: 0 });
 
-    render(<Harness token="tkn" onValue={(v) => snapshots.push(v)} />);
+    render(<Harness onValue={(v) => snapshots.push(v)} />);
 
     await waitFor(() => {
-      expect(apiFetch).toHaveBeenCalledWith('/api/analysis/runs?limit=2&offset=0', { token: 'tkn' });
+      expect(apiFetch).toHaveBeenCalledWith('/api/analysis/runs?limit=2&offset=0');
     });
 
     const latest = snapshots[snapshots.length - 1];
@@ -47,7 +47,7 @@ describe('useAnalysisRuns', () => {
     });
 
     await waitFor(() => {
-      expect(apiFetch).toHaveBeenCalledWith('/api/analysis/runs?limit=2&offset=2', { token: 'tkn' });
+      expect(apiFetch).toHaveBeenCalledWith('/api/analysis/runs?limit=2&offset=2');
     });
 
     const afterNext = snapshots[snapshots.length - 1];
@@ -57,7 +57,7 @@ describe('useAnalysisRuns', () => {
     });
 
     await waitFor(() => {
-      expect(apiFetch).toHaveBeenCalledWith('/api/analysis/runs?limit=2&offset=0', { token: 'tkn' });
+      expect(apiFetch).toHaveBeenCalledWith('/api/analysis/runs?limit=2&offset=0');
     });
   });
 });

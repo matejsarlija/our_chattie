@@ -1,10 +1,19 @@
 import React from 'react';
 import AnalysisCitationList from './AnalysisCitationList';
 
-const getFindingText = (finding) => finding?.claim || finding?.text || finding?.summary || '';
-const getTimelineText = (item) => item?.event || item?.description || item?.text || '';
-const getConflictText = (item) => item?.description || item?.text || item?.summary || '';
-const getOpenQuestionText = (item) => item?.question || item?.text || item?.description || '';
+const getText = (item, keys) => {
+  if (item == null) return '';
+  if (typeof item === 'string') return item;
+  for (const key of keys) {
+    if (typeof item[key] === 'string' && item[key].trim()) return item[key];
+  }
+  return '';
+};
+
+const getFindingText = (finding) => getText(finding, ['claim', 'text', 'summary']);
+const getTimelineText = (item) => getText(item, ['event', 'description', 'title', 'text']);
+const getConflictText = (item) => getText(item, ['description', 'text', 'summary', 'reason', 'finding']);
+const getOpenQuestionText = (item) => getText(item, ['question', 'text', 'description']);
 
 function FindingsSection({ findings, showEmpty }) {
   if (!Array.isArray(findings) || findings.length === 0) {
@@ -49,6 +58,11 @@ function TimelineSection({ timeline, showEmpty }) {
       <ul className="space-y-2">
         {timeline.map((item, index) => (
           <li key={`timeline-${index}`} className="rounded-lg border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-2 text-sm text-[var(--text)]">
+            {item?.date && (
+              <span className="mb-0.5 block text-xs font-medium uppercase tracking-wide text-[var(--text-muted)]">
+                {String(item.date)}
+              </span>
+            )}
             {getTimelineText(item) || '-'}
             <AnalysisCitationList citations={item?.citations} />
           </li>

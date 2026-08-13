@@ -125,7 +125,7 @@ export const logError = (error, context = {}) => {
     console.error('Application Error:', errorInfo);
 
     // In production, you might send this to an error tracking service
-    const isProduction = (import.meta.env?.PROD) || (typeof process !== 'undefined' && process.env.NODE_ENV === 'production');
+    const isProduction = (typeof process !== 'undefined' && process.env.NODE_ENV === 'production');
     if (isProduction && window.gtag) {
         window.gtag('event', 'exception', {
             description: error.message,
@@ -146,7 +146,7 @@ export const createErrorHandler = (setError, context = {}) => {
 
 // Error boundary fallback component helper
 export const getErrorBoundaryMessage = (error) => {
-    const isDevelopment = (import.meta.env?.DEV) || (typeof process !== 'undefined' && process.env.NODE_ENV === 'development');
+    const isDevelopment = (typeof process !== 'undefined' && process.env.NODE_ENV === 'development');
     return {
         title: 'Something went wrong',
         message: getErrorMessage(error),

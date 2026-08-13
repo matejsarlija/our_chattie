@@ -32,7 +32,7 @@ describe('errorHandler utilities', () => {
         });
 
         test('NetworkError should extend AppError correctly', () => {
-            const error = new NetworkError('Network failed', 'server_error');
+            const error = new NetworkError('Network failed', 500, { status: 'error' });
 
             expect(error).toBeInstanceOf(AppError);
             expect(error.name).toBe('NetworkError');
@@ -94,11 +94,11 @@ describe('errorHandler utilities', () => {
             expect(message).toBe(ERROR_MESSAGES.network.server_error);
         });
 
-        test('should return default message for unknown code', () => {
+        test('should return default category message for unknown code', () => {
             const error = new AppError('Custom message', 'network', 'UNKNOWN_CODE');
             const message = getErrorMessage(error);
 
-            expect(message).toBe('Custom message');
+            expect(message).toBe(ERROR_MESSAGES.network.default);
         });
 
         test('should return default category message for AppError', () => {

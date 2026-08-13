@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import ChatHeader from '../Chat/ChatHeader';
+import DashboardHeader from './DashboardHeader';
 import NewAnalysisModal from './NewAnalysisModal';
 
 export default function DashboardShell({ children }) {
@@ -17,7 +17,7 @@ export default function DashboardShell({ children }) {
 
   return (
     <div className="min-h-screen bg-[var(--bg)]">
-      <ChatHeader onOpenNewAnalysis={() => setIsNewModalOpen(true)} />
+      <DashboardHeader onOpenNewAnalysis={() => setIsNewModalOpen(true)} />
       {children}
       <NewAnalysisModal isOpen={isNewModalOpen} onClose={() => setIsNewModalOpen(false)} />
     </div>
