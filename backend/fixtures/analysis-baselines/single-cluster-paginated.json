@@ -1,0 +1,1307 @@
+{
+  "query": {
+    "type": "oib",
+    "value": "66124057408"
+  },
+  "discoveryMetadata": {
+    "discoveryMode": "search-window",
+    "acquisitionModes": [
+      "search-window"
+    ],
+    "searchWindows": [
+      {
+        "mode": "search-window",
+        "currentPage": 1,
+        "pagesScanned": 1,
+        "hasNextPage": true,
+        "rawParsedEntryCount": 10
+      },
+      {
+        "mode": "search-window",
+        "currentPage": 2,
+        "pagesScanned": 2,
+        "hasNextPage": true,
+        "rawParsedEntryCount": 10
+      },
+      {
+        "mode": "search-window",
+        "currentPage": 3,
+        "pagesScanned": 3,
+        "hasNextPage": true,
+        "rawParsedEntryCount": 10
+      },
+      {
+        "mode": "search-window",
+        "currentPage": 4,
+        "pagesScanned": 4,
+        "hasNextPage": true,
+        "rawParsedEntryCount": 10
+      },
+      {
+        "mode": "search-window",
+        "currentPage": 5,
+        "pagesScanned": 5,
+        "hasNextPage": true,
+        "rawParsedEntryCount": 10
+      }
+    ],
+    "totalResults": 381,
+    "totalPages": 39,
+    "pagesScanned": 5,
+    "currentPage": 5,
+    "hasNextPage": true,
+    "rawParsedEntryCount": 50
+  },
+  "casesToProcess": [
+    {
+      "caseInfo": {
+        "caseNumber": "ST-2/2013",
+        "title": "Podnesak od 2026.06.23.",
+        "date": "2026-06-23",
+        "detailLink": "https://e-oglasna.pravosudje.hr/objave/single-0001",
+        "participants": [
+          {
+            "name": "KERUM društvo s ograničenom odgovornošću, za unutarnju i vanjsku trgovinu, promet i usluge u stečaju",
+            "oib": "66124057408",
+            "role": "DUŽNIK"
+          }
+        ]
+      },
+      "acquisition": {
+        "mode": "search-window",
+        "currentPage": 1
+      },
+      "documentLinks": [
+        {
+          "url": "https://e-oglasna.pravosudje.hr/objave/dokument/single-0001/preuzimanje",
+          "text": "Dokument objave"
+        }
+      ]
+    },
+    {
+      "caseInfo": {
+        "caseNumber": "ST-2/2013",
+        "title": "Rješenje od 2026.06.04.",
+        "date": "2026-06-04",
+        "detailLink": "https://e-oglasna.pravosudje.hr/objave/single-0002",
+        "participants": [
+          {
+            "name": "KERUM društvo s ograničenom odgovornošću, za unutarnju i vanjsku trgovinu, promet i usluge u stečaju",
+            "oib": "66124057408",
+            "role": "DUŽNIK"
+          }
+        ]
+      },
+      "acquisition": {
+        "mode": "search-window",
+        "currentPage": 1
+      },
+      "documentLinks": [
+        {
+          "url": "https://e-oglasna.pravosudje.hr/objave/dokument/single-0002/preuzimanje",
+          "text": "Dokument objave"
+        }
+      ]
+    },
+    {
+      "caseInfo": {
+        "caseNumber": "ST-2/2013",
+        "title": "Zaključak od 2026.05.17.",
+        "date": "2026-05-17",
+        "detailLink": "https://e-oglasna.pravosudje.hr/objave/single-0003",
+        "participants": [
+          {
+            "name": "KERUM društvo s ograničenom odgovornošću, za unutarnju i vanjsku trgovinu, promet i usluge u stečaju",
+            "oib": "66124057408",
+            "role": "DUŽNIK"
+          }
+        ]
+      },
+      "acquisition": {
+        "mode": "search-window",
+        "currentPage": 1
+      },
+      "documentLinks": [
+        {
+          "url": "https://e-oglasna.pravosudje.hr/objave/dokument/single-0003/preuzimanje",
+          "text": "Dokument objave"
+        }
+      ]
+    },
+    {
+      "caseInfo": {
+        "caseNumber": "ST-2/2013",
+        "title": "Žalba od 2026.04.28.",
+        "date": "2026-04-28",
+        "detailLink": "https://e-oglasna.pravosudje.hr/objave/single-0004",
+        "participants": [
+          {
+            "name": "KERUM društvo s ograničenom odgovornošću, za unutarnju i vanjsku trgovinu, promet i usluge u stečaju",
+            "oib": "66124057408",
+            "role": "DUŽNIK"
+          }
+        ]
+      },
+      "acquisition": {
+        "mode": "search-window",
+        "currentPage": 1
+      },
+      "documentLinks": [
+        {
+          "url": "https://e-oglasna.pravosudje.hr/objave/dokument/single-0004/preuzimanje",
+          "text": "Dokument objave"
+        }
+      ]
+    },
+    {
+      "caseInfo": {
+        "caseNumber": "ST-2/2013",
+        "title": "Izvješće stečajne upraviteljice od 2026.04.10.",
+        "date": "2026-04-10",
+        "detailLink": "https://e-oglasna.pravosudje.hr/objave/single-0005",
+        "participants": [
+          {
+            "name": "KERUM društvo s ograničenom odgovornošću, za unutarnju i vanjsku trgovinu, promet i usluge u stečaju",
+            "oib": "66124057408",
+            "role": "DUŽNIK"
+          }
+        ]
+      },
+      "acquisition": {
+        "mode": "search-window",
+        "currentPage": 1
+      },
+      "documentLinks": [
+        {
+          "url": "https://e-oglasna.pravosudje.hr/objave/dokument/single-0005/preuzimanje",
+          "text": "Dokument objave"
+        }
+      ]
+    },
+    {
+      "caseInfo": {
+        "caseNumber": "ST-2/2013",
+        "title": "Diobeni popis vjerovnika od 2026.03.22.",
+        "date": "2026-03-22",
+        "detailLink": "https://e-oglasna.pravosudje.hr/objave/single-0006",
+        "participants": [
+          {
+            "name": "KERUM društvo s ograničenom odgovornošću, za unutarnju i vanjsku trgovinu, promet i usluge u stečaju",
+            "oib": "66124057408",
+            "role": "DUŽNIK"
+          }
+        ]
+      },
+      "acquisition": {
+        "mode": "search-window",
+        "currentPage": 1
+      },
+      "documentLinks": [
+        {
+          "url": "https://e-oglasna.pravosudje.hr/objave/dokument/single-0006/preuzimanje",
+          "text": "Dokument objave"
+        }
+      ]
+    },
+    {
+      "caseInfo": {
+        "caseNumber": "ST-2/2013",
+        "title": "Ustup tražbine od 2026.03.04.",
+        "date": "2026-03-04",
+        "detailLink": "https://e-oglasna.pravosudje.hr/objave/single-0007",
+        "participants": [
+          {
+            "name": "KERUM društvo s ograničenom odgovornošću, za unutarnju i vanjsku trgovinu, promet i usluge u stečaju",
+            "oib": "66124057408",
+            "role": "DUŽNIK"
+          }
+        ]
+      },
+      "acquisition": {
+        "mode": "search-window",
+        "currentPage": 1
+      },
+      "documentLinks": [
+        {
+          "url": "https://e-oglasna.pravosudje.hr/objave/dokument/single-0007/preuzimanje",
+          "text": "Dokument objave"
+        }
+      ]
+    },
+    {
+      "caseInfo": {
+        "caseNumber": "ST-2/2013",
+        "title": "Završno izvješće i završni račun od 2026.02.13.",
+        "date": "2026-02-13",
+        "detailLink": "https://e-oglasna.pravosudje.hr/objave/single-0008",
+        "participants": [
+          {
+            "name": "KERUM društvo s ograničenom odgovornošću, za unutarnju i vanjsku trgovinu, promet i usluge u stečaju",
+            "oib": "66124057408",
+            "role": "DUŽNIK"
+          }
+        ]
+      },
+      "acquisition": {
+        "mode": "search-window",
+        "currentPage": 1
+      },
+      "documentLinks": [
+        {
+          "url": "https://e-oglasna.pravosudje.hr/objave/dokument/single-0008/preuzimanje",
+          "text": "Dokument objave"
+        }
+      ]
+    },
+    {
+      "caseInfo": {
+        "caseNumber": "ST-2/2013",
+        "title": "Prijedlog završne diobe od 2026.01.26.",
+        "date": "2026-01-26",
+        "detailLink": "https://e-oglasna.pravosudje.hr/objave/single-0009",
+        "participants": [
+          {
+            "name": "KERUM društvo s ograničenom odgovornošću, za unutarnju i vanjsku trgovinu, promet i usluge u stečaju",
+            "oib": "66124057408",
+            "role": "DUŽNIK"
+          }
+        ]
+      },
+      "acquisition": {
+        "mode": "search-window",
+        "currentPage": 1
+      },
+      "documentLinks": [
+        {
+          "url": "https://e-oglasna.pravosudje.hr/objave/dokument/single-0009/preuzimanje",
+          "text": "Dokument objave"
+        }
+      ]
+    },
+    {
+      "caseInfo": {
+        "caseNumber": "ST-2/2013",
+        "title": "Prigovor na diobni popis od 2026.01.07.",
+        "date": "2026-01-07",
+        "detailLink": "https://e-oglasna.pravosudje.hr/objave/single-0010",
+        "participants": [
+          {
+            "name": "KERUM društvo s ograničenom odgovornošću, za unutarnju i vanjsku trgovinu, promet i usluge u stečaju",
+            "oib": "66124057408",
+            "role": "DUŽNIK"
+          }
+        ]
+      },
+      "acquisition": {
+        "mode": "search-window",
+        "currentPage": 1
+      },
+      "documentLinks": [
+        {
+          "url": "https://e-oglasna.pravosudje.hr/objave/dokument/single-0010/preuzimanje",
+          "text": "Dokument objave"
+        }
+      ]
+    },
+    {
+      "caseInfo": {
+        "caseNumber": "ST-2/2013",
+        "title": "Podnesak od 2025.12.20.",
+        "date": "2025-12-20",
+        "detailLink": "https://e-oglasna.pravosudje.hr/objave/single-0011",
+        "participants": [
+          {
+            "name": "KERUM društvo s ograničenom odgovornošću, za unutarnju i vanjsku trgovinu, promet i usluge u stečaju",
+            "oib": "66124057408",
+            "role": "DUŽNIK"
+          }
+        ]
+      },
+      "acquisition": {
+        "mode": "search-window",
+        "currentPage": 2
+      },
+      "documentLinks": [
+        {
+          "url": "https://e-oglasna.pravosudje.hr/objave/dokument/single-0011/preuzimanje",
+          "text": "Dokument objave"
+        }
+      ]
+    },
+    {
+      "caseInfo": {
+        "caseNumber": "ST-2/2013",
+        "title": "Rješenje od 2025.12.01.",
+        "date": "2025-12-01",
+        "detailLink": "https://e-oglasna.pravosudje.hr/objave/single-0012",
+        "participants": [
+          {
+            "name": "KERUM društvo s ograničenom odgovornošću, za unutarnju i vanjsku trgovinu, promet i usluge u stečaju",
+            "oib": "66124057408",
+            "role": "DUŽNIK"
+          }
+        ]
+      },
+      "acquisition": {
+        "mode": "search-window",
+        "currentPage": 2
+      },
+      "documentLinks": [
+        {
+          "url": "https://e-oglasna.pravosudje.hr/objave/dokument/single-0012/preuzimanje",
+          "text": "Dokument objave"
+        }
+      ]
+    },
+    {
+      "caseInfo": {
+        "caseNumber": "ST-2/2013",
+        "title": "Zaključak od 2025.11.13.",
+        "date": "2025-11-13",
+        "detailLink": "https://e-oglasna.pravosudje.hr/objave/single-0013",
+        "participants": [
+          {
+            "name": "KERUM društvo s ograničenom odgovornošću, za unutarnju i vanjsku trgovinu, promet i usluge u stečaju",
+            "oib": "66124057408",
+            "role": "DUŽNIK"
+          }
+        ]
+      },
+      "acquisition": {
+        "mode": "search-window",
+        "currentPage": 2
+      },
+      "documentLinks": [
+        {
+          "url": "https://e-oglasna.pravosudje.hr/objave/dokument/single-0013/preuzimanje",
+          "text": "Dokument objave"
+        }
+      ]
+    },
+    {
+      "caseInfo": {
+        "caseNumber": "ST-2/2013",
+        "title": "Žalba od 2025.10.25.",
+        "date": "2025-10-25",
+        "detailLink": "https://e-oglasna.pravosudje.hr/objave/single-0014",
+        "participants": [
+          {
+            "name": "KERUM društvo s ograničenom odgovornošću, za unutarnju i vanjsku trgovinu, promet i usluge u stečaju",
+            "oib": "66124057408",
+            "role": "DUŽNIK"
+          }
+        ]
+      },
+      "acquisition": {
+        "mode": "search-window",
+        "currentPage": 2
+      },
+      "documentLinks": [
+        {
+          "url": "https://e-oglasna.pravosudje.hr/objave/dokument/single-0014/preuzimanje",
+          "text": "Dokument objave"
+        }
+      ]
+    },
+    {
+      "caseInfo": {
+        "caseNumber": "ST-2/2013",
+        "title": "Izvješće stečajne upraviteljice od 2025.10.07.",
+        "date": "2025-10-07",
+        "detailLink": "https://e-oglasna.pravosudje.hr/objave/single-0015",
+        "participants": [
+          {
+            "name": "KERUM društvo s ograničenom odgovornošću, za unutarnju i vanjsku trgovinu, promet i usluge u stečaju",
+            "oib": "66124057408",
+            "role": "DUŽNIK"
+          }
+        ]
+      },
+      "acquisition": {
+        "mode": "search-window",
+        "currentPage": 2
+      },
+      "documentLinks": [
+        {
+          "url": "https://e-oglasna.pravosudje.hr/objave/dokument/single-0015/preuzimanje",
+          "text": "Dokument objave"
+        }
+      ]
+    },
+    {
+      "caseInfo": {
+        "caseNumber": "ST-2/2013",
+        "title": "Diobeni popis vjerovnika od 2025.09.18.",
+        "date": "2025-09-18",
+        "detailLink": "https://e-oglasna.pravosudje.hr/objave/single-0016",
+        "participants": [
+          {
+            "name": "KERUM društvo s ograničenom odgovornošću, za unutarnju i vanjsku trgovinu, promet i usluge u stečaju",
+            "oib": "66124057408",
+            "role": "DUŽNIK"
+          }
+        ]
+      },
+      "acquisition": {
+        "mode": "search-window",
+        "currentPage": 2
+      },
+      "documentLinks": [
+        {
+          "url": "https://e-oglasna.pravosudje.hr/objave/dokument/single-0016/preuzimanje",
+          "text": "Dokument objave"
+        }
+      ]
+    },
+    {
+      "caseInfo": {
+        "caseNumber": "ST-2/2013",
+        "title": "Ustup tražbine od 2025.08.31.",
+        "date": "2025-08-31",
+        "detailLink": "https://e-oglasna.pravosudje.hr/objave/single-0017",
+        "participants": [
+          {
+            "name": "KERUM društvo s ograničenom odgovornošću, za unutarnju i vanjsku trgovinu, promet i usluge u stečaju",
+            "oib": "66124057408",
+            "role": "DUŽNIK"
+          }
+        ]
+      },
+      "acquisition": {
+        "mode": "search-window",
+        "currentPage": 2
+      },
+      "documentLinks": [
+        {
+          "url": "https://e-oglasna.pravosudje.hr/objave/dokument/single-0017/preuzimanje",
+          "text": "Dokument objave"
+        }
+      ]
+    },
+    {
+      "caseInfo": {
+        "caseNumber": "ST-2/2013",
+        "title": "Završno izvješće i završni račun od 2025.08.12.",
+        "date": "2025-08-12",
+        "detailLink": "https://e-oglasna.pravosudje.hr/objave/single-0018",
+        "participants": [
+          {
+            "name": "KERUM društvo s ograničenom odgovornošću, za unutarnju i vanjsku trgovinu, promet i usluge u stečaju",
+            "oib": "66124057408",
+            "role": "DUŽNIK"
+          }
+        ]
+      },
+      "acquisition": {
+        "mode": "search-window",
+        "currentPage": 2
+      },
+      "documentLinks": [
+        {
+          "url": "https://e-oglasna.pravosudje.hr/objave/dokument/single-0018/preuzimanje",
+          "text": "Dokument objave"
+        }
+      ]
+    },
+    {
+      "caseInfo": {
+        "caseNumber": "ST-2/2013",
+        "title": "Prijedlog završne diobe od 2025.07.25.",
+        "date": "2025-07-25",
+        "detailLink": "https://e-oglasna.pravosudje.hr/objave/single-0019",
+        "participants": [
+          {
+            "name": "KERUM društvo s ograničenom odgovornošću, za unutarnju i vanjsku trgovinu, promet i usluge u stečaju",
+            "oib": "66124057408",
+            "role": "DUŽNIK"
+          }
+        ]
+      },
+      "acquisition": {
+        "mode": "search-window",
+        "currentPage": 2
+      },
+      "documentLinks": [
+        {
+          "url": "https://e-oglasna.pravosudje.hr/objave/dokument/single-0019/preuzimanje",
+          "text": "Dokument objave"
+        }
+      ]
+    },
+    {
+      "caseInfo": {
+        "caseNumber": "ST-2/2013",
+        "title": "Prigovor na diobni popis od 2025.07.06.",
+        "date": "2025-07-06",
+        "detailLink": "https://e-oglasna.pravosudje.hr/objave/single-0020",
+        "participants": [
+          {
+            "name": "KERUM društvo s ograničenom odgovornošću, za unutarnju i vanjsku trgovinu, promet i usluge u stečaju",
+            "oib": "66124057408",
+            "role": "DUŽNIK"
+          }
+        ]
+      },
+      "acquisition": {
+        "mode": "search-window",
+        "currentPage": 2
+      },
+      "documentLinks": [
+        {
+          "url": "https://e-oglasna.pravosudje.hr/objave/dokument/single-0020/preuzimanje",
+          "text": "Dokument objave"
+        }
+      ]
+    },
+    {
+      "caseInfo": {
+        "caseNumber": "ST-2/2013",
+        "title": "Podnesak od 2025.06.18.",
+        "date": "2025-06-18",
+        "detailLink": "https://e-oglasna.pravosudje.hr/objave/single-0021",
+        "participants": [
+          {
+            "name": "KERUM društvo s ograničenom odgovornošću, za unutarnju i vanjsku trgovinu, promet i usluge u stečaju",
+            "oib": "66124057408",
+            "role": "DUŽNIK"
+          }
+        ]
+      },
+      "acquisition": {
+        "mode": "search-window",
+        "currentPage": 3
+      },
+      "documentLinks": [
+        {
+          "url": "https://e-oglasna.pravosudje.hr/objave/dokument/single-0021/preuzimanje",
+          "text": "Dokument objave"
+        }
+      ]
+    },
+    {
+      "caseInfo": {
+        "caseNumber": "ST-2/2013",
+        "title": "Rješenje od 2025.05.30.",
+        "date": "2025-05-30",
+        "detailLink": "https://e-oglasna.pravosudje.hr/objave/single-0022",
+        "participants": [
+          {
+            "name": "KERUM društvo s ograničenom odgovornošću, za unutarnju i vanjsku trgovinu, promet i usluge u stečaju",
+            "oib": "66124057408",
+            "role": "DUŽNIK"
+          }
+        ]
+      },
+      "acquisition": {
+        "mode": "search-window",
+        "currentPage": 3
+      },
+      "documentLinks": [
+        {
+          "url": "https://e-oglasna.pravosudje.hr/objave/dokument/single-0022/preuzimanje",
+          "text": "Dokument objave"
+        }
+      ]
+    },
+    {
+      "caseInfo": {
+        "caseNumber": "ST-2/2013",
+        "title": "Zaključak od 2025.05.12.",
+        "date": "2025-05-12",
+        "detailLink": "https://e-oglasna.pravosudje.hr/objave/single-0023",
+        "participants": [
+          {
+            "name": "KERUM društvo s ograničenom odgovornošću, za unutarnju i vanjsku trgovinu, promet i usluge u stečaju",
+            "oib": "66124057408",
+            "role": "DUŽNIK"
+          }
+        ]
+      },
+      "acquisition": {
+        "mode": "search-window",
+        "currentPage": 3
+      },
+      "documentLinks": [
+        {
+          "url": "https://e-oglasna.pravosudje.hr/objave/dokument/single-0023/preuzimanje",
+          "text": "Dokument objave"
+        }
+      ]
+    },
+    {
+      "caseInfo": {
+        "caseNumber": "ST-2/2013",
+        "title": "Žalba od 2025.04.23.",
+        "date": "2025-04-23",
+        "detailLink": "https://e-oglasna.pravosudje.hr/objave/single-0024",
+        "participants": [
+          {
+            "name": "KERUM društvo s ograničenom odgovornošću, za unutarnju i vanjsku trgovinu, promet i usluge u stečaju",
+            "oib": "66124057408",
+            "role": "DUŽNIK"
+          }
+        ]
+      },
+      "acquisition": {
+        "mode": "search-window",
+        "currentPage": 3
+      },
+      "documentLinks": [
+        {
+          "url": "https://e-oglasna.pravosudje.hr/objave/dokument/single-0024/preuzimanje",
+          "text": "Dokument objave"
+        }
+      ]
+    },
+    {
+      "caseInfo": {
+        "caseNumber": "ST-2/2013",
+        "title": "Izvješće stečajne upraviteljice od 2025.04.05.",
+        "date": "2025-04-05",
+        "detailLink": "https://e-oglasna.pravosudje.hr/objave/single-0025",
+        "participants": [
+          {
+            "name": "KERUM društvo s ograničenom odgovornošću, za unutarnju i vanjsku trgovinu, promet i usluge u stečaju",
+            "oib": "66124057408",
+            "role": "DUŽNIK"
+          }
+        ]
+      },
+      "acquisition": {
+        "mode": "search-window",
+        "currentPage": 3
+      },
+      "documentLinks": [
+        {
+          "url": "https://e-oglasna.pravosudje.hr/objave/dokument/single-0025/preuzimanje",
+          "text": "Dokument objave"
+        }
+      ]
+    },
+    {
+      "caseInfo": {
+        "caseNumber": "ST-2/2013",
+        "title": "Diobeni popis vjerovnika od 2025.03.17.",
+        "date": "2025-03-17",
+        "detailLink": "https://e-oglasna.pravosudje.hr/objave/single-0026",
+        "participants": [
+          {
+            "name": "KERUM društvo s ograničenom odgovornošću, za unutarnju i vanjsku trgovinu, promet i usluge u stečaju",
+            "oib": "66124057408",
+            "role": "DUŽNIK"
+          }
+        ]
+      },
+      "acquisition": {
+        "mode": "search-window",
+        "currentPage": 3
+      },
+      "documentLinks": [
+        {
+          "url": "https://e-oglasna.pravosudje.hr/objave/dokument/single-0026/preuzimanje",
+          "text": "Dokument objave"
+        }
+      ]
+    },
+    {
+      "caseInfo": {
+        "caseNumber": "ST-2/2013",
+        "title": "Ustup tražbine od 2025.02.27.",
+        "date": "2025-02-27",
+        "detailLink": "https://e-oglasna.pravosudje.hr/objave/single-0027",
+        "participants": [
+          {
+            "name": "KERUM društvo s ograničenom odgovornošću, za unutarnju i vanjsku trgovinu, promet i usluge u stečaju",
+            "oib": "66124057408",
+            "role": "DUŽNIK"
+          }
+        ]
+      },
+      "acquisition": {
+        "mode": "search-window",
+        "currentPage": 3
+      },
+      "documentLinks": [
+        {
+          "url": "https://e-oglasna.pravosudje.hr/objave/dokument/single-0027/preuzimanje",
+          "text": "Dokument objave"
+        }
+      ]
+    },
+    {
+      "caseInfo": {
+        "caseNumber": "ST-2/2013",
+        "title": "Završno izvješće i završni račun od 2025.02.08.",
+        "date": "2025-02-08",
+        "detailLink": "https://e-oglasna.pravosudje.hr/objave/single-0028",
+        "participants": [
+          {
+            "name": "KERUM društvo s ograničenom odgovornošću, za unutarnju i vanjsku trgovinu, promet i usluge u stečaju",
+            "oib": "66124057408",
+            "role": "DUŽNIK"
+          }
+        ]
+      },
+      "acquisition": {
+        "mode": "search-window",
+        "currentPage": 3
+      },
+      "documentLinks": [
+        {
+          "url": "https://e-oglasna.pravosudje.hr/objave/dokument/single-0028/preuzimanje",
+          "text": "Dokument objave"
+        }
+      ]
+    },
+    {
+      "caseInfo": {
+        "caseNumber": "ST-2/2013",
+        "title": "Prijedlog završne diobe od 2025.01.21.",
+        "date": "2025-01-21",
+        "detailLink": "https://e-oglasna.pravosudje.hr/objave/single-0029",
+        "participants": [
+          {
+            "name": "KERUM društvo s ograničenom odgovornošću, za unutarnju i vanjsku trgovinu, promet i usluge u stečaju",
+            "oib": "66124057408",
+            "role": "DUŽNIK"
+          }
+        ]
+      },
+      "acquisition": {
+        "mode": "search-window",
+        "currentPage": 3
+      },
+      "documentLinks": [
+        {
+          "url": "https://e-oglasna.pravosudje.hr/objave/dokument/single-0029/preuzimanje",
+          "text": "Dokument objave"
+        }
+      ]
+    },
+    {
+      "caseInfo": {
+        "caseNumber": "ST-2/2013",
+        "title": "Prigovor na diobni popis od 2025.01.02.",
+        "date": "2025-01-02",
+        "detailLink": "https://e-oglasna.pravosudje.hr/objave/single-0030",
+        "participants": [
+          {
+            "name": "KERUM društvo s ograničenom odgovornošću, za unutarnju i vanjsku trgovinu, promet i usluge u stečaju",
+            "oib": "66124057408",
+            "role": "DUŽNIK"
+          }
+        ]
+      },
+      "acquisition": {
+        "mode": "search-window",
+        "currentPage": 3
+      },
+      "documentLinks": [
+        {
+          "url": "https://e-oglasna.pravosudje.hr/objave/dokument/single-0030/preuzimanje",
+          "text": "Dokument objave"
+        }
+      ]
+    },
+    {
+      "caseInfo": {
+        "caseNumber": "ST-2/2013",
+        "title": "Podnesak od 2024.12.15.",
+        "date": "2024-12-15",
+        "detailLink": "https://e-oglasna.pravosudje.hr/objave/single-0031",
+        "participants": [
+          {
+            "name": "KERUM društvo s ograničenom odgovornošću, za unutarnju i vanjsku trgovinu, promet i usluge u stečaju",
+            "oib": "66124057408",
+            "role": "DUŽNIK"
+          }
+        ]
+      },
+      "acquisition": {
+        "mode": "search-window",
+        "currentPage": 4
+      },
+      "documentLinks": [
+        {
+          "url": "https://e-oglasna.pravosudje.hr/objave/dokument/single-0031/preuzimanje",
+          "text": "Dokument objave"
+        }
+      ]
+    },
+    {
+      "caseInfo": {
+        "caseNumber": "ST-2/2013",
+        "title": "Rješenje od 2024.11.26.",
+        "date": "2024-11-26",
+        "detailLink": "https://e-oglasna.pravosudje.hr/objave/single-0032",
+        "participants": [
+          {
+            "name": "KERUM društvo s ograničenom odgovornošću, za unutarnju i vanjsku trgovinu, promet i usluge u stečaju",
+            "oib": "66124057408",
+            "role": "DUŽNIK"
+          }
+        ]
+      },
+      "acquisition": {
+        "mode": "search-window",
+        "currentPage": 4
+      },
+      "documentLinks": [
+        {
+          "url": "https://e-oglasna.pravosudje.hr/objave/dokument/single-0032/preuzimanje",
+          "text": "Dokument objave"
+        }
+      ]
+    },
+    {
+      "caseInfo": {
+        "caseNumber": "ST-2/2013",
+        "title": "Zaključak od 2024.11.08.",
+        "date": "2024-11-08",
+        "detailLink": "https://e-oglasna.pravosudje.hr/objave/single-0033",
+        "participants": [
+          {
+            "name": "KERUM društvo s ograničenom odgovornošću, za unutarnju i vanjsku trgovinu, promet i usluge u stečaju",
+            "oib": "66124057408",
+            "role": "DUŽNIK"
+          }
+        ]
+      },
+      "acquisition": {
+        "mode": "search-window",
+        "currentPage": 4
+      },
+      "documentLinks": [
+        {
+          "url": "https://e-oglasna.pravosudje.hr/objave/dokument/single-0033/preuzimanje",
+          "text": "Dokument objave"
+        }
+      ]
+    },
+    {
+      "caseInfo": {
+        "caseNumber": "ST-2/2013",
+        "title": "Žalba od 2024.10.20.",
+        "date": "2024-10-20",
+        "detailLink": "https://e-oglasna.pravosudje.hr/objave/single-0034",
+        "participants": [
+          {
+            "name": "KERUM društvo s ograničenom odgovornošću, za unutarnju i vanjsku trgovinu, promet i usluge u stečaju",
+            "oib": "66124057408",
+            "role": "DUŽNIK"
+          }
+        ]
+      },
+      "acquisition": {
+        "mode": "search-window",
+        "currentPage": 4
+      },
+      "documentLinks": [
+        {
+          "url": "https://e-oglasna.pravosudje.hr/objave/dokument/single-0034/preuzimanje",
+          "text": "Dokument objave"
+        }
+      ]
+    },
+    {
+      "caseInfo": {
+        "caseNumber": "ST-2/2013",
+        "title": "Izvješće stečajne upraviteljice od 2024.10.02.",
+        "date": "2024-10-02",
+        "detailLink": "https://e-oglasna.pravosudje.hr/objave/single-0035",
+        "participants": [
+          {
+            "name": "KERUM društvo s ograničenom odgovornošću, za unutarnju i vanjsku trgovinu, promet i usluge u stečaju",
+            "oib": "66124057408",
+            "role": "DUŽNIK"
+          }
+        ]
+      },
+      "acquisition": {
+        "mode": "search-window",
+        "currentPage": 4
+      },
+      "documentLinks": [
+        {
+          "url": "https://e-oglasna.pravosudje.hr/objave/dokument/single-0035/preuzimanje",
+          "text": "Dokument objave"
+        }
+      ]
+    },
+    {
+      "caseInfo": {
+        "caseNumber": "ST-2/2013",
+        "title": "Diobeni popis vjerovnika od 2024.09.13.",
+        "date": "2024-09-13",
+        "detailLink": "https://e-oglasna.pravosudje.hr/objave/single-0036",
+        "participants": [
+          {
+            "name": "KERUM društvo s ograničenom odgovornošću, za unutarnju i vanjsku trgovinu, promet i usluge u stečaju",
+            "oib": "66124057408",
+            "role": "DUŽNIK"
+          }
+        ]
+      },
+      "acquisition": {
+        "mode": "search-window",
+        "currentPage": 4
+      },
+      "documentLinks": [
+        {
+          "url": "https://e-oglasna.pravosudje.hr/objave/dokument/single-0036/preuzimanje",
+          "text": "Dokument objave"
+        }
+      ]
+    },
+    {
+      "caseInfo": {
+        "caseNumber": "ST-2/2013",
+        "title": "Ustup tražbine od 2024.08.26.",
+        "date": "2024-08-26",
+        "detailLink": "https://e-oglasna.pravosudje.hr/objave/single-0037",
+        "participants": [
+          {
+            "name": "KERUM društvo s ograničenom odgovornošću, za unutarnju i vanjsku trgovinu, promet i usluge u stečaju",
+            "oib": "66124057408",
+            "role": "DUŽNIK"
+          }
+        ]
+      },
+      "acquisition": {
+        "mode": "search-window",
+        "currentPage": 4
+      },
+      "documentLinks": [
+        {
+          "url": "https://e-oglasna.pravosudje.hr/objave/dokument/single-0037/preuzimanje",
+          "text": "Dokument objave"
+        }
+      ]
+    },
+    {
+      "caseInfo": {
+        "caseNumber": "ST-2/2013",
+        "title": "Završno izvješće i završni račun od 2024.08.07.",
+        "date": "2024-08-07",
+        "detailLink": "https://e-oglasna.pravosudje.hr/objave/single-0038",
+        "participants": [
+          {
+            "name": "KERUM društvo s ograničenom odgovornošću, za unutarnju i vanjsku trgovinu, promet i usluge u stečaju",
+            "oib": "66124057408",
+            "role": "DUŽNIK"
+          }
+        ]
+      },
+      "acquisition": {
+        "mode": "search-window",
+        "currentPage": 4
+      },
+      "documentLinks": [
+        {
+          "url": "https://e-oglasna.pravosudje.hr/objave/dokument/single-0038/preuzimanje",
+          "text": "Dokument objave"
+        }
+      ]
+    },
+    {
+      "caseInfo": {
+        "caseNumber": "ST-2/2013",
+        "title": "Prijedlog završne diobe od 2024.07.20.",
+        "date": "2024-07-20",
+        "detailLink": "https://e-oglasna.pravosudje.hr/objave/single-0039",
+        "participants": [
+          {
+            "name": "KERUM društvo s ograničenom odgovornošću, za unutarnju i vanjsku trgovinu, promet i usluge u stečaju",
+            "oib": "66124057408",
+            "role": "DUŽNIK"
+          }
+        ]
+      },
+      "acquisition": {
+        "mode": "search-window",
+        "currentPage": 4
+      },
+      "documentLinks": [
+        {
+          "url": "https://e-oglasna.pravosudje.hr/objave/dokument/single-0039/preuzimanje",
+          "text": "Dokument objave"
+        }
+      ]
+    },
+    {
+      "caseInfo": {
+        "caseNumber": "ST-2/2013",
+        "title": "Prigovor na diobni popis od 2024.07.01.",
+        "date": "2024-07-01",
+        "detailLink": "https://e-oglasna.pravosudje.hr/objave/single-0040",
+        "participants": [
+          {
+            "name": "KERUM društvo s ograničenom odgovornošću, za unutarnju i vanjsku trgovinu, promet i usluge u stečaju",
+            "oib": "66124057408",
+            "role": "DUŽNIK"
+          }
+        ]
+      },
+      "acquisition": {
+        "mode": "search-window",
+        "currentPage": 4
+      },
+      "documentLinks": [
+        {
+          "url": "https://e-oglasna.pravosudje.hr/objave/dokument/single-0040/preuzimanje",
+          "text": "Dokument objave"
+        }
+      ]
+    },
+    {
+      "caseInfo": {
+        "caseNumber": "ST-2/2013",
+        "title": "Podnesak od 2024.06.13.",
+        "date": "2024-06-13",
+        "detailLink": "https://e-oglasna.pravosudje.hr/objave/single-0041",
+        "participants": [
+          {
+            "name": "KERUM društvo s ograničenom odgovornošću, za unutarnju i vanjsku trgovinu, promet i usluge u stečaju",
+            "oib": "66124057408",
+            "role": "DUŽNIK"
+          }
+        ]
+      },
+      "acquisition": {
+        "mode": "search-window",
+        "currentPage": 5
+      },
+      "documentLinks": [
+        {
+          "url": "https://e-oglasna.pravosudje.hr/objave/dokument/single-0041/preuzimanje",
+          "text": "Dokument objave"
+        }
+      ]
+    },
+    {
+      "caseInfo": {
+        "caseNumber": "ST-2/2013",
+        "title": "Rješenje od 2024.05.25.",
+        "date": "2024-05-25",
+        "detailLink": "https://e-oglasna.pravosudje.hr/objave/single-0042",
+        "participants": [
+          {
+            "name": "KERUM društvo s ograničenom odgovornošću, za unutarnju i vanjsku trgovinu, promet i usluge u stečaju",
+            "oib": "66124057408",
+            "role": "DUŽNIK"
+          }
+        ]
+      },
+      "acquisition": {
+        "mode": "search-window",
+        "currentPage": 5
+      },
+      "documentLinks": [
+        {
+          "url": "https://e-oglasna.pravosudje.hr/objave/dokument/single-0042/preuzimanje",
+          "text": "Dokument objave"
+        }
+      ]
+    },
+    {
+      "caseInfo": {
+        "caseNumber": "ST-2/2013",
+        "title": "Zaključak od 2024.05.07.",
+        "date": "2024-05-07",
+        "detailLink": "https://e-oglasna.pravosudje.hr/objave/single-0043",
+        "participants": [
+          {
+            "name": "KERUM društvo s ograničenom odgovornošću, za unutarnju i vanjsku trgovinu, promet i usluge u stečaju",
+            "oib": "66124057408",
+            "role": "DUŽNIK"
+          }
+        ]
+      },
+      "acquisition": {
+        "mode": "search-window",
+        "currentPage": 5
+      },
+      "documentLinks": [
+        {
+          "url": "https://e-oglasna.pravosudje.hr/objave/dokument/single-0043/preuzimanje",
+          "text": "Dokument objave"
+        }
+      ]
+    },
+    {
+      "caseInfo": {
+        "caseNumber": "ST-2/2013",
+        "title": "Žalba od 2024.04.18.",
+        "date": "2024-04-18",
+        "detailLink": "https://e-oglasna.pravosudje.hr/objave/single-0044",
+        "participants": [
+          {
+            "name": "KERUM društvo s ograničenom odgovornošću, za unutarnju i vanjsku trgovinu, promet i usluge u stečaju",
+            "oib": "66124057408",
+            "role": "DUŽNIK"
+          }
+        ]
+      },
+      "acquisition": {
+        "mode": "search-window",
+        "currentPage": 5
+      },
+      "documentLinks": [
+        {
+          "url": "https://e-oglasna.pravosudje.hr/objave/dokument/single-0044/preuzimanje",
+          "text": "Dokument objave"
+        }
+      ]
+    },
+    {
+      "caseInfo": {
+        "caseNumber": "ST-2/2013",
+        "title": "Izvješće stečajne upraviteljice od 2024.03.31.",
+        "date": "2024-03-31",
+        "detailLink": "https://e-oglasna.pravosudje.hr/objave/single-0045",
+        "participants": [
+          {
+            "name": "KERUM društvo s ograničenom odgovornošću, za unutarnju i vanjsku trgovinu, promet i usluge u stečaju",
+            "oib": "66124057408",
+            "role": "DUŽNIK"
+          }
+        ]
+      },
+      "acquisition": {
+        "mode": "search-window",
+        "currentPage": 5
+      },
+      "documentLinks": [
+        {
+          "url": "https://e-oglasna.pravosudje.hr/objave/dokument/single-0045/preuzimanje",
+          "text": "Dokument objave"
+        }
+      ]
+    },
+    {
+      "caseInfo": {
+        "caseNumber": "ST-2/2013",
+        "title": "Diobeni popis vjerovnika od 2024.03.12.",
+        "date": "2024-03-12",
+        "detailLink": "https://e-oglasna.pravosudje.hr/objave/single-0046",
+        "participants": [
+          {
+            "name": "KERUM društvo s ograničenom odgovornošću, za unutarnju i vanjsku trgovinu, promet i usluge u stečaju",
+            "oib": "66124057408",
+            "role": "DUŽNIK"
+          }
+        ]
+      },
+      "acquisition": {
+        "mode": "search-window",
+        "currentPage": 5
+      },
+      "documentLinks": [
+        {
+          "url": "https://e-oglasna.pravosudje.hr/objave/dokument/single-0046/preuzimanje",
+          "text": "Dokument objave"
+        }
+      ]
+    },
+    {
+      "caseInfo": {
+        "caseNumber": "ST-2/2013",
+        "title": "Ustup tražbine od 2024.02.23.",
+        "date": "2024-02-23",
+        "detailLink": "https://e-oglasna.pravosudje.hr/objave/single-0047",
+        "participants": [
+          {
+            "name": "KERUM društvo s ograničenom odgovornošću, za unutarnju i vanjsku trgovinu, promet i usluge u stečaju",
+            "oib": "66124057408",
+            "role": "DUŽNIK"
+          }
+        ]
+      },
+      "acquisition": {
+        "mode": "search-window",
+        "currentPage": 5
+      },
+      "documentLinks": [
+        {
+          "url": "https://e-oglasna.pravosudje.hr/objave/dokument/single-0047/preuzimanje",
+          "text": "Dokument objave"
+        }
+      ]
+    },
+    {
+      "caseInfo": {
+        "caseNumber": "ST-2/2013",
+        "title": "Završno izvješće i završni račun od 2024.02.04.",
+        "date": "2024-02-04",
+        "detailLink": "https://e-oglasna.pravosudje.hr/objave/single-0048",
+        "participants": [
+          {
+            "name": "KERUM društvo s ograničenom odgovornošću, za unutarnju i vanjsku trgovinu, promet i usluge u stečaju",
+            "oib": "66124057408",
+            "role": "DUŽNIK"
+          }
+        ]
+      },
+      "acquisition": {
+        "mode": "search-window",
+        "currentPage": 5
+      },
+      "documentLinks": [
+        {
+          "url": "https://e-oglasna.pravosudje.hr/objave/dokument/single-0048/preuzimanje",
+          "text": "Dokument objave"
+        }
+      ]
+    },
+    {
+      "caseInfo": {
+        "caseNumber": "ST-2/2013",
+        "title": "Prijedlog završne diobe od 2024.01.17.",
+        "date": "2024-01-17",
+        "detailLink": "https://e-oglasna.pravosudje.hr/objave/single-0049",
+        "participants": [
+          {
+            "name": "KERUM društvo s ograničenom odgovornošću, za unutarnju i vanjsku trgovinu, promet i usluge u stečaju",
+            "oib": "66124057408",
+            "role": "DUŽNIK"
+          }
+        ]
+      },
+      "acquisition": {
+        "mode": "search-window",
+        "currentPage": 5
+      },
+      "documentLinks": [
+        {
+          "url": "https://e-oglasna.pravosudje.hr/objave/dokument/single-0049/preuzimanje",
+          "text": "Dokument objave"
+        }
+      ]
+    },
+    {
+      "caseInfo": {
+        "caseNumber": "ST-2/2013",
+        "title": "Prigovor na diobni popis od 2023.12.29.",
+        "date": "2023-12-29",
+        "detailLink": "https://e-oglasna.pravosudje.hr/objave/single-0050",
+        "participants": [
+          {
+            "name": "KERUM društvo s ograničenom odgovornošću, za unutarnju i vanjsku trgovinu, promet i usluge u stečaju",
+            "oib": "66124057408",
+            "role": "DUŽNIK"
+          }
+        ]
+      },
+      "acquisition": {
+        "mode": "search-window",
+        "currentPage": 5
+      },
+      "documentLinks": [
+        {
+          "url": "https://e-oglasna.pravosudje.hr/objave/dokument/single-0050/preuzimanje",
+          "text": "Dokument objave"
+        }
+      ]
+    }
+  ]
+}

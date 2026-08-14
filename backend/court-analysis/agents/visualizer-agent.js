@@ -23,11 +23,21 @@ class VisualizerTool extends Tool {
 
     async _call(analysisText) {
         console.log("[VisualizerTool] Generating diagram for analysis text...");
+
+        // Guard: an empty/error placeholder carries no analyzable substance and
+        // must not be sent to the model (it would only emit an empty stub).
+        const usableText = String(analysisText || "").trim();
+        const USELESS_RE = /gre[šs]ka pri generiranju|nema dostupnih podataka za generiranje analize|analiza dokumenata nije uspje[šs]no izvr[šs]ena|nema dovoljno dokaza/i;
+        if (!usableText || USELESS_RE.test(usableText)) {
+            console.warn("[VisualizerTool] Skipping diagram generation: input text is empty or a failure placeholder.");
+            return "Error generating diagram.";
+        }
+
         const prompt = `
         You are a specialized Data Visualization Agent. Your ONLY job is to transform the provided legal analysis text into a strictly valid Mermaid flowchart.
         
         INPUT TEXT:
-        ${analysisText}
+        ${usableText}
 
         INSTRUCTIONS:
         1. Produce ONLY a Mermaid code block using 'flowchart TD'.

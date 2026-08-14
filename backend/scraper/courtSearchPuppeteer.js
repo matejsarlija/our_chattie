@@ -14,6 +14,11 @@ if (process.env.NODE_ENV === 'production' || process.env.BROWSERLESS_TOKEN) {
     }
 }
 
+function resolveMaxPagesScanned() {
+    const raw = Number.parseInt(process.env.DISCOVERY_MAX_PAGES_SCANNED, 10);
+    return Number.isFinite(raw) && raw >= 1 ? raw : 5;
+}
+
 class CourtSearchPuppeteer {
     constructor() {
         this.baseUrl = 'https://e-oglasna.pravosudje.hr';
@@ -133,6 +138,93 @@ class CourtSearchPuppeteer {
             hasNextPage,
             rawParsedEntryCount
         };
+    }
+
+    buildSearchResultsUrl(searchTerm, page) {
+        const params = new URLSearchParams({
+            text: searchTerm,
+            page: String(page),
+            sort: 'datePublished,desc',
+            _g: 'null'
+        });
+        return `${this.baseUrl}/objave?${params.toString()}`;
+    }
+
+    async navigateToSearchResultsPage(searchTerm, page) {
+        const url = this.buildSearchResultsUrl(searchTerm, page);
+        console.log(`[navigateToSearchResultsPage] Navigating to page ${page}: ${url}`);
+        await this.page.goto(url, {
+            waitUntil: 'networkidle0',
+            timeout: 90000
+        });
+
+        try {
+            await this.page.waitForSelector('li.item.row', { visible: true, timeout: 30000 });
+        } catch (err) {
+            // Graceful fallback: allow the caller to decide whether the page is empty.
+            console.warn(`[navigateToSearchResultsPage] No result items found on page ${page}.`, err.message);
+        }
+    }
+
+    /**
+     * Aggregates per-page search metadata from a multi-page crawl into a single
+     * normalized discovery metadata block. Each page becomes its own entry in
+     * `searchWindows`, while the top-level fields describe the whole window.
+     */
+    aggregateSearchWindows(pageMetadataList, totalRawCount) {
+        const pages = Array.isArray(pageMetadataList) ? pageMetadataList : [];
+        const last = pages[pages.length - 1] || {};
+        const pagesScanned = pages.length || 1;
+
+        return {
+            discoveryMode: 'search-window',
+            acquisitionModes: ['search-window'],
+            searchWindows: pages.map((page, index) => ({
+                mode: 'search-window',
+                currentPage: page.currentPage ?? index + 1,
+                pagesScanned: 1,
+                hasNextPage: Boolean(page.hasNextPage),
+                rawParsedEntryCount: page.rawParsedEntryCount ?? null
+            })),
+            totalResults: last.totalResults ?? null,
+            totalPages: last.totalPages ?? null,
+            pagesScanned,
+            currentPage: last.currentPage ?? 1,
+            hasNextPage: last.hasNextPage ?? false,
+            rawParsedEntryCount: totalRawCount
+        };
+    }
+
+    async performSearchAcrossPages(searchTerm, maxPages = null) {
+        const limit = Number.isFinite(maxPages) ? Math.max(1, maxPages) : resolveMaxPagesScanned();
+        console.log(`[performSearchAcrossPages] Searching for "${searchTerm}" across up to ${limit} page(s)...`);
+
+        await this.performSearch(searchTerm);
+        const firstPage = await this.parseSearchResultsPage();
+
+        const allResults = [...(firstPage.results || [])];
+        const pageMetadataList = [firstPage.searchMetadata];
+
+        let currentPage = firstPage.searchMetadata.currentPage || 1;
+        let hasNextPage = firstPage.searchMetadata.hasNextPage || false;
+
+        while (hasNextPage && pageMetadataList.length < limit) {
+            const nextPage = currentPage + 1;
+            await this.navigateToSearchResultsPage(searchTerm, nextPage);
+            const parsed = await this.parseSearchResultsPage();
+            const results = parsed.results || [];
+
+            pageMetadataList.push(parsed.searchMetadata);
+            allResults.push(...results);
+
+            currentPage = parsed.searchMetadata.currentPage || nextPage;
+            hasNextPage = parsed.searchMetadata.hasNextPage || false;
+
+            if (results.length === 0) break;
+        }
+
+        const searchMetadata = this.aggregateSearchWindows(pageMetadataList, allResults.length);
+        return { results: allResults, searchMetadata };
     }
 
     mapSearchResultsToPipelineEntries(results, searchMetadata, limit = null) {
@@ -561,6 +653,126 @@ class CourtSearchPuppeteer {
      * @param {string} searchTerm
      * @returns {Promise<{caseInfo: object, documentLinks: Array<object>} | null>}
      */
+    /**
+     * Case-number follow-up search (cluster expansion strategy
+     * `case-number-follow-up-search`): search the e-Oglasna window by the
+     * cluster's case number and keep entries that match the normalized lineage.
+     * Only entries belonging to the requested case number are returned so the
+     * pipeline's cluster-scoped contract is preserved.
+     */
+    async searchCaseNumberFollowUp(caseNumber, options = {}) {
+        const pass = options.pass ?? 1;
+        const strategy = options.strategy || 'case-number-follow-up-search';
+        const reason = options.reason || null;
+        const maxPages = options.maxPages ?? 1;
+        const normalized = normalizeCaseNumber(caseNumber);
+
+        console.log(`[searchCaseNumberFollowUp] Searching follow-up for case number "${caseNumber}" (pass ${pass})...`);
+        const { results: allResults, searchMetadata } = await this.performSearchAcrossPages(caseNumber, maxPages);
+
+        const matched = allResults.filter(r => normalizeCaseNumber(r.caseNumber) === normalized);
+        const entries = matched.map(r => ({
+            caseInfo: { ...r },
+            acquisition: {
+                mode: 'cluster-expansion',
+                sourceCaseNumber: normalized,
+                currentPage: r.acquisition?.currentPage ?? null,
+                pass,
+                strategy,
+                reason
+            },
+            documentLinks: r.documentDownloadLink
+                ? [{ url: r.documentDownloadLink, text: r.documentLinkText || `Dokumenti za ${normalized}` }]
+                : []
+        }));
+
+        console.log(`[searchCaseNumberFollowUp] Found ${entries.length} matching entrie(s) for case ${caseNumber}.`);
+        return { entries, searchMetadata, strategy, reason, pass };
+    }
+
+    async parseDetailPage(detailLink) {
+        try {
+            await this.page.goto(detailLink, {
+                waitUntil: 'networkidle0',
+                timeout: 90000
+            });
+
+            const data = await this.page.evaluate(() => {
+                const docs = [];
+                document.querySelectorAll('a[href*="/preuzimanje"]').forEach(a => {
+                    docs.push({
+                        url: new URL(a.href, window.location.origin).href,
+                        text: (a.textContent || '').trim() || 'Dokument'
+                    });
+                });
+
+                const relatedCaseNumbers = [];
+                document.querySelectorAll('a[href*="text="]').forEach(a => {
+                    const text = (a.textContent || '').trim();
+                    if (text && !relatedCaseNumbers.includes(text)) relatedCaseNumbers.push(text);
+                });
+
+                const titleEl = document.querySelector('h1, .title, [class*="title"]');
+                return {
+                    docs,
+                    relatedCaseNumbers,
+                    title: titleEl ? titleEl.textContent.trim() : null
+                };
+            });
+
+            return { detailLink, title: data.title, documentLinks: data.docs };
+        } catch (err) {
+            console.warn('[parseDetailPage] Failed to parse detail page:', detailLink, err.message);
+            return null;
+        }
+    }
+
+    /**
+     * Detail-link follow-up (cluster expansion strategy `detail-link-follow-up`):
+     * visit each primary-cluster detail link and harvest any additional document
+     * download links that are not exposed on the search result row.
+     */
+    async followDetailLinks(detailLinks, options = {}) {
+        const pass = options.pass ?? 1;
+        const strategy = options.strategy || 'detail-link-follow-up';
+        const reason = options.reason || null;
+        const links = (Array.isArray(detailLinks) ? detailLinks : []).filter(Boolean);
+
+        const entries = [];
+        for (const link of links) {
+            const parsed = await this.parseDetailPage(link);
+            if (!parsed) continue;
+            if (!Array.isArray(parsed.documentLinks) || parsed.documentLinks.length === 0) continue;
+
+            entries.push({
+                caseInfo: {
+                    title: parsed.title || 'Detalj objave',
+                    detailLink: link,
+                    // A detail page does not repeat the case number reliably.
+                    // Preserve the originating cluster so the pipeline can add
+                    // documents harvested exclusively from this page.
+                    caseNumber: options.sourceCaseNumber || 'N/A',
+                    court: 'N/A',
+                    date: 'N/A',
+                    participants: []
+                },
+                acquisition: {
+                    mode: 'cluster-expansion',
+                    sourceCaseNumber: options.sourceCaseNumber || null,
+                    currentPage: null,
+                    pass,
+                    strategy,
+                    reason,
+                    detailLink: link
+                },
+                documentLinks: parsed.documentLinks
+            });
+        }
+
+        console.log(`[followDetailLinks] Harvested ${entries.length} detail entrie(s) across ${links.length} link(s).`);
+        return { entries, strategy, reason, pass };
+    }
+
     async searchAndGetFirstCaseWithDocuments(searchTerm) {
         console.log('[searchAndGetFirstCaseWithDocuments] Starting search...');
         await this.performSearch(searchTerm);
@@ -599,10 +811,9 @@ class CourtSearchPuppeteer {
      * @param {number} limit - The number of cases to return.
      * @returns {Promise<Array<{caseInfo: object, documentLinks: Array<object>}>>}
      */
-    async searchAndGetLatestCasesWithDocuments(searchTerm, limit = 2) {
+    async searchAndGetLatestCasesWithDocuments(searchTerm, limit = 2, maxPages = null) {
         console.log('[searchAndGetLatestCasesWithDocuments] Starting search...');
-        await this.performSearch(searchTerm);
-        const { results: allResults, searchMetadata } = await this.parseSearchResultsPage();
+        const { results: allResults, searchMetadata } = await this.performSearchAcrossPages(searchTerm, maxPages);
 
         if (allResults.length === 0) {
             console.warn('[searchAndGetLatestCasesWithDocuments] Search yielded no results.');
@@ -623,7 +834,7 @@ class CourtSearchPuppeteer {
             };
         }
 
-        console.log(`[searchAndGetLatestCasesWithDocuments] Success! Found ${resultsWithDocs.length} case(s) with direct download links.`);
+        console.log(`[searchAndGetLatestCasesWithDocuments] Success! Found ${resultsWithDocs.length} case(s) with direct download links across ${searchMetadata.pagesScanned} page(s).`);
 
         // Take the most recent ones from the top of the list, up to the limit
         const limitedResults = resultsWithDocs.slice(0, limit);
@@ -636,10 +847,9 @@ class CourtSearchPuppeteer {
         };
     }
 
-    async searchAndGetLatestCases(searchTerm, limit = null) {
+    async searchAndGetLatestCases(searchTerm, limit = null, maxPages = null) {
         console.log('[searchAndGetLatestCases] Starting search...');
-        await this.performSearch(searchTerm);
-        const { results: allResults, searchMetadata } = await this.parseSearchResultsPage();
+        const { results: allResults, searchMetadata } = await this.performSearchAcrossPages(searchTerm, maxPages);
 
         if (allResults.length === 0) {
             console.warn('[searchAndGetLatestCases] Search yielded no results.');

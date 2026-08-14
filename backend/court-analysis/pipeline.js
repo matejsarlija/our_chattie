@@ -13,7 +13,7 @@ const {
 } = require('../helpers/courtAnalysisRequest');
 const { groupEntriesByCase } = require('./utils/grouping');
 const { normalizeCaseNumber } = require('./utils/caseNumber');
-const { buildClusterEvidencePackage } = require('./reasoning/evidencePackage');
+const { buildClusterEvidencePackage, attachAnalysesToEvidencePackage } = require('./reasoning/evidencePackage');
 const { generateClusterReport } = require('./reasoning/reportService');
 const fs = require('fs');
 const path = require('path');
@@ -44,6 +44,16 @@ function buildEmptyPartialResult() {
         clusterEvidencePackage: null,
         report: null
     };
+}
+
+// Placeholder/error strings produced by generateComparativeAnalysis when the
+// underlying AI call failed. These carry no analyzable substance, so the
+// visualizer must not run against them (it would only emit an empty stub).
+const USELESS_ANALYSIS_TEXT_RE = /gre[šs]ka pri generiranju|nema dostupnih podataka za generiranje analize|analiza dokumenata nije uspje[šs]no izvr[šs]ena|nema dovoljno dokaza/i;
+
+function isUsableAnalysisText(text) {
+    const value = String(text || '').trim();
+    return value.length > 0 && !USELESS_ANALYSIS_TEXT_RE.test(value);
 }
 
 function clampCaseLimit(rawLimit) {
@@ -822,6 +832,164 @@ function applyConfiguredClusterExpansion(entriesForGrouping, initialDiscoverySum
     };
 }
 
+/**
+ * Executes deterministic cluster-expansion follow-up searches against a live
+ * scraper (`automator`) when the primary cluster is under-covered. Produces
+ * `clusterExpansion.batches` compatible with `applyConfiguredClusterExpansion`,
+ * which remains the single application point (provenance tagging + counts).
+ *
+ * No LLM decision loop: eligibility comes from `expansionPlan`/eligibility
+ * computed by the deterministic heuristics. A scraper lacking the follow-up
+ * methods (mocks/fixtures) is treated as a no-op.
+ */
+async function executeClusterExpansionSearches(automator, discoveryResult, options = {}) {
+    const discoverySummary = discoveryResult?.discoverySummary || {};
+    const plan = discoverySummary.expansionPlan || null;
+    const eligibility = discoverySummary.expansionEligibility || null;
+    const primaryClusterId = discoveryResult?.primaryClusterId
+        || discoverySummary.recommendedPrimaryClusterId
+        || null;
+
+    if (!automator || typeof automator.searchCaseNumberFollowUp !== 'function') {
+        return { batches: [], status: 'no-automator', appliedPasses: 0 };
+    }
+    if (!plan?.executable || !eligibility?.eligible) {
+        return { batches: [], status: 'not-eligible', appliedPasses: 0 };
+    }
+    if (Array.isArray(eligibility.blockerReasons) && eligibility.blockerReasons.length > 0) {
+        return { batches: [], status: 'blocked', blockerReasons: eligibility.blockerReasons, appliedPasses: 0 };
+    }
+
+    const configuredMaxPasses = Number.isFinite(options.clusterExpansion?.maxPasses)
+        ? options.clusterExpansion.maxPasses
+        : null;
+    const maxPasses = Math.min(
+        configuredMaxPasses ?? CLUSTER_EXPANSION_DEFAULTS.maxClusterExpansionPasses,
+        plan.maxPasses ?? CLUSTER_EXPANSION_DEFAULTS.maxClusterExpansionPasses
+    );
+
+    const primaryClusterSummary = (discoverySummary.clusters || []).find(c => c.clusterId === primaryClusterId) || null;
+    const primaryCaseNumber = normalizeCaseNumber(
+        primaryClusterSummary?.primaryCaseNumber || primaryClusterId
+    );
+    const uniqueDetailLinks = Array.from(new Set(
+        (primaryClusterSummary?.acquisitionProvenance || [])
+            .map(p => p.entryDetailLink)
+            .filter(Boolean)
+    ));
+
+    const reason = plan.reasonCodes?.[0] || null;
+    const batches = [];
+    const seenEntryLinks = new Set();
+    const seenDocumentUrls = new Set();
+
+    // Seed the dedupe set with detail links already captured by the search
+    // window so that a follow-up search which re-fetches the same case (the
+    // typical single-cluster OIB shape, where case-number search returns the
+    // same window) is treated as "no new entries" instead of appending
+    // duplicates. Only explicit detail links are used as re-fetch identity;
+    // link-less entries stay eligible so genuine same-case expansion is not
+    // collapsed by the shared case number alone.
+    for (const cluster of discoveryResult?.clusters || []) {
+        if (cluster?.clusterId !== primaryClusterId) continue;
+        for (const entry of cluster?.entries || []) {
+            const detailLink = entry?.caseInfo?.detailLink || null;
+            if (detailLink) seenEntryLinks.add(detailLink);
+            for (const documentLink of entry?.documentLinks || []) {
+                if (documentLink?.url) seenDocumentUrls.add(documentLink.url);
+            }
+        }
+    }
+
+    const hasNewEntries = (entries) => {
+        let hasNew = false;
+        for (const entry of entries || []) {
+            const detailLink = entry?.caseInfo?.detailLink || entry?.caseInfo?.caseNumber || null;
+            if (!detailLink) {
+                // no fingerprint → treat as new
+                hasNew = true;
+                continue;
+            }
+            if (!seenEntryLinks.has(detailLink)) {
+                seenEntryLinks.add(detailLink);
+                hasNew = true;
+            }
+        }
+        return hasNew;
+    };
+
+    // Detail pages are intentionally revisited even though their page URL is
+    // already known. Their value is a newly exposed download URL, not a new
+    // search-result row, so detail-link identity must not suppress them.
+    const collectNewDetailDocuments = (entries) => {
+        const newEntries = [];
+        for (const entry of entries || []) {
+            const documentLinks = (entry.documentLinks || []).filter((documentLink) => {
+                if (!documentLink?.url || seenDocumentUrls.has(documentLink.url)) return false;
+                seenDocumentUrls.add(documentLink.url);
+                return true;
+            });
+            if (documentLinks.length > 0) {
+                newEntries.push({ ...entry, documentLinks });
+            }
+        }
+        return newEntries;
+    };
+
+    for (let pass = 1; pass <= maxPasses; pass += 1) {
+        let anyNewThisPass = false;
+
+        if (typeof automator.searchCaseNumberFollowUp === 'function') {
+            const result = await automator.searchCaseNumberFollowUp(primaryCaseNumber, {
+                pass,
+                strategy: 'case-number-follow-up-search',
+                reason,
+                maxPages: options.expansionSearchPages ?? 1
+            });
+            if (hasNewEntries(result?.entries)) {
+                batches.push({
+                    clusterId: primaryClusterId,
+                    pass,
+                    strategy: 'case-number-follow-up-search',
+                    reason,
+                    entries: result.entries
+                });
+                anyNewThisPass = true;
+            }
+        }
+
+        if (typeof automator.followDetailLinks === 'function' && uniqueDetailLinks.length > 0) {
+            const result = await automator.followDetailLinks(uniqueDetailLinks, {
+                pass,
+                strategy: 'detail-link-follow-up',
+                reason,
+                sourceCaseNumber: primaryCaseNumber
+            });
+            const entriesWithNewDocuments = collectNewDetailDocuments(result?.entries);
+            if (entriesWithNewDocuments.length > 0) {
+                batches.push({
+                    clusterId: primaryClusterId,
+                    pass,
+                    strategy: 'detail-link-follow-up',
+                    reason,
+                    entries: entriesWithNewDocuments
+                });
+                anyNewThisPass = true;
+            }
+        }
+
+        // A pass that adds nothing new terminates the loop: re-running the same
+        // searches would only re-discover the same entries.
+        if (!anyNewThisPass) break;
+    }
+
+    return {
+        batches,
+        status: batches.length > 0 ? 'executed' : 'no-follow-up-found',
+        appliedPasses: batches.length > 0 ? maxPasses : 0
+    };
+}
+
 function buildDiscoveryResult(casesToProcess, options = {}, progressCallback) {
     if (!casesToProcess || casesToProcess.length === 0) {
         throw new Error('Nije pronađen nijedan predmet za traženi pojam.');
@@ -918,6 +1086,9 @@ function resolveAnalysisArgs(caseLimitOrOptions, maybeProgressCallback) {
             enableVisualizer: caseLimitOrOptions.enableVisualizer !== false,
             query: caseLimitOrOptions.query || null,
             clusterExpansion: caseLimitOrOptions.clusterExpansion || null,
+            maxPagesScanned: Number.isFinite(caseLimitOrOptions.maxPagesScanned)
+                ? Math.max(1, caseLimitOrOptions.maxPagesScanned)
+                : null,
             progressCallback: maybeProgressCallback,
         };
     }
@@ -928,6 +1099,44 @@ function resolveAnalysisArgs(caseLimitOrOptions, maybeProgressCallback) {
         enableVisualizer: true,
         query: null,
         progressCallback: maybeProgressCallback,
+    };
+}
+
+/**
+ * Optionally enriches `resolved` with cluster-expansion batches discovered via
+ * live follow-up searches. Runs an initial deterministic discovery pass to
+ * check eligibility; if eligible and the automator supports follow-up methods,
+ * executes them and returns options carrying `clusterExpansion` batches so the
+ * single application point (`applyConfiguredClusterExpansion`) can append them
+ * with proper provenance.
+ */
+async function resolveAutoExpansion(automator, casesToProcess, resolved, progressCallback) {
+    if (!automator || !casesToProcess || casesToProcess.length === 0) {
+        return resolved;
+    }
+
+    const initialDiscovery = buildDiscoveryResult(casesToProcess, {
+        caseLimit: resolved.caseLimit,
+        query: resolved.query || null,
+        clusterExpansion: null,
+        discoveryMetadata: resolved.discoveryMetadata || null
+    }, progressCallback);
+
+    const expansionResult = await executeClusterExpansionSearches(automator, initialDiscovery, {
+        clusterExpansion: resolved.clusterExpansion || null,
+        expansionSearchPages: resolved.expansionSearchPages ?? 1
+    });
+
+    if (expansionResult.status !== 'executed' || expansionResult.batches.length === 0) {
+        return resolved;
+    }
+
+    return {
+        ...resolved,
+        clusterExpansion: {
+            maxPasses: expansionResult.appliedPasses || null,
+            batches: expansionResult.batches
+        }
     };
 }
 
@@ -964,12 +1173,19 @@ async function runCourtAnalysis(searchTerm, caseLimitOrOptions, progressCallback
             discoveryMode: discoveryMetadata?.discoveryMode || null,
         });
 
+        // Optional deterministic cluster-expansion follow-up searches (2b). Uses
+        // the live automator; no-ops for mocks/fixtures lacking follow-up methods.
+        const expandedResolved = await resolveAutoExpansion(automator, casesToProcess, {
+            ...resolved,
+            discoveryMetadata,
+        }, callback);
+
         // Process the scraped cases using the separate function
         const result = await processScrapedCases(casesToProcess, callback, {
-            caseLimit: resolved.caseLimit,
-            enableVisualizer: resolved.enableVisualizer,
-            query: resolved.query || { value: searchTerm },
-            clusterExpansion: resolved.clusterExpansion,
+            caseLimit: expandedResolved.caseLimit,
+            enableVisualizer: expandedResolved.enableVisualizer,
+            query: expandedResolved.query || { value: searchTerm },
+            clusterExpansion: expandedResolved.clusterExpansion,
             discoveryMetadata,
         });
         return result;
@@ -993,13 +1209,18 @@ async function runCourtDiscovery(searchTerm, caseLimitOrOptions, progressCallbac
     try {
         callback?.({ step: 'discovering', progress: 10, message: 'Pretražujem sudske zapise za nedavne objave...' });
         await automator.init();
-        const scrapeResult = await automator.searchAndGetLatestCases(searchTerm);
+        const scrapeResult = await automator.searchAndGetLatestCases(searchTerm, null, resolved.maxPagesScanned);
         const { casesToProcess, discoveryMetadata } = normalizeScraperResult(scrapeResult);
 
+        const expandedResolved = await resolveAutoExpansion(automator, casesToProcess, {
+            ...resolved,
+            discoveryMetadata,
+        }, callback);
+
         return buildDiscoveryResult(casesToProcess, {
-            caseLimit: resolved.caseLimit,
-            query: resolved.query || { value: searchTerm },
-            clusterExpansion: resolved.clusterExpansion,
+            caseLimit: expandedResolved.caseLimit,
+            query: expandedResolved.query || { value: searchTerm },
+            clusterExpansion: expandedResolved.clusterExpansion,
             discoveryMetadata
         }, callback);
     } catch (error) {
@@ -1023,19 +1244,24 @@ async function runCourtAnalysisWithExistingAutomator(searchTerm, caseLimitOrOpti
     try {
         // 1. Use the existing automator to scrape (no init/close needed)
         callback?.({ step: 'discovering', progress: 10, message: 'Pretražujem sudske zapise za nedavne objave...' });
-        const scrapeResult = await existingAutomator.searchAndGetLatestCasesWithDocuments(searchTerm, resolved.scrapeLimit);
+        const scrapeResult = await existingAutomator.searchAndGetLatestCasesWithDocuments(searchTerm, resolved.scrapeLimit, resolved.maxPagesScanned);
         const { casesToProcess, discoveryMetadata } = normalizeScraperResult(scrapeResult);
 
         if (!casesToProcess || casesToProcess.length === 0) {
             throw new Error('Nije pronađen nijedan predmet s dostupnim dokumentima za traženi pojam.');
         }
 
+        const expandedResolved = await resolveAutoExpansion(existingAutomator, casesToProcess, {
+            ...resolved,
+            discoveryMetadata,
+        }, callback);
+
         // Process using the shared logic
         const result = await processScrapedCases(casesToProcess, callback, {
-            caseLimit: resolved.caseLimit,
-            enableVisualizer: resolved.enableVisualizer,
-            query: resolved.query || { value: searchTerm },
-            clusterExpansion: resolved.clusterExpansion,
+            caseLimit: expandedResolved.caseLimit,
+            enableVisualizer: expandedResolved.enableVisualizer,
+            query: expandedResolved.query || { value: searchTerm },
+            clusterExpansion: expandedResolved.clusterExpansion,
             discoveryMetadata,
         });
         return result;
@@ -1251,10 +1477,21 @@ async function processScrapedCases(casesToProcess, progressCallback, options = {
 
         // 3. Final Comparative Analysis
         partialResult.processedCases = allProcessedCases;
+
+        // Enrich the evidence package with successful per-document analyses now
+        // that they exist, so the report/retriever ground findings in real
+        // document content and expose coverage (analyzed vs failed).
+        const enrichedEvidencePackage = attachAnalysesToEvidencePackage(
+            clusterEvidencePackage,
+            allProcessedCases,
+            primaryClusterId || null
+        );
+        partialResult.clusterEvidencePackage = enrichedEvidencePackage;
+
         stageAwareProgress?.({ step: 'reasoning', progress: 85, message: 'Generiram usporednu analizu i zaključak...' });
         let comparativeAnalysis = await generateComparativeAnalysis(allProcessedCases, { clusterEvidencePackage });
         partialResult.comparativeAnalysis = comparativeAnalysis;
-        const report = await generateClusterReport(clusterEvidencePackage, {
+        const report = await generateClusterReport(enrichedEvidencePackage, {
             onStage: (event) => stageAwareProgress?.(event)
         });
         partialResult.report = report;
@@ -1265,7 +1502,7 @@ async function processScrapedCases(casesToProcess, progressCallback, options = {
         });
 
         // --- VISUALIZATION STEP ---
-        if (resolvedOptions.enableVisualizer && comparativeAnalysis) {
+        if (resolvedOptions.enableVisualizer && isUsableAnalysisText(comparativeAnalysis)) {
             stageAwareProgress?.({ step: 'reasoning', progress: 95, message: 'Generiram vizualizaciju tijeka predmeta...' });
             try {
                 const visualizerTool = new VisualizerTool();
@@ -1291,7 +1528,7 @@ async function processScrapedCases(casesToProcess, progressCallback, options = {
             discoverySummary,
             primaryCluster,
             secondaryClusters,
-            clusterEvidencePackage,
+            clusterEvidencePackage: enrichedEvidencePackage,
             report
         };
 
@@ -1329,5 +1566,9 @@ module.exports = {
     buildEmptyPartialResult,
     evaluateDiscoveryHeuristics,
     evaluateClusterExpansionEligibility,
-    buildClusterExpansionPlan
+    buildClusterExpansionPlan,
+    applyConfiguredClusterExpansion,
+    executeClusterExpansionSearches,
+    resolveAutoExpansion,
+    isUsableAnalysisText
 };

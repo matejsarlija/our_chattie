@@ -114,6 +114,27 @@ describe('Synthesizer', () => {
         expect(report.timeline).toEqual([]);
     });
 
+    test('downgrades structural findings and surfaces an open question when most document analyses fail', async () => {
+        mockInvoke.mockResolvedValue({
+            content: JSON.stringify({
+                narrative: 'Sažetak.',
+                findings: [{ text: 'Dokument pripada predmetu.', confidence: 'high', citations: ['doc-1'] }],
+                openQuestions: [],
+                nextSteps: []
+            })
+        });
+
+        const report = await synthesizeReport({
+            timeline: [],
+            claims: [{ id: 'document-1', text: 'Dokument pripada predmetu.', confidence: 'medium', evidence: [{ sourceId: 'doc-1', text: 'Strukturna poveznica dokumenta.', metadata: { sourceType: 'document-link' } }] }],
+            meta: { caseNumber: 'ST-700/2024', coverage: { analyzed: 1, failed: 2, total: 3 } }
+        });
+
+        expect(mockInvoke.mock.calls[0][0]).toContain('DOCUMENT COVERAGE WARNING');
+        expect(report.findings[0].confidence).toBe('low');
+        expect(report.openQuestions.join(' ')).toContain('Analiza dokumenata nije potpuna');
+    });
+
     test('populates report.timeline from the evidence timeline with citations', async () => {
         mockInvoke.mockResolvedValue({
             content: `{

@@ -32,6 +32,18 @@ const ANALYSIS_CHUNK_SIZE = 3500;
 const ANALYSIS_CHUNK_OVERLAP = 350;
 const ANALYSIS_RETRIEVAL_LIMIT = 6;
 
+// Pacing for document analysis. Free-tier quota is exhausted the moment many
+// files hit Gemini in parallel, so within a batch we process files with bounded
+// concurrency. On the free plan keep it serial; on a paid key allow more.
+const ANALYSIS_FILE_CONCURRENCY = (() => {
+    const raw = Number(process.env.ANALYSIS_FILE_CONCURRENCY);
+    return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 1;
+})();
+const ANALYSIS_FILE_DELAY_MS = (() => {
+    const raw = Number(process.env.ANALYSIS_FILE_DELAY_MS);
+    return Number.isFinite(raw) && raw >= 0 ? raw : 0;
+})();
+
 function buildRetrievalTerms(caseInfo = {}, file = {}) {
     const terms = new Set();
     if (caseInfo.caseNumber) terms.add(String(caseInfo.caseNumber).toLowerCase());
@@ -223,7 +235,7 @@ class AnalyzeDocumentsTool extends Tool {
     async _call(input) {
         const { files, caseInfo, progressCallback } = input;
 
-        const analysisPromises = files.map(async (file) => {
+        const analyzeFile = async (file) => {
             try {
                 let text = await extractTextFromFile(file.filePath);
 
@@ -351,25 +363,114 @@ class AnalyzeDocumentsTool extends Tool {
                     });
                 return { ...file, aiResult: null, error: err.message };
             }
-        });
+        };
 
-        const settledResults = await Promise.allSettled(analysisPromises);
+        // First pass with bounded concurrency so free-tier quota is not
+        // exhausted by a parallel fan-out of every file in the batch.
+        const firstPassResults = await mapWithConcurrency(
+            files,
+            ANALYSIS_FILE_CONCURRENCY,
+            analyzeFile,
+            { delayMs: ANALYSIS_FILE_DELAY_MS }
+        );
 
-        const individualAnalyses = settledResults.map((result) => {
-            if (result.status === "fulfilled") {
-                return result.value;
-            } else {
-                return {
-                    error: "An unexpected error occurred during analysis.",
-                    ...result.reason,
-                };
-            }
-        });
+        // Deferred second pass: retry only files that failed with transient
+        // (recoverable) Gemini errors, e.g. quota-burst timeouts. Structural
+        // failures (unreadable/corrupt files) are not retried — retrying them
+        // would only burn the remaining budget.
+        const retryableIndexes = firstPassResults
+            .map((result, index) => ({ result, index }))
+            .filter(({ result }) => !result.aiResult && isTransientAnalysisFailure(result.error))
+            .map(({ index }) => index);
+
+        let individualAnalyses = firstPassResults;
+        if (retryableIndexes.length > 0) {
+            console.log(`[Analyzer] ${retryableIndexes.length} file(s) failed with transient errors; retrying sequentially...`);
+            const retryFiles = retryableIndexes.map((index) => files[index]);
+            const retryResults = await mapWithConcurrency(
+                retryFiles,
+                1,
+                analyzeFile,
+                { delayMs: ANALYSIS_FILE_DELAY_MS }
+            );
+            retryResults.forEach((result, position) => {
+                individualAnalyses[retryableIndexes[position]] = result;
+            });
+        }
 
         return {
-            individualAnalyses: individualAnalyses,
+            individualAnalyses,
+            coverage: buildAnalysisCoverage(individualAnalyses),
         };
     }
+}
+
+function sleep(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Maps `worker` over `items` with bounded concurrency, preserving input order.
+ * Each worker is wrapped so a single rejection does not kill the batch; the
+ * returned array contains whatever each item resolved/rejected to.
+ * @param {Array} items
+ * @param {number} concurrency
+ * @param {(item: any) => Promise<any>} worker
+ * @param {{ delayMs?: number }} [options]
+ * @returns {Promise<Array>}
+ */
+async function mapWithConcurrency(items, concurrency, worker, options = {}) {
+    const { delayMs = 0 } = options;
+    const safeWorker = async (item) => {
+        try {
+            return await worker(item);
+        } catch (err) {
+            return { error: err.message || String(err) };
+        }
+    };
+
+    const results = new Array(items.length);
+    let nextIndex = 0;
+
+    const boundedLoop = async () => {
+        while (nextIndex < items.length) {
+            const index = nextIndex;
+            nextIndex += 1;
+            if (delayMs > 0 && index > 0) {
+                await sleep(delayMs);
+            }
+            results[index] = await safeWorker(items[index]);
+        }
+    };
+
+    const poolSize = Math.max(1, Math.min(concurrency || 1, items.length));
+    await Promise.all(Array.from({ length: poolSize }, () => boundedLoop()));
+
+    return results;
+}
+
+function isTransientAnalysisFailure(errorMessage) {
+    const message = String(errorMessage || "").toLowerCase();
+    return /abort|timed out|timeout|429|rate limit|overloaded|too many requests|resource has been exhausted/i.test(message);
+}
+
+function buildAnalysisCoverage(individualAnalyses) {
+    const total = Array.isArray(individualAnalyses) ? individualAnalyses.length : 0;
+    const analyzed = (individualAnalyses || []).filter((item) => Boolean(item?.aiResult));
+    const failed = (individualAnalyses || []).filter((item) => !item?.aiResult);
+    const coverageRatio = total > 0 ? Number((analyzed.length / total).toFixed(2)) : 0;
+
+    return {
+        analyzed: analyzed.length,
+        failed: failed.length,
+        total,
+        coverageRatio,
+        complete: total > 0 && analyzed.length === total,
+        failedFiles: failed.map((item) => ({
+            fileName: item?.text || item?.filePath || "nepoznata datoteka",
+            reason: item?.error || "nepoznata greška",
+        })),
+    };
 }
 
 // --- NEW FUNCTION FOR THE FINAL STEP ---

@@ -186,7 +186,7 @@ describe('runCourtAnalysis pipeline (deterministic)', () => {
 
         const result = await runCourtDiscovery('66124057408', { caseLimit: 2 }, jest.fn());
 
-        expect(mockSearchAndGetLatestCases).toHaveBeenCalledWith('66124057408');
+        expect(mockSearchAndGetLatestCases).toHaveBeenCalledWith('66124057408', null, null);
         expect(result.discoverySummary.totalResults).toBe(12);
         expect(result.discoverySummary.totalPages).toBe(3);
         expect(result.discoverySummary.rawEntryCount).toBe(4);

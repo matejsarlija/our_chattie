@@ -98,6 +98,23 @@ describe('Verifier', () => {
         expect(verifiedReport.conflicts[0].reason).toContain('Evidence says debt NOT paid');
     });
 
+    test('does not let verification raise structural findings above low confidence when document coverage is poor', async () => {
+        mockInvoke.mockResolvedValue({
+            content: JSON.stringify([
+                { index: 1, status: 'supported', reason: 'Poveznica je pronađena.', confidence: 'high' },
+                { index: 2, status: 'unsupported', reason: 'Nije pronađeno.', confidence: 'low' }
+            ])
+        });
+
+        const result = await verifyReport(mockReport, {
+            ...mockEvidence,
+            meta: { coverage: { analyzed: 0, failed: 2, total: 2 } }
+        });
+
+        expect(result.findings[0].confidence).toBe('low');
+        expect(result.openQuestions.join(' ')).toContain('Analiza dokumenata nije potpuna');
+    });
+
     test('handles empty report gracefully', async () => {
         const emptyReport = { schemaVersion: SCHEMA_VERSION, claims: [], findings: [], meta: {} };
         const result = await verifyReport(emptyReport, mockEvidence);

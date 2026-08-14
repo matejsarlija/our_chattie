@@ -124,6 +124,70 @@ function buildClusterEvidencePackage({ cluster, clusterSummary, discoverySummary
     };
 }
 
+/**
+ * Attaches per-document AI analysis results to a cluster evidence package so the
+ * reasoning engine (synthesizer + lexical retriever) can ground claims in real
+ * document content instead of structural metadata (titles/links) alone.
+ *
+ * Only successful analyses (`aiResult` present) become first-class sources;
+ * failures are surfaced via the `coverage` block for transparency.
+ *
+ * @param {object|null} pkg - The cluster evidence package (pre-analysis).
+ * @param {Array<object>} processedCases - Fully processed cases from the pipeline.
+ * @param {string|null} [clusterId] - Only attach analyses belonging to this cluster.
+ * @returns {object|null} A shallow-copied package enriched with `analyses` + `coverage`.
+ */
+function attachAnalysesToEvidencePackage(pkg, processedCases, clusterId = null) {
+    if (!pkg) return pkg;
+
+    const selectedCase = (Array.isArray(processedCases) ? processedCases : []).find((processedCase) => {
+        const candidateId = processedCase?.groupMetadata?.clusterId || processedCase?.caseResult?.caseNumber;
+        return !clusterId || candidateId === clusterId;
+    });
+
+    const individualAnalyses = Array.isArray(selectedCase?.analysis?.individualAnalyses)
+        ? selectedCase.analysis.individualAnalyses
+        : [];
+
+    const analyses = [];
+    for (const item of individualAnalyses) {
+        if (!item?.aiResult) continue;
+        analyses.push({
+            id: item.filePath || item.text || `analysis-${analyses.length + 1}`,
+            fileName: item.text || item.filePath || null,
+            filePath: item.filePath || null,
+            caseNumber: item.aiResult.caseNumber || pkg.clusterId || null,
+            decisionDate: item.aiResult.decisionDate || null,
+            summary: item.aiResult.summary || null,
+            parties: Array.isArray(item.aiResult.parties) ? item.aiResult.parties : []
+        });
+    }
+
+    const total = individualAnalyses.length;
+    const analyzed = analyses.length;
+    const failedFiles = individualAnalyses
+        .filter((item) => !item?.aiResult)
+        .map((item) => ({
+            fileName: item.text || item.filePath || 'nepoznata datoteka',
+            reason: item.error || 'nepoznata greška',
+        }));
+
+    const coverage = {
+        analyzed,
+        failed: total - analyzed,
+        total,
+        coverageRatio: total > 0 ? Number((analyzed / total).toFixed(2)) : 0,
+        complete: total > 0 && analyzed === total,
+        failedFiles,
+    };
+
+    return {
+        ...pkg,
+        analyses,
+        coverage,
+    };
+}
+
 function validateClusterEvidencePackage(pkg) {
     if (!pkg || typeof pkg !== 'object') {
         return { valid: false, error: 'ClusterEvidencePackage must be an object.' };
@@ -171,5 +235,6 @@ function validateClusterEvidencePackage(pkg) {
 
 module.exports = {
     buildClusterEvidencePackage,
+    attachAnalysesToEvidencePackage,
     validateClusterEvidencePackage
 };

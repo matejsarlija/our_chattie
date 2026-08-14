@@ -75,6 +75,25 @@ function collectSources(evidencePackage) {
         if (source) sources.push(source);
     }
 
+    // Per-document AI analyses carry the actual legal substance (summaries,
+    // amounts, decision dates). Indexing them lets the retriever find real
+    // content instead of only structural metadata.
+    for (const analysis of evidencePackage?.analyses || []) {
+        const source = createSource(
+            analysis.id || analysis.filePath || analysis.fileName,
+            [analysis.summary, analysis.fileName, analysis.caseNumber, analysis.decisionDate]
+                .filter(Boolean)
+                .join(' '),
+            {
+                sourceType: 'analysis',
+                caseNumber: analysis.caseNumber || null,
+                fileName: analysis.fileName || null,
+                decisionDate: analysis.decisionDate || null
+            }
+        );
+        if (source) sources.push(source);
+    }
+
     return sources;
 }
 

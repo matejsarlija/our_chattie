@@ -113,4 +113,114 @@ describe('CourtSearchPuppeteer discovery metadata', () => {
         expect(parsed.searchMetadata.totalPages).toBe(124);
         expect(parsed.searchMetadata.currentPage).toBe(37);
     });
+
+    test('aggregateSearchWindows merges per-page metadata with correct pagesScanned', () => {
+        const aggregated = scraper.aggregateSearchWindows([
+            { currentPage: 1, hasNextPage: true, totalResults: 42, totalPages: 5, rawParsedEntryCount: 10 },
+            { currentPage: 2, hasNextPage: true, totalResults: 42, totalPages: 5, rawParsedEntryCount: 10 },
+            { currentPage: 3, hasNextPage: false, totalResults: 42, totalPages: 5, rawParsedEntryCount: 10 },
+        ], 30);
+
+        expect(aggregated.pagesScanned).toBe(3);
+        expect(aggregated.currentPage).toBe(3);
+        expect(aggregated.hasNextPage).toBe(false);
+        expect(aggregated.totalResults).toBe(42);
+        expect(aggregated.totalPages).toBe(5);
+        expect(aggregated.rawParsedEntryCount).toBe(30);
+        expect(aggregated.searchWindows).toHaveLength(3);
+        expect(aggregated.searchWindows[0]).toEqual(expect.objectContaining({ mode: 'search-window', currentPage: 1 }));
+        expect(aggregated.searchWindows[2]).toEqual(expect.objectContaining({ mode: 'search-window', currentPage: 3, hasNextPage: false }));
+    });
+
+    test('performSearchAcrossPages stops at the maxPages limit even when hasNextPage remains true', async () => {
+        scraper.performSearch = jest.fn().mockResolvedValue(undefined);
+        scraper.parseSearchResultsPage = jest.fn()
+            .mockResolvedValueOnce({
+                results: [{ caseNumber: 'St-1/2020' }],
+                searchMetadata: { currentPage: 1, hasNextPage: true, totalResults: 50, totalPages: 10 }
+            })
+            .mockResolvedValueOnce({
+                results: [{ caseNumber: 'St-2/2020' }],
+                searchMetadata: { currentPage: 2, hasNextPage: true, totalResults: 50, totalPages: 10 }
+            })
+            .mockResolvedValueOnce({
+                results: [{ caseNumber: 'St-3/2020' }],
+                searchMetadata: { currentPage: 3, hasNextPage: true, totalResults: 50, totalPages: 10 }
+            });
+        scraper.navigateToSearchResultsPage = jest.fn().mockResolvedValue(undefined);
+
+        const { results, searchMetadata } = await scraper.performSearchAcrossPages('KERUM', 3);
+
+        expect(results).toHaveLength(3);
+        expect(scraper.navigateToSearchResultsPage).toHaveBeenCalledTimes(2);
+        expect(searchMetadata.pagesScanned).toBe(3);
+        expect(searchMetadata.searchWindows).toHaveLength(3);
+    });
+
+    test('performSearchAcrossPages tags each page with its own currentPage via parseSearchResultsPage', async () => {
+        scraper.performSearch = jest.fn().mockResolvedValue(undefined);
+        scraper.parseSearchResultsPage = jest.fn()
+            .mockResolvedValueOnce({
+                results: [{ caseNumber: 'St-1/2020' }],
+                searchMetadata: { currentPage: 1, hasNextPage: true, totalResults: 50, totalPages: 10 }
+            })
+            .mockResolvedValueOnce({
+                results: [{ caseNumber: 'St-2/2020' }],
+                searchMetadata: { currentPage: 2, hasNextPage: false, totalResults: 50, totalPages: 10 }
+            });
+        scraper.navigateToSearchResultsPage = jest.fn().mockResolvedValue(undefined);
+
+        const { searchMetadata } = await scraper.performSearchAcrossPages('KERUM', 5);
+
+        expect(searchMetadata.pagesScanned).toBe(2);
+        expect(searchMetadata.currentPage).toBe(2);
+        expect(searchMetadata.hasNextPage).toBe(false);
+    });
+
+    test('searchCaseNumberFollowUp returns only entries matching the normalized case lineage', async () => {
+        scraper.performSearchAcrossPages = jest.fn().mockResolvedValue({
+            results: [
+                { caseNumber: 'St-700/2024', detailLink: 'http://l1', documentDownloadLink: 'http://d1' },
+                { caseNumber: 'ST-700/2024', detailLink: 'http://l2', documentDownloadLink: 'http://d2' },
+                { caseNumber: 'St-800/2024', detailLink: 'http://l3', documentDownloadLink: 'http://d3' },
+            ],
+            searchMetadata: { pagesScanned: 1, currentPage: 1, hasNextPage: false }
+        });
+
+        const result = await scraper.searchCaseNumberFollowUp('st-700/2024', { pass: 1, strategy: 'case-number-follow-up-search' });
+
+        expect(result.entries).toHaveLength(2);
+        expect(result.entries.every(e => e.acquisition.mode === 'cluster-expansion')).toBe(true);
+        expect(result.entries.every(e => e.acquisition.sourceCaseNumber === 'ST-700/2024')).toBe(true);
+        expect(result.entries.every(e => e.acquisition.pass === 1)).toBe(true);
+        expect(result.entries[0].documentLinks).toEqual([
+            { url: 'http://d1', text: 'Dokumenti za ST-700/2024' }
+        ]);
+    });
+
+    test('followDetailLinks harvests document links from detail pages', async () => {
+        scraper.parseDetailPage = jest.fn()
+            .mockResolvedValueOnce({
+                detailLink: 'http://detail1',
+                title: 'Detalj 1',
+                documentLinks: [{ url: 'http://d1', text: 'Zapisnik' }]
+            })
+            .mockResolvedValueOnce({ detailLink: 'http://detail2', title: 'Detalj 2', documentLinks: [] });
+
+        const result = await scraper.followDetailLinks(['http://detail1', 'http://detail2'], {
+            pass: 1,
+            strategy: 'detail-link-follow-up',
+            sourceCaseNumber: 'ST-700/2024'
+        });
+
+        expect(result.entries).toHaveLength(1);
+        expect(result.entries[0].acquisition).toEqual(expect.objectContaining({
+            mode: 'cluster-expansion',
+            strategy: 'detail-link-follow-up',
+            pass: 1,
+            sourceCaseNumber: 'ST-700/2024'
+        }));
+        expect(result.entries[0].documentLinks).toEqual([{ url: 'http://d1', text: 'Zapisnik' }]);
+        expect(result.entries[0].caseInfo.caseNumber).toBe('ST-700/2024');
+    });
 });

@@ -643,4 +643,214 @@ describe('AnalysisRunDetailPage metadata modules', () => {
       screen.getByText(/Rezultat analize nije dostupan jer obrada nije uspješno dovršena\./)
     ).toBeInTheDocument();
   });
+
+  test('renders secondary clusters from result_json with identity badges', () => {
+    useAnalysisRunDetail.mockReturnValue({
+      run: {
+        id: 'run-1',
+        status: 'done',
+        oib: '12345678901',
+        result_text: 'Rezultat',
+        result_json: {
+          processedCases: [],
+          secondaryClusters: [
+            {
+              clusterId: 'Povrv-297/2020',
+              caseNumber: 'Povrv-297/2020',
+              entryCount: 4,
+              documentCount: 3,
+              participantNames: ['KERUM d.o.o.'],
+              identityConsistency: 'consistent',
+              acquisitionProvenance: [{ mode: 'search-window' }],
+            },
+            {
+              clusterId: 'P-170/2023',
+              caseNumber: 'P-170/2023',
+              entryCount: 2,
+              documentCount: 0,
+              participantNames: ['Nepoznato'],
+              identityConsistency: 'unresolved',
+              acquisitionProvenance: [{ mode: 'search-window' }],
+            },
+          ],
+        },
+      },
+      events: [],
+      loading: false,
+      eventsLoading: false,
+      error: '',
+      isRunning: false,
+      connectionMode: 'idle',
+      lastUpdatedAt: '2026-02-27T12:00:00.000Z',
+      refresh: jest.fn(),
+    });
+
+    render(<AnalysisRunDetailPage />);
+
+    expect(screen.getByText('Ostali pronađeni predmeti')).toBeInTheDocument();
+    expect(screen.getByText('Povrv-297/2020')).toBeInTheDocument();
+    expect(screen.getByText('P-170/2023')).toBeInTheDocument();
+    expect(screen.getByText('Identičan subjekt')).toBeInTheDocument();
+    expect(screen.getByText('Nepotvrđena identifikacija')).toBeInTheDocument();
+    expect(screen.getByText('2 predmeta')).toBeInTheDocument();
+  });
+
+  test('falls back to discoverySummary.clusters when secondaryClusters is absent', () => {
+    useAnalysisRunDetail.mockReturnValue({
+      run: {
+        id: 'run-1',
+        status: 'done',
+        oib: '12345678901',
+        result_text: 'Rezultat',
+        result_json: {
+          processedCases: [],
+          discoverySummary: {
+            clusters: [
+              { clusterId: 'ST-100/2023', selectedForReasoning: true, entryCount: 5, documentCount: 5 },
+              { clusterId: 'ST-200/2021', selectedForReasoning: false, entryCount: 3, documentCount: 1 },
+            ],
+          },
+        },
+      },
+      events: [],
+      loading: false,
+      eventsLoading: false,
+      error: '',
+      isRunning: false,
+      connectionMode: 'idle',
+      lastUpdatedAt: '2026-02-27T12:00:00.000Z',
+      refresh: jest.fn(),
+    });
+
+    render(<AnalysisRunDetailPage />);
+
+    expect(screen.getByText('Ostali pronađeni predmeti')).toBeInTheDocument();
+    expect(screen.getByText('ST-200/2021')).toBeInTheDocument();
+    expect(screen.queryByText('ST-100/2023')).not.toBeInTheDocument();
+  });
+
+  test('hides the secondary-clusters section entirely for a single-cluster run', () => {
+    useAnalysisRunDetail.mockReturnValue({
+      run: {
+        id: 'run-1',
+        status: 'done',
+        oib: '12345678901',
+        result_text: 'Rezultat',
+        result_json: {
+          processedCases: [],
+          secondaryClusters: [],
+          discoverySummary: {
+            capturedDistinctCaseCount: 1,
+            reasoningClusterId: 'ST-2/2013',
+            recommendedPrimaryClusterId: 'ST-2/2013',
+            secondaryClusterIds: [],
+            clusters: [
+              { clusterId: 'ST-2/2013', selectedForReasoning: true, entryCount: 50, documentCount: 50 },
+            ],
+          },
+        },
+      },
+      events: [],
+      loading: false,
+      eventsLoading: false,
+      error: '',
+      isRunning: false,
+      connectionMode: 'idle',
+      lastUpdatedAt: '2026-02-27T12:00:00.000Z',
+      refresh: jest.fn(),
+    });
+
+    render(<AnalysisRunDetailPage />);
+
+    expect(screen.queryByText('Ostali pronađeni predmeti')).not.toBeInTheDocument();
+    expect(screen.queryByText('2 predmeta')).not.toBeInTheDocument();
+  });
+
+  test('renders the analysis coverage banner with failed document counts', () => {
+    useAnalysisRunDetail.mockReturnValue({
+      run: {
+        id: 'run-1',
+        status: 'done',
+        oib: '12345678901',
+        result_text: 'Rezultat',
+        result_json: {
+          processedCases: [
+            {
+              caseResult: { caseNumber: 'ST-700/2024' },
+              groupMetadata: { selectedForReasoning: true },
+              analysis: {
+                coverage: {
+                  analyzed: 2,
+                  failed: 1,
+                  total: 3,
+                  coverageRatio: 0.67,
+                  complete: false,
+                  failedFiles: [
+                    { fileName: 'doc3.pdf', reason: 'Gemini request timed out after 30000ms' },
+                  ],
+                },
+              },
+            },
+          ],
+        },
+      },
+      events: [],
+      loading: false,
+      eventsLoading: false,
+      error: '',
+      isRunning: false,
+      connectionMode: 'idle',
+      lastUpdatedAt: '2026-02-27T12:00:00.000Z',
+      refresh: jest.fn(),
+    });
+
+    render(<AnalysisRunDetailPage />);
+
+    expect(screen.getByText('Pokrivenost analize dokumenata')).toBeInTheDocument();
+    expect(screen.getByText(/Analizirano je 2 od 3 dokumenata/)).toBeInTheDocument();
+    expect(screen.getByText('1 neanalizirano')).toBeInTheDocument();
+    expect(screen.getByText(/doc3\.pdf/)).toBeInTheDocument();
+  });
+
+  test('shows a complete state in the coverage banner when all documents were analyzed', () => {
+    useAnalysisRunDetail.mockReturnValue({
+      run: {
+        id: 'run-1',
+        status: 'done',
+        oib: '12345678901',
+        result_text: 'Rezultat',
+        result_json: {
+          processedCases: [
+            {
+              caseResult: { caseNumber: 'ST-700/2024' },
+              groupMetadata: { selectedForReasoning: true },
+              analysis: {
+                coverage: {
+                  analyzed: 2,
+                  failed: 0,
+                  total: 2,
+                  coverageRatio: 1,
+                  complete: true,
+                  failedFiles: [],
+                },
+              },
+            },
+          ],
+        },
+      },
+      events: [],
+      loading: false,
+      eventsLoading: false,
+      error: '',
+      isRunning: false,
+      connectionMode: 'idle',
+      lastUpdatedAt: '2026-02-27T12:00:00.000Z',
+      refresh: jest.fn(),
+    });
+
+    render(<AnalysisRunDetailPage />);
+
+    expect(screen.getByText('Pokrivenost analize dokumenata')).toBeInTheDocument();
+    expect(screen.getByText('Kompletno')).toBeInTheDocument();
+  });
 });

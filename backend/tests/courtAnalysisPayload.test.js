@@ -125,7 +125,8 @@ describe('buildCourtAnalysisPayload', () => {
                             aiResult: 'Nalaz',
                             error: null
                         }
-                    ]
+                    ],
+                    coverage: null
                 },
                     groupMetadata: {
                         clusterId: 'ST-100/2023',

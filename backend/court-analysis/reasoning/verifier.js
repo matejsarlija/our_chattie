@@ -2,6 +2,7 @@ require("dotenv").config();
 const { ChatGoogleGenerativeAI } = require("@langchain/google-genai");
 const { withGeminiRetry, withGeminiTimeout } = require("../../helpers/geminiRetry");
 const { GEMINI_MODEL, GEMINI_API_KEY } = require("../../helpers/geminiConfig");
+const { isPoorDocumentCoverage, coverageOpenQuestion, applyCoverageConfidenceGuard } = require('./coverageGuard');
 
 const gemini = new ChatGoogleGenerativeAI({
     model: GEMINI_MODEL,
@@ -111,10 +112,16 @@ async function verifyReport(report, evidencePackage) {
             openQuestions.push(`Unverified finding: ${finding.text}`);
         });
 
+        const guardedFindings = applyCoverageConfidenceGuard(verifiedFindings, evidencePackage);
+        if (isPoorDocumentCoverage(evidencePackage?.meta?.coverage)) {
+            const question = coverageOpenQuestion(evidencePackage.meta.coverage);
+            if (!openQuestions.includes(question)) openQuestions.push(question);
+        }
+
         return {
             ...report,
-            findings: verifiedFindings,
-            verifiedFindings,
+            findings: guardedFindings,
+            verifiedFindings: guardedFindings,
             openQuestions,
             conflicts
         };

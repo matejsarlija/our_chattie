@@ -22,7 +22,8 @@ function mapProcessedCase(processedCase) {
                     aiResult: item.aiResult,
                     error: item.error
                 }))
-                : []
+                : [],
+            coverage: processedCase?.analysis?.coverage || null
         },
         groupMetadata: processedCase?.groupMetadata || null
     };

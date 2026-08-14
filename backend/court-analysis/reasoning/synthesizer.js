@@ -4,6 +4,11 @@ const { withGeminiRetry, withGeminiTimeout } = require("../../helpers/geminiRetr
 const { GEMINI_MODEL, GEMINI_API_KEY } = require("../../helpers/geminiConfig");
 const { SCHEMA_VERSION, validateReport } = require("./schema");
 const { validateClusterEvidencePackage } = require("./evidencePackage");
+const {
+    isPoorDocumentCoverage,
+    coverageOpenQuestion,
+    applyCoverageConfidenceGuard
+} = require("./coverageGuard");
 
 const gemini = new ChatGoogleGenerativeAI({
     model: GEMINI_MODEL,
@@ -36,6 +41,10 @@ async function synthesizeReport(evidencePackage) {
     const claimsText = claims.map(c => `- ${c.text} (Confidence: ${c.confidence})`).join('\n');
     const partiesText = (meta.parties || []).join(', ');
     const caseNumber = meta.caseNumber || 'Unknown';
+    const poorDocumentCoverage = isPoorDocumentCoverage(meta.coverage);
+    const coverageInstruction = poorDocumentCoverage
+        ? `\n    DOCUMENT COVERAGE WARNING: Only ${meta.coverage.analyzed || 0} of ${meta.coverage.total || 0} documents were analyzed successfully. Titles and links are structural metadata only. Do not make substantive findings from them; express those as open questions or use low confidence unless a finding cites analyzed document content.\n`
+        : '';
 
     const prompt = `
     You are a legal analyst assistant for Croatian court cases.
@@ -50,6 +59,7 @@ async function synthesizeReport(evidencePackage) {
 
     VERIFIED CLAIMS:
     ${claimsText || "No verified claims found."}
+    ${coverageInstruction}
 
     INSTRUCTIONS:
     1. Write a "narrative" summarizing the case history and status in Croatian.
@@ -81,26 +91,31 @@ async function synthesizeReport(evidencePackage) {
             throw new Error("Synthesizer returned invalid JSON.");
         }
 
-        const findings = (parsed.findings || []).map((finding, index) => ({
+        const findings = applyCoverageConfidenceGuard((parsed.findings || []).map((finding, index) => ({
             id: finding.id || `finding-${index + 1}`,
             text: finding.text || finding.claim || "Untitled Finding",
             confidence: finding.confidence || "medium",
             citations: Array.isArray(finding.citations) ? finding.citations : []
-        }));
+        })), normalizedEvidence);
+
+        const openQuestions = [...(parsed.openQuestions || [])];
+        if (poorDocumentCoverage && !openQuestions.includes(coverageOpenQuestion(meta.coverage))) {
+            openQuestions.push(coverageOpenQuestion(meta.coverage));
+        }
 
         const finalReport = {
             schemaVersion: SCHEMA_VERSION,
             narrative: parsed.narrative,
-            openQuestions: parsed.openQuestions || [],
+            openQuestions,
             nextSteps: parsed.nextSteps || [],
             conflicts: [],
             claims,
-            findings: findings.length > 0 ? findings : claims.map((claim, index) => ({
+            findings: findings.length > 0 ? findings : applyCoverageConfidenceGuard(claims.map((claim, index) => ({
                 id: `finding-${index + 1}`,
                 text: claim.text,
                 confidence: claim.confidence || 'medium',
                 citations: claim.evidence || []
-            })),
+            })), normalizedEvidence),
             timeline: buildReportTimeline(timeline),
             meta: {
                 ...meta,
@@ -224,6 +239,8 @@ function buildPackageMeta(pkg) {
         selection: pkg.selection || null,
         expansion: pkg.expansion || null,
         acquisition: pkg.acquisition || null,
+        coverage: pkg.coverage || null,
+        analysesCount: Array.isArray(pkg.analyses) ? pkg.analyses.length : 0,
         documentLinks: (pkg.documentLinks || []).map((link) => ({
             id: link.id,
             url: link.url,
@@ -256,13 +273,36 @@ function createReasoningEvidenceFromPackage(pkg) {
         evidence: [{
             sourceId: link.id || link.url || `${pkg.clusterId}:document-${index + 1}`,
             text: link.text || link.url || 'Dokument bez naziva',
+            metadata: { sourceType: 'document-link' },
             provenance: link.sourceProvenance || link.acquisition || null
+        }]
+    }));
+
+    // Successful per-document analyses carry the real legal substance. Surface
+    // them as first-class claims so the synthesizer grounds its findings in
+    // actual document content, not only structural metadata.
+    const analysisClaims = (pkg.analyses || []).map((analysis, index) => ({
+        id: `analysis-${index + 1}`,
+        text: `Analiza dokumenta "${analysis.fileName || 'nepoznat'}": ${analysis.summary || 'Nema sažetka.'}`,
+        confidence: 'medium',
+        evidence: [{
+            sourceId: analysis.id || analysis.filePath || `${pkg.clusterId}:analysis-${index + 1}`,
+            text: analysis.summary || '',
+            metadata: {
+                sourceType: 'analysis',
+                fileName: analysis.fileName || null,
+                decisionDate: analysis.decisionDate || null,
+                caseNumber: analysis.caseNumber || null
+            }
         }]
     }));
 
     return {
         timeline,
-        claims,
+        claims: [
+            ...claims,
+            ...analysisClaims
+        ],
         meta: buildPackageMeta(pkg)
     };
 }
