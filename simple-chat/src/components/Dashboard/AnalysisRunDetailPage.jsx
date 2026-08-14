@@ -7,6 +7,8 @@ import RunStatusBadge from './RunStatusBadge';
 import RunProgressStepper from './RunProgressStepper';
 import RunEventTimeline from './RunEventTimeline';
 import AnalysisReportAnnex from './AnalysisReportAnnex';
+import AnalysisCoverageBanner from './AnalysisCoverageBanner';
+import SecondaryClustersSection from './SecondaryClustersSection';
 import DashboardShell from './DashboardShell';
 import { useAnalysisRunDetail } from '../../hooks/useAnalysisRunDetail';
 import { useAnalysisEvents } from '../../hooks/useAnalysisEvents';
@@ -215,97 +217,9 @@ export default function AnalysisRunDetailPage() {
               <RunProgressStepper stages={stages} isErrored={isErrored} />
             </section>
 
-            {coverage && (
-              <section className="mb-5 rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div>
-                    <h3 className="text-sm font-semibold text-[var(--text)]">Pokrivenost analize dokumenata</h3>
-                    {coverage.complete ? (
-                      <p className="mt-1 text-sm text-[var(--text-muted)]">
-                        Analizirano je {coverage.analyzed} od {coverage.total} dokumenata.
-                      </p>
-                    ) : (
-                      <p className="mt-1 text-sm text-[var(--text-muted)]">
-                        Analizirano je {coverage.analyzed} od {coverage.total} dokumenata ({coverage.failed} nije uspjelo).
-                        Nalazi se temelje na uspješno analiziranim dokumentima; preostali mogu biti ključni za potpunu sliku.
-                      </p>
-                    )}
-                  </div>
-                  <span
-                    className={`rounded-full px-2.5 py-1 text-xs font-medium ${
-                      coverage.complete
-                        ? 'border border-[var(--border)] bg-[var(--surface-muted)] text-[var(--text)]'
-                        : 'border border-amber-200 bg-amber-50 text-amber-800'
-                    }`}
-                  >
-                    {coverage.complete ? 'Kompletno' : `${coverage.failed} neanalizirano`}
-                  </span>
-                </div>
-                {Array.isArray(coverage.failedFiles) && coverage.failedFiles.length > 0 && (
-                  <details className="mt-3">
-                    <summary className="cursor-pointer text-xs font-medium text-[var(--text-muted)] hover:text-[var(--text)]">
-                      Prikaži neanalizirane datoteke ({coverage.failedFiles.length})
-                    </summary>
-                    <ul className="mt-2 space-y-1 text-xs text-[var(--text-muted)]">
-                      {coverage.failedFiles.map((file, index) => (
-                        <li key={`failed-${index}`} className="flex flex-wrap gap-x-2 gap-y-0.5">
-                          <span className="font-medium text-[var(--text)]">{file.fileName}</span>
-                          <span>— {file.reason}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </details>
-                )}
-              </section>
-            )}
+            <AnalysisCoverageBanner coverage={coverage} />
 
-            {secondaryClusters.length > 0 && (
-              <section className="mb-5 rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4">
-                <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-                  <div>
-                    <h3 className="text-sm font-semibold text-[var(--text)]">Ostali pronađeni predmeti</h3>
-                    <p className="mt-1 text-sm text-[var(--text-muted)]">
-                      Ovaj upit je otkrio i dodatne predmete koji nisu uključeni u odabranu analizu. Za potpunu sliku
-                      istražite ih zasebno.
-                    </p>
-                  </div>
-                  <span className="rounded-full border border-[var(--border)] bg-[var(--surface-muted)] px-2.5 py-1 text-xs font-medium text-[var(--text)]">
-                    {secondaryClusters.length} predmeta
-                  </span>
-                </div>
-                <div className="space-y-2">
-                  {secondaryClusters.map((cluster) => {
-                    const clusterId = cluster?.clusterId || cluster?.caseNumber || '-';
-                    const identity = cluster?.identityConsistency === 'consistent'
-                      ? 'Identičan subjekt'
-                      : cluster?.identityConsistency === 'ambiguous'
-                        ? 'Nejasna identifikacija'
-                        : 'Nepotvrđena identifikacija';
-                    return (
-                      <article key={clusterId} className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-3">
-                        <div className="flex flex-wrap items-center justify-between gap-2">
-                          <div className="min-w-0">
-                            <p className="text-sm font-medium text-[var(--text)]">{clusterId}</p>
-                            <p className="mt-0.5 text-xs text-[var(--text-muted)]">
-                              {cluster.entryCount ?? 0} objava · {cluster.documentCount ?? 0} dokumenata ·{' '}
-                              {cluster.participantNames?.length ? cluster.participantNames.join(', ') : 'Bez sudionika'}
-                            </p>
-                          </div>
-                          <span className="shrink-0 rounded-full border border-[var(--border)] bg-[var(--surface-muted)] px-2.5 py-1 text-xs text-[var(--text-muted)]">
-                            {identity}
-                          </span>
-                        </div>
-                        {Array.isArray(cluster.acquisitionProvenance) && cluster.acquisitionProvenance.length > 0 && (
-                          <p className="mt-2 text-[11px] text-[var(--text-muted)]">
-                            Pronađeno: {cluster.acquisitionProvenance.map((p) => p.mode).filter(Boolean).join(', ')}
-                          </p>
-                        )}
-                      </article>
-                    );
-                  })}
-                </div>
-              </section>
-            )}
+            <SecondaryClustersSection clusters={secondaryClusters} />
 
             <section className="mb-5">
               <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4">

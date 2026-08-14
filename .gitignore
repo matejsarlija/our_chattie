@@ -42,6 +42,8 @@ simple-chat/src/stories/Dashboard/AnalysisDetail/**
 !simple-chat/src/stories/Dashboard/AnalysisDetail/README.mdx
 !simple-chat/src/stories/Dashboard/AnalysisDetailDecisionMatrix.stories.jsx
 !simple-chat/src/stories/Dashboard/AnalysisDetailProgressPresentation.stories.jsx
+!simple-chat/src/stories/Dashboard/AnalysisDetailCoverageBanner.stories.jsx
+!simple-chat/src/stories/Dashboard/AnalysisDetailSecondaryClusters.stories.jsx
 /dokumentacija*
 
 # opencode
