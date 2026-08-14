@@ -4,7 +4,7 @@ jest.mock('../env', () => ({
   env: envMock,
 }));
 
-import { apiFetch, ApiClientError, resolveApiUrl } from '../apiClient';
+import { apiFetch, ApiClientError, resolveApiUrl, getSettings, updateSettings } from '../apiClient';
 
 describe('apiFetch', () => {
   beforeEach(() => {
@@ -65,5 +65,34 @@ describe('apiFetch', () => {
     expect(resolveApiUrl('https://alimentacija.info/api/analysis/runs')).toBe(
       'https://alimentacija.info/api/analysis/runs',
     );
+  });
+
+  test('getSettings fetches the settings endpoint', async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: { get: jest.fn(() => null) },
+      text: jest.fn().mockResolvedValue(JSON.stringify({ settings: { geminiPlan: 'paid' } })),
+    });
+
+    const data = await getSettings();
+    expect(data).toEqual({ settings: { geminiPlan: 'paid' } });
+    expect(global.fetch).toHaveBeenCalledWith('/api/settings', expect.objectContaining({ method: 'GET' }));
+  });
+
+  test('updateSettings PUTs the patch to the settings endpoint', async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: { get: jest.fn(() => null) },
+      text: jest.fn().mockResolvedValue(JSON.stringify({ settings: { geminiPlan: 'free' } })),
+    });
+
+    const data = await updateSettings({ geminiPlan: 'free' });
+    expect(data).toEqual({ settings: { geminiPlan: 'free' } });
+
+    const [, options] = global.fetch.mock.calls[0];
+    expect(options.method).toBe('PUT');
+    expect(JSON.parse(options.body)).toEqual({ geminiPlan: 'free' });
   });
 });

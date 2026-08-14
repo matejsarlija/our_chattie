@@ -1,4 +1,5 @@
 import { Link, useNavigate } from 'react-router-dom';
+import GeminiPlanToggle from './GeminiPlanToggle';
 
 export default function DashboardHeader({ onOpenNewAnalysis }) {
   const navigate = useNavigate();
@@ -34,6 +35,8 @@ export default function DashboardHeader({ onOpenNewAnalysis }) {
             + Nova analiza
           </button>
 
+          <GeminiPlanToggle />
+
           <Link to="/pravila-privatnosti" className="text-[var(--text-muted)] hover:text-[var(--text)] transition-colors">
             Pravila privatnosti
           </Link>
@@ -42,7 +45,8 @@ export default function DashboardHeader({ onOpenNewAnalysis }) {
           </Link>
         </div>
 
-        <div className="lg:hidden ml-auto">
+        <div className="lg:hidden ml-auto flex items-center gap-3">
+          <GeminiPlanToggle />
           <button
             type="button"
             onClick={handleNewAnalysis}

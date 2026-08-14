@@ -86,4 +86,11 @@ export const apiFetch = async (url, { method = 'GET', body, headers, isJson = tr
   return payload;
 };
 
+export const getSettings = () => apiFetch('/api/settings');
+
+export const updateSettings = (patch) => apiFetch('/api/settings', {
+  method: 'PUT',
+  body: patch,
+});
+
 export const ApiClientError = ApiError;
