@@ -72,6 +72,39 @@ describeIfSmoke('Puppeteer smoke (live)', () => {
     }
   };
 
+  const seedDetailRun = async (resultJson) => {
+    const { createLocalStore } = require('../services/localStore');
+    const store = createLocalStore();
+    const run = await store.createAnalysisRun({
+      oib: '12345678901',
+      queryType: 'oib',
+      queryValue: '12345678901',
+      status: 'done',
+    });
+    await store.completeAnalysisRun({
+      analysisId: run.id,
+      resultText: '## Testni nalaz\n\n- točka',
+      resultJson,
+    });
+    return { store, run };
+  };
+
+  const cleanupDetailRun = (store, runId) => {
+    try {
+      const runsFile = path.join(store.dataDir, 'runs.json');
+      const runs = JSON.parse(fs.readFileSync(runsFile, 'utf8'));
+      fs.writeFileSync(runsFile, JSON.stringify(runs.filter((item) => item.id !== runId), null, 2), 'utf8');
+    } catch (cleanupError) {
+      console.warn('Smoke run cleanup skipped:', cleanupError.message);
+    }
+  };
+
+  const openDetailPage = async (runId) => {
+    const response = await page.goto(`${FRONTEND_URL}/dashboard/runs/${runId}`, { waitUntil: 'networkidle2' });
+    expect(response).toBeTruthy();
+    expect(response.status()).toBeLessThan(400);
+  };
+
   beforeAll(async () => {
     fs.rmSync(ARTIFACT_DIR, { recursive: true, force: true });
     browser = await puppeteer.launch({
@@ -204,6 +237,115 @@ describeIfSmoke('Puppeteer smoke (live)', () => {
         } catch (cleanupError) {
           console.warn('Smoke timeline test cleanup skipped:', cleanupError.message);
         }
+      }
+    });
+  });
+
+  test('analysis detail renders the coverage banner with failed-document counts', async () => {
+    await runWithFailureArtifacts('analysis detail renders the coverage banner', async () => {
+      const { store, run } = await seedDetailRun({
+        processedCases: [
+          {
+            groupMetadata: { selectedForReasoning: true },
+            caseResult: { caseNumber: 'ST-2/2013', title: 'KERUM d.o.o. u stečaju' },
+            analysis: {
+              individualAnalyses: [],
+              coverage: {
+                analyzed: 2,
+                total: 3,
+                failed: 1,
+                complete: false,
+                coverageRatio: 0.67,
+                failedFiles: [{ fileName: 'dokument-3.pdf', reason: 'Gemini timeout' }],
+              },
+            },
+          },
+        ],
+        secondaryClusters: [],
+        report: null,
+      });
+
+      try {
+        await openDetailPage(run.id);
+
+        await page.waitForFunction(
+          (expected) => document.body.innerText.includes(expected),
+          { timeout: 15000 },
+          'Pokrivenost analize dokumenata'
+        );
+
+        const body = await page.evaluate(() => document.body.innerText || '');
+        expect(body).toContain('Pokrivenost analize dokumenata');
+        expect(body).toContain('Analizirano je 2 od 3 dokumenata');
+        expect(body).toContain('1 neanalizirano');
+        expect(pageErrors).toEqual([]);
+      } finally {
+        cleanupDetailRun(store, run.id);
+      }
+    });
+  });
+
+  test('analysis detail renders the secondary clusters section', async () => {
+    await runWithFailureArtifacts('analysis detail renders the secondary clusters section', async () => {
+      const { store, run } = await seedDetailRun({
+        processedCases: [],
+        secondaryClusters: [
+          {
+            clusterId: 'Povrv-297/2020',
+            entryCount: 4,
+            documentCount: 7,
+            participantNames: ['KERUM d.o.o.'],
+            identityConsistency: 'consistent',
+            acquisitionProvenance: [{ mode: 'case-number-follow-up' }],
+          },
+        ],
+        report: null,
+      });
+
+      try {
+        await openDetailPage(run.id);
+
+        await page.waitForFunction(
+          (expected) => document.body.innerText.includes(expected),
+          { timeout: 15000 },
+          'Ostali pronađeni predmeti'
+        );
+
+        const body = await page.evaluate(() => document.body.innerText || '');
+        expect(body).toContain('Ostali pronađeni predmeti');
+        expect(body).toContain('Povrv-297/2020');
+        expect(pageErrors).toEqual([]);
+      } finally {
+        cleanupDetailRun(store, run.id);
+      }
+    });
+  });
+
+  test('analysis detail hides the secondary clusters section for a single-cluster run', async () => {
+    await runWithFailureArtifacts('analysis detail hides the secondary clusters section for a single-cluster run', async () => {
+      const { store, run } = await seedDetailRun({
+        processedCases: [],
+        secondaryClusters: [],
+        discoverySummary: {
+          clusters: [{ clusterId: 'ST-2/2013', selectedForReasoning: true }],
+        },
+        report: null,
+      });
+
+      try {
+        await openDetailPage(run.id);
+
+        await page.waitForFunction(
+          (expected) => document.body.innerText.includes(expected),
+          { timeout: 15000 },
+          'Testni nalaz'
+        );
+
+        const body = await page.evaluate(() => document.body.innerText || '');
+        expect(body).not.toContain('Ostali pronađeni predmeti');
+        expect(pageErrors).toEqual([]);
+      } finally {
+        cleanupDetailRun(store, run.id);
       }
     });
   });
