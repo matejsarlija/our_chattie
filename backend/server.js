@@ -176,6 +176,7 @@ async function startServer() {
           {
             caseLimit: parsedRequest.options.caseLimit,
             query: parsedRequest.query,
+            clusterExpansion: parsedRequest.options.clusterExpansion,
           },
           safeProgress
         );

@@ -58,4 +58,63 @@ describe('parseCourtAnalysisRequest', () => {
     expect(low.options.caseLimit).toBe(1);
     expect(high.options.caseLimit).toBe(10);
   });
+
+  test('defaults clusterExpansion to null when absent', () => {
+    const parsed = parseCourtAnalysisRequest({ searchTerm: '66124057408' });
+    expect(parsed.options.clusterExpansion).toBeNull();
+  });
+
+  test('coerces options.clusterExpansion booleans and integers', () => {
+    const enabled = parseCourtAnalysisRequest({
+      searchTerm: '66124057408',
+      options: { clusterExpansion: true },
+    });
+    const explicit = parseCourtAnalysisRequest({
+      searchTerm: '66124057408',
+      options: { clusterExpansion: { maxPasses: 2 } },
+    });
+    const numeric = parseCourtAnalysisRequest({
+      searchTerm: '66124057408',
+      options: { clusterExpansion: 1 },
+    });
+
+    expect(enabled.options.clusterExpansion).toEqual({ maxPasses: 2 });
+    expect(explicit.options.clusterExpansion).toEqual({ maxPasses: 2 });
+    expect(numeric.options.clusterExpansion).toEqual({ maxPasses: 1 });
+  });
+
+  test('clamps options.clusterExpansion.maxPasses into supported bounds', () => {
+    const zero = parseCourtAnalysisRequest({
+      searchTerm: '66124057408',
+      options: { clusterExpansion: { maxPasses: 0 } },
+    });
+    const over = parseCourtAnalysisRequest({
+      searchTerm: '66124057408',
+      options: { clusterExpansion: { maxPasses: 99 } },
+    });
+
+    expect(zero.options.clusterExpansion).toEqual({ maxPasses: 0 });
+    expect(over.options.clusterExpansion).toEqual({ maxPasses: 2 });
+  });
+
+  test('rejects invalid options.clusterExpansion.maxPasses with 400', () => {
+    try {
+      parseCourtAnalysisRequest({
+        searchTerm: '66124057408',
+        options: { clusterExpansion: { maxPasses: 'abc' } },
+      });
+      throw new Error('Expected parseCourtAnalysisRequest to throw');
+    } catch (err) {
+      expect(err.statusCode).toBe(400);
+      expect(err.message).toMatch(/clusterExpansion/);
+    }
+  });
+
+  test('treats explicit false clusterExpansion as disabled', () => {
+    const parsed = parseCourtAnalysisRequest({
+      searchTerm: '66124057408',
+      options: { clusterExpansion: false },
+    });
+    expect(parsed.options.clusterExpansion).toBeNull();
+  });
 });
