@@ -1,70 +1,48 @@
-# Getting Started with Create React App
+# Court Analysis Dashboard Frontend
 
-This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
+This React application is the dashboard for the court-analysis service. It lets users start an analysis, follow its progress, and inspect completed or partially completed reports.
 
-## Available Scripts
+For backend setup, Gemini configuration, and end-to-end QA instructions, see the [root README](../README.md).
 
-In the project directory, you can run:
+## Routes
 
-### `npm start`
+- `/` redirects to `/dashboard`.
+- `/dashboard` lists analysis runs and opens the new-analysis dialog.
+- `/dashboard/runs/:id` shows one run, including its progress events and structured report.
 
-Runs the app in the development mode.\
-Open [http://localhost:3000](http://localhost:3000) to view it in your browser.
+## Development
 
-The page will reload when you make changes.\
-You may also see any lint errors in the console.
+Install dependencies and start the default Vite server:
 
-### `npm test`
+```sh
+npm install
+npm start
+```
 
-Launches the test runner in the interactive watch mode.\
-See the section about [running tests](https://facebook.github.io/create-react-app/docs/running-tests) for more information.
+The app runs on `http://localhost:3000` and proxies `/api` requests to the backend at `http://localhost:3001`.
 
-### `npm run build`
+No frontend environment variables are required for local development. To use another API origin or change streaming behavior, create `.env.local` with supported Vite variables:
 
-Builds the app for production to the `build` folder.\
-It correctly bundles React in production mode and optimizes the build for the best performance.
+```ini
+VITE_API_URL="http://localhost:3001/api"
+VITE_COURT_ANALYSIS_URL="http://localhost:3001/api/court-analysis"
+VITE_ANALYSIS_DETAIL_SSE_ENABLED="true"
+```
 
-The build is minified and the filenames include the hashes.\
-Your app is ready to be deployed!
+The same settings also accept `REACT_APP_*` names for Create React App compatibility.
 
-See the section about [deployment](https://facebook.github.io/create-react-app/docs/deployment) for more information.
+## Commands
 
-### `npm run eject`
+```sh
+npm start                 # Vite development server
+npm run build             # Vite production build to build/
+npm test                  # CRA/Jest test runner
+npm run test:ci           # non-interactive CI test run
+npm run cra:start         # legacy CRA development server
+npm run cra:build         # legacy CRA production build
+npm run build:matrix      # verify Vite and CRA builds
+npm run storybook         # Storybook on port 6006
+npm run build-storybook   # static Storybook build
+```
 
-**Note: this is a one-way operation. Once you `eject`, you can't go back!**
-
-If you aren't satisfied with the build tool and configuration choices, you can `eject` at any time. This command will remove the single build dependency from your project.
-
-Instead, it will copy all the configuration files and the transitive dependencies (webpack, Babel, ESLint, etc) right into your project so you have full control over them. All of the commands except `eject` will still work, but they will point to the copied scripts so you can tweak them. At this point you're on your own.
-
-You don't have to ever use `eject`. The curated feature set is suitable for small and middle deployments, and you shouldn't feel obligated to use this feature. However we understand that this tool wouldn't be useful if you couldn't customize it when you are ready for it.
-
-## Learn More
-
-You can learn more in the [Create React App documentation](https://facebook.github.io/create-react-app/docs/getting-started).
-
-To learn React, check out the [React documentation](https://reactjs.org/).
-
-### Code Splitting
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/code-splitting](https://facebook.github.io/create-react-app/docs/code-splitting)
-
-### Analyzing the Bundle Size
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size](https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size)
-
-### Making a Progressive Web App
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app](https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app)
-
-### Advanced Configuration
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/advanced-configuration](https://facebook.github.io/create-react-app/docs/advanced-configuration)
-
-### Deployment
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/deployment](https://facebook.github.io/create-react-app/docs/deployment)
-
-### `npm run build` fails to minify
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify](https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify)
+The dashboard’s visual decision history lives in `src/stories/Dashboard/AnalysisDetail/README.mdx`.
