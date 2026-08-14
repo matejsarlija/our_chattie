@@ -16,6 +16,7 @@ const GEMINI_REQUEST_TIMEOUT_MS = Number(process.env.GEMINI_REQUEST_TIMEOUT_MS) 
 const GEMINI_RETRY_TIMEOUTS = process.env.GEMINI_RETRY_TIMEOUTS !== '0';
 
 const { isDailyQuotaExhaustion } = require('./friendlyAnalysisError');
+const { resolveGeminiPlan } = require('./geminiPlan');
 
 async function withGeminiTimeout(callable, { timeoutMs = GEMINI_REQUEST_TIMEOUT_MS } = {}) {
     if (!timeoutMs || timeoutMs <= 0) {
@@ -79,18 +80,30 @@ function shouldRetry(error, options = {}) {
   // Daily-quota exhaustion is terminal — retrying burns the remaining budget.
   if (isDailyQuotaExhaustion(`${error?.message || ''}`)) return false;
 
+  const plan = options.plan || resolveGeminiPlan();
+
   const status = error?.status || error?.response?.status;
-  if (status === 429 || status === 503 || status === 500) return true;
-
   const message = `${error?.message || ''}`.toLowerCase();
-  if (message.includes('rate limit') || message.includes('overloaded') || message.includes('too many requests')) return true;
 
-  // A timeout from the fail-fast guard: on a paid key this is usually a
-  // transient 429 hang that is recoverable with backoff. Opt-out via
-  // GEMINI_RETRY_TIMEOUTS=0 for strict fail-fast on a tiny free quota.
-  if (error?.name === 'AbortError') {
-    return options.retryTimeouts !== false && GEMINI_RETRY_TIMEOUTS;
+  // Server-side transient errors (5xx) are retryable regardless of plan.
+  if (status === 503 || status === 500) return true;
+
+  const isRateLimit =
+    status === 429 ||
+    message.includes('rate limit') ||
+    message.includes('too many requests');
+  const isTimeout = error?.name === 'AbortError';
+
+  if (isRateLimit || isTimeout) {
+    // On the free tier a rate-limit/timeout is the daily-cap hang and is
+    // terminal. On a paid key it is a transient burst that recovers with backoff.
+    if (plan === 'free') return false;
+    if (isTimeout) return options.retryTimeouts !== false && GEMINI_RETRY_TIMEOUTS;
+    return true;
   }
+
+  // "overloaded" is a server-side transient condition, not a quota signal.
+  if (message.includes('overloaded')) return true;
 
   return false;
 }

@@ -2,6 +2,8 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 
+const { DEFAULT_GEMINI_PLAN, GEMINI_PLANS } = require('../helpers/geminiPlan');
+
 const DEFAULT_DATA_DIR = path.join(__dirname, '..', 'data', 'analysis');
 
 function getDataDir(override) {
@@ -35,6 +37,7 @@ function createLocalStore(options = {}) {
   const dataDir = getDataDir(options.dataDir);
   const runsFile = path.join(dataDir, 'runs.json');
   const eventsFile = path.join(dataDir, 'events.json');
+  const settingsFile = path.join(dataDir, 'settings.json');
 
   let writeQueue = Promise.resolve();
 
@@ -62,6 +65,17 @@ function createLocalStore(options = {}) {
 
   function writeEventsMap(map) {
     writeJson(eventsFile, map);
+  }
+
+  function readSettings() {
+    const settings = readJson(settingsFile, {});
+    return {
+      geminiPlan: GEMINI_PLANS.includes(settings.geminiPlan) ? settings.geminiPlan : DEFAULT_GEMINI_PLAN,
+    };
+  }
+
+  function writeSettings(settings) {
+    writeJson(settingsFile, settings);
   }
 
   function findRun(runs, id) {
@@ -179,6 +193,26 @@ function createLocalStore(options = {}) {
     return { run, events };
   }
 
+  function getSettings() {
+    return readSettings();
+  }
+
+  async function updateSettings(patch) {
+    return enqueue(() => {
+      const next = readSettings();
+      if (patch && typeof patch === 'object' && patch.geminiPlan !== undefined) {
+        if (!GEMINI_PLANS.includes(patch.geminiPlan)) {
+          const err = new Error('Invalid geminiPlan. Expected "free" or "paid".');
+          err.statusCode = 400;
+          throw err;
+        }
+        next.geminiPlan = patch.geminiPlan;
+      }
+      writeSettings(next);
+      return next;
+    });
+  }
+
   function reset() {
     try {
       fs.rmSync(dataDir, { recursive: true, force: true });
@@ -198,6 +232,8 @@ function createLocalStore(options = {}) {
     getAnalysisRun,
     getAnalysisEvents,
     getAnalysisRunFull,
+    getSettings,
+    updateSettings,
     reset,
   };
 }

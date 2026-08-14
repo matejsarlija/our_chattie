@@ -8,15 +8,24 @@ const STAGE_LABELS = {
     complete: 'završetka obrade'
 };
 
+const { resolveGeminiPlan } = require('./geminiPlan');
+
+const DAILY_LIMIT_MESSAGE = 'Dnevni limit AI analize je iscrpljen. Pokušajte ponovno sutra ili s manjim brojem predmeta.';
+const TRANSIENT_MESSAGE = 'AI servis je trenutno preopterećen (privremeno ograničenje učestalosti zahtjeva). Pokušajte ponovno za nekoliko minuta.';
+const TIMEOUT_MESSAGE = 'Zahtjev AI servisu je premašio dopušteno vrijeme čekanja i automatski je prekinut. Pokušajte ponovno.';
+
+
 function describeStage(stage) {
     return STAGE_LABELS[stage] || 'obrade zahtjeva';
 }
 
-// Two-class 429 policy:
-// - Daily quota exhaustion is terminal: retrying burns the remaining budget and
-//   never succeeds, so surface the day-level limit message immediately.
-// - Transient rate-limit (RPM/TPM burst) on a paid key is recoverable with
-//   retry-and-backoff; the friendly message must NOT claim the daily limit.
+// Two-class 429 policy, now plan-aware:
+// - Daily quota exhaustion is terminal on every plan: retrying burns the
+//   remaining budget and never succeeds, so surface the day-level limit.
+// - On the free tier, a rate-limit or timeout is the daily-cap hang, so it is
+//   presented as the daily limit too (terminal).
+// - On a paid key, a rate-limit/timeout is a transient RPM/TPM burst that
+//   recovers with backoff; the message must NOT claim the daily limit.
 const DAILY_QUOTA_RE =
     /resource has been exhausted|requests[_ -]?per[_-]?day|quota.*(daily|per.?day|exhausted)|dnevni limit|daily limit|limit.*per day|exceeded.*daily/i;
 const TRANSIENT_RATE_LIMIT_RE =
@@ -30,8 +39,9 @@ function isTransientRateLimit(reason) {
     return TRANSIENT_RATE_LIMIT_RE.test(reason) && !isDailyQuotaExhaustion(reason);
 }
 
-function friendlyAnalysisErrorMessage(error, { stage = null, hasPartial = false } = {}) {
+function friendlyAnalysisErrorMessage(error, { stage = null, hasPartial = false, plan = null } = {}) {
     const raw = (error && typeof error === 'object' && error.message) ? error.message : String(error || '');
+    const resolvedPlan = plan || resolveGeminiPlan();
     let reason = raw || 'Došlo je do greške u obradi.';
 
     if (/no results with documents found|nijedan predmet s dostupnim dokumentima/i.test(reason)) {
@@ -39,11 +49,11 @@ function friendlyAnalysisErrorMessage(error, { stage = null, hasPartial = false 
     } else if (/nije pronađen nijedan predmet/i.test(reason)) {
         reason = 'Nije pronađen nijedan predmet za traženi pojam.';
     } else if (isDailyQuotaExhaustion(reason)) {
-        reason = 'Dnevni limit AI analize je iscrpljen. Pokušajte ponovno sutra ili s manjim brojem predmeta.';
+        reason = DAILY_LIMIT_MESSAGE;
     } else if (isTransientRateLimit(reason)) {
-        reason = 'AI servis je trenutno preopterećen (privremeno ograničenje učestalosti zahtjeva). Pokušajte ponovno za nekoliko minuta.';
+        reason = resolvedPlan === 'paid' ? TRANSIENT_MESSAGE : DAILY_LIMIT_MESSAGE;
     } else if (/timed? ?out|ETIMEDOUT|ESOCKETTIMEDOUT|deadline|abort/i.test(reason)) {
-        reason = 'Zahtjev AI servisu je premašio dopušteno vrijeme čekanja i automatski je prekinut. Pokušajte ponovno; na besplatnom AI planu uzrok je često iscrpljeni dnevni limit, a na plaćenom privremeni raskorak u učestalosti zahtjeva.';
+        reason = resolvedPlan === 'paid' ? TIMEOUT_MESSAGE : DAILY_LIMIT_MESSAGE;
     } else if (/network|ECONNREFUSED|ENOTFOUND|EAI_AGAIN|ERR_INTERNET/i.test(reason)) {
         reason = 'Došlo je do mrežne greške pri povezivanju sa servisom. Pokušajte ponovno.';
     } else if (/failed to launch the browser|browser.?process/i.test(reason)) {
@@ -63,5 +73,8 @@ module.exports = {
     describeStage,
     friendlyAnalysisErrorMessage,
     isDailyQuotaExhaustion,
-    isTransientRateLimit
+    isTransientRateLimit,
+    DAILY_LIMIT_MESSAGE,
+    TRANSIENT_MESSAGE,
+    TIMEOUT_MESSAGE
 };

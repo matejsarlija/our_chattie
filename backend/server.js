@@ -325,6 +325,25 @@ async function startServer() {
     res.status(200).json({ status: 'ok' });
   });
 
+  app.get('/api/settings', analysisReadIpLimiter, async (req, res) => {
+    try {
+      res.json({ settings: analysisStore.getSettings() });
+    } catch (error) {
+      console.error('[Settings] get failed:', error.message);
+      res.status(500).json({ error: 'Failed to load settings.' });
+    }
+  });
+
+  app.put('/api/settings', analysisWriteIpLimiter, async (req, res) => {
+    try {
+      const settings = await analysisStore.updateSettings(req.body);
+      res.json({ settings });
+    } catch (error) {
+      console.error('[Settings] update failed:', error.message);
+      res.status(error.statusCode === 400 ? 400 : 500).json({ error: error.message });
+    }
+  });
+
   app.use((err, req, res, next) => {
     if (err) {
       return res.status(500).json({ error: err.message });
