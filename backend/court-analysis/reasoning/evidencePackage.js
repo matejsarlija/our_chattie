@@ -1,4 +1,5 @@
 const { deriveEntryDisplayId } = require('../utils/entryDisplayId');
+const { collectMoneyFlows } = require('./moneyFlow');
 
 function normalizeAcquisition(entry) {
     const acquisition = entry?.acquisition || entry?.caseInfo?.acquisition || {};
@@ -159,9 +160,12 @@ function attachAnalysesToEvidencePackage(pkg, processedCases, clusterId = null) 
             caseNumber: item.aiResult.caseNumber || pkg.clusterId || null,
             decisionDate: item.aiResult.decisionDate || null,
             summary: item.aiResult.summary || null,
-            parties: Array.isArray(item.aiResult.parties) ? item.aiResult.parties : []
+            parties: Array.isArray(item.aiResult.parties) ? item.aiResult.parties : [],
+            amounts: Array.isArray(item.aiResult.amounts) ? item.aiResult.amounts : []
         });
     }
+
+    const moneyFlow = collectMoneyFlows(analyses);
 
     const total = individualAnalyses.length;
     const analyzed = analyses.length;
@@ -185,6 +189,7 @@ function attachAnalysesToEvidencePackage(pkg, processedCases, clusterId = null) 
         ...pkg,
         analyses,
         coverage,
+        moneyFlow
     };
 }
 

@@ -120,7 +120,7 @@ describe('runCourtAnalysis pipeline (deterministic)', () => {
         const progress = jest.fn();
         const result = await runCourtAnalysis('66124057408', { caseLimit: 3, enableVisualizer: false }, progress);
 
-        expect(mockSearchAndGetLatestCasesWithDocuments).toHaveBeenCalledWith('66124057408', 9);
+        expect(mockSearchAndGetLatestCasesWithDocuments).toHaveBeenCalledWith('66124057408', null);
         expect(result.discoverySummary.capturedDistinctCaseCount).toBe(4);
         expect(result.discoverySummary.recommendedPrimaryClusterId).toBe('C1');
         expect(result.discoverySummary.secondaryClusterIds).toEqual(['C2', 'C3', 'C4']);

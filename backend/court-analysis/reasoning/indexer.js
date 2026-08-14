@@ -79,9 +79,13 @@ function collectSources(evidencePackage) {
     // amounts, decision dates). Indexing them lets the retriever find real
     // content instead of only structural metadata.
     for (const analysis of evidencePackage?.analyses || []) {
+        const amountText = (Array.isArray(analysis.amounts) ? analysis.amounts : [])
+            .map((amount) => `${amount.amount || ''} ${amount.currency || ''} ${amount.description || ''}`.trim())
+            .filter(Boolean)
+            .join(' ');
         const source = createSource(
             analysis.id || analysis.filePath || analysis.fileName,
-            [analysis.summary, analysis.fileName, analysis.caseNumber, analysis.decisionDate]
+            [analysis.summary, analysis.fileName, analysis.caseNumber, analysis.decisionDate, amountText]
                 .filter(Boolean)
                 .join(' '),
             {

@@ -99,4 +99,33 @@ describe('runCourtAnalysis visualizer defaults', () => {
     await runCourtAnalysis('66124057408', { caseLimit: 1, enableVisualizer: false }, jest.fn());
     expect(mockVisualizerCall).not.toHaveBeenCalled();
   });
+
+  test('passes structured money-flow data to the visualizer when analyses contain amounts', async () => {
+    mockAnalyzeCall.mockResolvedValue({
+      individualAnalyses: [
+        {
+          text: 'diobni_popis.pdf',
+          aiResult: {
+            summary: 'Isplata drugog višeg isplatnog reda.',
+            caseNumber: 'C1',
+            amounts: [{ description: 'Isplata drugog višeg isplatnog reda', amount: '1.200.000,00', currency: 'EUR', date: '2025-12-17' }],
+          },
+        },
+      ],
+      finalSummary: 'Analysis',
+    });
+
+    await runCourtAnalysis('66124057408', { caseLimit: 1 }, jest.fn());
+
+    expect(mockVisualizerCall).toHaveBeenCalledTimes(1);
+    expect(mockVisualizerCall).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({
+        moneyFlow: expect.objectContaining({
+          count: 1,
+          hasMoneyFlow: true,
+        }),
+      }),
+    );
+  });
 });

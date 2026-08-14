@@ -220,6 +220,71 @@ describe('Track 1: evidence enrichment (1c)', () => {
     expect(evidence.meta.coverage).toEqual(expect.objectContaining({ analyzed: 1 }));
     expect(evidence.meta.analysesCount).toBe(1);
   });
+
+  test('attachAnalysesToEvidencePackage surfaces structured money-flow from analysis amounts', () => {
+    const pkg = buildClusterEvidencePackage({ cluster: buildBaseCluster(), clusterSummary: {}, discoverySummary: buildDiscoverySummary(), query: null });
+    const enriched = attachAnalysesToEvidencePackage(pkg, [
+      {
+        groupMetadata: { clusterId: 'ST-700/2024' },
+        analysis: {
+          individualAnalyses: [
+            {
+              text: 'diobni_popis.pdf',
+              aiResult: {
+                summary: 'Isplata drugog višeg isplatnog reda.',
+                caseNumber: 'ST-700/2024',
+                amounts: [
+                  { description: 'Isplata drugog višeg isplatnog reda', amount: '1.200.000,00', currency: 'EUR', date: '2025-12-17' },
+                  { description: 'Rezervacija parničnih troškova', amount: 1033.25, currency: 'EUR' },
+                  { description: 'Nepotpun zapis bez iznosa' }
+                ]
+              }
+            },
+          ],
+        },
+      },
+    ], 'ST-700/2024');
+
+    expect(enriched.moneyFlow).toEqual(expect.objectContaining({
+      count: 2,
+      hasMoneyFlow: true,
+      currencyTotals: { EUR: 1200000.00 + 1033.25 }
+    }));
+    expect(enriched.analyses[0].amounts).toHaveLength(3);
+
+    const evidence = realSynthesizer.normalizeReasoningEvidence(enriched);
+    const moneyFlowClaims = evidence.claims.filter((claim) => claim.id.startsWith('money-flow-'));
+    expect(moneyFlowClaims).toHaveLength(2);
+    expect(moneyFlowClaims[0].text).toContain('1,200,000');
+    expect(moneyFlowClaims[0].text).toContain('EUR');
+    expect(moneyFlowClaims[0].text).toContain('diobni_popis.pdf');
+    expect(evidence.meta.moneyFlow).toEqual(expect.objectContaining({ count: 2, hasMoneyFlow: true }));
+  });
+
+  test('attachAnalysesToEvidencePackage exposes an empty money-flow surface when no amounts exist', () => {
+    const pkg = buildClusterEvidencePackage({ cluster: buildBaseCluster(), clusterSummary: {}, discoverySummary: buildDiscoverySummary(), query: null });
+    const enriched = attachAnalysesToEvidencePackage(pkg, [
+      {
+        groupMetadata: { clusterId: 'ST-700/2024' },
+        analysis: {
+          individualAnalyses: [
+            { text: 'doc1.pdf', aiResult: { summary: 'Procesno rješenje bez iznosa.', caseNumber: 'ST-700/2024' } },
+          ],
+        },
+      },
+    ], 'ST-700/2024');
+
+    expect(enriched.moneyFlow).toEqual({
+      count: 0,
+      entries: [],
+      currencyTotals: {},
+      hasMoneyFlow: false
+    });
+
+    const evidence = realSynthesizer.normalizeReasoningEvidence(enriched);
+    expect(evidence.claims.some((claim) => claim.id.startsWith('money-flow-'))).toBe(false);
+    expect(evidence.meta.moneyFlow.hasMoneyFlow).toBe(false);
+  });
 });
 
 describe('Track 1: visualizer guards (1e)', () => {

@@ -808,7 +808,8 @@ class CourtSearchPuppeteer {
      * The new primary method for the analysis pipeline. It finds the latest N cases
      * that have direct document download links.
      * @param {string} searchTerm
-     * @param {number} limit - The number of cases to return.
+     * @param {number|null} limit - The number of cases to return. A null limit
+     *  captures the full scanned window (full document history).
      * @returns {Promise<Array<{caseInfo: object, documentLinks: Array<object>}>>}
      */
     async searchAndGetLatestCasesWithDocuments(searchTerm, limit = 2, maxPages = null) {
@@ -836,8 +837,10 @@ class CourtSearchPuppeteer {
 
         console.log(`[searchAndGetLatestCasesWithDocuments] Success! Found ${resultsWithDocs.length} case(s) with direct download links across ${searchMetadata.pagesScanned} page(s).`);
 
-        // Take the most recent ones from the top of the list, up to the limit
-        const limitedResults = resultsWithDocs.slice(0, limit);
+        // Take the most recent ones from the top of the list, up to the limit.
+        // A null limit (Track 3b full document history) captures the entire
+        // scanned window instead of truncating to the top-N.
+        const limitedResults = limit == null ? resultsWithDocs : resultsWithDocs.slice(0, limit);
         console.log(`[searchAndGetLatestCasesWithDocuments] Processing the latest ${limitedResults.length} case(s).`);
 
         // Map them to the format your pipeline expects

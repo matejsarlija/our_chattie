@@ -137,6 +137,101 @@ describe('processScrapedCases discovery reconciliation', () => {
         expect(result.processedCases[0].caseResult.caseNumber).toBe('ST-100/2023');
     });
 
+    test('analyzes the full 50-entry single-cluster window (3b full document history)', async () => {
+        const fixture = require('../fixtures/analysis-baselines/single-cluster-paginated.json');
+        expect(fixture.casesToProcess).toHaveLength(50);
+
+        mockAnalyzeCall.mockImplementation(({ files }) => Promise.resolve({
+            individualAnalyses: files.map((file, index) => ({
+                text: file.text,
+                filePath: file.filePath,
+                aiResult: {
+                    caseNumber: 'ST-2/2013',
+                    decisionDate: null,
+                    summary: `Dokument ${index + 1}`
+                }
+            })),
+            finalSummary: 'Analysis'
+        }));
+
+        const result = await processScrapedCases(
+            fixture.casesToProcess,
+            jest.fn(),
+            {
+                caseLimit: 5,
+                enableVisualizer: false,
+                query: fixture.query,
+                discoveryMetadata: fixture.discoveryMetadata
+            }
+        );
+
+        expect(result.discoverySummary.rawEntryCount).toBe(50);
+        expect(result.discoverySummary.capturedDistinctCaseCount).toBe(1);
+        expect(result.discoverySummary.recommendedPrimaryClusterId).toBe('ST-2/2013');
+        expect(result.discoverySummary.secondaryClusterIds).toEqual([]);
+
+        const primary = result.discoverySummary.clusters[0];
+        expect(primary.entryCount).toBe(50);
+        expect(primary.documentCount).toBe(50);
+
+        // Full document history: every merged documentLink is downloaded and analyzed.
+        expect(mockDownloadCall).toHaveBeenCalledTimes(1);
+        expect(mockDownloadCall.mock.calls[0][0].documentLinks).toHaveLength(50);
+        expect(mockAnalyzeCall).toHaveBeenCalledTimes(1);
+        expect(mockAnalyzeCall.mock.calls[0][0].files).toHaveLength(50);
+        expect(result.clusterEvidencePackage.documentLinks).toHaveLength(50);
+        expect(result.clusterEvidencePackage.coverage).toEqual(expect.objectContaining({
+            analyzed: 50,
+            total: 50,
+            complete: true
+        }));
+    });
+
+    test('surfaces structured money-flow from analyzed documents (3c money-flow reconstruction)', async () => {
+        const fixture = require('../fixtures/analysis-baselines/single-cluster-paginated.json');
+        const entries = fixture.casesToProcess.slice(0, 3);
+
+        mockAnalyzeCall.mockImplementation(({ files }) => Promise.resolve({
+            individualAnalyses: files.map((file, index) => ({
+                text: file.text,
+                filePath: file.filePath,
+                aiResult: {
+                    caseNumber: 'ST-2/2013',
+                    summary: index === 0
+                        ? 'Isplata drugog višeg isplatnog reda u iznosu od 1.200.000,00 EUR.'
+                        : 'Procesno rješenje bez financijskog sadržaja.',
+                    amounts: index === 0
+                        ? [{ description: 'Isplata drugog višeg isplatnog reda', amount: '1.200.000,00', currency: 'EUR', date: '2025-12-17' }]
+                        : []
+                }
+            })),
+            finalSummary: 'Analysis'
+        }));
+
+        const result = await processScrapedCases(
+            entries,
+            jest.fn(),
+            {
+                caseLimit: 5,
+                enableVisualizer: false,
+                query: fixture.query,
+                discoveryMetadata: fixture.discoveryMetadata
+            }
+        );
+
+        expect(result.clusterEvidencePackage.moneyFlow).toEqual(expect.objectContaining({
+            count: 1,
+            hasMoneyFlow: true,
+            currencyTotals: { EUR: 1200000.00 }
+        }));
+        expect(result.clusterEvidencePackage.moneyFlow.entries[0]).toEqual(expect.objectContaining({
+            amount: 1200000.00,
+            currency: 'EUR',
+            description: 'Isplata drugog višeg isplatnog reda',
+            caseNumber: 'ST-2/2013'
+        }));
+    });
+
     test('retains sparse single-cluster eligibility while exposing search-window metadata and unresolved identity', async () => {
         const fixture = require('../fixtures/analysis-baselines/sparse-single-cluster-discovery.json');
 

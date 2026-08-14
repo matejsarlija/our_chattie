@@ -64,7 +64,16 @@ function clampCaseLimit(rawLimit) {
     return numeric;
 }
 
-const RAW_SCRAPE_MULTIPLIER = 3;
+// Track 3b — full document history. Default: capture the entire scanned search
+// window so the selected primary cluster's merged documentLinks are all
+// downloaded/analyzed, not just the top `caseLimit×3` entries. An explicit
+// positive ANALYSIS_SCRAPE_LIMIT re-imposes a capture cap for quota conservation.
+function resolveAnalysisScrapeLimit() {
+    const raw = Number.parseInt(process.env.ANALYSIS_SCRAPE_LIMIT, 10);
+    if (Number.isFinite(raw) && raw >= 1) return Math.floor(raw);
+    return null;
+}
+
 const CLUSTER_SELECTION_DEFAULTS = {
     entryCountScoreWeight: 0.35,
     entryDateSpanScoreWeight: 0.30,
@@ -90,9 +99,11 @@ const DISCOVERY_HEURISTICS_DEFAULTS = {
 };
 
 function computeRawScrapeLimit(caseLimit) {
-    const normalizedLimit = clampCaseLimit(caseLimit);
-    const maxRawLimit = MAX_CASE_LIMIT * RAW_SCRAPE_MULTIPLIER;
-    return Math.min(normalizedLimit * RAW_SCRAPE_MULTIPLIER, maxRawLimit);
+    const envLimit = resolveAnalysisScrapeLimit();
+    if (envLimit !== null) return envLimit;
+    // Full document history: capture the whole scanned window for the primary
+    // cluster (no caseLimit-derived truncation).
+    return null;
 }
 
 function parseCaseDateToTimestamp(rawDate) {
@@ -1506,7 +1517,9 @@ async function processScrapedCases(casesToProcess, progressCallback, options = {
             stageAwareProgress?.({ step: 'reasoning', progress: 95, message: 'Generiram vizualizaciju tijeka predmeta...' });
             try {
                 const visualizerTool = new VisualizerTool();
-                const diagramCode = await visualizerTool._call(comparativeAnalysis);
+                const diagramCode = await visualizerTool._call(comparativeAnalysis, {
+                    moneyFlow: enrichedEvidencePackage?.moneyFlow || null
+                });
                 if (diagramCode && diagramCode !== "Error generating diagram.") {
                     comparativeAnalysis += `\n\n${diagramCode}`;
                 }

@@ -21,7 +21,7 @@ class VisualizerTool extends Tool {
         this.description = "Generates a Mermaid flowchart representing money flow and case chronology from legal analysis text.";
     }
 
-    async _call(analysisText) {
+    async _call(analysisText, options = {}) {
         console.log("[VisualizerTool] Generating diagram for analysis text...");
 
         // Guard: an empty/error placeholder carries no analyzable substance and
@@ -33,11 +33,23 @@ class VisualizerTool extends Tool {
             return "Error generating diagram.";
         }
 
+        // Track 3c: structured money-flow entries (when present) give the
+        // "Tijek novca" subgraph deterministic, real financial content instead
+        // of relying on the model to spot amounts inside free-text prose.
+        const moneyFlow = Array.isArray(options.moneyFlow?.entries)
+            ? options.moneyFlow.entries
+            : [];
+        const moneyFlowBlock = moneyFlow.length > 0
+            ? `\n\nSTRUCTURED MONEY-FLOW DATA (use only as financial source material for the "Tijek novca" subgraph):\n${moneyFlow.map((entry, index) =>
+                `- ${entry.amount} ${entry.currency || '?'}${entry.description ? ` — ${entry.description}` : ''}${entry.date ? ` (${entry.date})` : ''}${entry.from ? ` from ${entry.from}` : ''}${entry.to ? ` to ${entry.to}` : ''}${entry.fileName ? ` [source: ${entry.fileName}]` : ''}`
+            ).join('\n')}`
+            : '';
+
         const prompt = `
         You are a specialized Data Visualization Agent. Your ONLY job is to transform the provided legal analysis text into a strictly valid Mermaid flowchart.
         
         INPUT TEXT:
-        ${usableText}
+        ${usableText}${moneyFlowBlock}
 
         INSTRUCTIONS:
         1. Produce ONLY a Mermaid code block using 'flowchart TD'.

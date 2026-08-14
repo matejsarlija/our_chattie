@@ -295,7 +295,9 @@ class AnalyzeDocumentsTool extends Tool {
                 The participants include enriched registry data. Use this to determine if a company is active, in bankruptcy, or has failed to file financial reports (GFI) recently.
 
                 From the court document text below, extract key information as a JSON object with the following keys: "caseNumber", "decisionDate", and "summary" (a medium-sized paragraph, nicely formatted, to be in Croatian please, as that is what our customers speak).
-                Do include any important figures (currency amounts) you find in the summary. Provide ONLY the json object and nothing else. Text:\n\n${analysisInput.analysisText}`;
+                Do include any important figures (currency amounts) you find in the summary.
+                Also extract any financial amounts (payments, claims, costs, reservations) into an optional "amounts" array, each item being a JSON object with: "description" (what the money is for, in Croatian), "amount" (number), "currency" ("EUR" or "HRK"), and "date" (if known). If the document contains no amounts, set "amounts" to an empty array.
+                Provide ONLY the json object and nothing else. Text:\n\n${analysisInput.analysisText}`;
 
                 const response = await withGeminiRetry(
                     () => withGeminiTimeout((signal) => gemini.invoke(prompt, { signal })),

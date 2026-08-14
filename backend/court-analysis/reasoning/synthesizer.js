@@ -241,6 +241,12 @@ function buildPackageMeta(pkg) {
         acquisition: pkg.acquisition || null,
         coverage: pkg.coverage || null,
         analysesCount: Array.isArray(pkg.analyses) ? pkg.analyses.length : 0,
+        moneyFlow: pkg.moneyFlow || {
+            count: 0,
+            entries: [],
+            currencyTotals: {},
+            hasMoneyFlow: false
+        },
         documentLinks: (pkg.documentLinks || []).map((link) => ({
             id: link.id,
             url: link.url,
@@ -297,11 +303,38 @@ function createReasoningEvidenceFromPackage(pkg) {
         }]
     }));
 
+    // Structured money-flow entries become first-class, source-cited claims so
+    // the report's findings/amounts are grounded in deterministic extraction
+    // (Track 3c) rather than prose alone.
+    const moneyFlowClaims = (pkg.moneyFlow?.entries || []).map((entry, index) => {
+        const displayAmount = Number.isFinite(entry.amount)
+            ? entry.amount.toLocaleString('en-US')
+            : String(entry.amount ?? '');
+        return {
+            id: `money-flow-${index + 1}`,
+            text: `Financijski iznos ${displayAmount} ${entry.currency || ''} ${entry.description ? `(${entry.description})` : ''}${entry.date ? ` — ${entry.date}` : ''}${entry.fileName ? ` iz dokumenta "${entry.fileName}"` : ''}.`,
+            confidence: 'medium',
+            evidence: [{
+                sourceId: entry.sourceId || `${pkg.clusterId}:money-flow-${index + 1}`,
+                text: `${entry.amount} ${entry.currency || ''} ${entry.description || ''}`.trim(),
+                metadata: {
+                    sourceType: 'analysis-amount',
+                    fileName: entry.fileName || null,
+                    caseNumber: entry.caseNumber || null,
+                    date: entry.date || null,
+                    from: entry.from || null,
+                    to: entry.to || null
+                }
+            }]
+        };
+    });
+
     return {
         timeline,
         claims: [
             ...claims,
-            ...analysisClaims
+            ...analysisClaims,
+            ...moneyFlowClaims
         ],
         meta: buildPackageMeta(pkg)
     };

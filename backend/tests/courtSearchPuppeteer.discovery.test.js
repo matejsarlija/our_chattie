@@ -177,6 +177,44 @@ describe('CourtSearchPuppeteer discovery metadata', () => {
         expect(searchMetadata.hasNextPage).toBe(false);
     });
 
+    test('searchAndGetLatestCasesWithDocuments captures the full window when limit is null (3b full history)', async () => {
+        scraper.performSearchAcrossPages = jest.fn().mockResolvedValue({
+            results: [
+                { caseNumber: 'St-1/2013', documentDownloadLink: 'http://d1' },
+                { caseNumber: 'St-2/2013', documentDownloadLink: 'http://d2' },
+                { caseNumber: 'St-3/2013', documentDownloadLink: 'http://d3' },
+                { caseNumber: 'St-4/2013', documentDownloadLink: null },
+                { caseNumber: 'St-5/2013', documentDownloadLink: 'http://d5' },
+            ],
+            searchMetadata: { pagesScanned: 1, currentPage: 1, hasNextPage: false, totalResults: 5, totalPages: 1 }
+        });
+        scraper.mapSearchResultsToPipelineEntries = jest.fn().mockReturnValue([]);
+
+        await scraper.searchAndGetLatestCasesWithDocuments('ST-1/2013', null);
+
+        const captured = scraper.mapSearchResultsToPipelineEntries.mock.calls[0][0];
+        expect(captured).toHaveLength(4);
+        expect(captured.map(c => c.caseNumber)).toEqual(['St-1/2013', 'St-2/2013', 'St-3/2013', 'St-5/2013']);
+    });
+
+    test('searchAndGetLatestCasesWithDocuments still truncates to a numeric limit', async () => {
+        scraper.performSearchAcrossPages = jest.fn().mockResolvedValue({
+            results: [
+                { caseNumber: 'St-1/2013', documentDownloadLink: 'http://d1' },
+                { caseNumber: 'St-2/2013', documentDownloadLink: 'http://d2' },
+                { caseNumber: 'St-3/2013', documentDownloadLink: 'http://d3' },
+            ],
+            searchMetadata: { pagesScanned: 1, currentPage: 1, hasNextPage: false, totalResults: 3, totalPages: 1 }
+        });
+        scraper.mapSearchResultsToPipelineEntries = jest.fn().mockReturnValue([]);
+
+        await scraper.searchAndGetLatestCasesWithDocuments('ST-1/2013', 2);
+
+        const captured = scraper.mapSearchResultsToPipelineEntries.mock.calls[0][0];
+        expect(captured).toHaveLength(2);
+        expect(captured.map(c => c.caseNumber)).toEqual(['St-1/2013', 'St-2/2013']);
+    });
+
     test('searchCaseNumberFollowUp returns only entries matching the normalized case lineage', async () => {
         scraper.performSearchAcrossPages = jest.fn().mockResolvedValue({
             results: [
