@@ -1,5 +1,19 @@
 // Keep all your original CommonJS require() statements at the top
 require('dotenv').config();
+const { assertGeminiConfig, GEMINI_MODEL } = require('./helpers/geminiConfig');
+
+// Fail loudly at startup instead of surfacing a confusing mid-run 500 (or an
+// opaque constructor error from the SDK) when GOOGLE_API_KEY is missing. This
+// must run BEFORE anything that constructs a ChatGoogleGenerativeAI client.
+// Local users copy backend/.env.example to backend/.env and set their own key.
+try {
+  assertGeminiConfig();
+} catch (error) {
+  console.error('[Startup] ' + error.message);
+  process.exit(1);
+}
+console.log(`Gemini model configured: ${GEMINI_MODEL}`);
+
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');

@@ -11,10 +11,10 @@ const pdfParse = require("pdf-parse");
 const mammoth = require("mammoth");
 const { splitTextIntoChunks } = require("../reasoning/chunker");
 
-const API_KEY = process.env.GOOGLE_API_KEY;
+const { GEMINI_MODEL, GEMINI_API_KEY } = require("../../helpers/geminiConfig");
 const gemini = new ChatGoogleGenerativeAI({
-    model: "gemini-2.5-flash",
-    apiKey: API_KEY,
+    model: GEMINI_MODEL,
+    apiKey: GEMINI_API_KEY,
 });
 
 const pdfjsLib = require("pdfjs-dist/legacy/build/pdf.js");

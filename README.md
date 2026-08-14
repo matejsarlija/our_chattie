@@ -67,11 +67,14 @@ This project is GPLv3 licensed (LICENSE.md).
     ```
 
 4.  **Set up Environment Variables:**
-    Create a `.env` file in the `backend` directory with:
+    Copy `backend/.env.example` to `backend/.env` and fill in your values. The backend **refuses to start without `GOOGLE_API_KEY`**:
     ```ini
     # .env in /backend
-    GOOGLE_API_KEY="your_google_ai_studio_api_key"
+    GOOGLE_API_KEY="your_google_ai_studio_api_key" # Required — server exits at startup if missing
     CORS_ORIGIN="http://localhost:3000" # Optional; frontend dev origin
+    GEMINI_MODEL="gemini-2.5-flash" # Optional; override the Gemini model across the pipeline
+    GEMINI_REQUEST_TIMEOUT_MS=30000 # Optional; per-request timeout before the fail-fast guard aborts
+    GEMINI_RETRY_TIMEOUTS=1 # Optional; retry timeout AbortErrors with backoff (paid keys), "0" to disable
     BROWSERLESS_TOKEN="your_browserless_io_api_key" # Optional, for production scraping
     # Optional: ANALYSIS_DATA_DIR=/absolute/path/to/data
     ```

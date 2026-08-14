@@ -1,10 +1,11 @@
+require("dotenv").config();
 const { ChatGoogleGenerativeAI } = require("@langchain/google-genai");
 const { withGeminiRetry, withGeminiTimeout } = require("../../helpers/geminiRetry");
-require("dotenv").config();
+const { GEMINI_MODEL, GEMINI_API_KEY } = require("../../helpers/geminiConfig");
 
 const gemini = new ChatGoogleGenerativeAI({
-    model: "gemini-2.5-flash",
-    apiKey: process.env.GOOGLE_API_KEY,
+    model: GEMINI_MODEL,
+    apiKey: GEMINI_API_KEY,
     temperature: 0.1
 });
 

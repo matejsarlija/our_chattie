@@ -1,4 +1,4 @@
-const { withGeminiTimeout, GEMINI_REQUEST_TIMEOUT_MS } = require('../helpers/geminiRetry');
+const { withGeminiTimeout, GEMINI_REQUEST_TIMEOUT_MS, shouldRetry } = require('../helpers/geminiRetry');
 
 describe('withGeminiTimeout', () => {
   test('defaults to a positive, env-overridable timeout', () => {
@@ -59,5 +59,35 @@ describe('withGeminiTimeout', () => {
   test('disables the timer when timeoutMs is 0 or negative', async () => {
     await expect(withGeminiTimeout(() => Promise.resolve('no-timeout'), { timeoutMs: 0 })).resolves.toBe('no-timeout');
     await expect(withGeminiTimeout(() => Promise.resolve('no-timeout'), { timeoutMs: -1 })).resolves.toBe('no-timeout');
+  });
+});
+
+describe('shouldRetry (two-class 429 policy)', () => {
+  test('retries transient rate-limit status codes', () => {
+    expect(shouldRetry({ status: 429 })).toBe(true);
+    expect(shouldRetry({ status: 503 })).toBe(true);
+    expect(shouldRetry({ status: 500 })).toBe(true);
+  });
+
+  test('retries transient rate-limit messages', () => {
+    expect(shouldRetry(new Error('rate limit exceeded'))).toBe(true);
+    expect(shouldRetry(new Error('AI overloaded'))).toBe(true);
+    expect(shouldRetry(new Error('429 Too Many Requests'))).toBe(true);
+  });
+
+  test('never retries daily-quota exhaustion', () => {
+    expect(shouldRetry(new Error('Resource has been exhausted (quota)'))).toBe(false);
+    expect(shouldRetry({ status: 429, message: 'Quota exceeded for quota metric requests_per_day' })).toBe(false);
+  });
+
+  test('retries timeout AbortErrors by default (paid-key burst hang), opt-out allowed', () => {
+    const timeoutError = new Error('Gemini request timed out after 30000ms');
+    timeoutError.name = 'AbortError';
+    expect(shouldRetry(timeoutError)).toBe(true);
+    expect(shouldRetry(timeoutError, { retryTimeouts: false })).toBe(false);
+  });
+
+  test('does not retry arbitrary errors', () => {
+    expect(shouldRetry(new Error('boom'))).toBe(false);
   });
 });

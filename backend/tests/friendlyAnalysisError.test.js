@@ -25,19 +25,32 @@ describe('friendlyAnalysisErrorMessage', () => {
     expect(message).toContain('Nije pronađen nijedan predmet s dostupnim dokumentima');
   });
 
-  test('detects quota exhaustion', () => {
+  test('detects quota exhaustion (daily limit)', () => {
     const message = friendlyAnalysisErrorMessage(new Error('Resource has been exhausted (quota)'));
     expect(message).toContain('Dnevni limit AI analize je iscrpljen');
   });
 
-  test('detects quota from 429-style errors', () => {
-    const message = friendlyAnalysisErrorMessage(new Error('rate limit exceeded 429'));
+  test('detects per-day quota exhaustion as daily limit', () => {
+    const message = friendlyAnalysisErrorMessage(new Error('429 Quota exceeded for quota metric requests_per_day'));
     expect(message).toContain('Dnevni limit AI analize je iscrpljen');
   });
 
-  test('detects timeout errors', () => {
+  test('distinguishes transient rate-limit bursts (paid key) from the daily quota', () => {
+    const message = friendlyAnalysisErrorMessage(new Error('429 rate limit exceeded, retry later'));
+    expect(message).toContain('preopterećen (privremeno ograničenje učestalosti zahtjeva)');
+    expect(message).not.toContain('Dnevni limit AI analize je iscrpljen');
+  });
+
+  test('treats a bare 429 / too many requests as a transient burst, not daily quota', () => {
+    const message = friendlyAnalysisErrorMessage(new Error('429 Too Many Requests'));
+    expect(message).toContain('preopterećen');
+    expect(message).not.toContain('Dnevni limit');
+  });
+
+  test('does not claim the daily limit for a timeout on a paid key', () => {
     const message = friendlyAnalysisErrorMessage(new Error('DeadlineExceeded: timed out'));
     expect(message).toContain('premašio dopušteno vrijeme čekanja');
+    expect(message).not.toContain('Dnevni limit AI analize je iscrpljen');
   });
 
   test('detects abort/timeout from the Gemini fail-fast guard and hints at the free-tier quota', () => {

@@ -10,6 +10,13 @@ const MAX_DELAY_MS = 15000;
 // the pipeline can surface a transparent error + persist partial results.
 const GEMINI_REQUEST_TIMEOUT_MS = Number(process.env.GEMINI_REQUEST_TIMEOUT_MS) || 30000;
 
+// Paid-key transient bursts hang inside the SDK until the timeout guard fires,
+// so AbortError timeouts are retried with backoff by default. Set to "0" to
+// restore strict fail-fast behavior (e.g. when conserving a tiny free quota).
+const GEMINI_RETRY_TIMEOUTS = process.env.GEMINI_RETRY_TIMEOUTS !== '0';
+
+const { isDailyQuotaExhaustion } = require('./friendlyAnalysisError');
+
 async function withGeminiTimeout(callable, { timeoutMs = GEMINI_REQUEST_TIMEOUT_MS } = {}) {
     if (!timeoutMs || timeoutMs <= 0) {
         return Promise.resolve().then(() => callable(undefined));
@@ -68,11 +75,24 @@ function parseRetryAfterMs(error) {
   return null;
 }
 
-function shouldRetry(error) {
+function shouldRetry(error, options = {}) {
+  // Daily-quota exhaustion is terminal — retrying burns the remaining budget.
+  if (isDailyQuotaExhaustion(`${error?.message || ''}`)) return false;
+
   const status = error?.status || error?.response?.status;
   if (status === 429 || status === 503 || status === 500) return true;
+
   const message = `${error?.message || ''}`.toLowerCase();
-  return message.includes('rate limit') || message.includes('overloaded');
+  if (message.includes('rate limit') || message.includes('overloaded') || message.includes('too many requests')) return true;
+
+  // A timeout from the fail-fast guard: on a paid key this is usually a
+  // transient 429 hang that is recoverable with backoff. Opt-out via
+  // GEMINI_RETRY_TIMEOUTS=0 for strict fail-fast on a tiny free quota.
+  if (error?.name === 'AbortError') {
+    return options.retryTimeouts !== false && GEMINI_RETRY_TIMEOUTS;
+  }
+
+  return false;
 }
 
 async function withGeminiRetry(fn, options = {}) {
@@ -86,7 +106,7 @@ async function withGeminiRetry(fn, options = {}) {
     try {
       return await fn();
     } catch (error) {
-      if (!shouldRetry(error) || attempt >= maxRetries) {
+      if (!shouldRetry(error, options) || attempt >= maxRetries) {
         throw error;
       }
 
@@ -109,5 +129,7 @@ module.exports = {
     withGeminiRetry,
     withGeminiTimeout,
     parseRetryAfterMs,
+    shouldRetry,
     GEMINI_REQUEST_TIMEOUT_MS,
+    GEMINI_RETRY_TIMEOUTS,
 };

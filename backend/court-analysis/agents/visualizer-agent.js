@@ -1,11 +1,13 @@
 // backend/court-analysis/agents/visualizer-agent.js
+require("dotenv").config();
 const { Tool } = require("@langchain/core/tools");
 const { ChatGoogleGenerativeAI } = require("@langchain/google-genai");
 const { withGeminiRetry, withGeminiTimeout } = require("../../helpers/geminiRetry");
+const { GEMINI_MODEL, GEMINI_API_KEY } = require("../../helpers/geminiConfig");
 
 const gemini = new ChatGoogleGenerativeAI({
-    model: "gemini-2.5-flash", // Consistent with analysis agent
-    apiKey: process.env.GOOGLE_API_KEY,
+    model: GEMINI_MODEL, // Consistent with analysis agent
+    apiKey: GEMINI_API_KEY,
     temperature: 0.1, // Low temperature for strict syntax adherence
 });
 
