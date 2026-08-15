@@ -54,6 +54,10 @@ jest.mock('../court-registry/enricher', () => ({
     enrichParticipants: jest.fn().mockImplementation((p) => Promise.resolve(p)),
 }));
 
+jest.mock('../helpers/geminiPlan', () => ({
+    resolveGeminiPlan: () => 'free',
+}));
+
 jest.mock('adm-zip', () => {
     return jest.fn().mockImplementation(() => ({
         getEntries: jest.fn().mockReturnValue([]),
@@ -120,7 +124,7 @@ describe('runCourtAnalysis pipeline (deterministic)', () => {
         const progress = jest.fn();
         const result = await runCourtAnalysis('66124057408', { caseLimit: 3, enableVisualizer: false }, progress);
 
-        expect(mockSearchAndGetLatestCasesWithDocuments).toHaveBeenCalledWith('66124057408', null);
+        expect(mockSearchAndGetLatestCasesWithDocuments).toHaveBeenCalledWith('66124057408', 15);
         expect(result.discoverySummary.capturedDistinctCaseCount).toBe(4);
         expect(result.discoverySummary.recommendedPrimaryClusterId).toBe('C1');
         expect(result.discoverySummary.secondaryClusterIds).toEqual(['C2', 'C3', 'C4']);

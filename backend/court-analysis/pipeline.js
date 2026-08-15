@@ -19,6 +19,7 @@ const fs = require('fs');
 const path = require('path');
 const AdmZip = require('adm-zip');
 const logger = require('../helpers/logger');
+const { resolveGeminiPlan } = require('../helpers/geminiPlan');
 
 /**
  * Error carrying whatever partial results were accumulated before a pipeline stage
@@ -64,14 +65,20 @@ function clampCaseLimit(rawLimit) {
     return numeric;
 }
 
-// Track 3b — full document history. Default: capture the entire scanned search
-// window so the selected primary cluster's merged documentLinks are all
-// downloaded/analyzed, not just the top `caseLimit×3` entries. An explicit
-// positive ANALYSIS_SCRAPE_LIMIT re-imposes a capture cap for quota conservation.
+// Track 3b — full document history, with a plan-aware safety ceiling.
+// By default the analysis path captures the entire scanned search window for the
+// selected primary cluster, capped per plan so a single run cannot exhaust the
+// daily AI quota (free ≈ 20 Gemini calls/day, paid keys can go deeper). An
+// explicit positive ANALYSIS_SCRAPE_LIMIT overrides the ceiling entirely.
+const SCRAPE_LIMIT_BY_PLAN = {
+    free: 15,
+    paid: 50,
+};
+
 function resolveAnalysisScrapeLimit() {
     const raw = Number.parseInt(process.env.ANALYSIS_SCRAPE_LIMIT, 10);
     if (Number.isFinite(raw) && raw >= 1) return Math.floor(raw);
-    return null;
+    return SCRAPE_LIMIT_BY_PLAN[resolveGeminiPlan()] ?? SCRAPE_LIMIT_BY_PLAN.free;
 }
 
 const CLUSTER_SELECTION_DEFAULTS = {
@@ -97,14 +104,6 @@ const DISCOVERY_HEURISTICS_DEFAULTS = {
     strongPrimaryClusterSpanDays: 730,
     dominantClusterRatioThreshold: 0.65
 };
-
-function computeRawScrapeLimit(caseLimit) {
-    const envLimit = resolveAnalysisScrapeLimit();
-    if (envLimit !== null) return envLimit;
-    // Full document history: capture the whole scanned window for the primary
-    // cluster (no caseLimit-derived truncation).
-    return null;
-}
 
 function parseCaseDateToTimestamp(rawDate) {
     if (!rawDate || typeof rawDate !== 'string') return null;
@@ -1073,7 +1072,7 @@ function resolveAnalysisArgs(caseLimitOrOptions, maybeProgressCallback) {
     if (typeof caseLimitOrOptions === 'function') {
         return {
             caseLimit: DEFAULT_CASE_LIMIT,
-            scrapeLimit: computeRawScrapeLimit(DEFAULT_CASE_LIMIT),
+            scrapeLimit: resolveAnalysisScrapeLimit(),
             enableVisualizer: true,
             progressCallback: caseLimitOrOptions,
         };
@@ -1083,7 +1082,7 @@ function resolveAnalysisArgs(caseLimitOrOptions, maybeProgressCallback) {
         const caseLimit = clampCaseLimit(caseLimitOrOptions);
         return {
             caseLimit,
-            scrapeLimit: computeRawScrapeLimit(caseLimit),
+            scrapeLimit: resolveAnalysisScrapeLimit(),
             enableVisualizer: true,
             progressCallback: maybeProgressCallback,
         };
@@ -1093,7 +1092,7 @@ function resolveAnalysisArgs(caseLimitOrOptions, maybeProgressCallback) {
         const caseLimit = clampCaseLimit(caseLimitOrOptions.caseLimit);
         return {
             caseLimit,
-            scrapeLimit: computeRawScrapeLimit(caseLimit),
+            scrapeLimit: resolveAnalysisScrapeLimit(),
             enableVisualizer: caseLimitOrOptions.enableVisualizer !== false,
             query: caseLimitOrOptions.query || null,
             clusterExpansion: caseLimitOrOptions.clusterExpansion || null,
@@ -1106,7 +1105,7 @@ function resolveAnalysisArgs(caseLimitOrOptions, maybeProgressCallback) {
 
     return {
         caseLimit: DEFAULT_CASE_LIMIT,
-        scrapeLimit: computeRawScrapeLimit(DEFAULT_CASE_LIMIT),
+        scrapeLimit: resolveAnalysisScrapeLimit(),
         enableVisualizer: true,
         query: null,
         progressCallback: maybeProgressCallback,
