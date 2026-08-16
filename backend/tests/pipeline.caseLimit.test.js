@@ -10,39 +10,33 @@ jest.mock('../scraper/courtSearchPuppeteer', () => {
   }));
 });
 
-const mockResolveGeminiPlan = jest.fn(() => 'free');
-jest.mock('../helpers/geminiPlan', () => ({
-  resolveGeminiPlan: () => mockResolveGeminiPlan(),
-}));
-
 const { runCourtAnalysis } = require('../court-analysis/pipeline');
 
-describe('runCourtAnalysis caseLimit + scrapeLimit options', () => {
+describe('runCourtAnalysis caseLimit options', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     delete process.env.ANALYSIS_SCRAPE_LIMIT;
-    mockResolveGeminiPlan.mockReturnValue('free');
     mockSearchAndGetLatestCasesWithDocuments.mockResolvedValue([]);
   });
 
   test('uses default caseLimit when options are omitted and second arg is callback', async () => {
     const progress = jest.fn();
     await expect(runCourtAnalysis('66124057408', progress)).rejects.toThrow();
-    expect(mockSearchAndGetLatestCasesWithDocuments).toHaveBeenCalledWith('66124057408', 15);
+    expect(mockSearchAndGetLatestCasesWithDocuments).toHaveBeenCalledWith('66124057408', null);
   });
 
   test('honors options.caseLimit from caller', async () => {
     await expect(
       runCourtAnalysis('66124057408', { caseLimit: 3 }, jest.fn()),
     ).rejects.toThrow();
-    expect(mockSearchAndGetLatestCasesWithDocuments).toHaveBeenCalledWith('66124057408', 15);
+    expect(mockSearchAndGetLatestCasesWithDocuments).toHaveBeenCalledWith('66124057408', null);
   });
 
   test('clamps options.caseLimit into supported bounds', async () => {
     await expect(
       runCourtAnalysis('66124057408', { caseLimit: 0 }, jest.fn()),
     ).rejects.toThrow();
-    expect(mockSearchAndGetLatestCasesWithDocuments).toHaveBeenCalledWith('66124057408', 15);
+    expect(mockSearchAndGetLatestCasesWithDocuments).toHaveBeenCalledWith('66124057408', null);
 
     jest.clearAllMocks();
     mockSearchAndGetLatestCasesWithDocuments.mockResolvedValue([]);
@@ -50,27 +44,18 @@ describe('runCourtAnalysis caseLimit + scrapeLimit options', () => {
     await expect(
       runCourtAnalysis('66124057408', { caseLimit: 77 }, jest.fn()),
     ).rejects.toThrow();
-    expect(mockSearchAndGetLatestCasesWithDocuments).toHaveBeenCalledWith('66124057408', 15);
+    expect(mockSearchAndGetLatestCasesWithDocuments).toHaveBeenCalledWith('66124057408', null);
   });
 
-  test('caps capture at 15 by default on the free plan', async () => {
+  test('captures the full document history by default (no truncation)', async () => {
     await expect(
       runCourtAnalysis('66124057408', { caseLimit: 5 }, jest.fn()),
     ).rejects.toThrow();
-    expect(mockSearchAndGetLatestCasesWithDocuments).toHaveBeenCalledWith('66124057408', 15);
+    expect(mockSearchAndGetLatestCasesWithDocuments).toHaveBeenCalledWith('66124057408', null);
   });
 
-  test('caps capture at 50 by default on the paid plan', async () => {
-    mockResolveGeminiPlan.mockReturnValue('paid');
-    await expect(
-      runCourtAnalysis('66124057408', { caseLimit: 5 }, jest.fn()),
-    ).rejects.toThrow();
-    expect(mockSearchAndGetLatestCasesWithDocuments).toHaveBeenCalledWith('66124057408', 50);
-  });
-
-  test('applies ANALYSIS_SCRAPE_LIMIT env override when set (wins over the plan)', async () => {
+  test('applies ANALYSIS_SCRAPE_LIMIT env override when set', async () => {
     process.env.ANALYSIS_SCRAPE_LIMIT = '7';
-    mockResolveGeminiPlan.mockReturnValue('paid');
     await expect(
       runCourtAnalysis('66124057408', { caseLimit: 5 }, jest.fn()),
     ).rejects.toThrow();
