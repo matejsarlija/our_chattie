@@ -56,6 +56,24 @@ describe('NewAnalysisModal', () => {
     });
   });
 
+  test('threads the selected scan depth into the stream request', async () => {
+    mockStreamCourtAnalysis.mockResolvedValue(undefined);
+
+    render(<NewAnalysisModal isOpen onClose={jest.fn()} />);
+
+    fireEvent.change(screen.getByPlaceholderText(/12345678901/i), { target: { value: '12345678901' } });
+    fireEvent.change(screen.getByLabelText(/dubina pretrage/i), { target: { value: 'full' } });
+    fireEvent.click(screen.getByRole('button', { name: /pokreni/i }));
+
+    await waitFor(() => {
+      expect(mockStreamCourtAnalysis).toHaveBeenCalledWith(
+        '12345678901',
+        expect.any(Object),
+        { scanDepth: 'full' },
+      );
+    });
+  });
+
   test('shows error message when streaming fails', async () => {
     mockStreamCourtAnalysis.mockImplementation(async (_searchTerm, callbacks) => {
       callbacks.onError('Neuspjelo pokretanje analize.', { status: 500 });

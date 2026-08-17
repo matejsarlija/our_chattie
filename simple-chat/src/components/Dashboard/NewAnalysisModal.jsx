@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { z } from 'zod';
 import { useNavigate } from 'react-router-dom';
 import { useCourtAnalysisStream } from '../../hooks/useCourtAnalysisStream';
-import DepthDial from './DepthDial';
+import ScanDepthSelect from './ScanDepthSelect';
 
 const oibSchema = z
   .string()
@@ -100,8 +100,8 @@ export default function NewAnalysisModal({ isOpen, onClose }) {
             />
           </label>
 
-          <div className="flex justify-center border-t border-[var(--border)] pt-4">
-            <DepthDial value={scanDepth} onChange={setScanDepth} disabled={streamingAPI.isLoading} />
+          <div className="border-t border-[var(--border)] pt-4">
+            <ScanDepthSelect value={scanDepth} onChange={setScanDepth} disabled={streamingAPI.isLoading} />
           </div>
 
           {error && <p className="text-sm text-[var(--danger)]">{error}</p>}

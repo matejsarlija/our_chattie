@@ -7,7 +7,7 @@ For backend setup, Gemini configuration, and end-to-end QA instructions, see the
 ## Routes
 
 - `/` redirects to `/dashboard`.
-- `/dashboard` lists analysis runs and opens the new-analysis dialog.
+- `/dashboard` lists analysis runs and opens the new-analysis dialog, which includes a "Dubina pretrage" scan-depth selector (`ScanDepthSelect`): Standardno (newest pages), Uravnoteženo (default; newest pages + 10 oldest entries), Sve dostupne (every page).
 - `/dashboard/runs/:id` shows one run, including its progress events and structured report.
 
 ## Development
