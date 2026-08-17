@@ -44,6 +44,7 @@ simple-chat/src/stories/Dashboard/AnalysisDetail/**
 !simple-chat/src/stories/Dashboard/AnalysisDetailProgressPresentation.stories.jsx
 !simple-chat/src/stories/Dashboard/AnalysisDetailCoverageBanner.stories.jsx
 !simple-chat/src/stories/Dashboard/AnalysisDetailSecondaryClusters.stories.jsx
+!simple-chat/src/stories/Dashboard/NewAnalysisDepthDial.stories.jsx
 /dokumentacija*
 
 # opencode

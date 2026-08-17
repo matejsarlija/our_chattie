@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { z } from 'zod';
 import { useNavigate } from 'react-router-dom';
 import { useCourtAnalysisStream } from '../../hooks/useCourtAnalysisStream';
+import DepthDial from './DepthDial';
 
 const oibSchema = z
   .string()
@@ -13,6 +14,7 @@ export default function NewAnalysisModal({ isOpen, onClose }) {
   const streamingAPI = useCourtAnalysisStream();
 
   const [oib, setOib] = useState('');
+  const [scanDepth, setScanDepth] = useState('balanced');
   const [error, setError] = useState('');
 
   useEffect(() => {
@@ -56,7 +58,7 @@ export default function NewAnalysisModal({ isOpen, onClose }) {
           streamError = message || 'Neuspjelo pokretanje analize.';
         },
         onComplete: () => {},
-      });
+      }, { scanDepth });
 
       if (streamError) {
         setError(streamError);
@@ -97,6 +99,10 @@ export default function NewAnalysisModal({ isOpen, onClose }) {
               autoFocus
             />
           </label>
+
+          <div className="flex justify-center border-t border-[var(--border)] pt-4">
+            <DepthDial value={scanDepth} onChange={setScanDepth} disabled={streamingAPI.isLoading} />
+          </div>
 
           {error && <p className="text-sm text-[var(--danger)]">{error}</p>}
 
