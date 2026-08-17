@@ -19,6 +19,14 @@ function resolveMaxPagesScanned() {
     return Number.isFinite(raw) && raw >= 1 ? raw : 5;
 }
 
+// Hard ceiling for `full` depth. "Every page" is bounded so a mis-parsed
+// hasNextPage or a huge text-query window cannot walk unbounded pages while
+// holding the concurrency-1 analysis queue.
+function resolveFullScanMaxPages() {
+    const raw = Number.parseInt(process.env.FULL_SCAN_MAX_PAGES, 10);
+    return Number.isFinite(raw) && raw >= 1 ? raw : 200;
+}
+
 // Tail sampling: when a case has more history than the forward scan window
 // covers, walk backward from the last page and keep the oldest entries so the
 // analysis gets "origin" context (initial filings, opening rulings, intro docs).
@@ -178,17 +186,21 @@ class CourtSearchPuppeteer {
     /**
      * Aggregates per-page search metadata from a multi-page crawl into a single
      * normalized discovery metadata block. Each page becomes its own entry in
-     * `searchWindows`, while the top-level fields describe the whole window.
+     * `searchWindows`, while the top-level fields (pagesScanned/currentPage/
+     * hasNextPage) describe the FORWARD window only — tail-sample pages are
+     * listed in `searchWindows` and counted in `tailPagesScanned` so they never
+     * distort the forward frontier reported to discovery heuristics and the UI.
      */
     aggregateSearchWindows(pageMetadataList, totalRawCount) {
         const pages = Array.isArray(pageMetadataList) ? pageMetadataList : [];
-        const last = pages[pages.length - 1] || {};
-        const pagesScanned = pages.length || 1;
+        const forwardPages = pages.filter((page) => page.tailWindow !== true);
+        const tailPages = pages.filter((page) => page.tailWindow === true);
+        const forward = forwardPages[forwardPages.length - 1] || pages[pages.length - 1] || {};
+        const pagesScanned = forwardPages.length || 1;
 
-        const hasTailWindow = pages.some((page) => page.tailWindow === true);
-        return {
+        const aggregated = {
             discoveryMode: 'search-window',
-            acquisitionModes: hasTailWindow
+            acquisitionModes: tailPages.length > 0
                 ? ['search-window', 'search-window-tail']
                 : ['search-window'],
             searchWindows: pages.map((page, index) => ({
@@ -198,22 +210,28 @@ class CourtSearchPuppeteer {
                 hasNextPage: Boolean(page.hasNextPage),
                 rawParsedEntryCount: page.rawParsedEntryCount ?? null
             })),
-            totalResults: last.totalResults ?? null,
-            totalPages: last.totalPages ?? null,
+            totalResults: forward.totalResults ?? null,
+            totalPages: forward.totalPages ?? null,
             pagesScanned,
-            currentPage: last.currentPage ?? 1,
-            hasNextPage: last.hasNextPage ?? false,
+            currentPage: forward.currentPage ?? 1,
+            hasNextPage: forward.hasNextPage ?? false,
             rawParsedEntryCount: totalRawCount
         };
+        if (tailPages.length > 0) {
+            aggregated.tailPagesScanned = tailPages.length;
+        }
+        return aggregated;
     }
 
     async performSearchAcrossPages(searchTerm, maxPages = null, options = {}) {
-        // `Infinity` (full depth) scans every page until the result set runs out;
-        // `null` falls back to the DISCOVERY_MAX_PAGES_SCANNED default window.
+        // `Infinity` (full depth) scans every page until the result set runs out,
+        // bounded by FULL_SCAN_MAX_PAGES; `null` falls back to the
+        // DISCOVERY_MAX_PAGES_SCANNED default window.
         const limit = maxPages === Infinity
             ? Infinity
             : (Number.isFinite(maxPages) ? Math.max(1, maxPages) : resolveMaxPagesScanned());
-        console.log(`[performSearchAcrossPages] Searching for "${searchTerm}" across up to ${limit === Infinity ? 'all' : limit} page(s)...`);
+        const pageBudget = limit === Infinity ? resolveFullScanMaxPages() : limit;
+        console.log(`[performSearchAcrossPages] Searching for "${searchTerm}" across up to ${limit === Infinity ? `all (cap ${pageBudget})` : limit} page(s)...`);
 
         await this.performSearch(searchTerm);
         const firstPage = await this.parseSearchResultsPage();
@@ -224,7 +242,7 @@ class CourtSearchPuppeteer {
         let currentPage = firstPage.searchMetadata.currentPage || 1;
         let hasNextPage = firstPage.searchMetadata.hasNextPage || false;
 
-        while (hasNextPage && pageMetadataList.length < limit) {
+        while (hasNextPage && pageMetadataList.length < pageBudget) {
             const nextPage = currentPage + 1;
             await this.navigateToSearchResultsPage(searchTerm, nextPage);
             const parsed = await this.parseSearchResultsPage();
@@ -239,6 +257,11 @@ class CourtSearchPuppeteer {
             if (results.length === 0) break;
         }
 
+        // The ceiling fired only when the site still reports more pages but the
+        // full-scan budget is exhausted. Surface it so reports can be honest
+        // about "Sve dostupne" having stopped at the cap.
+        const fullScanCapped = limit === Infinity && hasNextPage && pageMetadataList.length >= pageBudget;
+
         let searchMetadata = this.aggregateSearchWindows(pageMetadataList, allResults.length);
 
         // Grab the oldest entries of the case (tail) so long histories get their
@@ -251,6 +274,9 @@ class CourtSearchPuppeteer {
             searchMetadata = this.aggregateSearchWindows(pageMetadataList, allResults.length);
         }
         searchMetadata.tailSampling = tail.summary;
+        if (fullScanCapped) {
+            searchMetadata.fullScanCapped = true;
+        }
 
         return { results: allResults, searchMetadata };
     }
@@ -317,6 +343,9 @@ class CourtSearchPuppeteer {
                 enabled: true,
                 entriesCollected: accumulated.length,
                 entriesKept: kept.length,
+                // Downstream doc-link filtering can drop kept entries, so report
+                // how many of the kept ones actually carry a download link.
+                entriesKeptWithDocuments: kept.filter((item) => Boolean(item.documentDownloadLink)).length,
                 pages: windows.length
             }
         };
@@ -324,7 +353,15 @@ class CourtSearchPuppeteer {
 
     mapSearchResultsToPipelineEntries(results, searchMetadata, limit = null) {
         const normalizedLimit = Number.isFinite(limit) ? Math.max(0, limit) : null;
-        const effectiveResults = normalizedLimit === null ? results : results.slice(0, normalizedLimit);
+
+        // Numeric limits truncate the forward window only; tail-sample entries
+        // are the whole point of balanced depth and always survive.
+        let effectiveResults = results;
+        if (normalizedLimit !== null) {
+            const forward = results.filter((r) => r.acquisition?.mode !== 'search-window-tail');
+            const tail = results.filter((r) => r.acquisition?.mode === 'search-window-tail');
+            effectiveResults = [...forward.slice(0, normalizedLimit), ...tail];
+        }
 
         return effectiveResults.map((caseInfo) => ({
             caseInfo,
@@ -934,8 +971,14 @@ class CourtSearchPuppeteer {
 
         // Take the most recent ones from the top of the list, up to the limit.
         // A null limit (Track 3b full document history) captures the entire
-        // scanned window instead of truncating to the top-N.
-        const limitedResults = limit == null ? resultsWithDocs : resultsWithDocs.slice(0, limit);
+        // scanned window instead of truncating to the top-N. Numeric limits
+        // truncate the forward window only — tail entries always survive.
+        const limitedResults = limit == null
+            ? resultsWithDocs
+            : [
+                ...resultsWithDocs.filter((r) => r.acquisition?.mode !== 'search-window-tail').slice(0, limit),
+                ...resultsWithDocs.filter((r) => r.acquisition?.mode === 'search-window-tail')
+            ];
         console.log(`[searchAndGetLatestCasesWithDocuments] Processing the latest ${limitedResults.length} case(s).`);
 
         // Map them to the format your pipeline expects
