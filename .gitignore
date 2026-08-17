@@ -53,6 +53,9 @@ simple-chat/src/stories/Dashboard/AnalysisDetail/**
 # analysis persistence store
 /backend/data/
 
+# runtime download/extract artifacts
+/backend/uploads/
+
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
