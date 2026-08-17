@@ -19,6 +19,15 @@ function resolveMaxPagesScanned() {
     return Number.isFinite(raw) && raw >= 1 ? raw : 5;
 }
 
+// Tail sampling: when a case has more history than the forward scan window
+// covers, walk backward from the last page and keep the oldest entries so the
+// analysis gets "origin" context (initial filings, opening rulings, intro docs).
+// The last page is often partial (e.g. page 39 of 39 may hold a single entry),
+// so we accumulate across up to TAIL_SAMPLE_MAX_PAGES until we reach
+// TAIL_SAMPLE_ENTRIES instead of assuming the last page is full.
+const TAIL_SAMPLE_ENTRIES = 10;
+const TAIL_SAMPLE_MAX_PAGES = 2;
+
 class CourtSearchPuppeteer {
     constructor() {
         this.baseUrl = 'https://e-oglasna.pravosudje.hr';
@@ -176,11 +185,14 @@ class CourtSearchPuppeteer {
         const last = pages[pages.length - 1] || {};
         const pagesScanned = pages.length || 1;
 
+        const hasTailWindow = pages.some((page) => page.tailWindow === true);
         return {
             discoveryMode: 'search-window',
-            acquisitionModes: ['search-window'],
+            acquisitionModes: hasTailWindow
+                ? ['search-window', 'search-window-tail']
+                : ['search-window'],
             searchWindows: pages.map((page, index) => ({
-                mode: 'search-window',
+                mode: page.tailWindow ? 'search-window-tail' : 'search-window',
                 currentPage: page.currentPage ?? index + 1,
                 pagesScanned: 1,
                 hasNextPage: Boolean(page.hasNextPage),
@@ -195,9 +207,13 @@ class CourtSearchPuppeteer {
         };
     }
 
-    async performSearchAcrossPages(searchTerm, maxPages = null) {
-        const limit = Number.isFinite(maxPages) ? Math.max(1, maxPages) : resolveMaxPagesScanned();
-        console.log(`[performSearchAcrossPages] Searching for "${searchTerm}" across up to ${limit} page(s)...`);
+    async performSearchAcrossPages(searchTerm, maxPages = null, options = {}) {
+        // `Infinity` (full depth) scans every page until the result set runs out;
+        // `null` falls back to the DISCOVERY_MAX_PAGES_SCANNED default window.
+        const limit = maxPages === Infinity
+            ? Infinity
+            : (Number.isFinite(maxPages) ? Math.max(1, maxPages) : resolveMaxPagesScanned());
+        console.log(`[performSearchAcrossPages] Searching for "${searchTerm}" across up to ${limit === Infinity ? 'all' : limit} page(s)...`);
 
         await this.performSearch(searchTerm);
         const firstPage = await this.parseSearchResultsPage();
@@ -223,8 +239,87 @@ class CourtSearchPuppeteer {
             if (results.length === 0) break;
         }
 
-        const searchMetadata = this.aggregateSearchWindows(pageMetadataList, allResults.length);
+        let searchMetadata = this.aggregateSearchWindows(pageMetadataList, allResults.length);
+
+        // Grab the oldest entries of the case (tail) so long histories get their
+        // origin context. Only fires when the forward window didn't already cover
+        // the full result set.
+        const tail = await this.performTailSample(searchTerm, searchMetadata, options);
+        if (tail.results.length > 0) {
+            allResults.push(...tail.results);
+            pageMetadataList.push(...tail.windows);
+            searchMetadata = this.aggregateSearchWindows(pageMetadataList, allResults.length);
+        }
+        searchMetadata.tailSampling = tail.summary;
+
         return { results: allResults, searchMetadata };
+    }
+
+    /**
+     * Walks backward from the last result page, accumulating entries until
+     * TAIL_SAMPLE_ENTRIES oldest entries are captured (or TAIL_SAMPLE_MAX_PAGES
+     * are visited). Handles partial last pages by continuing to the previous
+     * page instead of assuming the last page holds a full batch.
+     */
+    async performTailSample(searchTerm, searchMetadata, options = {}) {
+        const enabled = options.tailSample === true;
+        const totalPages = Number.isFinite(searchMetadata?.totalPages) ? searchMetadata.totalPages : null;
+        const pagesScanned = Number.isFinite(searchMetadata?.pagesScanned) ? searchMetadata.pagesScanned : 0;
+
+        if (!enabled || totalPages === null) {
+            return { results: [], windows: [], summary: { enabled: false } };
+        }
+        if (totalPages <= pagesScanned) {
+            return {
+                results: [],
+                windows: [],
+                summary: { enabled: true, reason: 'window-fully-scanned', entriesKept: 0, pages: 0 }
+            };
+        }
+
+        const accumulated = [];
+        const windows = [];
+        let page = totalPages;
+
+        while (accumulated.length < TAIL_SAMPLE_ENTRIES
+            && page > pagesScanned
+            && windows.length < TAIL_SAMPLE_MAX_PAGES) {
+            await this.navigateToSearchResultsPage(searchTerm, page);
+            const parsed = await this.parseSearchResultsPage();
+            const pageResults = parsed.results || [];
+            const pageMetadata = parsed.searchMetadata || {};
+
+            pageMetadata.tailWindow = true;
+            for (const item of pageResults) {
+                item.acquisition = {
+                    mode: 'search-window-tail',
+                    currentPage: Number.isFinite(pageMetadata.currentPage) ? pageMetadata.currentPage : page,
+                    sampling: 'tail'
+                };
+            }
+
+            accumulated.push(...pageResults);
+            windows.push(pageMetadata);
+            page -= 1;
+
+            if (pageResults.length === 0) break;
+        }
+
+        // `accumulated` is oldest-first (highest page first). Keep the oldest
+        // TAIL_SAMPLE_ENTRIES, then reverse so the overall result list stays in
+        // descending recency order after being appended to the forward window.
+        const kept = accumulated.slice(0, TAIL_SAMPLE_ENTRIES).reverse();
+
+        return {
+            results: kept,
+            windows,
+            summary: {
+                enabled: true,
+                entriesCollected: accumulated.length,
+                entriesKept: kept.length,
+                pages: windows.length
+            }
+        };
     }
 
     mapSearchResultsToPipelineEntries(results, searchMetadata, limit = null) {
@@ -812,9 +907,9 @@ class CourtSearchPuppeteer {
      *  captures the full scanned window (full document history).
      * @returns {Promise<Array<{caseInfo: object, documentLinks: Array<object>}>>}
      */
-    async searchAndGetLatestCasesWithDocuments(searchTerm, limit = 2, maxPages = null) {
+    async searchAndGetLatestCasesWithDocuments(searchTerm, limit = 2, maxPages = null, tailSample = false) {
         console.log('[searchAndGetLatestCasesWithDocuments] Starting search...');
-        const { results: allResults, searchMetadata } = await this.performSearchAcrossPages(searchTerm, maxPages);
+        const { results: allResults, searchMetadata } = await this.performSearchAcrossPages(searchTerm, maxPages, { tailSample });
 
         if (allResults.length === 0) {
             console.warn('[searchAndGetLatestCasesWithDocuments] Search yielded no results.');
@@ -850,9 +945,9 @@ class CourtSearchPuppeteer {
         };
     }
 
-    async searchAndGetLatestCases(searchTerm, limit = null, maxPages = null) {
+    async searchAndGetLatestCases(searchTerm, limit = null, maxPages = null, tailSample = false) {
         console.log('[searchAndGetLatestCases] Starting search...');
-        const { results: allResults, searchMetadata } = await this.performSearchAcrossPages(searchTerm, maxPages);
+        const { results: allResults, searchMetadata } = await this.performSearchAcrossPages(searchTerm, maxPages, { tailSample });
 
         if (allResults.length === 0) {
             console.warn('[searchAndGetLatestCases] Search yielded no results.');

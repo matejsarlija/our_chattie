@@ -106,6 +106,20 @@ function computeRawScrapeLimit(caseLimit) {
     return null;
 }
 
+// Resolves the scan-depth dial into concrete scraper parameters.
+//   standard -> default forward window, no oldest-tail sample
+//   balanced -> default forward window + oldest-10 tail sample (default)
+//   full     -> scan every available page (tail subsumed)
+function resolveScanDepth(scanDepth) {
+    if (scanDepth === 'standard') {
+        return { scanDepth: 'standard', maxPagesScanned: null, tailSample: false };
+    }
+    if (scanDepth === 'full') {
+        return { scanDepth: 'full', maxPagesScanned: Infinity, tailSample: false };
+    }
+    return { scanDepth: 'balanced', maxPagesScanned: null, tailSample: true };
+}
+
 function parseCaseDateToTimestamp(rawDate) {
     if (!rawDate || typeof rawDate !== 'string') return null;
     const value = rawDate.trim();
@@ -1071,44 +1085,49 @@ function buildDiscoveryResult(casesToProcess, options = {}, progressCallback) {
 
 function resolveAnalysisArgs(caseLimitOrOptions, maybeProgressCallback) {
     if (typeof caseLimitOrOptions === 'function') {
+        const depth = resolveScanDepth('balanced');
         return {
             caseLimit: DEFAULT_CASE_LIMIT,
             scrapeLimit: computeRawScrapeLimit(DEFAULT_CASE_LIMIT),
             enableVisualizer: true,
+            ...depth,
             progressCallback: caseLimitOrOptions,
         };
     }
 
     if (typeof caseLimitOrOptions === 'number' || typeof caseLimitOrOptions === 'string') {
         const caseLimit = clampCaseLimit(caseLimitOrOptions);
+        const depth = resolveScanDepth('balanced');
         return {
             caseLimit,
             scrapeLimit: computeRawScrapeLimit(caseLimit),
             enableVisualizer: true,
+            ...depth,
             progressCallback: maybeProgressCallback,
         };
     }
 
     if (caseLimitOrOptions && typeof caseLimitOrOptions === 'object') {
         const caseLimit = clampCaseLimit(caseLimitOrOptions.caseLimit);
+        const depth = resolveScanDepth(caseLimitOrOptions.scanDepth);
         return {
             caseLimit,
             scrapeLimit: computeRawScrapeLimit(caseLimit),
             enableVisualizer: caseLimitOrOptions.enableVisualizer !== false,
             query: caseLimitOrOptions.query || null,
             clusterExpansion: caseLimitOrOptions.clusterExpansion || null,
-            maxPagesScanned: Number.isFinite(caseLimitOrOptions.maxPagesScanned)
-                ? Math.max(1, caseLimitOrOptions.maxPagesScanned)
-                : null,
+            ...depth,
             progressCallback: maybeProgressCallback,
         };
     }
 
+    const depth = resolveScanDepth('balanced');
     return {
         caseLimit: DEFAULT_CASE_LIMIT,
         scrapeLimit: computeRawScrapeLimit(DEFAULT_CASE_LIMIT),
         enableVisualizer: true,
         query: null,
+        ...depth,
         progressCallback: maybeProgressCallback,
     };
 }
@@ -1173,7 +1192,12 @@ async function runCourtAnalysis(searchTerm, caseLimitOrOptions, progressCallback
         });
         callback?.({ step: 'discovering', progress: 10, message: 'Pretražujem sudske zapise za nedavne objave...' });
         await automator.init();
-        const scrapeResult = await automator.searchAndGetLatestCasesWithDocuments(searchTerm, resolved.scrapeLimit);
+        const scrapeResult = await automator.searchAndGetLatestCasesWithDocuments(
+            searchTerm,
+            resolved.scrapeLimit,
+            resolved.maxPagesScanned,
+            resolved.tailSample
+        );
         const { casesToProcess, discoveryMetadata } = normalizeScraperResult(scrapeResult);
         
         if (!casesToProcess || casesToProcess.length === 0) {
@@ -1220,7 +1244,7 @@ async function runCourtDiscovery(searchTerm, caseLimitOrOptions, progressCallbac
     try {
         callback?.({ step: 'discovering', progress: 10, message: 'Pretražujem sudske zapise za nedavne objave...' });
         await automator.init();
-        const scrapeResult = await automator.searchAndGetLatestCases(searchTerm, null, resolved.maxPagesScanned);
+        const scrapeResult = await automator.searchAndGetLatestCases(searchTerm, null, resolved.maxPagesScanned, resolved.tailSample);
         const { casesToProcess, discoveryMetadata } = normalizeScraperResult(scrapeResult);
 
         const expandedResolved = await resolveAutoExpansion(automator, casesToProcess, {
@@ -1255,7 +1279,7 @@ async function runCourtAnalysisWithExistingAutomator(searchTerm, caseLimitOrOpti
     try {
         // 1. Use the existing automator to scrape (no init/close needed)
         callback?.({ step: 'discovering', progress: 10, message: 'Pretražujem sudske zapise za nedavne objave...' });
-        const scrapeResult = await existingAutomator.searchAndGetLatestCasesWithDocuments(searchTerm, resolved.scrapeLimit, resolved.maxPagesScanned);
+        const scrapeResult = await existingAutomator.searchAndGetLatestCasesWithDocuments(searchTerm, resolved.scrapeLimit, resolved.maxPagesScanned, resolved.tailSample);
         const { casesToProcess, discoveryMetadata } = normalizeScraperResult(scrapeResult);
 
         if (!casesToProcess || casesToProcess.length === 0) {

@@ -7,6 +7,8 @@ const MAX_CASE_LIMIT = 10;
 const DEFAULT_CLUSTER_EXPANSION_PASSES = 2;
 const MIN_CLUSTER_EXPANSION_PASSES = 0;
 const MAX_CLUSTER_EXPANSION_PASSES = 2;
+const SCAN_DEPTHS = ['standard', 'balanced', 'full'];
+const DEFAULT_SCAN_DEPTH = 'balanced';
 
 function createBadRequest(message) {
   const err = new Error(message);
@@ -61,6 +63,20 @@ function coerceClusterExpansion(value) {
   return { maxPasses: clamped };
 }
 
+// Threads the search scan-depth knob (dial) through the API route. One of
+// `standard` (default window only), `balanced` (default window + oldest-10 tail,
+// the default), or `full` (scan every available page).
+function coerceScanDepth(value) {
+  if (value === undefined || value === null || value === '') {
+    return DEFAULT_SCAN_DEPTH;
+  }
+  const normalized = String(value).trim().toLowerCase();
+  if (!SCAN_DEPTHS.includes(normalized)) {
+    throw createBadRequest(`Invalid options.scanDepth. Allowed values: ${SCAN_DEPTHS.join(', ')}.`);
+  }
+  return normalized;
+}
+
 function parseCourtAnalysisRequest(body) {
   const payload = body && typeof body === 'object' ? body : {};
   const queryPayload = payload.query && typeof payload.query === 'object' ? payload.query : null;
@@ -102,6 +118,7 @@ function parseCourtAnalysisRequest(body) {
     options: {
       caseLimit: coerceCaseLimit(optionsPayload.caseLimit),
       clusterExpansion: coerceClusterExpansion(optionsPayload.clusterExpansion),
+      scanDepth: coerceScanDepth(optionsPayload.scanDepth),
     },
   };
 }
@@ -114,5 +131,7 @@ module.exports = {
   DEFAULT_CLUSTER_EXPANSION_PASSES,
   MIN_CLUSTER_EXPANSION_PASSES,
   MAX_CLUSTER_EXPANSION_PASSES,
+  SCAN_DEPTHS,
+  DEFAULT_SCAN_DEPTH,
   ALLOWED_QUERY_TYPES,
 };

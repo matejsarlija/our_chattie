@@ -120,7 +120,7 @@ describe('runCourtAnalysis pipeline (deterministic)', () => {
         const progress = jest.fn();
         const result = await runCourtAnalysis('66124057408', { caseLimit: 3, enableVisualizer: false }, progress);
 
-        expect(mockSearchAndGetLatestCasesWithDocuments).toHaveBeenCalledWith('66124057408', null);
+        expect(mockSearchAndGetLatestCasesWithDocuments).toHaveBeenCalledWith('66124057408', null, null, true);
         expect(result.discoverySummary.capturedDistinctCaseCount).toBe(4);
         expect(result.discoverySummary.recommendedPrimaryClusterId).toBe('C1');
         expect(result.discoverySummary.secondaryClusterIds).toEqual(['C2', 'C3', 'C4']);
@@ -186,7 +186,7 @@ describe('runCourtAnalysis pipeline (deterministic)', () => {
 
         const result = await runCourtDiscovery('66124057408', { caseLimit: 2 }, jest.fn());
 
-        expect(mockSearchAndGetLatestCases).toHaveBeenCalledWith('66124057408', null, null);
+        expect(mockSearchAndGetLatestCases).toHaveBeenCalledWith('66124057408', null, null, true);
         expect(result.discoverySummary.totalResults).toBe(12);
         expect(result.discoverySummary.totalPages).toBe(3);
         expect(result.discoverySummary.rawEntryCount).toBe(4);
