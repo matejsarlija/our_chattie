@@ -812,31 +812,15 @@ describe('AnalysisRunDetailPage metadata modules', () => {
     expect(screen.getByText(/doc3\.pdf/)).toBeInTheDocument();
   });
 
-  test('shows a complete state in the coverage banner when all documents were analyzed', () => {
+  test('renders the token usage summary from run.token_usage', () => {
     useAnalysisRunDetail.mockReturnValue({
       run: {
         id: 'run-1',
         status: 'done',
         oib: '12345678901',
         result_text: 'Rezultat',
-        result_json: {
-          processedCases: [
-            {
-              caseResult: { caseNumber: 'ST-700/2024' },
-              groupMetadata: { selectedForReasoning: true },
-              analysis: {
-                coverage: {
-                  analyzed: 2,
-                  failed: 0,
-                  total: 2,
-                  coverageRatio: 1,
-                  complete: true,
-                  failedFiles: [],
-                },
-              },
-            },
-          ],
-        },
+        result_json: { processedCases: [] },
+        token_usage: { inputTokens: 100, outputTokens: 40, totalTokens: 140, calls: 3 },
       },
       events: [],
       loading: false,
@@ -850,7 +834,34 @@ describe('AnalysisRunDetailPage metadata modules', () => {
 
     render(<AnalysisRunDetailPage />);
 
-    expect(screen.getByText('Pokrivenost analize dokumenata')).toBeInTheDocument();
-    expect(screen.getByText('Kompletno')).toBeInTheDocument();
+    expect(screen.getByText('Potrošnja tokena')).toBeInTheDocument();
+    expect(screen.getByText('100')).toBeInTheDocument();
+    expect(screen.getByText('40')).toBeInTheDocument();
+    expect(screen.getByText('140')).toBeInTheDocument();
+    expect(screen.getByText(/3 poziva/)).toBeInTheDocument();
+  });
+
+  test('hides the token usage summary when no usage is present', () => {
+    useAnalysisRunDetail.mockReturnValue({
+      run: {
+        id: 'run-1',
+        status: 'done',
+        oib: '12345678901',
+        result_text: 'Rezultat',
+        result_json: { processedCases: [] },
+      },
+      events: [],
+      loading: false,
+      eventsLoading: false,
+      error: '',
+      isRunning: false,
+      connectionMode: 'idle',
+      lastUpdatedAt: '2026-02-27T12:00:00.000Z',
+      refresh: jest.fn(),
+    });
+
+    render(<AnalysisRunDetailPage />);
+
+    expect(screen.queryByText('Potrošnja tokena')).not.toBeInTheDocument();
   });
 });

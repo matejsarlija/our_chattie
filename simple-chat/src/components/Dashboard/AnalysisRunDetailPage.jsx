@@ -8,6 +8,7 @@ import RunProgressStepper from './RunProgressStepper';
 import RunEventTimeline from './RunEventTimeline';
 import AnalysisReportAnnex from './AnalysisReportAnnex';
 import AnalysisCoverageBanner from './AnalysisCoverageBanner';
+import AnalysisUsageSummary from './AnalysisUsageSummary';
 import SecondaryClustersSection from './SecondaryClustersSection';
 import DashboardShell from './DashboardShell';
 import { useAnalysisRunDetail } from '../../hooks/useAnalysisRunDetail';
@@ -113,6 +114,7 @@ export default function AnalysisRunDetailPage() {
     return [];
   }, [report?.open_questions, report?.openQuestions]);
   const resultMarkdown = useMemo(() => run?.result_text || '', [run?.result_text]);
+  const usage = useMemo(() => run?.token_usage || parsedResult?.usage || null, [run?.token_usage, parsedResult?.usage]);
   const coverage = useMemo(() => getAnalysisCoverage(parsedResult, run), [parsedResult, run]);
   const secondaryClusters = useMemo(() => getSecondaryClusters(parsedResult, run), [parsedResult, run]);
   const queryLabel = useMemo(() => getQueryLabel(run?.query_type), [run?.query_type]);
@@ -216,6 +218,8 @@ export default function AnalysisRunDetailPage() {
             <section className="mb-5">
               <RunProgressStepper stages={stages} isErrored={isErrored} />
             </section>
+
+            <AnalysisUsageSummary usage={usage} isRunning={isRunning} />
 
             <AnalysisCoverageBanner coverage={coverage} />
 
