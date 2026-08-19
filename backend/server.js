@@ -145,6 +145,28 @@ async function startServer() {
         const safeProgress = async (event) => {
           const normalizedEvent = normalizeAnalysisProgressEvent(event);
           progressCallback(normalizedEvent);
+
+          const isUsageUpdate = Boolean(
+            normalizedEvent.usage
+            && typeof normalizedEvent.usage === 'object'
+            && normalizedEvent.message == null
+            && normalizedEvent.data == null
+          );
+
+          if (isUsageUpdate) {
+            // Token-usage snapshots update the run record only — they must not
+            // create timeline events or advance the stepper.
+            try {
+              await analysisStore.updateAnalysisRunUsage({
+                analysisId: runId,
+                usage: normalizedEvent.usage,
+              });
+            } catch (err) {
+              console.error('[Analysis Runs] Failed to persist token usage:', err.message);
+            }
+            return;
+          }
+
           try {
             await analysisStore.appendAnalysisEvent({
               analysisId: runId,

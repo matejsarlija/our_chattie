@@ -24,7 +24,10 @@ async function generateClusterReport(clusterEvidencePackage, options = {}) {
         claims: Array.isArray(reasoningEvidence?.claims) ? reasoningEvidence.claims.length : 0,
     });
 
-    const report = await synthesizeReport(reasoningEvidence);
+    const report = await synthesizeReport(reasoningEvidence, {
+        tracker: options.tracker,
+        onUsage: options.onUsage,
+    });
     logger.info('reportService.synthesize', 'Report synthesized', {
         findings: Array.isArray(report?.findings) ? report.findings.length : 0,
     });
@@ -35,7 +38,10 @@ async function generateClusterReport(clusterEvidencePackage, options = {}) {
         message: 'Provjeravam nalaze prema dokazima...'
     });
 
-    const verifiedReport = await verifyReport(report, reasoningEvidence);
+    const verifiedReport = await verifyReport(report, reasoningEvidence, {
+        tracker: options.tracker,
+        onUsage: options.onUsage,
+    });
     logger.info('reportService.verify', 'Report verified', {
         findings: Array.isArray(verifiedReport?.findings) ? verifiedReport.findings.length : 0,
         verified: Array.isArray(verifiedReport?.verifiedFindings) ? verifiedReport.verifiedFindings.length : 0,

@@ -43,7 +43,8 @@ function buildCourtAnalysisPayload(finalResult) {
             ? finalResult.secondaryClusters
             : [],
         clusterEvidencePackage: finalResult?.clusterEvidencePackage || null,
-        report: finalResult?.report || null
+        report: finalResult?.report || null,
+        usage: finalResult?.usage || null
     };
 }
 

@@ -96,6 +96,7 @@ function createLocalStore(options = {}) {
         query_value: queryValue || null,
         status,
         result_format: 'markdown',
+        token_usage: null,
         created_at: nowIso(),
         updated_at: nowIso(),
       };
@@ -131,6 +132,17 @@ function createLocalStore(options = {}) {
       writeEventsMap(eventsMap);
 
       return events[events.length - 1];
+    });
+  }
+
+  async function updateAnalysisRunUsage({ analysisId, usage }) {
+    return enqueue(() => {
+      const runs = readRuns();
+      const run = findRun(runs, analysisId);
+      run.token_usage = usage ?? null;
+      run.updated_at = nowIso();
+      writeRuns(runs);
+      return run;
     });
   }
 
@@ -228,6 +240,7 @@ function createLocalStore(options = {}) {
     appendAnalysisEvent,
     completeAnalysisRun,
     failAnalysisRun,
+    updateAnalysisRunUsage,
     listAnalysisRuns,
     getAnalysisRun,
     getAnalysisEvents,

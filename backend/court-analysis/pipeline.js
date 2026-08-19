@@ -2,6 +2,7 @@
 
 const CourtSearchPuppeteer = require('../scraper/courtSearchPuppeteer');
 const { DownloadDocumentsTool } = require('./agents/download-agent');
+const { ExtractArchiveTool } = require('./agents/extract-tool');
 // We will modify AnalyzeDocumentsTool, so we need to import it
 const { AnalyzeDocumentsTool, generateComparativeAnalysis } = require('./agents/analysis-agent');
 const { VisualizerTool } = require('./agents/visualizer-agent');
@@ -15,9 +16,9 @@ const { groupEntriesByCase } = require('./utils/grouping');
 const { normalizeCaseNumber } = require('./utils/caseNumber');
 const { buildClusterEvidencePackage, attachAnalysesToEvidencePackage } = require('./reasoning/evidencePackage');
 const { generateClusterReport } = require('./reasoning/reportService');
+const { createUsageTracker } = require('../helpers/geminiUsage');
 const fs = require('fs');
 const path = require('path');
-const AdmZip = require('adm-zip');
 const logger = require('../helpers/logger');
 
 /**
@@ -42,7 +43,8 @@ function buildEmptyPartialResult() {
         primaryCluster: null,
         secondaryClusters: [],
         clusterEvidencePackage: null,
-        report: null
+        report: null,
+        usage: null
     };
 }
 
@@ -1326,9 +1328,16 @@ async function processScrapedCases(casesToProcess, progressCallback, options = {
     let allFilesToCleanup = [];
     let lastStage = null;
 
+    const usageTracker = createUsageTracker();
     const stageAwareProgress = (event) => {
         if (event?.step) lastStage = event.step;
         progressCallback?.(event);
+    };
+    const emitUsage = (snapshot) => {
+        stageAwareProgress({
+            step: lastStage || 'reasoning',
+            usage: snapshot,
+        });
     };
 
     let partialResult = buildEmptyPartialResult();
@@ -1383,6 +1392,7 @@ async function processScrapedCases(casesToProcess, progressCallback, options = {
         });
 
         const downloadTool = new DownloadDocumentsTool();
+        const extractTool = new ExtractArchiveTool();
         const analyzeTool = new AnalyzeDocumentsTool();
 
         // Reason only over the selected primary cluster. Other clusters remain discovery outputs.
@@ -1424,17 +1434,12 @@ async function processScrapedCases(casesToProcess, progressCallback, options = {
             for (const file of downloadedFiles) {
                 extractedFilePaths.push(file.filePath);
                 if (path.extname(file.filePath).toLowerCase() === '.zip') {
-                    const zip = new AdmZip(file.filePath);
-                    const zipEntries = zip.getEntries();
                     const extractionDir = path.dirname(file.filePath);
-                    zipEntries.forEach((zipEntry) => {
-                        if (!zipEntry.isDirectory) {
-                            const extractedFilePath = path.join(extractionDir, zipEntry.entryName);
-                            zip.extractEntryTo(zipEntry.entryName, extractionDir, false, true);
-                            filesForAnalysis.push({ filePath: extractedFilePath, text: zipEntry.entryName, url: file.url });
-                            extractedFilePaths.push(extractedFilePath);
-                        }
-                    });
+                    const extractionResult = await extractTool._call({ filePath: file.filePath, destination: extractionDir });
+                    for (const extracted of (extractionResult.extractedFiles || [])) {
+                        filesForAnalysis.push({ filePath: extracted.filePath, text: extracted.entryName, url: file.url });
+                        extractedFilePaths.push(extracted.filePath);
+                    }
                 } else {
                     filesForAnalysis.push(file);
                 }
@@ -1473,7 +1478,7 @@ async function processScrapedCases(casesToProcess, progressCallback, options = {
 
             // 2c. Analyze THIS case's documents
             stageAwareProgress?.({ step: 'reasoning', message: `Analiziram ${filesForAnalysis.length} datoteka za predmet ${i + 1}...` });
-            const analysis = await analyzeTool._call({ files: filesForAnalysis, caseInfo: caseInfo, progressCallback: null });
+            const analysis = await analyzeTool._call({ files: filesForAnalysis, caseInfo: caseInfo, progressCallback: null, usageTracker, onUsage: emitUsage });
             logger.info('pipeline.processScrapedCases', 'Case analyzed', {
                 caseIndex: i + 1,
                 totalCases,
@@ -1524,10 +1529,12 @@ async function processScrapedCases(casesToProcess, progressCallback, options = {
         partialResult.clusterEvidencePackage = enrichedEvidencePackage;
 
         stageAwareProgress?.({ step: 'reasoning', progress: 85, message: 'Generiram usporednu analizu i zaključak...' });
-        let comparativeAnalysis = await generateComparativeAnalysis(allProcessedCases, { clusterEvidencePackage });
+        let comparativeAnalysis = await generateComparativeAnalysis(allProcessedCases, { clusterEvidencePackage, tracker: usageTracker, onUsage: emitUsage });
         partialResult.comparativeAnalysis = comparativeAnalysis;
         const report = await generateClusterReport(enrichedEvidencePackage, {
-            onStage: (event) => stageAwareProgress?.(event)
+            onStage: (event) => stageAwareProgress?.(event),
+            tracker: usageTracker,
+            onUsage: emitUsage
         });
         partialResult.report = report;
         logger.info('pipeline.processScrapedCases', 'Reasoning report generated', {
@@ -1542,7 +1549,9 @@ async function processScrapedCases(casesToProcess, progressCallback, options = {
             try {
                 const visualizerTool = new VisualizerTool();
                 const diagramCode = await visualizerTool._call(comparativeAnalysis, {
-                    moneyFlow: enrichedEvidencePackage?.moneyFlow || null
+                    moneyFlow: enrichedEvidencePackage?.moneyFlow || null,
+                    tracker: usageTracker,
+                    onUsage: emitUsage
                 });
                 if (diagramCode && diagramCode !== "Error generating diagram.") {
                     comparativeAnalysis += `\n\n${diagramCode}`;
@@ -1566,13 +1575,15 @@ async function processScrapedCases(casesToProcess, progressCallback, options = {
             primaryCluster,
             secondaryClusters,
             clusterEvidencePackage: enrichedEvidencePackage,
-            report
+            report,
+            usage: usageTracker.snapshot()
         };
 
     } catch (error) {
         // Re-throw wrapped with whatever partial results were accumulated before the
         // failing stage, so the API layer can persist discovery data + a transparent
         // error instead of discarding everything.
+        partialResult.usage = usageTracker.snapshot();
         throw new PartialAnalysisError(error.message, partialResult, { stage: lastStage });
     } finally {
         // The cleanup function needs to be available in the scope of this file.
