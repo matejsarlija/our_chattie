@@ -7,8 +7,8 @@ const { HumanMessage } = require("@langchain/core/messages");
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
-const pdfParse = require("pdf-parse");
 const mammoth = require("mammoth");
+const WordExtractor = require("word-extractor");
 const { splitTextIntoChunks } = require("../reasoning/chunker");
 
 const { GEMINI_MODEL, GEMINI_API_KEY } = require("../../helpers/geminiConfig");
@@ -19,10 +19,12 @@ const gemini = new ChatGoogleGenerativeAI({
 
 const pdfjsLib = require("pdfjs-dist/legacy/build/pdf.js");
 const { withGeminiRetry, withGeminiTimeout } = require("../../helpers/geminiRetry");
+const { trackGeminiInvoke } = require("../../helpers/geminiUsage");
 
-// 2. Explicitly set the path to the worker script for Node.js
+// Explicitly set the worker script path for Node.js. The legacy main-thread
+// build must be paired with the legacy worker (not the default build worker).
 pdfjsLib.GlobalWorkerOptions.workerSrc =
-    require.resolve("pdfjs-dist/build/pdf.worker.js");
+    require.resolve("pdfjs-dist/legacy/build/pdf.worker.js");
 
 const { createCanvas } = require("canvas");
 
@@ -128,17 +130,34 @@ function buildAnalysisInputText(text, caseInfo, file) {
 }
 
 async function extractTextFromFile(filePath) {
+    const lowerPath = String(filePath).toLowerCase();
     try {
-        if (filePath.endsWith(".pdf")) {
-            const dataBuffer = fs.readFileSync(filePath);
-            const data = await pdfParse(dataBuffer);
-            return data?.text || "";
+        if (lowerPath.endsWith(".pdf")) {
+            const data = new Uint8Array(fs.readFileSync(filePath));
+            const doc = await pdfjsLib.getDocument({ data }).promise;
+            const pageTexts = [];
+            for (let i = 1; i <= doc.numPages; i++) {
+                const page = await doc.getPage(i);
+                const content = await page.getTextContent();
+                const pageText = content.items
+                    .filter((item) => typeof item.str === "string")
+                    .map((item) => item.str)
+                    .join(" ");
+                pageTexts.push(pageText);
+            }
+            await doc.destroy();
+            return pageTexts.join("\n\n").trim();
         }
-        if (filePath.endsWith(".docx")) {
+        if (lowerPath.endsWith(".docx")) {
             const result = await mammoth.extractRawText({ path: filePath });
             return result.value;
         }
-        if (filePath.endsWith(".txt")) {
+        if (lowerPath.endsWith(".doc")) {
+            const extractor = new WordExtractor();
+            const doc = await extractor.extract(filePath);
+            return doc.getBody();
+        }
+        if (lowerPath.endsWith(".txt")) {
             return fs.readFileSync(filePath, "utf8");
         }
     } catch (error) {
@@ -163,7 +182,7 @@ async function extractTextFromFile(filePath) {
  * @param {string} filePath The path to the PDF file.
  * @returns {Promise<string>} The combined text from all pages.
  */
-async function extractTextViaOCR(filePath, progressCallback) {
+async function extractTextViaOCR(filePath, progressCallback, options = {}) {
     console.log(
         `[OCR] Attempting OCR for ${path.basename(filePath)} with pdf.js`,
     );
@@ -171,7 +190,7 @@ async function extractTextViaOCR(filePath, progressCallback) {
 
     try {
         const data = new Uint8Array(fs.readFileSync(filePath));
-        const pdf = await pdfjsLib.getDocument(data).promise;
+        const pdf = await pdfjsLib.getDocument({ data }).promise;
         const numPages = pdf.numPages;
 
         for (let i = 1; i <= numPages; i++) {
@@ -200,7 +219,7 @@ async function extractTextViaOCR(filePath, progressCallback) {
             });
 
             const response = await withGeminiRetry(
-                () => withGeminiTimeout((signal) => gemini.invoke([message], { signal })),
+                () => withGeminiTimeout((signal) => trackGeminiInvoke(gemini, [message], { signal, tracker: options.tracker, onUsage: options.onUsage })),
                 {
                     onRetry: ({ attempt, delayMs }) => {
                         progressCallback &&
@@ -233,7 +252,7 @@ class AnalyzeDocumentsTool extends Tool {
     }
 
     async _call(input) {
-        const { files, caseInfo, progressCallback } = input;
+        const { files, caseInfo, progressCallback, usageTracker, onUsage } = input;
 
         const analyzeFile = async (file) => {
             try {
@@ -247,7 +266,7 @@ class AnalyzeDocumentsTool extends Tool {
                     console.log(
                         `[Analyzer] Standard text extraction failed for ${path.basename(file.filePath)}. Falling back to OCR.`,
                     );
-                    text = await extractTextViaOCR(file.filePath, progressCallback);
+                    text = await extractTextViaOCR(file.filePath, progressCallback, { tracker: usageTracker, onUsage });
                 }
 
                 // Final check: if still no text, return error, file failed analysis
@@ -300,7 +319,7 @@ class AnalyzeDocumentsTool extends Tool {
                 Provide ONLY the json object and nothing else. Text:\n\n${analysisInput.analysisText}`;
 
                 const response = await withGeminiRetry(
-                    () => withGeminiTimeout((signal) => gemini.invoke(prompt, { signal })),
+                    () => withGeminiTimeout((signal) => trackGeminiInvoke(gemini, prompt, { signal, tracker: usageTracker, onUsage })),
                     {
                         onRetry: ({ attempt, delayMs }) => {
                             progressCallback &&
@@ -482,7 +501,7 @@ function buildAnalysisCoverage(individualAnalyses) {
  * @param {Array<object>} allProcessedCases - The array of fully processed cases from the pipeline.
  * @returns {Promise<string>} The final comparative analysis text.
  */
-async function generateComparativeAnalysis(allProcessedCases) {
+async function generateComparativeAnalysis(allProcessedCases, options = {}) {
     if (!allProcessedCases || allProcessedCases.length === 0) {
         return "Nema dostupnih podataka za generiranje analize.";
     }
@@ -507,7 +526,7 @@ async function generateComparativeAnalysis(allProcessedCases) {
         //const prompt = `This is the only recent court entry found. Synthesize the following document summaries into a single, coherent, and detailed overview IN CROATIAN. Explain the significance of this entry in the context of the case. Based on the information, what are the likely next steps for the parties involved?\n\nSUMMARIES:\n${successfulSummaries}`;
 
         try {
-            const response = await withGeminiRetry(() => withGeminiTimeout((signal) => gemini.invoke(prompt, { signal })));
+            const response = await withGeminiRetry(() => withGeminiTimeout((signal) => trackGeminiInvoke(gemini, prompt, { signal, tracker: options.tracker, onUsage: options.onUsage })));
             return response.content;
         } catch (err) {
             console.error("Failed to generate summary for single case:", err);
@@ -547,7 +566,7 @@ async function generateComparativeAnalysis(allProcessedCases) {
     //console.log("Comparative context contains the following data:", comparativeContext);
 
     try {
-        const response = await withGeminiRetry(() => withGeminiTimeout((signal) => gemini.invoke(prompt, { signal })));
+        const response = await withGeminiRetry(() => withGeminiTimeout((signal) => trackGeminiInvoke(gemini, prompt, { signal, tracker: options.tracker, onUsage: options.onUsage })));
         return response.content;
     } catch (err) {
         console.error("Failed to generate comparative analysis:", err);

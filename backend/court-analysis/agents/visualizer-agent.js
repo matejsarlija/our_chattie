@@ -3,6 +3,7 @@ require("dotenv").config();
 const { Tool } = require("@langchain/core/tools");
 const { ChatGoogleGenerativeAI } = require("@langchain/google-genai");
 const { withGeminiRetry, withGeminiTimeout } = require("../../helpers/geminiRetry");
+const { trackGeminiInvoke } = require("../../helpers/geminiUsage");
 const { GEMINI_MODEL, GEMINI_API_KEY } = require("../../helpers/geminiConfig");
 
 const gemini = new ChatGoogleGenerativeAI({
@@ -73,7 +74,7 @@ class VisualizerTool extends Tool {
         `;
 
         try {
-            const response = await withGeminiRetry(() => withGeminiTimeout((signal) => gemini.invoke(prompt, { signal })));
+            const response = await withGeminiRetry(() => withGeminiTimeout((signal) => trackGeminiInvoke(gemini, prompt, { signal, tracker: options.tracker, onUsage: options.onUsage })));
             console.log("[VisualizerTool] Raw Mermaid Output:\n", response.content);
             return response.content;
         } catch (err) {

@@ -1,6 +1,7 @@
 require("dotenv").config();
 const { ChatGoogleGenerativeAI } = require("@langchain/google-genai");
 const { withGeminiRetry, withGeminiTimeout } = require("../../helpers/geminiRetry");
+const { trackGeminiInvoke } = require("../../helpers/geminiUsage");
 const { GEMINI_MODEL, GEMINI_API_KEY } = require("../../helpers/geminiConfig");
 const { isPoorDocumentCoverage, coverageOpenQuestion, applyCoverageConfidenceGuard } = require('./coverageGuard');
 
@@ -27,7 +28,7 @@ function normalizeFindingsForVerification(report) {
     }));
 }
 
-async function verifyReport(report, evidencePackage) {
+async function verifyReport(report, evidencePackage, options = {}) {
     const findingsToVerify = normalizeFindingsForVerification(report);
 
     if (!report || findingsToVerify.length === 0) {
@@ -75,7 +76,7 @@ async function verifyReport(report, evidencePackage) {
     `;
 
     try {
-        const response = await withGeminiRetry(() => withGeminiTimeout((signal) => gemini.invoke(prompt, { signal })));
+        const response = await withGeminiRetry(() => withGeminiTimeout((signal) => trackGeminiInvoke(gemini, prompt, { signal, tracker: options.tracker, onUsage: options.onUsage })));
         const cleanJson = response.content.replace(/```json\n?|```/g, "").trim();
         const verificationResults = JSON.parse(cleanJson);
 

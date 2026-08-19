@@ -1,6 +1,7 @@
 require("dotenv").config();
 const { ChatGoogleGenerativeAI } = require("@langchain/google-genai");
 const { withGeminiRetry, withGeminiTimeout } = require("../../helpers/geminiRetry");
+const { trackGeminiInvoke } = require("../../helpers/geminiUsage");
 const { GEMINI_MODEL, GEMINI_API_KEY } = require("../../helpers/geminiConfig");
 const { SCHEMA_VERSION, validateReport } = require("./schema");
 const { validateClusterEvidencePackage } = require("./evidencePackage");
@@ -22,9 +23,12 @@ const gemini = new ChatGoogleGenerativeAI({
  * @param {Array} evidencePackage.timeline
  * @param {Array} evidencePackage.claims
  * @param {object} evidencePackage.meta
+ * @param {object} [options]
+ * @param {object} [options.tracker] Cumulative usage tracker from geminiUsage.
+ * @param {(snapshot: object) => void} [options.onUsage] Fired after each Gemini call.
  * @returns {Promise<object>} The structured report.
  */
-async function synthesizeReport(evidencePackage) {
+async function synthesizeReport(evidencePackage, options = {}) {
     if (!evidencePackage) {
         return createEmptyReport("Nema dovoljno dokaza za generiranje izvješća.");
     }
@@ -80,7 +84,7 @@ async function synthesizeReport(evidencePackage) {
     `;
 
     try {
-        const response = await withGeminiRetry(() => withGeminiTimeout((signal) => gemini.invoke(prompt, { signal })));
+        const response = await withGeminiRetry(() => withGeminiTimeout((signal) => trackGeminiInvoke(gemini, prompt, { signal, tracker: options.tracker, onUsage: options.onUsage })));
         const cleanJson = response.content.replace(/```json\n?|```/g, "").trim();
         
         let parsed;
