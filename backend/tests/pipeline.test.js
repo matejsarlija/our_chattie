@@ -157,6 +157,8 @@ describe('runCourtAnalysis pipeline (deterministic)', () => {
                 clusterId: result.clusterEvidencePackage.clusterId,
                 retrieval: expect.any(Object),
             }),
+        }), expect.objectContaining({
+            tracker: expect.any(Object),
         }));
         expect(result.report).toEqual(expect.objectContaining({
             schemaVersion: '1.0.0',

@@ -151,7 +151,8 @@ describe('buildCourtAnalysisPayload', () => {
             primaryCluster: null,
             secondaryClusters: [],
             clusterEvidencePackage: null,
-            report: null
+            report: null,
+            usage: null
         });
     });
 

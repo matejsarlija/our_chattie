@@ -105,6 +105,6 @@ describe('reasoning reportService', () => {
             })
         ]));
         expect(onStage).toHaveBeenCalledWith(expect.objectContaining({ step: 'verifying' }));
-        expect(mockVerifyReport).toHaveBeenCalledWith(synthesizedReport, synthesisEvidence);
+        expect(mockVerifyReport).toHaveBeenCalledWith(synthesizedReport, synthesisEvidence, expect.any(Object));
     });
 });

@@ -30,11 +30,31 @@ describe('analysisStream helpers', () => {
       completed_at: null,
       result_text: null,
       error: null,
+      token_usage: null,
     };
 
     expect(didRunChange(base, { ...base })).toBe(false);
     expect(didRunChange(base, { ...base, status: 'done' })).toBe(true);
     expect(didRunChange(base, { ...base, result_text: 'result' })).toBe(true);
+  });
+
+  test('detects token_usage changes for live usage updates', () => {
+    const base = {
+      status: 'running',
+      updated_at: '2025-01-01T00:00:00.000Z',
+      completed_at: null,
+      result_text: null,
+      error: null,
+      token_usage: null,
+    };
+
+    const next = {
+      ...base,
+      token_usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15, calls: 1 },
+    };
+
+    expect(didRunChange(base, next)).toBe(true);
+    expect(didRunChange(next, { ...next })).toBe(false);
   });
 
   test('returns only unseen events', () => {
