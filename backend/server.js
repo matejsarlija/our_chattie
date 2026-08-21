@@ -175,7 +175,7 @@ async function startServer() {
               metadata: {
                 progress: normalizedEvent.progress || null,
                 hasData: Boolean(normalizedEvent.data),
-                ...(normalizedEvent.metadata?.originalStep ? { originalStep: normalizedEvent.metadata.originalStep } : {}),
+                ...(normalizedEvent.metadata || {}),
               },
             });
           } catch (err) {

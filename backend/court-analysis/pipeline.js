@@ -20,6 +20,7 @@ const { createUsageTracker } = require('../helpers/geminiUsage');
 const fs = require('fs');
 const path = require('path');
 const logger = require('../helpers/logger');
+const agentLog = require('../helpers/agentLog');
 
 /**
  * Error carrying whatever partial results were accumulated before a pipeline stage
@@ -1018,11 +1019,16 @@ async function executeClusterExpansionSearches(automator, discoveryResult, optio
 }
 
 function buildDiscoveryResult(casesToProcess, options = {}, progressCallback) {
+    // The initial discovery pass (expansion eligibility check) reuses this
+    // function; suppress its progress events there so the timeline does not
+    // receive duplicate grouping entries.
+    const emitProgress = options.emitProgress === false ? null : progressCallback;
+
     if (!casesToProcess || casesToProcess.length === 0) {
         throw new Error('Nije pronađen nijedan predmet za traženi pojam.');
     }
 
-    progressCallback?.({ step: 'grouping', progress: 15, message: 'Grupiram pronađene objave po predmetima...' });
+    emitProgress?.({ step: 'grouping', progress: 15, message: 'Grupiram pronađene objave po predmetima...' });
 
     const entriesForGrouping = casesToProcess.map(normalizeEntryForGrouping);
     const initialAllClusters = groupEntriesByCase(entriesForGrouping);
@@ -1069,11 +1075,25 @@ function buildDiscoveryResult(casesToProcess, options = {}, progressCallback) {
         expansionApplied: Boolean(expansionResult.expansion),
     });
 
-    progressCallback?.({
+    emitProgress?.({
         step: 'grouping',
         progress: 20,
         message: `Pronađeno ${clusters.length} jedinstvenih predmeta (odabrano od ${allClusters.length} grupa iz ${casesToProcess.length} objava) za analizu.`
     });
+
+    const primaryClusterSummary = discoverySummary.clusters.find((cluster) => cluster.clusterId === primaryClusterId) || null;
+    if (primaryClusterSummary) {
+        const IDENTITY_LABELS_HR = {
+            consistent: 'konzistentan',
+            unresolved: 'nepotvrđen',
+            ambiguous: 'dvosmislen',
+        };
+        emitProgress?.({
+            step: 'grouping',
+            progress: 22,
+            message: `Glavni predmet: ${primaryClusterSummary.primaryCaseNumber} — ${primaryClusterSummary.entryCount} objava, raspon ${primaryClusterSummary.entryDateSpanDays} dana, identitet: ${IDENTITY_LABELS_HR[primaryClusterSummary.identityConsistency] || primaryClusterSummary.identityConsistency}.`
+        });
+    }
 
     return {
         allClusters,
@@ -1151,7 +1171,8 @@ async function resolveAutoExpansion(automator, casesToProcess, resolved, progres
         caseLimit: resolved.caseLimit,
         query: resolved.query || null,
         clusterExpansion: null,
-        discoveryMetadata: resolved.discoveryMetadata || null
+        discoveryMetadata: resolved.discoveryMetadata || null,
+        emitProgress: false
     }, progressCallback);
 
     const expansionResult = await executeClusterExpansionSearches(automator, initialDiscovery, {
@@ -1201,7 +1222,13 @@ async function runCourtAnalysis(searchTerm, caseLimitOrOptions, progressCallback
             resolved.tailSample
         );
         const { casesToProcess, discoveryMetadata } = normalizeScraperResult(scrapeResult);
-        
+
+        callback?.({
+            step: 'discovering',
+            progress: 12,
+            message: `Pronađeno ${casesToProcess.length} objava na ${discoveryMetadata?.pagesScanned ?? '?'} stranica${discoveryMetadata?.hasNextPage ? ' (postoji više stranica)' : ''}.`
+        });
+
         if (!casesToProcess || casesToProcess.length === 0) {
             throw new Error('Nije pronađen nijedan predmet s dostupnim dokumentima za traženi pojam.');
         }
@@ -1419,7 +1446,7 @@ async function processScrapedCases(casesToProcess, progressCallback, options = {
                 try {
                     caseInfo.participants = await enrichParticipants(caseInfo.participants);
                 } catch (err) {
-                    console.error('Enrichment failed gracefully:', err.message);
+                    agentLog.error('Enrichment failed gracefully:', err.message);
                 }
             }
             // -----------------------
@@ -1427,6 +1454,7 @@ async function processScrapedCases(casesToProcess, progressCallback, options = {
             // 2a. Download
             stageAwareProgress?.({ step: 'downloading', message: `Preuzimam arhivu za predmet ${i + 1} (${documentLinks.length} linkova)...` });
             downloadedFiles = await downloadTool._call({ documentLinks, progressCallback: null });
+            stageAwareProgress?.({ step: 'downloading', message: `Preuzeto ${downloadedFiles.length}/${documentLinks.length} datoteka za predmet ${i + 1}.` });
 
             // 2b. Unzip
             stageAwareProgress?.({ step: 'extracting', message: `Raspakiram datoteke za predmet ${i + 1}...` });
@@ -1447,8 +1475,21 @@ async function processScrapedCases(casesToProcess, progressCallback, options = {
             
             allFilesToCleanup.push(...extractedFilePaths);
 
+            const fileTypeCounts = filesForAnalysis.reduce((counts, file) => {
+                const ext = (path.extname(file.filePath || '').toLowerCase().replace('.', '')) || 'ostalo';
+                counts[ext] = (counts[ext] || 0) + 1;
+                return counts;
+            }, {});
+            const typeBreakdown = Object.entries(fileTypeCounts)
+                .map(([ext, count]) => `${ext.toUpperCase()}: ${count}`)
+                .join(', ');
+            stageAwareProgress?.({
+                step: 'extracting',
+                message: `Za analizu pripremljeno ${filesForAnalysis.length} datoteka${typeBreakdown ? ` (${typeBreakdown})` : ''}.`
+            });
+
             if (filesForAnalysis.length === 0) {
-                 console.warn(`No files to analyze for case ${caseInfo.title}. Skipping analysis.`);
+                 agentLog.warn(`No files to analyze for case ${caseInfo.title}. Skipping analysis.`);
                  allProcessedCases.push({
                     caseResult: caseInfo,
                     analysis: { individualAnalyses: [], finalSummary: "Nema dokumenata za analizu." },
@@ -1478,7 +1519,12 @@ async function processScrapedCases(casesToProcess, progressCallback, options = {
 
             // 2c. Analyze THIS case's documents
             stageAwareProgress?.({ step: 'reasoning', message: `Analiziram ${filesForAnalysis.length} datoteka za predmet ${i + 1}...` });
-            const analysis = await analyzeTool._call({ files: filesForAnalysis, caseInfo: caseInfo, progressCallback: null, usageTracker, onUsage: emitUsage });
+            const analysis = await analyzeTool._call({ files: filesForAnalysis, caseInfo: caseInfo, progressCallback: stageAwareProgress, usageTracker, onUsage: emitUsage });
+            const analysisCoverage = analysis?.coverage || {};
+            stageAwareProgress?.({
+                step: 'reasoning',
+                message: `AI analiza predmeta ${i + 1} dovršena: ${analysisCoverage.analyzed ?? 0} uspješno, ${analysisCoverage.failed ?? 0} neuspjelo od ${analysisCoverage.total ?? filesForAnalysis.length} datoteka.`
+            });
             logger.info('pipeline.processScrapedCases', 'Case analyzed', {
                 caseIndex: i + 1,
                 totalCases,
@@ -1557,7 +1603,7 @@ async function processScrapedCases(casesToProcess, progressCallback, options = {
                     comparativeAnalysis += `\n\n${diagramCode}`;
                 }
             } catch (err) {
-                console.error('Visualization failed gracefully:', err.message);
+                agentLog.error('Visualization failed gracefully:', err.message);
             }
         }
         // -------------------------
@@ -1599,7 +1645,7 @@ async function cleanupFiles(filePaths) {
                 await fs.promises.unlink(filePath);
             }
         } catch (err) {
-            console.warn(`Failed to delete temporary file ${filePath}: ${err.message}`);
+            agentLog.warn(`Failed to delete temporary file ${filePath}: ${err.message}`);
         }
     }
 }
