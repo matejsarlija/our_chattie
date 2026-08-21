@@ -30,10 +30,11 @@
     "express-rate-limit": "^6.11.2",
     "helmet": "^7.2.0",
     "mammoth": "^1.9.1",
+    "mime-types": "^2.1.35",
     "p-queue": "^7.3.0",
-    "pdf-parse": "^1.1.1",
-    "pdfjs-dist": "^2.16.105",
-    "puppeteer-core": "^24.11.2"
+    "pdfjs-dist": "^3.11.174",
+    "puppeteer-core": "^24.11.2",
+    "word-extractor": "^1.0.4"
   },
   "devDependencies": {
     "docx": "^9.5.1",

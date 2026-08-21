@@ -10,6 +10,7 @@ const path = require("path");
 const mammoth = require("mammoth");
 const WordExtractor = require("word-extractor");
 const { splitTextIntoChunks } = require("../reasoning/chunker");
+const agentLog = require("../../helpers/agentLog");
 
 const { GEMINI_MODEL, GEMINI_API_KEY } = require("../../helpers/geminiConfig");
 const gemini = new ChatGoogleGenerativeAI({
@@ -25,6 +26,22 @@ const { trackGeminiInvoke } = require("../../helpers/geminiUsage");
 // build must be paired with the legacy worker (not the default build worker).
 pdfjsLib.GlobalWorkerOptions.workerSrc =
     require.resolve("pdfjs-dist/legacy/build/pdf.worker.js");
+
+// Point pdf.js at its bundled standard_fonts directory. Without this, every
+// document referencing a non-embedded standard font (LiberationSans, FoxitSerif,
+// ...) logs a fetch warning and can degrade glyph-to-unicode mapping during
+// getTextContent(). In Node the legacy build reads baseUrl from disk
+// (NodeStandardFontDataFactory -> fs.readFile), so a filesystem path + separator
+// is the correct format.
+const PDFJS_STANDARD_FONT_DATA_URL = (() => {
+    const fontsDir = path.join(
+        path.dirname(require.resolve("pdfjs-dist/legacy/build/pdf.js")),
+        "..",
+        "..",
+        "standard_fonts",
+    );
+    return fs.existsSync(fontsDir) ? fontsDir + path.sep : null;
+})();
 
 const { createCanvas } = require("canvas");
 
@@ -44,6 +61,14 @@ const ANALYSIS_FILE_CONCURRENCY = (() => {
 const ANALYSIS_FILE_DELAY_MS = (() => {
     const raw = Number(process.env.ANALYSIS_FILE_DELAY_MS);
     return Number.isFinite(raw) && raw >= 0 ? raw : 0;
+})();
+
+// Liveness signal emitted while a document batch is being processed. Long
+// batches used to produce minutes of silence; the heartbeat carries live
+// counts so the UI can show progress and detect stalls.
+const ANALYSIS_HEARTBEAT_MS = (() => {
+    const raw = Number(process.env.ANALYSIS_HEARTBEAT_MS);
+    return Number.isFinite(raw) && raw >= 1000 ? raw : 45000;
 })();
 
 function buildRetrievalTerms(caseInfo = {}, file = {}) {
@@ -129,12 +154,53 @@ function buildAnalysisInputText(text, caseInfo, file) {
     };
 }
 
+/**
+ * Stable reason codes attached to failed extractions so callers (coverage
+ * metadata, UI) can distinguish "scanned document" from "corrupt file" from
+ * "OCR timed out" instead of collapsing everything into an empty string.
+ */
+const EXTRACTION_ERROR_CODES = {
+    FILE_NOT_FOUND: "file-not-found",
+    UNSUPPORTED_TYPE: "unsupported-type",
+    PDF_PARSE_FAILED: "pdf-parse-failed",
+    DOCX_PARSE_FAILED: "docx-parse-failed",
+    DOC_PARSE_FAILED: "doc-parse-failed",
+    TXT_READ_FAILED: "txt-read-failed",
+    OCR_TIMEOUT: "ocr-timeout",
+    OCR_FAILED: "ocr-failed",
+};
+
+function buildExtractionResult(overrides = {}) {
+    return {
+        text: "",
+        method: null,
+        pages: 0,
+        truncated: false,
+        error: null,
+        ...overrides,
+    };
+}
+
+/**
+ * Extracts raw text from a file based on its extension.
+ * @param {string} filePath
+ * @returns {Promise<{text: string, method: string|null, pages: number, truncated: boolean, error: string|null}>}
+ * Never rejects: failures are reported via `error` with `text: ""`.
+ */
 async function extractTextFromFile(filePath) {
     const lowerPath = String(filePath).toLowerCase();
+
+    if (!fs.existsSync(filePath)) {
+        return buildExtractionResult({ error: EXTRACTION_ERROR_CODES.FILE_NOT_FOUND });
+    }
+
     try {
         if (lowerPath.endsWith(".pdf")) {
             const data = new Uint8Array(fs.readFileSync(filePath));
-            const doc = await pdfjsLib.getDocument({ data }).promise;
+            const doc = await pdfjsLib.getDocument({
+                data,
+                standardFontDataUrl: PDFJS_STANDARD_FONT_DATA_URL,
+            }).promise;
             const pageTexts = [];
             for (let i = 1; i <= doc.numPages; i++) {
                 const page = await doc.getPage(i);
@@ -146,54 +212,98 @@ async function extractTextFromFile(filePath) {
                 pageTexts.push(pageText);
             }
             await doc.destroy();
-            return pageTexts.join("\n\n").trim();
+            return buildExtractionResult({
+                text: pageTexts.join("\n\n").trim(),
+                method: "pdf-text",
+                pages: pageTexts.length,
+            });
         }
         if (lowerPath.endsWith(".docx")) {
             const result = await mammoth.extractRawText({ path: filePath });
-            return result.value;
+            return buildExtractionResult({
+                text: result.value,
+                method: "docx",
+                pages: 1,
+            });
         }
         if (lowerPath.endsWith(".doc")) {
             const extractor = new WordExtractor();
             const doc = await extractor.extract(filePath);
-            return doc.getBody();
+            return buildExtractionResult({
+                text: doc.getBody(),
+                method: "doc",
+                pages: 1,
+            });
         }
         if (lowerPath.endsWith(".txt")) {
-            return fs.readFileSync(filePath, "utf8");
+            return buildExtractionResult({
+                text: fs.readFileSync(filePath, "utf8"),
+                method: "txt",
+                pages: 1,
+            });
         }
     } catch (error) {
-        console.error(
+        agentLog.error(
             `Failed to extract text from ${filePath}:`,
             error.message,
         );
-        return "";
+        let errorCode = EXTRACTION_ERROR_CODES.UNSUPPORTED_TYPE;
+        if (lowerPath.endsWith(".pdf")) errorCode = EXTRACTION_ERROR_CODES.PDF_PARSE_FAILED;
+        else if (lowerPath.endsWith(".docx")) errorCode = EXTRACTION_ERROR_CODES.DOCX_PARSE_FAILED;
+        else if (lowerPath.endsWith(".doc")) errorCode = EXTRACTION_ERROR_CODES.DOC_PARSE_FAILED;
+        else if (lowerPath.endsWith(".txt")) errorCode = EXTRACTION_ERROR_CODES.TXT_READ_FAILED;
+        return buildExtractionResult({ error: errorCode });
     }
-    return "";
+    return buildExtractionResult({ error: EXTRACTION_ERROR_CODES.UNSUPPORTED_TYPE });
 }
 
-// --- NEW OCR FALLBACK FUNCTION ---
+// --- OCR FALLBACK FUNCTION ---
+
 /**
- * Extracts text from an image-based PDF using Gemini directly.
- * @param {string} filePath The path to the PDF file.
- * @returns {Promise<string>} The combined text from all pages.
+ * Resolves the OCR page cap at call time so tests (and operators) can tune it
+ * via `OCR_MAX_PAGES` without reloading the module. A scanned 100-page PDF
+ * would otherwise trigger one Gemini vision call per page.
  */
+function resolveOcrMaxPages() {
+    const raw = Number.parseInt(process.env.OCR_MAX_PAGES, 10);
+    return Number.isFinite(raw) && raw >= 1 ? Math.floor(raw) : 5;
+}
+
+function isTimeoutLikeError(err) {
+    return /abort|timed out|timeout/i.test(String(err?.message || err || ""));
+}
+
 /**
  * Extracts text from an image-based PDF using pdf.js and Gemini Vision.
  * This method has NO external system dependencies like Ghostscript.
  * @param {string} filePath The path to the PDF file.
- * @returns {Promise<string>} The combined text from all pages.
+ * @param {function} [progressCallback] Receives per-page and retry progress events.
+ * @param {{ tracker?: object, onUsage?: function }} [options]
+ * @returns {Promise<{text: string, method: string|null, pages: number, truncated: boolean, error: string|null}>}
+ * Never rejects: failures are reported via `error` with `text: ""`.
  */
 async function extractTextViaOCR(filePath, progressCallback, options = {}) {
-    console.log(
+    agentLog.log(
         `[OCR] Attempting OCR for ${path.basename(filePath)} with pdf.js`,
     );
     let combinedText = "";
+    let pagesProcessed = 0;
 
     try {
         const data = new Uint8Array(fs.readFileSync(filePath));
-        const pdf = await pdfjsLib.getDocument({ data }).promise;
+        const pdf = await pdfjsLib.getDocument({
+            data,
+            standardFontDataUrl: PDFJS_STANDARD_FONT_DATA_URL,
+        }).promise;
         const numPages = pdf.numPages;
+        const maxPages = Math.min(numPages, resolveOcrMaxPages());
 
-        for (let i = 1; i <= numPages; i++) {
+        for (let i = 1; i <= maxPages; i++) {
+            progressCallback &&
+                progressCallback({
+                    step: "analyzing",
+                    message: `OCR: čitam stranicu ${i}/${maxPages} (${path.basename(filePath)})...`,
+                });
             const page = await pdf.getPage(i);
             const viewport = page.getViewport({ scale: 2.0 }); // Higher scale = higher resolution image
             const canvas = createCanvas(viewport.width, viewport.height);
@@ -231,16 +341,67 @@ async function extractTextViaOCR(filePath, progressCallback, options = {}) {
                 },
             );
             combinedText += response.content + "\n\n";
+            pagesProcessed = i;
         }
-    } catch (err) {
-        console.error(`[OCR] Failed during OCR process for ${filePath}:`, err);
-        return ""; // Return empty string on failure
-    }
 
-    console.log(
-        `[OCR] Successfully extracted ~${combinedText.length} characters.`,
-    );
-    return combinedText;
+        const truncated = numPages > maxPages;
+        if (truncated) {
+            agentLog.log(
+                `[OCR] Page cap reached: processed ${maxPages} of ${numPages} pages (OCR_MAX_PAGES).`,
+            );
+        }
+
+        agentLog.log(
+            `[OCR] Successfully extracted ~${combinedText.length} characters.`,
+        );
+        return buildExtractionResult({
+            text: combinedText.trim(),
+            method: "ocr",
+            pages: pagesProcessed,
+            truncated,
+        });
+    } catch (err) {
+        agentLog.error(`[OCR] Failed during OCR process for ${filePath}:`, err);
+        return buildExtractionResult({
+            method: "ocr",
+            pages: pagesProcessed,
+            error: isTimeoutLikeError(err)
+                ? EXTRACTION_ERROR_CODES.OCR_TIMEOUT
+                : EXTRACTION_ERROR_CODES.OCR_FAILED,
+        });
+    }
+}
+
+/**
+ * Turns an extraction failure into a precise, user-facing message. The
+ * "Could not extract text from file" prefix is kept stable because downstream
+ * classification (e.g. transient-failure detection) matches on it.
+ */
+function describeExtractionFailure(extraction) {
+    switch (extraction?.error) {
+        case EXTRACTION_ERROR_CODES.FILE_NOT_FOUND:
+            return "file not found.";
+        case EXTRACTION_ERROR_CODES.UNSUPPORTED_TYPE:
+            return "unsupported file type.";
+        case EXTRACTION_ERROR_CODES.PDF_PARSE_FAILED:
+            return "the PDF could not be parsed (it may be corrupt or unreadable).";
+        case EXTRACTION_ERROR_CODES.DOCX_PARSE_FAILED:
+            return "the DOCX could not be parsed.";
+        case EXTRACTION_ERROR_CODES.DOC_PARSE_FAILED:
+            return "the DOC could not be parsed.";
+        case EXTRACTION_ERROR_CODES.TXT_READ_FAILED:
+            return "the text file could not be read.";
+        case EXTRACTION_ERROR_CODES.OCR_TIMEOUT:
+            return "OCR timed out while reading the scanned document.";
+        case EXTRACTION_ERROR_CODES.OCR_FAILED:
+            return "OCR failed while reading the scanned document.";
+        default:
+            return "no readable text was found in the document.";
+    }
+}
+
+function buildExtractionErrorMessage(extraction) {
+    return `Could not extract text from file: ${describeExtractionFailure(extraction)}`;
 }
 
 class AnalyzeDocumentsTool extends Tool {
@@ -254,27 +415,80 @@ class AnalyzeDocumentsTool extends Tool {
     async _call(input) {
         const { files, caseInfo, progressCallback, usageTracker, onUsage } = input;
 
-        const analyzeFile = async (file) => {
+        // Live-activity tracking: structured per-file events plus a periodic
+        // heartbeat so the UI can show real progress (and detect stalls)
+        // during long batches instead of silence.
+        const total = Array.isArray(files) ? files.length : 0;
+        const batchCounters = { done: 0, failed: 0 };
+        let currentFileName = null;
+
+        const emitFileEvent = (file, status, extra = {}) => {
+            progressCallback &&
+                progressCallback({
+                    step: "analyzing",
+                    kind: "file",
+                    message: status === "ok"
+                        ? `Analiziran dokument ${batchCounters.done + batchCounters.failed}/${total}: ${file.text || path.basename(file.filePath || "")}`
+                        : `Neuspješna analiza ${batchCounters.done + batchCounters.failed}/${total}: ${file.text || path.basename(file.filePath || "")}`,
+                    metadata: {
+                        kind: "file",
+                        fileName: file.text || path.basename(file.filePath || ""),
+                        status,
+                        done: batchCounters.done,
+                        failed: batchCounters.failed,
+                        total,
+                        ...extra,
+                    },
+                });
+        };
+
+        const emitHeartbeat = () => {
+            progressCallback &&
+                progressCallback({
+                    step: "analyzing",
+                    kind: "heartbeat",
+                    metadata: {
+                        kind: "heartbeat",
+                        done: batchCounters.done,
+                        failed: batchCounters.failed,
+                        total,
+                        currentFile: currentFileName,
+                    },
+                });
+        };
+
+        const heartbeatTimer = total > 0 ? setInterval(emitHeartbeat, ANALYSIS_HEARTBEAT_MS) : null;
+
+        const analyzeFile = async (file, { retried = false } = {}) => {
+            const startedAt = Date.now();
+            currentFileName = file.text || path.basename(file.filePath || "");
             try {
-                let text = await extractTextFromFile(file.filePath);
+                let extraction = await extractTextFromFile(file.filePath);
+                let text = extraction.text;
 
                 // If initial extraction fails, try OCR for PDFs
                 if (
                     (!text || text.trim().length === 0) &&
                     file.filePath.toLowerCase().endsWith(".pdf")
                 ) {
-                    console.log(
+                    agentLog.log(
                         `[Analyzer] Standard text extraction failed for ${path.basename(file.filePath)}. Falling back to OCR.`,
                     );
-                    text = await extractTextViaOCR(file.filePath, progressCallback, { tracker: usageTracker, onUsage });
+                    const ocrResult = await extractTextViaOCR(file.filePath, progressCallback, { tracker: usageTracker, onUsage });
+                    if (ocrResult.text && ocrResult.text.trim().length > 0) {
+                        text = ocrResult.text;
+                        extraction = ocrResult;
+                    } else if (!extraction.error) {
+                        // The text layer was empty (likely a scanned document)
+                        // and OCR could not rescue it — surface WHY it failed
+                        // instead of a generic "may be empty or corrupt".
+                        extraction = { ...extraction, error: ocrResult.error || EXTRACTION_ERROR_CODES.OCR_FAILED };
+                    }
                 }
 
                 // Final check: if still no text, return error, file failed analysis
                 if (!text || text.trim().length === 0) {
-                    // tu si možemo dodati hrvatski tekst za bolje error messagese za korisnike
-                    throw new Error(
-                        "Could not extract text from file. It may be empty, corrupted, or an image-based document.",
-                    );
+                    throw new Error(buildExtractionErrorMessage(extraction));
                 }
 
                 //console.log('Case info for analysis:', caseInfo);
@@ -361,68 +575,73 @@ class AnalyzeDocumentsTool extends Tool {
                 // END of fix
 
                 // added by a human
-                console.log(
+                agentLog.log(
                     `Analyzed file ${file.filePath}, AI result:`,
                     aiResult,
                 );
 
-                progressCallback &&
-                    progressCallback({
-                        step: "analyzing",
-                        message: `Analyzed: ${file.text}`,
-                    });
+                batchCounters.done += 1;
+                emitFileEvent(file, "ok", {
+                    durationMs: Date.now() - startedAt,
+                    retried,
+                });
                 return { ...file, aiResult };
             } catch (err) {
-                console.error(
+                agentLog.error(
                     `Error analyzing file ${file.filePath}:`,
                     err.message,
                 );
-                progressCallback &&
-                    progressCallback({
-                        step: "analyzing",
-                        message: `Failed to analyze: ${file.text}`,
-                    });
+                batchCounters.failed += 1;
+                emitFileEvent(file, "failed", {
+                    durationMs: Date.now() - startedAt,
+                    retried,
+                    error: err.message,
+                });
                 return { ...file, aiResult: null, error: err.message };
             }
         };
 
-        // First pass with bounded concurrency so free-tier quota is not
-        // exhausted by a parallel fan-out of every file in the batch.
-        const firstPassResults = await mapWithConcurrency(
-            files,
-            ANALYSIS_FILE_CONCURRENCY,
-            analyzeFile,
-            { delayMs: ANALYSIS_FILE_DELAY_MS }
-        );
-
-        // Deferred second pass: retry only files that failed with transient
-        // (recoverable) Gemini errors, e.g. quota-burst timeouts. Structural
-        // failures (unreadable/corrupt files) are not retried — retrying them
-        // would only burn the remaining budget.
-        const retryableIndexes = firstPassResults
-            .map((result, index) => ({ result, index }))
-            .filter(({ result }) => !result.aiResult && isTransientAnalysisFailure(result.error))
-            .map(({ index }) => index);
-
-        let individualAnalyses = firstPassResults;
-        if (retryableIndexes.length > 0) {
-            console.log(`[Analyzer] ${retryableIndexes.length} file(s) failed with transient errors; retrying sequentially...`);
-            const retryFiles = retryableIndexes.map((index) => files[index]);
-            const retryResults = await mapWithConcurrency(
-                retryFiles,
-                1,
+        try {
+            // First pass with bounded concurrency so free-tier quota is not
+            // exhausted by a parallel fan-out of every file in the batch.
+            const firstPassResults = await mapWithConcurrency(
+                files,
+                ANALYSIS_FILE_CONCURRENCY,
                 analyzeFile,
                 { delayMs: ANALYSIS_FILE_DELAY_MS }
             );
-            retryResults.forEach((result, position) => {
-                individualAnalyses[retryableIndexes[position]] = result;
-            });
-        }
 
-        return {
-            individualAnalyses,
-            coverage: buildAnalysisCoverage(individualAnalyses),
-        };
+            // Deferred second pass: retry only files that failed with transient
+            // (recoverable) Gemini errors, e.g. quota-burst timeouts. Structural
+            // failures (unreadable/corrupt files) are not retried — retrying them
+            // would only burn the remaining budget.
+            const retryableIndexes = firstPassResults
+                .map((result, index) => ({ result, index }))
+                .filter(({ result }) => !result.aiResult && isTransientAnalysisFailure(result.error))
+                .map(({ index }) => index);
+
+            let individualAnalyses = firstPassResults;
+            if (retryableIndexes.length > 0) {
+                agentLog.log(`[Analyzer] ${retryableIndexes.length} file(s) failed with transient errors; retrying sequentially...`);
+                const retryFiles = retryableIndexes.map((index) => files[index]);
+                const retryResults = await mapWithConcurrency(
+                    retryFiles,
+                    1,
+                    (file) => analyzeFile(file, { retried: true }),
+                    { delayMs: ANALYSIS_FILE_DELAY_MS }
+                );
+                retryResults.forEach((result, position) => {
+                    individualAnalyses[retryableIndexes[position]] = result;
+                });
+            }
+
+            return {
+                individualAnalyses,
+                coverage: buildAnalysisCoverage(individualAnalyses),
+            };
+        } finally {
+            if (heartbeatTimer) clearInterval(heartbeatTimer);
+        }
     }
 }
 
@@ -529,7 +748,7 @@ async function generateComparativeAnalysis(allProcessedCases, options = {}) {
             const response = await withGeminiRetry(() => withGeminiTimeout((signal) => trackGeminiInvoke(gemini, prompt, { signal, tracker: options.tracker, onUsage: options.onUsage })));
             return response.content;
         } catch (err) {
-            console.error("Failed to generate summary for single case:", err);
+            agentLog.error("Failed to generate summary for single case:", err);
             return "Greška pri generiranju završnog sažetka.";
         }
     }
@@ -569,9 +788,9 @@ async function generateComparativeAnalysis(allProcessedCases, options = {}) {
         const response = await withGeminiRetry(() => withGeminiTimeout((signal) => trackGeminiInvoke(gemini, prompt, { signal, tracker: options.tracker, onUsage: options.onUsage })));
         return response.content;
     } catch (err) {
-        console.error("Failed to generate comparative analysis:", err);
+        agentLog.error("Failed to generate comparative analysis:", err);
         return "Greška pri generiranju usporedne analize.";
     }
 }
 
-module.exports = { AnalyzeDocumentsTool, generateComparativeAnalysis };
+module.exports = { AnalyzeDocumentsTool, generateComparativeAnalysis, extractTextFromFile, extractTextViaOCR };
