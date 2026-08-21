@@ -6,6 +6,7 @@ import ErrorBoundary from '../ErrorBoundary';
 import RunStatusBadge from './RunStatusBadge';
 import RunProgressStepper from './RunProgressStepper';
 import RunEventTimeline from './RunEventTimeline';
+import AnalysisActivityLog from './AnalysisActivityLog';
 import AnalysisReportAnnex from './AnalysisReportAnnex';
 import AnalysisCoverageBanner from './AnalysisCoverageBanner';
 import AnalysisUsageSummary from './AnalysisUsageSummary';
@@ -100,7 +101,7 @@ export default function AnalysisRunDetailPage() {
     streamEnabled: env.analysisDetailSseEnabled,
   });
 
-  const { timeline, stages, isErrored } = useAnalysisEvents(events);
+  const { timeline, stages, activity, isErrored } = useAnalysisEvents(events);
   const timelineToRender = showFullTimeline ? timeline : timeline.slice(-2);
 
   const parsedResult = useMemo(() => parseMaybeJson(run?.result_json ?? run?.resultJson), [run?.result_json, run?.resultJson]);
@@ -218,6 +219,8 @@ export default function AnalysisRunDetailPage() {
             <section className="mb-5">
               <RunProgressStepper stages={stages} isErrored={isErrored} />
             </section>
+
+            <AnalysisActivityLog activity={activity} isRunning={isRunning} />
 
             <AnalysisUsageSummary usage={usage} isRunning={isRunning} />
 

@@ -45,6 +45,7 @@ describe('AnalysisRunDetailPage metadata modules', () => {
     useAnalysisEvents.mockReturnValue({
       timeline: [],
       stages: [],
+      activity: [],
       isErrored: false,
     });
 

@@ -61,7 +61,31 @@ const normalizeEventType = (event) => {
 
 export function useAnalysisEvents(events) {
   return useMemo(() => {
-    const normalized = (events || []).map((event) => {
+    const all = events || [];
+    // Transient high-frequency events (per-file progress, heartbeats) power
+    // the live activity console; they must not flood the stage timeline or
+    // advance the stepper.
+    const activity = all
+      .filter((event) => ['file', 'heartbeat'].includes(event?.metadata?.kind))
+      .map((event) => ({
+        id: event.id,
+        kind: event.metadata.kind,
+        fileName: event.metadata.fileName || null,
+        status: event.metadata.status || null,
+        done: event.metadata.done ?? null,
+        failed: event.metadata.failed ?? null,
+        total: event.metadata.total ?? null,
+        currentFile: event.metadata.currentFile || null,
+        error: event.metadata.error || null,
+        durationMs: event.metadata.durationMs ?? null,
+        retried: Boolean(event.metadata.retried),
+        message: event.message || '',
+        createdAt: event.created_at,
+      }));
+
+    const timelineEvents = all.filter((event) => !['file', 'heartbeat'].includes(event?.metadata?.kind));
+
+    const normalized = timelineEvents.map((event) => {
       const stage = normalizeEventType(event);
       return {
         id: event.id,
@@ -93,6 +117,7 @@ export function useAnalysisEvents(events) {
     return {
       timeline: normalized,
       stages,
+      activity,
       current,
       isErrored: normalized.some((event) => event.stage === 'error'),
     };

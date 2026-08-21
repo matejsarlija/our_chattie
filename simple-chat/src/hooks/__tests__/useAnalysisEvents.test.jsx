@@ -102,4 +102,46 @@ describe('useAnalysisEvents canonical stage parity', () => {
     expect(latest.timeline[1].stage).toBe('error');
     expect(latest.stages.map((stage) => stage.key)).toContain('complete');
   });
+
+  test('separates file/heartbeat activity from the stage timeline', () => {
+    let latest = null;
+
+    render(
+      <Harness
+        events={[
+          { id: 'e1', event_type: 'reasoning', message: 'Analiziram 3 datoteka...', created_at: '2026-08-21T10:00:00.000Z' },
+          {
+            id: 'a1',
+            event_type: 'analyzing',
+            message: 'Analiziran dokument 1/3: A.pdf',
+            created_at: '2026-08-21T10:00:05.000Z',
+            metadata: { kind: 'file', fileName: 'A.pdf', status: 'ok', done: 1, failed: 0, total: 3, durationMs: 4200 },
+          },
+          {
+            id: 'a2',
+            event_type: 'analyzing',
+            message: '',
+            created_at: '2026-08-21T10:00:35.000Z',
+            metadata: { kind: 'heartbeat', done: 1, failed: 0, total: 3, currentFile: 'B.pdf' },
+          },
+          { id: 'e2', event_type: 'complete', message: 'Analiza je završena!', created_at: '2026-08-21T10:01:00.000Z' },
+        ]}
+        onValue={(value) => {
+          latest = value;
+        }}
+      />,
+    );
+
+    // Activity events must not flood the timeline or advance the stepper.
+    expect(latest.timeline.map((event) => event.id)).toEqual(['e1', 'e2']);
+    expect(latest.current).toBe('complete');
+
+    expect(latest.activity.map((event) => event.id)).toEqual(['a1', 'a2']);
+    expect(latest.activity[0].kind).toBe('file');
+    expect(latest.activity[0].fileName).toBe('A.pdf');
+    expect(latest.activity[0].status).toBe('ok');
+    expect(latest.activity[0].total).toBe(3);
+    expect(latest.activity[1].kind).toBe('heartbeat');
+    expect(latest.activity[1].currentFile).toBe('B.pdf');
+  });
 });
