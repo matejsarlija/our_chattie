@@ -32,20 +32,9 @@ build/
 *.md
 /coverage
 */coverage
-*/*/stories
-!simple-chat/src/stories/
-simple-chat/src/stories/**
-!simple-chat/src/stories/Dashboard/
-simple-chat/src/stories/Dashboard/**
-!simple-chat/src/stories/Dashboard/AnalysisDetail/
-simple-chat/src/stories/Dashboard/AnalysisDetail/**
-!simple-chat/src/stories/Dashboard/AnalysisDetail/README.mdx
-!simple-chat/src/stories/Dashboard/AnalysisDetailDecisionMatrix.stories.jsx
-!simple-chat/src/stories/Dashboard/AnalysisDetailProgressPresentation.stories.jsx
-!simple-chat/src/stories/Dashboard/AnalysisDetailCoverageBanner.stories.jsx
-!simple-chat/src/stories/Dashboard/AnalysisDetailSecondaryClusters.stories.jsx
-!simple-chat/src/stories/Dashboard/AnalysisDetailUsageSummary.stories.jsx
-!simple-chat/src/stories/Dashboard/NewAnalysisDepthDial.stories.jsx
+# storybook: local-only working files
+*.stories.*
+simple-chat/src/stories/
 /dokumentacija*
 
 # opencode
