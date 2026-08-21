@@ -7,10 +7,12 @@ const OIB_PATTERN = /\b\d{11}\b/g;
 const KEY_PATTERN = /(["']?)(api[_-]?key|authorization|token|secret|password|google_api_key)(["']?)\s*[:=]\s*["']?[^\s"',;]+["']?/gi;
 const KEY_REPLACEMENT = '$1$2$3:[REDACTED]';
 
+function redactSecrets(value) {
+    return String(value).replace(KEY_PATTERN, KEY_REPLACEMENT);
+}
+
 function redact(value) {
-    return String(value)
-        .replace(OIB_PATTERN, '[OIB]')
-        .replace(KEY_PATTERN, KEY_REPLACEMENT);
+    return redactSecrets(String(value).replace(OIB_PATTERN, '[OIB]'));
 }
 
 function toJSON(entry) {
@@ -45,6 +47,7 @@ const logger = {
     warn: (scope, message, meta) => log('warn', scope, message, meta),
     error: (scope, message, meta) => log('error', scope, message, meta),
     redact,
+    redactSecrets,
 };
 
 module.exports = logger;

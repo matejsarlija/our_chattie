@@ -5,6 +5,7 @@ const { ChatGoogleGenerativeAI } = require("@langchain/google-genai");
 const { withGeminiRetry, withGeminiTimeout } = require("../../helpers/geminiRetry");
 const { trackGeminiInvoke } = require("../../helpers/geminiUsage");
 const { GEMINI_MODEL, GEMINI_API_KEY } = require("../../helpers/geminiConfig");
+const agentLog = require("../../helpers/agentLog");
 
 const gemini = new ChatGoogleGenerativeAI({
     model: GEMINI_MODEL, // Consistent with analysis agent
@@ -23,14 +24,14 @@ class VisualizerTool extends Tool {
     }
 
     async _call(analysisText, options = {}) {
-        console.log("[VisualizerTool] Generating diagram for analysis text...");
+        agentLog.log("[VisualizerTool] Generating diagram for analysis text...");
 
         // Guard: an empty/error placeholder carries no analyzable substance and
         // must not be sent to the model (it would only emit an empty stub).
         const usableText = String(analysisText || "").trim();
         const USELESS_RE = /gre[šs]ka pri generiranju|nema dostupnih podataka za generiranje analize|analiza dokumenata nije uspje[šs]no izvr[šs]ena|nema dovoljno dokaza/i;
         if (!usableText || USELESS_RE.test(usableText)) {
-            console.warn("[VisualizerTool] Skipping diagram generation: input text is empty or a failure placeholder.");
+            agentLog.warn("[VisualizerTool] Skipping diagram generation: input text is empty or a failure placeholder.");
             return "Error generating diagram.";
         }
 
@@ -75,10 +76,10 @@ class VisualizerTool extends Tool {
 
         try {
             const response = await withGeminiRetry(() => withGeminiTimeout((signal) => trackGeminiInvoke(gemini, prompt, { signal, tracker: options.tracker, onUsage: options.onUsage })));
-            console.log("[VisualizerTool] Raw Mermaid Output:\n", response.content);
+            agentLog.log("[VisualizerTool] Raw Mermaid Output:\n", response.content);
             return response.content;
         } catch (err) {
-            console.error("[VisualizerTool] Failed to generate diagram:", err.message);
+            agentLog.error("[VisualizerTool] Failed to generate diagram:", err.message);
             return "Error generating diagram.";
         }
     }

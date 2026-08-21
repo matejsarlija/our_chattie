@@ -4,7 +4,8 @@ const { Tool } = require('@langchain/core/tools');
 const fs = require('fs');
 const path = require('path');
 const axios = require('axios');
-const mime = require('mime-types');
+const mime = require("mime-types");
+const agentLog = require("../../helpers/agentLog");
 
 // agents/download-agent.js -> inside the downloadFile function
 
@@ -25,7 +26,7 @@ async function downloadFile(url, baseFilename, fallbackLinkText) {
     let extension = '';
 
     // --- Start Debug Logging ---
-    console.log('[Downloader] Response Headers:', {
+    agentLog.log('[Downloader] Response Headers:', {
         'content-type': headers['content-type'],
         'content-disposition': headers['content-disposition'],
     });
@@ -43,7 +44,7 @@ async function downloadFile(url, baseFilename, fallbackLinkText) {
             const serverExt = path.extname(serverFilename);
             if (serverExt) {
                 extension = serverExt;
-                console.log(`[Downloader] Found extension '${extension}' from Content-Disposition.`);
+                agentLog.log(`[Downloader] Found extension '${extension}' from Content-Disposition.`);
             }
         }
     }
@@ -54,20 +55,20 @@ async function downloadFile(url, baseFilename, fallbackLinkText) {
         const mimeExt = mime.extension(contentType);
         if (mimeExt && mimeExt !== 'bin') { // Ignore generic 'bin' from octet-stream
             extension = `.${mimeExt}`;
-            console.log(`[Downloader] Found extension '${extension}' from Content-Type: ${contentType}.`);
+            agentLog.log(`[Downloader] Found extension '${extension}' from Content-Type: ${contentType}.`);
         }
     }
 
     // 3. LAST RESORT: If STILL no extension, use our link text fallback.
     if (!extension) {
-        console.log('[Downloader] No specific extension found in headers. Using link text fallback.');
+        agentLog.log('[Downloader] No specific extension found in headers. Using link text fallback.');
         if (fallbackLinkText && fallbackLinkText.toLowerCase().includes('zip')) {
             extension = '.zip';
         } else {
             // This is our ultimate fallback. A file MUST have an extension.
             extension = '.bin'; // a generic binary file
         }
-        console.log(`[Downloader] Using fallback extension: '${extension}'`);
+        agentLog.log(`[Downloader] Using fallback extension: '${extension}'`);
     }
 
     const finalFilename = `${baseFilename}${extension}`;
@@ -82,7 +83,7 @@ async function downloadFile(url, baseFilename, fallbackLinkText) {
         response.data.on('error', (err) => { writer.close(); fs.unlink(filePath, () => reject(err)); });
     });
 
-    console.log(`[Downloader] Successfully saved file: ${filePath}`);
+    agentLog.log(`[Downloader] Successfully saved file: ${filePath}`);
     return filePath;
 }
 
@@ -110,7 +111,7 @@ class DownloadDocumentsTool extends Tool {
                 const currentProgress = 50 + Math.round((completed / documentLinks.length) * 30);
                 progressCallback && progressCallback({ step: 'downloading', progress: currentProgress, message: `Downloaded: ${path.basename(filePath)}` });
             } catch (err) {
-                console.error(`[Downloader] Failed to download ${link.text} from ${link.url}:`, err.message);
+                agentLog.error(`[Downloader] Failed to download ${link.text} from ${link.url}:`, err.message);
                 completed++;
                 const currentProgress = 50 + Math.round((completed / documentLinks.length) * 30);
                 progressCallback && progressCallback({ step: 'downloading', progress: currentProgress, message: `Failed: ${link.text}` });

@@ -3,6 +3,7 @@ const { ChatGoogleGenerativeAI } = require("@langchain/google-genai");
 const { withGeminiRetry, withGeminiTimeout } = require("../../helpers/geminiRetry");
 const { trackGeminiInvoke } = require("../../helpers/geminiUsage");
 const { GEMINI_MODEL, GEMINI_API_KEY } = require("../../helpers/geminiConfig");
+const agentLog = require("../../helpers/agentLog");
 const { SCHEMA_VERSION, validateReport } = require("./schema");
 const { validateClusterEvidencePackage } = require("./evidencePackage");
 const {
@@ -91,7 +92,7 @@ async function synthesizeReport(evidencePackage, options = {}) {
         try {
             parsed = JSON.parse(cleanJson);
         } catch (e) {
-            console.error("Failed to parse synthesizer JSON:", cleanJson);
+            agentLog.error("Failed to parse synthesizer JSON:", cleanJson);
             throw new Error("Synthesizer returned invalid JSON.");
         }
 
@@ -135,7 +136,7 @@ async function synthesizeReport(evidencePackage, options = {}) {
         return finalReport;
 
     } catch (error) {
-        console.error("Synthesizer failed:", error);
+        agentLog.error("Synthesizer failed:", error);
         throw error;
     }
 }

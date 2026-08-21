@@ -3,6 +3,7 @@ const { ChatGoogleGenerativeAI } = require("@langchain/google-genai");
 const { withGeminiRetry, withGeminiTimeout } = require("../../helpers/geminiRetry");
 const { trackGeminiInvoke } = require("../../helpers/geminiUsage");
 const { GEMINI_MODEL, GEMINI_API_KEY } = require("../../helpers/geminiConfig");
+const agentLog = require("../../helpers/agentLog");
 const { isPoorDocumentCoverage, coverageOpenQuestion, applyCoverageConfidenceGuard } = require('./coverageGuard');
 
 const gemini = new ChatGoogleGenerativeAI({
@@ -127,7 +128,7 @@ async function verifyReport(report, evidencePackage, options = {}) {
             conflicts
         };
     } catch (error) {
-        console.error("Verification failed:", error);
+        agentLog.error("Verification failed:", error);
         return report;
     }
 }
