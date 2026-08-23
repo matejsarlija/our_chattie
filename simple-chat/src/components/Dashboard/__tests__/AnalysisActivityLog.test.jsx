@@ -43,9 +43,30 @@ describe('AnalysisActivityLog', () => {
     expect(screen.getByTestId('analysis-activity-log')).toBeInTheDocument();
     expect(screen.getByText('2/20')).toBeInTheDocument();
     expect(screen.getByText(/Podnesak-1\.pdf/)).toBeInTheDocument();
+    // Fallback: without a classified reason, the raw technical message shows.
     expect(screen.getByText(/Gemini request timed out/)).toBeInTheDocument();
     const failedLine = screen.getByText(/Podnesak-2\.pdf/).closest('div');
     expect(failedLine.textContent).toContain('✗');
+  });
+
+  test('prefers the backend-classified reason over the raw error on failed lines', () => {
+    render(
+      <AnalysisActivityLog
+        activity={[
+          fileEvent(3, {
+            status: 'failed',
+            failed: 1,
+            durationMs: 30000,
+            error: 'Gemini request timed out after 30000ms',
+            reason: 'Dnevni limit AI analize je iscrpljen. Pokušajte ponovno sutra.',
+          }),
+        ]}
+        isRunning={false}
+      />,
+    );
+
+    expect(screen.getByText(/Dnevni limit AI analize je iscrpljen/)).toBeInTheDocument();
+    expect(screen.queryByText(/Gemini request timed out/)).not.toBeInTheDocument();
   });
 
   test('renders heartbeat lines with live counts', () => {

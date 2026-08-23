@@ -144,4 +144,38 @@ describe('useAnalysisEvents canonical stage parity', () => {
     expect(latest.activity[1].kind).toBe('heartbeat');
     expect(latest.activity[1].currentFile).toBe('B.pdf');
   });
+
+  test('surfaces the backend-classified reason alongside the raw error on failed file events', () => {
+    let latest = null;
+
+    render(
+      <Harness
+        events={[
+          {
+            id: 'a1',
+            event_type: 'analyzing',
+            message: 'Neuspješna analiza 1/2: A.pdf',
+            created_at: '2026-08-21T10:00:05.000Z',
+            metadata: {
+              kind: 'file',
+              fileName: 'A.pdf',
+              status: 'failed',
+              done: 0,
+              failed: 1,
+              total: 2,
+              error: 'Gemini request timed out after 30000ms',
+              reason: 'Dnevni limit AI analize je iscrpljen. Pokušajte ponovno sutra.',
+              reasonCode: 'daily_limit_free',
+            },
+          },
+        ]}
+        onValue={(value) => {
+          latest = value;
+        }}
+      />,
+    );
+
+    expect(latest.activity[0].reason).toBe('Dnevni limit AI analize je iscrpljen. Pokušajte ponovno sutra.');
+    expect(latest.activity[0].error).toBe('Gemini request timed out after 30000ms');
+  });
 });

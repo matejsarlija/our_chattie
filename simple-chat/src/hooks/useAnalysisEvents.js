@@ -77,6 +77,9 @@ export function useAnalysisEvents(events) {
         total: event.metadata.total ?? null,
         currentFile: event.metadata.currentFile || null,
         error: event.metadata.error || null,
+        // Backend-classified, user-friendly failure reason (Croatian). The
+        // UI prefers it over the raw technical error message.
+        reason: event.metadata.reason || null,
         durationMs: event.metadata.durationMs ?? null,
         retried: Boolean(event.metadata.retried),
         message: event.message || '',

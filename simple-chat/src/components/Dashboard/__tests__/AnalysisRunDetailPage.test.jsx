@@ -779,18 +779,23 @@ describe('AnalysisRunDetailPage metadata modules', () => {
             {
               caseResult: { caseNumber: 'ST-700/2024' },
               groupMetadata: { selectedForReasoning: true },
-              analysis: {
-                coverage: {
-                  analyzed: 2,
-                  failed: 1,
-                  total: 3,
-                  coverageRatio: 0.67,
-                  complete: false,
-                  failedFiles: [
-                    { fileName: 'doc3.pdf', reason: 'Gemini request timed out after 30000ms' },
-                  ],
+                analysis: {
+                  coverage: {
+                    analyzed: 2,
+                    failed: 1,
+                    total: 3,
+                    coverageRatio: 0.67,
+                    complete: false,
+                    failedFiles: [
+                      {
+                        fileName: 'doc3.pdf',
+                        // Backend-classified shape: stable code + Croatian reason.
+                        code: 'daily-quota',
+                        reason: 'Dnevni limit AI analize je iscrpljen. Pokušajte ponovno sutra.',
+                      },
+                    ],
+                  },
                 },
-              },
             },
           ],
         },
@@ -811,6 +816,9 @@ describe('AnalysisRunDetailPage metadata modules', () => {
     expect(screen.getByText(/Analizirano je 2 od 3 dokumenata/)).toBeInTheDocument();
     expect(screen.getByText('1 neanalizirano')).toBeInTheDocument();
     expect(screen.getByText(/doc3\.pdf/)).toBeInTheDocument();
+    // The classified Croatian reason surfaces — never the raw technical message.
+    expect(screen.getByText(/Dnevni limit AI analize je iscrpljen/)).toBeInTheDocument();
+    expect(screen.queryByText(/timed out after/)).not.toBeInTheDocument();
   });
 
   test('renders the token usage summary from run.token_usage', () => {

@@ -39,7 +39,9 @@ function ActivityLine({ item }) {
         {item.retried && <span title="ponovljeni pokušaj" className="text-amber-600">↻ </span>}
         <span className={ok ? 'text-[var(--text)]' : 'text-[var(--text)]'}>{item.fileName || item.message}</span>
         {duration && <span> · {duration}</span>}
-        {!ok && item.error && <span className="text-rose-600"> — {item.error}</span>}
+        {!ok && (item.reason || item.error) && (
+          <span className="text-rose-600"> — {item.reason || item.error}</span>
+        )}
       </span>
     </div>
   );
