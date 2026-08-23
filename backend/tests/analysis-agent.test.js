@@ -17,7 +17,7 @@ jest.mock('../helpers/geminiUsage', () => ({
 }));
 
 const mockGeminiInvoke = jest.fn();
-const { AnalyzeDocumentsTool, generateComparativeAnalysis } = require('../court-analysis/agents/analysis-agent');
+const { AnalyzeDocumentsTool } = require('../court-analysis/agents/analysis-agent');
 
 describe('AnalyzeDocumentsTool', () => {
     const testDocxPath = path.resolve(__dirname, 'test-analysis.docx');
@@ -101,23 +101,6 @@ describe('AnalyzeDocumentsTool', () => {
         });
         expect(result.individualAnalyses[0].aiResult).toBeNull();
         expect(result.individualAnalyses[0].error).toMatch(/Could not extract text|not found|ENOENT/i);
-    });
-
-    it('calls generateComparativeAnalysis with single case', async () => {
-        mockGeminiInvoke.mockResolvedValue({ content: 'Final synthesis.' });
-
-        const cases = [{
-            caseResult: { title: 'Case 1', date: '2025-01-01', participants: [] },
-            analysis: { individualAnalyses: [{ aiResult: { summary: 'Summary A' } }] },
-        }];
-
-        const result = await generateComparativeAnalysis(cases);
-        expect(result).toBe('Final synthesis.');
-    });
-
-    it('returns empty-message for zero cases', async () => {
-        const result = await generateComparativeAnalysis([]);
-        expect(result).toContain('Nema dostupnih podataka');
     });
 
     it('emits structured per-file events with live counts', async () => {

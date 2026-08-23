@@ -3,11 +3,16 @@ const os = require('os');
 const path = require('path');
 
 const mockGeminiInvoke = jest.fn();
+const mockResolveGeminiPlan = jest.fn(() => 'paid');
 
 jest.mock('@langchain/google-genai', () => ({
   ChatGoogleGenerativeAI: jest.fn().mockImplementation(() => ({
     invoke: mockGeminiInvoke,
   })),
+}));
+
+jest.mock('../helpers/geminiPlan', () => ({
+  resolveGeminiPlan: () => mockResolveGeminiPlan(),
 }));
 
 jest.mock('../helpers/geminiRetry', () => ({
@@ -146,5 +151,61 @@ describe('AnalyzeDocumentsTool edge/error cases', () => {
         } finally {
             fs.rmSync(tmpDir, { recursive: true, force: true });
         }
+    });
+});
+
+describe('transient second-pass retry gating (plan-aware)', () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'edge-retry-'));
+    const txtPath = path.join(tmpDir, 'doc.txt');
+    fs.writeFileSync(txtPath, 'Some readable court document text for analysis.');
+
+    const runSingleFile = async () => {
+        const tool = new AnalyzeDocumentsTool();
+        return tool._call({
+            files: [{ filePath: txtPath, url: 'mock', text: 'Retry probe' }],
+            caseInfo: { participants: [] },
+        });
+    };
+
+    beforeEach(() => {
+        mockGeminiInvoke.mockReset();
+    });
+
+    afterEach(() => {
+        mockResolveGeminiPlan.mockReset();
+        mockResolveGeminiPlan.mockImplementation(() => 'paid');
+    });
+
+    afterAll(() => {
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+    });
+
+    it('retries transient failures sequentially on the paid plan', async () => {
+        mockResolveGeminiPlan.mockImplementation(() => 'paid');
+        // First-pass analysis call fails with the quota-hang signature; the
+        // second-pass retry succeeds.
+        mockGeminiInvoke
+            .mockRejectedValueOnce(new Error('Gemini request timed out after 30000ms'))
+            .mockResolvedValueOnce({
+                content: JSON.stringify({ caseNumber: 'X', decisionDate: '2025-01-01', summary: 'Mock.', amounts: [] }),
+            });
+
+        const result = await runSingleFile();
+
+        expect(result.coverage.analyzed).toBe(1);
+        expect(result.individualAnalyses[0].aiResult).toBeDefined();
+        expect(mockGeminiInvoke).toHaveBeenCalledTimes(2);
+    });
+
+    it('skips the retry pass on the free plan instead of re-hanging 30s per file', async () => {
+        mockResolveGeminiPlan.mockImplementation(() => 'free');
+        mockGeminiInvoke.mockRejectedValue(new Error('Gemini request timed out after 30000ms'));
+
+        const result = await runSingleFile();
+
+        expect(result.coverage.failed).toBe(1);
+        expect(result.individualAnalyses[0].aiResult).toBeNull();
+        // Exactly one invoke: first pass only — no doomed second attempt.
+        expect(mockGeminiInvoke).toHaveBeenCalledTimes(1);
     });
 });
