@@ -46,7 +46,11 @@ class CourtSearchPuppeteer {
     async init() {
         try {
             const launchOptions = {
-                headless: process.env.NODE_ENV === 'production',
+                // Headful by default in local dev so operators can watch runs;
+                // production and explicit PUPPETEER_HEADLESS=1 (scripts/CI,
+                // displayless hosts) run headless while keeping the local
+                // puppeteer.launch transport.
+                headless: process.env.NODE_ENV === 'production' || process.env.PUPPETEER_HEADLESS === '1',
                 args: [
                     '--no-sandbox',
                     '--disable-setuid-sandbox',
