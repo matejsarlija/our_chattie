@@ -2,9 +2,9 @@
 
 require("dotenv").config();
 const { Tool } = require("@langchain/core/tools");
-const { ChatGoogleGenerativeAI } = require("@langchain/google-genai");
 const { HumanMessage } = require("@langchain/core/messages");
 const fs = require("fs");
+const crypto = require("crypto");
 const os = require("os");
 const path = require("path");
 const mammoth = require("mammoth");
@@ -12,11 +12,15 @@ const WordExtractor = require("word-extractor");
 const { splitTextIntoChunks } = require("../reasoning/chunker");
 const agentLog = require("../../helpers/agentLog");
 
-const { GEMINI_MODEL, GEMINI_API_KEY } = require("../../helpers/geminiConfig");
-const gemini = new ChatGoogleGenerativeAI({
-    model: GEMINI_MODEL,
-    apiKey: GEMINI_API_KEY,
-});
+const { GEMINI_MODEL, GEMINI_API_KEY, createGeminiClient, outputCapWarning } = require("../../helpers/geminiConfig");
+const { resolveGeminiPlan } = require("../../helpers/geminiPlan");
+const { classifyFileFailure } = require("../../helpers/friendlyAnalysisError");
+const { extractJsonBlock } = require("../../helpers/jsonExtract");
+// Two role-scoped clients: document JSON analysis and vision OCR differ in
+// temperature and output-token policy.
+const gemini = createGeminiClient("analysis");
+const ocrGemini = createGeminiClient("ocr");
+const ocrBatchGemini = createGeminiClient("ocr-batch");
 
 const pdfjsLib = require("pdfjs-dist/legacy/build/pdf.js");
 const { withGeminiRetry, withGeminiTimeout } = require("../../helpers/geminiRetry");
@@ -168,6 +172,7 @@ const EXTRACTION_ERROR_CODES = {
     TXT_READ_FAILED: "txt-read-failed",
     OCR_TIMEOUT: "ocr-timeout",
     OCR_FAILED: "ocr-failed",
+    OCR_PARTIAL: "ocr-partial",
 };
 
 function buildExtractionResult(overrides = {}) {
@@ -179,6 +184,19 @@ function buildExtractionResult(overrides = {}) {
         error: null,
         ...overrides,
     };
+}
+
+// Compact fact line for extraction outcomes, emitted once per analyzed file
+// so logs answer "how was this file's text obtained and how much did we
+// actually get" without needing debug verbosity.
+function summarizeExtraction(extraction) {
+    return [
+        `method=${extraction?.method || "none"}`,
+        `pages=${extraction?.pages ?? 0}`,
+        `chars=${(extraction?.text || "").length}`,
+        `truncated=${Boolean(extraction?.truncated)}`,
+        `error=${extraction?.error || "null"}`,
+    ].join(" ");
 }
 
 /**
@@ -243,15 +261,15 @@ async function extractTextFromFile(filePath) {
             });
         }
     } catch (error) {
-        agentLog.error(
-            `Failed to extract text from ${filePath}:`,
-            error.message,
-        );
         let errorCode = EXTRACTION_ERROR_CODES.UNSUPPORTED_TYPE;
         if (lowerPath.endsWith(".pdf")) errorCode = EXTRACTION_ERROR_CODES.PDF_PARSE_FAILED;
         else if (lowerPath.endsWith(".docx")) errorCode = EXTRACTION_ERROR_CODES.DOCX_PARSE_FAILED;
         else if (lowerPath.endsWith(".doc")) errorCode = EXTRACTION_ERROR_CODES.DOC_PARSE_FAILED;
         else if (lowerPath.endsWith(".txt")) errorCode = EXTRACTION_ERROR_CODES.TXT_READ_FAILED;
+        agentLog.error(
+            `Failed to extract text from ${filePath} (error=${errorCode}):`,
+            error.message,
+        );
         return buildExtractionResult({ error: errorCode });
     }
     return buildExtractionResult({ error: EXTRACTION_ERROR_CODES.UNSUPPORTED_TYPE });
@@ -273,6 +291,112 @@ function isTimeoutLikeError(err) {
     return /abort|timed out|timeout/i.test(String(err?.message || err || ""));
 }
 
+// Vision requests legitimately run longer than text JSON calls: rasterized
+// pages upload large payloads and generation is slower. A separate ceiling
+// keeps the shared 30s text-call default from starving OCR mid-page.
+function resolveOcrTimeoutMs() {
+    const raw = Number(process.env.GEMINI_OCR_TIMEOUT_MS);
+    return Number.isFinite(raw) && raw >= 1000 ? Math.floor(raw) : 90000;
+}
+
+// Measured on real e-Oglasna scans: JPEG payloads run ~5x smaller than PNG at
+// equal scale (scanner sensor noise defeats deflate), while the per-page
+// vision token cost is tile-based and format-independent. The long-edge cap
+// only engages for oversized page formats; A4 at scale 2 stays as-is.
+const OCR_IMAGE_LONG_EDGE = 2000;
+
+async function renderPageToJpeg(page) {
+    const baseViewport = page.getViewport({ scale: 1 });
+    const longestEdge = Math.max(baseViewport.width, baseViewport.height);
+    const scale = longestEdge > OCR_IMAGE_LONG_EDGE
+        ? OCR_IMAGE_LONG_EDGE / longestEdge
+        : 1;
+    const viewport = page.getViewport({ scale });
+    const canvas = createCanvas(viewport.width, viewport.height);
+    const context = canvas.getContext("2d");
+    await page.render({ canvasContext: context, viewport }).promise;
+    return canvas.toBuffer("image/jpeg");
+}
+
+// Page-level OCR memo keyed by document content hash, so transient second-pass
+// retries (and re-runs within one server process) never re-spend vision quota
+// on pages already read. In-memory by design: restarts clear it, and disk
+// persistence would be scope creep for a retry-shaped problem.
+const OCR_PAGE_CACHE_MAX_ENTRIES = 200;
+const ocrPageCache = new Map();
+
+function readCachedOcrPage(key) {
+    if (!ocrPageCache.has(key)) return null;
+    const value = ocrPageCache.get(key);
+    ocrPageCache.delete(key);
+    ocrPageCache.set(key, value);
+    return value;
+}
+
+function writeCachedOcrPage(key, value) {
+    if (ocrPageCache.has(key)) ocrPageCache.delete(key);
+    ocrPageCache.set(key, value);
+    while (ocrPageCache.size > OCR_PAGE_CACHE_MAX_ENTRIES) {
+        ocrPageCache.delete(ocrPageCache.keys().next().value);
+    }
+}
+
+// --- Multi-page batching ---
+// One multimodal request carries every pending page image; the model marks
+// each section with a `=== STRANICA N ===` header line numbered by the
+// image's POSITION in this message (first image = 1). Parsed positions are
+// remapped to original document page numbers afterwards: cache hits leave a
+// NON-CONTIGUOUS pending set, and the model never sees original numbers, so
+// delegating numbering to it would silently shift text across pages. If the
+// batch request fails or returns unparseable sections, we fall back to the
+// per-page loop — the page cache makes that fallback free for anything the
+// batch did deliver.
+const OCR_BATCH_MARKER_RE = /^===\s*STRANICA\s+(\d+)\s*===/gim;
+
+function buildOcrBatchInstruction() {
+    return (
+        "Extract all text from each document image. Images are provided in a fixed order. " +
+        "For EACH image, start with a header line exactly '=== STRANICA N ===' " +
+        "(N is the 1-based position of that image in THIS message: the first image is 1, the second is 2, and so on), " +
+        "followed by that page's raw text on the following lines. " +
+        "Provide no commentary outside the page sections."
+    );
+}
+
+/**
+ * Splits a batched OCR response into per-page text segments, aligned to the
+ * POSITION of each image in the request (1..expectedPages), not to original
+ * document page numbers.
+ * @returns {Array<string|null>} null where the model omitted a marker,
+ * duplicated one (first occurrence wins), or produced no text for a marked
+ * section.
+ */
+function splitBatchedOcrPages(responseText, expectedPages) {
+    const segments = new Array(expectedPages).fill(null);
+    const marks = [];
+    const re = new RegExp(OCR_BATCH_MARKER_RE.source, "gim");
+    let match;
+    while ((match = re.exec(String(responseText || ""))) !== null) {
+        marks.push({
+            pageNumber: Number.parseInt(match[1], 10),
+            // Where the next section's header line begins — the correct END
+            // of this section's body, so headers never leak into page text.
+            headerStart: match.index,
+            // Where this section's own text begins (right after its header).
+            bodyStart: match.index + match[0].length,
+        });
+    }
+    for (let i = 0; i < marks.length; i++) {
+        const { pageNumber, bodyStart } = marks[i];
+        if (!(pageNumber >= 1 && pageNumber <= expectedPages)) continue;
+        if (segments[pageNumber - 1] !== null) continue;
+        const end = i + 1 < marks.length ? marks[i + 1].headerStart : String(responseText).length;
+        const body = String(responseText).slice(bodyStart, end).trim();
+        segments[pageNumber - 1] = body.length > 0 ? body : null;
+    }
+    return segments;
+}
+
 /**
  * Extracts text from an image-based PDF using pdf.js and Gemini Vision.
  * This method has NO external system dependencies like Ghostscript.
@@ -286,73 +410,185 @@ async function extractTextViaOCR(filePath, progressCallback, options = {}) {
     agentLog.log(
         `[OCR] Attempting OCR for ${path.basename(filePath)} with pdf.js`,
     );
-    let combinedText = "";
     let pagesProcessed = 0;
+    // Hoisted so the outer failure path can still report how many pages made
+    // it into memory before the error.
+    const pageTexts = new Map();
 
     try {
-        const data = new Uint8Array(fs.readFileSync(filePath));
+        const fileBytes = fs.readFileSync(filePath);
+        const contentHash = crypto.createHash("sha256").update(fileBytes).digest("hex");
         const pdf = await pdfjsLib.getDocument({
-            data,
+            data: new Uint8Array(fileBytes),
             standardFontDataUrl: PDFJS_STANDARD_FONT_DATA_URL,
         }).promise;
         const numPages = pdf.numPages;
         const maxPages = Math.min(numPages, resolveOcrMaxPages());
 
+        // Cache-first: whatever this process already read costs nothing.
+        const pendingPageNumbers = [];
+        let cachedPagesHit = 0;
         for (let i = 1; i <= maxPages; i++) {
+            const cached = readCachedOcrPage(`${contentHash}:${i}`);
+            if (cached === null) pendingPageNumbers.push(i);
+            else {
+                pageTexts.set(i, cached);
+                cachedPagesHit += 1;
+            }
+        }
+
+        // Batch attempt: every pending page in ONE multimodal request. Only
+        // taken when more than one page is missing — a single page gains
+        // nothing from batching and would only add marker-parsing risk.
+        if (pendingPageNumbers.length > 1) {
+            progressCallback &&
+                progressCallback({
+                    step: "analyzing",
+                    message: `OCR: šaljem ${pendingPageNumbers.length} stranica u jednom zahtjevu (${path.basename(filePath)})...`,
+                });
+            try {
+                const content = [
+                    { type: "text", text: buildOcrBatchInstruction() },
+                ];
+                for (const pageNumber of pendingPageNumbers) {
+                    const page = await pdf.getPage(pageNumber);
+                    const imageBuffer = await renderPageToJpeg(page);
+                    content.push({
+                        type: "image_url",
+                        image_url: `data:image/jpeg;base64,${imageBuffer.toString("base64")}`,
+                    });
+                }
+                const message = new HumanMessage({ content });
+
+                const response = await withGeminiRetry(
+                    () => withGeminiTimeout(
+                        (signal) => trackGeminiInvoke(ocrBatchGemini, [message], { signal, tracker: options.tracker, onUsage: options.onUsage }),
+                        { timeoutMs: resolveOcrTimeoutMs() },
+                    ),
+                    {
+                        onRetry: ({ attempt, delayMs }) => {
+                            progressCallback &&
+                                progressCallback({
+                                    step: "ocr_retry",
+                                    message: `OCR batch retry ${attempt}. Waiting ${Math.round(delayMs / 1000)}s...`,
+                                });
+                        },
+                    },
+                );
+
+                // Segments are aligned to image POSITIONS in the request;
+                // remap each position to its original document page number.
+                const segments = splitBatchedOcrPages(response?.content, pendingPageNumbers.length);
+                let batchCovered = 0;
+                pendingPageNumbers.forEach((pageNumber, positionIndex) => {
+                    const segment = segments[positionIndex];
+                    if (typeof segment === "string") {
+                        pageTexts.set(pageNumber, segment);
+                        writeCachedOcrPage(`${contentHash}:${pageNumber}`, segment);
+                        batchCovered += 1;
+                    }
+                });
+                agentLog.log(
+                    `[OCR] Batch request covered ${batchCovered}/${pendingPageNumbers.length} pending pages.`,
+                );
+            } catch (batchErr) {
+                agentLog.error(
+                    `[OCR] Batch request failed for ${filePath}:`,
+                    batchErr?.name === "AbortError" ? batchErr.message : batchErr,
+                );
+                agentLog.log("[OCR] Falling back to per-page OCR.");
+            }
+        }
+
+        // Sequential fill for single-page documents and anything the batch
+        // left unresolved. Partial-yield semantics per page.
+        let firstFailure = null;
+        for (let i = 1; i <= maxPages; i++) {
+            if (pageTexts.has(i)) continue;
+
             progressCallback &&
                 progressCallback({
                     step: "analyzing",
                     message: `OCR: čitam stranicu ${i}/${maxPages} (${path.basename(filePath)})...`,
                 });
-            const page = await pdf.getPage(i);
-            const viewport = page.getViewport({ scale: 2.0 }); // Higher scale = higher resolution image
-            const canvas = createCanvas(viewport.width, viewport.height);
-            const context = canvas.getContext("2d");
 
-            await page.render({ canvasContext: context, viewport: viewport })
-                .promise;
+            // Page acquisition, rendering, and the vision call all sit inside
+            // the same guard: any of them failing yields the pages already
+            // read instead of discarding them.
+            try {
+                const page = await pdf.getPage(i);
+                const imageBuffer = await renderPageToJpeg(page);
 
-            const imageBuffer = canvas.toBuffer("image/png");
-            const imageAsBase64 = imageBuffer.toString("base64");
+                const message = new HumanMessage({
+                    content: [
+                        {
+                            type: "text",
+                            text: "Extract all text from this document image. Provide only the raw text.",
+                        },
+                        {
+                            type: "image_url",
+                            image_url: `data:image/jpeg;base64,${imageBuffer.toString("base64")}`,
+                        },
+                    ],
+                });
 
-            const message = new HumanMessage({
-                content: [
+                const response = await withGeminiRetry(
+                    () => withGeminiTimeout(
+                        (signal) => trackGeminiInvoke(ocrGemini, [message], { signal, tracker: options.tracker, onUsage: options.onUsage }),
+                        { timeoutMs: resolveOcrTimeoutMs() },
+                    ),
                     {
-                        type: "text",
-                        text: "Extract all text from this document image. Provide only the raw text.",
+                        onRetry: ({ attempt, delayMs }) => {
+                            progressCallback &&
+                                progressCallback({
+                                    step: "ocr_retry",
+                                    message: `OCR retry ${attempt}. Waiting ${Math.round(delayMs / 1000)}s...`,
+                                });
+                        },
                     },
-                    {
-                        type: "image_url",
-                        image_url: `data:image/png;base64,${imageAsBase64}`,
-                    },
-                ],
-            });
-
-            const response = await withGeminiRetry(
-                () => withGeminiTimeout((signal) => trackGeminiInvoke(gemini, [message], { signal, tracker: options.tracker, onUsage: options.onUsage })),
-                {
-                    onRetry: ({ attempt, delayMs }) => {
-                        progressCallback &&
-                            progressCallback({
-                                step: "ocr_retry",
-                                message: `OCR retry ${attempt}. Waiting ${Math.round(delayMs / 1000)}s...`,
-                            });
-                    },
-                },
-            );
-            combinedText += response.content + "\n\n";
-            pagesProcessed = i;
+                );
+                const pageText = String(response?.content || "");
+                pageTexts.set(i, pageText);
+                writeCachedOcrPage(`${contentHash}:${i}`, pageText);
+            } catch (pageErr) {
+                agentLog.error(
+                    `[OCR] Page ${i}/${maxPages} failed for ${filePath}:`,
+                    pageErr?.name === "AbortError" ? pageErr.message : pageErr,
+                );
+                firstFailure = pageErr;
+                break;
+            }
         }
 
+        // Assemble in page order and report exactly what was obtained.
+        const obtainedPages = [...pageTexts.keys()].sort((a, b) => a - b);
+        pagesProcessed = obtainedPages.length;
+
+        if (pagesProcessed === 0) {
+            throw firstFailure || new Error("No OCR pages were processed.");
+        }
+
+        const combinedText = obtainedPages.map((pageNumber) => pageTexts.get(pageNumber)).join("\n\n") + "\n\n";
         const truncated = numPages > maxPages;
-        if (truncated) {
+
+        if (firstFailure || pagesProcessed < maxPages) {
             agentLog.log(
-                `[OCR] Page cap reached: processed ${maxPages} of ${numPages} pages (OCR_MAX_PAGES).`,
+                `[OCR] Returning partial result: ${pagesProcessed}/${maxPages} pages extracted` +
+                    `${firstFailure ? " after a page failure" : ""}.`,
             );
+            return buildExtractionResult({
+                text: combinedText.trim(),
+                method: "ocr",
+                pages: pagesProcessed,
+                truncated,
+                error: EXTRACTION_ERROR_CODES.OCR_PARTIAL,
+            });
         }
 
         agentLog.log(
-            `[OCR] Successfully extracted ~${combinedText.length} characters.`,
+            `[OCR] Extracted ~${combinedText.length} chars from ${pagesProcessed}/${numPages} pages` +
+                (cachedPagesHit > 0 ? ` (${cachedPagesHit} from cache)` : "") +
+                `${truncated ? ` (capped at OCR_MAX_PAGES=${maxPages})` : ""}.`,
         );
         return buildExtractionResult({
             text: combinedText.trim(),
@@ -361,7 +597,15 @@ async function extractTextViaOCR(filePath, progressCallback, options = {}) {
             truncated,
         });
     } catch (err) {
-        agentLog.error(`[OCR] Failed during OCR process for ${filePath}:`, err);
+        // Timeout aborts carry only internal timer frames from the timeout
+        // guard — their stack is pure noise. Log the message alone and keep
+        // full stacks/inspect formatting for unexpected errors.
+        agentLog.error(
+            `[OCR] Failed during OCR process for ${filePath}:`,
+            err?.name === "AbortError" ? err.message : err,
+        );
+        // Whatever reached memory before the failure still counts.
+        pagesProcessed = Math.max(pagesProcessed, pageTexts.size);
         return buildExtractionResult({
             method: "ocr",
             pages: pagesProcessed,
@@ -393,6 +637,11 @@ function describeExtractionFailure(extraction) {
             return "the text file could not be read.";
         case EXTRACTION_ERROR_CODES.OCR_TIMEOUT:
             return "OCR timed out while reading the scanned document.";
+        case EXTRACTION_ERROR_CODES.OCR_PARTIAL:
+            // Reachable on the empty-partial edge: a page can come back from
+            // the model as whitespace, producing a partial result whose
+            // combined text is still empty.
+            return "OCR extracted only part of the scanned document before being interrupted.";
         case EXTRACTION_ERROR_CODES.OCR_FAILED:
             return "OCR failed while reading the scanned document.";
         default:
@@ -423,6 +672,9 @@ class AnalyzeDocumentsTool extends Tool {
         let currentFileName = null;
 
         const emitFileEvent = (file, status, extra = {}) => {
+            const classified = status === "failed"
+                ? classifyFileFailure(extra.error)
+                : null;
             progressCallback &&
                 progressCallback({
                     step: "analyzing",
@@ -437,6 +689,7 @@ class AnalyzeDocumentsTool extends Tool {
                         done: batchCounters.done,
                         failed: batchCounters.failed,
                         total,
+                        ...(classified ? { reasonCode: classified.code, reason: classified.reason } : {}),
                         ...extra,
                     },
                 });
@@ -466,13 +719,18 @@ class AnalyzeDocumentsTool extends Tool {
                 let extraction = await extractTextFromFile(file.filePath);
                 let text = extraction.text;
 
-                // If initial extraction fails, try OCR for PDFs
+                // If the PDF has no usable text, try OCR. The two reasons are
+                // logged separately on purpose: a parse error (corrupt or
+                // unreadable structure) is a different situation from an
+                // empty text layer, which is just a normal scanned document.
                 if (
                     (!text || text.trim().length === 0) &&
                     file.filePath.toLowerCase().endsWith(".pdf")
                 ) {
                     agentLog.log(
-                        `[Analyzer] Standard text extraction failed for ${path.basename(file.filePath)}. Falling back to OCR.`,
+                        extraction.error
+                            ? `[Analyzer] Text extraction failed for ${path.basename(file.filePath)} (error=${extraction.error}); trying OCR fallback`
+                            : `[Analyzer] No embedded text layer in ${path.basename(file.filePath)} (likely scanned); trying OCR fallback`,
                     );
                     const ocrResult = await extractTextViaOCR(file.filePath, progressCallback, { tracker: usageTracker, onUsage });
                     if (ocrResult.text && ocrResult.text.trim().length > 0) {
@@ -485,6 +743,10 @@ class AnalyzeDocumentsTool extends Tool {
                         extraction = { ...extraction, error: ocrResult.error || EXTRACTION_ERROR_CODES.OCR_FAILED };
                     }
                 }
+
+                agentLog.log(
+                    `[Extractor] ${path.basename(file.filePath)}: ${summarizeExtraction(extraction)}`,
+                );
 
                 // Final check: if still no text, return error, file failed analysis
                 if (!text || text.trim().length === 0) {
@@ -545,27 +807,20 @@ class AnalyzeDocumentsTool extends Tool {
                     },
                 );
 
-                // --- THIS IS THE FIX ---
-                // 1. Get the raw content from the AI.
-                const rawContent = response.content;
+                // Recovery-parse the paid-for completion instead of failing
+                // the file on fence markers or chatter around the JSON.
+                const aiResultPartial = extractJsonBlock(response.content);
 
-                // 2. Clean the string by removing the Markdown wrapper.
-                const cleanedContent = rawContent
-                    .replace(/```json\n|```/g, "")
-                    .trim();
-
-                // Added an extra check to see if the response looks like JSON before parsing
                 if (
-                    !cleanedContent.startsWith("{") ||
-                    !cleanedContent.endsWith("}")
+                    !aiResultPartial ||
+                    typeof aiResultPartial !== "object" ||
+                    Array.isArray(aiResultPartial)
                 ) {
+                    agentLog.warn(outputCapWarning("analysis"));
                     throw new Error(
-                        `AI returned non-JSON response: "${cleanedContent.slice(0, 100)}..."`,
+                        `AI returned non-JSON response: "${String(response?.content || "").slice(0, 100)}..."`,
                     );
                 }
-
-                // 3. Parse the CLEANED string.
-                const aiResultPartial = JSON.parse(cleanedContent);
 
                 const aiResult = {
                     ...aiResultPartial,
@@ -621,7 +876,7 @@ class AnalyzeDocumentsTool extends Tool {
                 .map(({ index }) => index);
 
             let individualAnalyses = firstPassResults;
-            if (retryableIndexes.length > 0) {
+            if (retryableIndexes.length > 0 && resolveGeminiPlan() === "paid") {
                 agentLog.log(`[Analyzer] ${retryableIndexes.length} file(s) failed with transient errors; retrying sequentially...`);
                 const retryFiles = retryableIndexes.map((index) => files[index]);
                 const retryResults = await mapWithConcurrency(
@@ -633,6 +888,14 @@ class AnalyzeDocumentsTool extends Tool {
                 retryResults.forEach((result, position) => {
                     individualAnalyses[retryableIndexes[position]] = result;
                 });
+            } else if (retryableIndexes.length > 0) {
+                // On the free plan a transient-looking error is the terminal
+                // daily-cap hang: every retry is another guaranteed 30s wait
+                // followed by the same failure. The paid plan keeps retries.
+                agentLog.log(
+                    `[Analyzer] Skipping transient retry pass on the ${resolveGeminiPlan()} plan ` +
+                        `(${retryableIndexes.length} file(s) affected).`,
+                );
             }
 
             return {
@@ -706,91 +969,26 @@ function buildAnalysisCoverage(individualAnalyses) {
         total,
         coverageRatio,
         complete: total > 0 && analyzed.length === total,
-        failedFiles: failed.map((item) => ({
-            fileName: item?.text || item?.filePath || "nepoznata datoteka",
-            reason: item?.error || "nepoznata greška",
-        })),
+        failedFiles: failed.map((item) => {
+            const classified = classifyFileFailure(item?.error);
+            return {
+                fileName: item?.text || item?.filePath || "nepoznata datoteka",
+                code: classified.code,
+                reason: classified.reason,
+            };
+        }),
     };
 }
 
-// --- NEW FUNCTION FOR THE FINAL STEP ---
-
-/**
- * Generates a high-level comparative analysis or a detailed summary.
- * @param {Array<object>} allProcessedCases - The array of fully processed cases from the pipeline.
- * @returns {Promise<string>} The final comparative analysis text.
- */
-async function generateComparativeAnalysis(allProcessedCases, options = {}) {
-    if (!allProcessedCases || allProcessedCases.length === 0) {
-        return "Nema dostupnih podataka za generiranje analize.";
-    }
-
-    // --- SCENARIO 1: Only ONE case entry was processed ---
-    if (allProcessedCases.length === 1) {
-        const singleCase = allProcessedCases[0];
-        const successfulSummaries = singleCase.analysis.individualAnalyses
-            .filter((f) => f.aiResult && f.aiResult.summary)
-            .map((f) => f.aiResult.summary)
-            .join("\n\n---\n\n");
-
-        if (!successfulSummaries) {
-            return "Analiza dokumenata nije uspješno izvršena za jedinu pronađenu objavu.";
-        }
-
-        // Old prompt was:
-        const prompt = `Synthesize the following summaries into a coherent overview (in Croatian):\n\n${successfulSummaries}. 
-        Try to extrapolate what might happen next in the case going forward, and what the next steps are for the parties involved.`;
-
-        // The prompt is slightly different: it asks for a deep dive and next steps, not a comparison.
-        //const prompt = `This is the only recent court entry found. Synthesize the following document summaries into a single, coherent, and detailed overview IN CROATIAN. Explain the significance of this entry in the context of the case. Based on the information, what are the likely next steps for the parties involved?\n\nSUMMARIES:\n${successfulSummaries}`;
-
-        try {
-            const response = await withGeminiRetry(() => withGeminiTimeout((signal) => trackGeminiInvoke(gemini, prompt, { signal, tracker: options.tracker, onUsage: options.onUsage })));
-            return response.content;
-        } catch (err) {
-            agentLog.error("Failed to generate summary for single case:", err);
-            return "Greška pri generiranju završnog sažetka.";
-        }
-    }
-
-    // --- SCENARIO 2: MULTIPLE case entries were processed ---
-    // This is where the real comparison happens.
-    let comparativeContext = "";
-    allProcessedCases.forEach((processedCase, index) => {
-        const caseInfo = processedCase.caseResult;
-        const summaries = processedCase.analysis.individualAnalyses
-            .filter((f) => f.aiResult && f.aiResult.summary)
-            .map((f) => f.aiResult.summary)
-            .join("\n");
-
-        comparativeContext += `--- Case Entry ${index + 1} ---\n`;
-        comparativeContext += `Title: ${caseInfo.title}\n`;
-        comparativeContext += `Date: ${caseInfo.date}\n`;
-        comparativeContext += `Summary of Documents:\n${summaries}\n\n`;
-    });
-
-    // const prompt = `You are a legal analyst assistant. Below are summaries from documents of ${allProcessedCases.length} different court entries for the same case. Please provide a comparative analysis IN CROATIAN.
-    // Your analysis should:
-    // 1.  Start by focusing on the most recent entry, explaining its significance.
-    // 2.  Compare it to the previous entry/entries, highlighting what has changed or progressed.
-    // 3.  Synthesize the information into a single, overarching narrative of what has happened.
-    // 4.  Based on the entire history, predict the most likely next steps or future developments in the case.
-
-    // Here is the data:
-    // ${comparativeContext}`;
-
-    const prompt = `Synthesize the following ${allProcessedCases.length} summaries into a coherent overview, in Croatian. Try to predict the most likely developments in the case, as well as what the next steps are for the parties involved.
-    Here is the data:\n${comparativeContext}.`;
-
-    //console.log("Comparative context contains the following data:", comparativeContext);
-
-    try {
-        const response = await withGeminiRetry(() => withGeminiTimeout((signal) => trackGeminiInvoke(gemini, prompt, { signal, tracker: options.tracker, onUsage: options.onUsage })));
-        return response.content;
-    } catch (err) {
-        agentLog.error("Failed to generate comparative analysis:", err);
-        return "Greška pri generiranju usporedne analize.";
-    }
+// Test-only escape hatch: the page cache is module-global, so suites that
+// exercise extraction must reset it to stay isolated from one another.
+function resetOcrPageCacheForTests() {
+    ocrPageCache.clear();
 }
 
-module.exports = { AnalyzeDocumentsTool, generateComparativeAnalysis, extractTextFromFile, extractTextViaOCR };
+module.exports = {
+    AnalyzeDocumentsTool,
+    extractTextFromFile,
+    extractTextViaOCR,
+    resetOcrPageCacheForTests,
+};
