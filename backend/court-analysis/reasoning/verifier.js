@@ -1,16 +1,12 @@
 require("dotenv").config();
-const { ChatGoogleGenerativeAI } = require("@langchain/google-genai");
 const { withGeminiRetry, withGeminiTimeout } = require("../../helpers/geminiRetry");
 const { trackGeminiInvoke } = require("../../helpers/geminiUsage");
-const { GEMINI_MODEL, GEMINI_API_KEY } = require("../../helpers/geminiConfig");
+const { createGeminiClient, outputCapWarning } = require("../../helpers/geminiConfig");
+const { extractJsonBlock } = require("../../helpers/jsonExtract");
 const agentLog = require("../../helpers/agentLog");
 const { isPoorDocumentCoverage, coverageOpenQuestion, applyCoverageConfidenceGuard } = require('./coverageGuard');
 
-const gemini = new ChatGoogleGenerativeAI({
-    model: GEMINI_MODEL,
-    apiKey: GEMINI_API_KEY,
-    temperature: 0.1
-});
+const gemini = createGeminiClient("verify");
 
 function normalizeFindingsForVerification(report) {
     if (Array.isArray(report?.findings) && report.findings.length > 0) {
@@ -29,22 +25,68 @@ function normalizeFindingsForVerification(report) {
     }));
 }
 
+// Mechanical metadata statements (e.g. "Dokument X pripada odabranom predmetu
+// Y") are deterministic grouping facts produced by discovery itself. Sending
+// them through the verification model burns tokens to confirm what code
+// already guarantees — they bypass the model but stay in the report verbatim.
+// Claims without an explicit sourceType are legacy/substantive content and
+// stay verifiable; money-flow entries ('analysis-amount') are short, factual,
+// and verified as before.
+const NON_VERIFIABLE_SOURCE_TYPES = new Set(['document-link']);
+
+function isVerifiableFinding(finding) {
+    const sources = [...(finding.evidence || []), ...(finding.citations || [])];
+    const sourceTypes = sources
+        .map((source) => source?.metadata?.sourceType)
+        .filter(Boolean);
+    if (sourceTypes.length === 0) return true;
+    return !sourceTypes.every((type) => NON_VERIFIABLE_SOURCE_TYPES.has(type));
+}
+
 async function verifyReport(report, evidencePackage, options = {}) {
-    const findingsToVerify = normalizeFindingsForVerification(report);
+    // Mechanical findings are skipped by the model but must survive verbatim
+    // in the output at their original positions — skipping is not deleting.
+    const allFindings = normalizeFindingsForVerification(report);
+    const verifiableEntries = [];
+    allFindings.forEach((finding, index) => {
+        if (isVerifiableFinding(finding)) verifiableEntries.push({ finding, index });
+    });
+    const findingsToVerify = verifiableEntries.map((entry) => entry.finding);
 
     if (!report || findingsToVerify.length === 0) {
         return report;
     }
 
-    const verifiedFindings = [];
     const openQuestions = [...(report.openQuestions || [])];
     const conflicts = [...(report.conflicts || [])];
 
-    const evidenceText = [
+    // Evidence is assembled once per unique snippet: claim texts are printed
+    // as claims, so a citation whose text merely echoes its own claim adds
+    // nothing but billed tokens.
+    const verifiableClaims = (evidencePackage.claims || [])
+        .filter((claim) => isVerifiableFinding({ evidence: claim.evidence }));
+    const claimTexts = new Set(
+        verifiableClaims.map((claim) => String(claim.text || '').trim()),
+    );
+
+    const evidenceLines = [
         ...(evidencePackage.timeline || []).map(event => `[Date: ${event.date}] ${event.description}`),
-        ...(evidencePackage.claims || []).map(claim => `[Source Claim] ${claim.text}`),
-        ...(evidencePackage.claims || []).flatMap(claim => (claim.evidence || []).map(ev => `[Citation ${ev.sourceId}] ${ev.text}`))
-    ].join('\n');
+    ];
+    const seenSnippets = new Set();
+    for (const claim of verifiableClaims) {
+        const claimText = String(claim.text || '').trim();
+        if (claimText && !seenSnippets.has(claimText)) {
+            seenSnippets.add(claimText);
+            evidenceLines.push(`[Source Claim] ${claimText}`);
+        }
+        for (const snippet of claim.evidence || []) {
+            const snippetText = String(snippet?.text || '').trim();
+            if (!snippetText || seenSnippets.has(snippetText) || claimTexts.has(snippetText)) continue;
+            seenSnippets.add(snippetText);
+            evidenceLines.push(`[Citation ${snippet.sourceId || ''}] ${snippetText}`);
+        }
+    }
+    const evidenceText = evidenceLines.join('\n');
 
     const claimsList = findingsToVerify.map((finding, index) => `${index + 1}. ${finding.text}`).join('\n');
 
@@ -78,19 +120,24 @@ async function verifyReport(report, evidencePackage, options = {}) {
 
     try {
         const response = await withGeminiRetry(() => withGeminiTimeout((signal) => trackGeminiInvoke(gemini, prompt, { signal, tracker: options.tracker, onUsage: options.onUsage })));
-        const cleanJson = response.content.replace(/```json\n?|```/g, "").trim();
-        const verificationResults = JSON.parse(cleanJson);
+        const verificationResults = extractJsonBlock(response.content);
+        if (!Array.isArray(verificationResults)) {
+            agentLog.warn(outputCapWarning("verify"));
+            agentLog.error("Failed to parse verifier JSON:", response.content);
+            throw new Error("Verifier returned invalid JSON.");
+        }
 
+        const verifiedByPosition = new Map();
         findingsToVerify.forEach((finding, index) => {
             const result = verificationResults.find(item => item.index === index + 1);
 
             if (!result) {
-                verifiedFindings.push(finding);
+                verifiedByPosition.set(index, finding);
                 return;
             }
 
             if (result.status === 'supported') {
-                verifiedFindings.push({
+                verifiedByPosition.set(index, {
                     ...finding,
                     confidence: result.confidence || 'high',
                     citations: [...(finding.citations || []), { sourceId: 'verification-pass', text: result.reason }]
@@ -103,7 +150,7 @@ async function verifyReport(report, evidencePackage, options = {}) {
                     finding: finding.text,
                     reason: result.reason
                 });
-                verifiedFindings.push({
+                verifiedByPosition.set(index, {
                     ...finding,
                     confidence: 'low',
                     citations: [...(finding.citations || []), { sourceId: 'verification-contradiction', text: result.reason }]
@@ -114,7 +161,25 @@ async function verifyReport(report, evidencePackage, options = {}) {
             openQuestions.push(`Unverified finding: ${finding.text}`);
         });
 
-        const guardedFindings = applyCoverageConfidenceGuard(verifiedFindings, evidencePackage);
+        // Stitch back in original report order: mechanical findings stay put
+        // untouched; verifiable ones are replaced by their verification
+        // outcome. Verifiable findings the model could not support drop out
+        // here — they were surfaced as open questions above.
+        const stitchedFindings = [];
+        const positionOfOriginal = new Map(verifiableEntries.map((entry, position) => [entry.index, position]));
+        allFindings.forEach((finding, originalIndex) => {
+            const position = positionOfOriginal.get(originalIndex);
+            if (position !== undefined) {
+                if (verifiedByPosition.has(position)) {
+                    stitchedFindings.push(verifiedByPosition.get(position));
+                }
+                // else: unsupported → intentionally omitted.
+            } else {
+                stitchedFindings.push(finding);
+            }
+        });
+
+        const guardedFindings = applyCoverageConfidenceGuard(stitchedFindings, evidencePackage);
         if (isPoorDocumentCoverage(evidencePackage?.meta?.coverage)) {
             const question = coverageOpenQuestion(evidencePackage.meta.coverage);
             if (!openQuestions.includes(question)) openQuestions.push(question);
