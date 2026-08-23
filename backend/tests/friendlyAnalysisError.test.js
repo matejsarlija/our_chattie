@@ -86,3 +86,57 @@ describe('friendlyAnalysisErrorMessage', () => {
     expect(describeStage('nope')).toContain('obrade zahtjeva');
   });
 });
+
+describe('classifyFileFailure', () => {
+  const {
+    classifyFileFailure,
+    DAILY_LIMIT_MESSAGE,
+    TRANSIENT_MESSAGE,
+    TIMEOUT_MESSAGE,
+  } = require('../helpers/friendlyAnalysisError');
+
+  test('daily-quota wording maps to the daily-limit reason on every plan', () => {
+    for (const plan of ['free', 'paid']) {
+      expect(classifyFileFailure('429 Resource has been exhausted', { plan }))
+        .toEqual({ code: 'daily-quota', reason: DAILY_LIMIT_MESSAGE });
+    }
+  });
+
+  test('timeouts are the daily-cap hang on free, transient on paid', () => {
+    expect(classifyFileFailure('Gemini request timed out after 30000ms', { plan: 'free' }))
+      .toEqual({ code: 'timeout', reason: DAILY_LIMIT_MESSAGE });
+    expect(classifyFileFailure('Gemini request timed out after 30000ms', { plan: 'paid' }))
+      .toEqual({ code: 'timeout', reason: TIMEOUT_MESSAGE });
+  });
+
+  test('rate-limit messages follow the same plan split', () => {
+    expect(classifyFileFailure('429 Too Many Requests', { plan: 'free' }).reason)
+      .toBe(DAILY_LIMIT_MESSAGE);
+    expect(classifyFileFailure('429 Too Many Requests', { plan: 'paid' }).reason)
+      .toBe(TRANSIENT_MESSAGE);
+  });
+
+  test('structural failures stay technical and honest in Croatian', () => {
+    expect(classifyFileFailure(
+      'Could not extract text from file: the PDF could not be parsed (it may be corrupt or unreadable).',
+    )).toEqual({
+      code: 'unreadable-file',
+      reason: 'Datoteka nije mogla biti očitana (nečitljiva ili nepodržanog formata).',
+    });
+    expect(classifyFileFailure('Could not extract text from file: OCR failed while reading the scanned document.').code)
+      .toBe('ocr-failed');
+  });
+
+  test('unknown and empty inputs fall back gracefully', () => {
+    expect(classifyFileFailure('').code).toBe('unknown');
+    expect(classifyFileFailure(null).code).toBe('unknown');
+    expect(classifyFileFailure('Something entirely unexpected happened').code).toBe('unknown');
+  });
+
+  test('classification order: quota beats rate-limit beats timeout', () => {
+    // A message matching multiple patterns must classify as the most
+    // specific/terminal cause.
+    const msg = 'Request failed: resource has been exhausted, request timed out';
+    expect(classifyFileFailure(msg, { plan: 'paid' }).code).toBe('daily-quota');
+  });
+});

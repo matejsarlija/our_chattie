@@ -1,5 +1,6 @@
 const { deriveEntryDisplayId } = require('../utils/entryDisplayId');
 const { collectMoneyFlows } = require('./moneyFlow');
+const { classifyFileFailure } = require('../../helpers/friendlyAnalysisError');
 
 function normalizeAcquisition(entry) {
     const acquisition = entry?.acquisition || entry?.caseInfo?.acquisition || {};
@@ -171,10 +172,14 @@ function attachAnalysesToEvidencePackage(pkg, processedCases, clusterId = null) 
     const analyzed = analyses.length;
     const failedFiles = individualAnalyses
         .filter((item) => !item?.aiResult)
-        .map((item) => ({
-            fileName: item.text || item.filePath || 'nepoznata datoteka',
-            reason: item.error || 'nepoznata greška',
-        }));
+        .map((item) => {
+            const classified = classifyFileFailure(item.error);
+            return {
+                fileName: item.text || item.filePath || 'nepoznata datoteka',
+                code: classified.code,
+                reason: classified.reason,
+            };
+        });
 
     const coverage = {
         analyzed,

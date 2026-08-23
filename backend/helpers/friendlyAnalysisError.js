@@ -39,6 +39,45 @@ function isTransientRateLimit(reason) {
     return TRANSIENT_RATE_LIMIT_RE.test(reason) && !isDailyQuotaExhaustion(reason);
 }
 
+// Per-file failure classifier: stable machine code + Croatian display text
+// for user-facing surfaces (coverage banner rows, SSE file events). Backend
+// logs keep the raw technical message; this translation layer exists so the
+// per-file reasons agree with the run-level policy instead of blaming OCR
+// for what is really a quota timeout on the free plan.
+function classifyFileFailure(message, { plan = null } = {}) {
+    const raw = String(message || '');
+    const resolvedPlan = plan || resolveGeminiPlan();
+
+    if (!raw.trim()) {
+        return { code: 'unknown', reason: 'Obrada datoteke nije uspjela.' };
+    }
+    if (isDailyQuotaExhaustion(raw)) {
+        return { code: 'daily-quota', reason: DAILY_LIMIT_MESSAGE };
+    }
+    if (isTransientRateLimit(raw)) {
+        return {
+            code: 'rate-limit',
+            reason: resolvedPlan === 'paid' ? TRANSIENT_MESSAGE : DAILY_LIMIT_MESSAGE,
+        };
+    }
+    if (/timed? ?out|deadline|abort/i.test(raw)) {
+        return {
+            code: 'timeout',
+            reason: resolvedPlan === 'paid' ? TIMEOUT_MESSAGE : DAILY_LIMIT_MESSAGE,
+        };
+    }
+    if (/OCR failed/i.test(raw)) {
+        return { code: 'ocr-failed', reason: 'OCR čitanje dokumenta nije uspjelo.' };
+    }
+    if (/could not be parsed|unsupported file type|file not found|no readable text/i.test(raw)) {
+        return {
+            code: 'unreadable-file',
+            reason: 'Datoteka nije mogla biti očitana (nečitljiva ili nepodržanog formata).',
+        };
+    }
+    return { code: 'unknown', reason: 'Obrada datoteke nije uspjela.' };
+}
+
 function friendlyAnalysisErrorMessage(error, { stage = null, hasPartial = false, plan = null } = {}) {
     const raw = (error && typeof error === 'object' && error.message) ? error.message : String(error || '');
     const resolvedPlan = plan || resolveGeminiPlan();
@@ -74,6 +113,7 @@ module.exports = {
     friendlyAnalysisErrorMessage,
     isDailyQuotaExhaustion,
     isTransientRateLimit,
+    classifyFileFailure,
     DAILY_LIMIT_MESSAGE,
     TRANSIENT_MESSAGE,
     TIMEOUT_MESSAGE
