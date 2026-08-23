@@ -1,3 +1,4 @@
+const os = require('os');
 const fs = require('fs');
 const path = require('path');
 const { PassThrough } = require('stream');
@@ -11,6 +12,12 @@ describe('downloadDocuments', () => {
     const testLinks = [
         { url: testUrl, text: 'Dummy PDF' }
     ];
+    let cacheDir;
+
+    beforeAll(() => {
+        cacheDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dl-cache-test-'));
+        process.env.DOWNLOAD_CACHE_DIR = cacheDir;
+    });
 
     beforeEach(() => {
         axios.mockImplementation(() => {
@@ -21,12 +28,15 @@ describe('downloadDocuments', () => {
     });
 
     afterAll(() => {
+        delete process.env.DOWNLOAD_CACHE_DIR;
+        if (cacheDir) fs.rmSync(cacheDir, { recursive: true, force: true });
         // Clean up downloaded files
         const uploadsDir = path.resolve(__dirname, '../uploads');
         if (fs.existsSync(uploadsDir)) {
-            fs.readdirSync(uploadsDir).forEach(file => {
-                fs.unlinkSync(path.join(uploadsDir, file));
-            });
+            fs.readdirSync(uploadsDir)
+                .map(file => path.join(uploadsDir, file))
+                .filter(entry => { try { return fs.statSync(entry).isFile(); } catch { return false; } })
+                .forEach(filePath => fs.unlinkSync(filePath));
         }
     });
 

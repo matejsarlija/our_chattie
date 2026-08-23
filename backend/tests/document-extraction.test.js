@@ -158,6 +158,18 @@ describe('extractTextFromFile', () => {
 });
 
 describe('extractTextViaOCR', () => {
+    let ocrCacheDir;
+
+    beforeAll(() => {
+        ocrCacheDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ocr-page-store-test-'));
+        process.env.OCR_CACHE_DIR = ocrCacheDir;
+    });
+
+    afterAll(() => {
+        delete process.env.OCR_CACHE_DIR;
+        if (ocrCacheDir) fs.rmSync(ocrCacheDir, { recursive: true, force: true });
+    });
+
     beforeEach(() => {
         // Invoke-count assertions elsewhere in this file assume per-test
         // isolation of the shared Gemini mock — and of the module-global
@@ -415,6 +427,33 @@ describe('OCR resilience and cost guards', () => {
             expect(second.error).toBeNull();
             expect(second.text).toContain('stable body one');
             expect(second.text).toContain('stable body two');
+        } finally {
+            fs.unlinkSync(tmpFile);
+        }
+    });
+
+    it('serves pages from the persistent store after a simulated backend restart', async () => {
+        setupOcr({ numPages: 2 });
+        mockGeminiInvoke.mockImplementation(() => Promise.resolve({
+            content: '=== STRANICA 1 ===\npersist body one\n=== STRANICA 2 ===\npersist body two',
+        }));
+
+        const tmpFile = uniqueTmpPdf('persist');
+        try {
+            const first = await extractTextViaOCR(tmpFile);
+            const callsAfterFirst = mockGeminiInvoke.mock.calls.length;
+            expect(callsAfterFirst).toBe(1);
+
+            // Wiping only the in-memory LRU simulates a backend restart; the
+            // disk tier must satisfy every page without new vision spend.
+            resetOcrPageCacheForTests();
+
+            const second = await extractTextViaOCR(tmpFile);
+            expect(mockGeminiInvoke.mock.calls.length).toBe(callsAfterFirst);
+            expect(second.pages).toBe(2);
+            expect(second.error).toBeNull();
+            expect(second.text).toContain('persist body one');
+            expect(second.text).toContain('persist body two');
         } finally {
             fs.unlinkSync(tmpFile);
         }

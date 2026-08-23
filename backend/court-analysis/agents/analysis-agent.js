@@ -16,6 +16,7 @@ const { GEMINI_MODEL, GEMINI_API_KEY, createGeminiClient, outputCapWarning } = r
 const { resolveGeminiPlan } = require("../../helpers/geminiPlan");
 const { classifyFileFailure } = require("../../helpers/friendlyAnalysisError");
 const { extractJsonBlock } = require("../../helpers/jsonExtract");
+const ocrPageStore = require("../../helpers/ocrPageStore");
 // Two role-scoped clients: document JSON analysis and vision OCR differ in
 // temperature and output-token policy.
 const gemini = createGeminiClient("analysis");
@@ -319,18 +320,38 @@ async function renderPageToJpeg(page) {
 }
 
 // Page-level OCR memo keyed by document content hash, so transient second-pass
-// retries (and re-runs within one server process) never re-spend vision quota
-// on pages already read. In-memory by design: restarts clear it, and disk
-// persistence would be scope creep for a retry-shaped problem.
+// retries (and re-runs) never re-spend vision quota on pages already read.
+// Two tiers: an in-process LRU (L1) in front of a persistent disk store (L2,
+// helpers/ocrPageStore.js) so pages survive backend restarts. The store is
+// versioned by prompt/model and never fails a run — see its header for the
+// invalidation contract.
 const OCR_PAGE_CACHE_MAX_ENTRIES = 200;
 const ocrPageCache = new Map();
 
+function splitOcrCacheKey(key) {
+    const separator = key.lastIndexOf(":");
+    if (separator <= 0) return null;
+    const pageNumber = Number.parseInt(key.slice(separator + 1), 10);
+    if (!Number.isFinite(pageNumber)) return null;
+    return { contentHash: key.slice(0, separator), pageNumber };
+}
+
 function readCachedOcrPage(key) {
-    if (!ocrPageCache.has(key)) return null;
-    const value = ocrPageCache.get(key);
-    ocrPageCache.delete(key);
-    ocrPageCache.set(key, value);
-    return value;
+    if (ocrPageCache.has(key)) {
+        const value = ocrPageCache.get(key);
+        ocrPageCache.delete(key);
+        ocrPageCache.set(key, value);
+        return value;
+    }
+    // L2: restart-persistent tier. A hit hydrates L1 and still counts as a
+    // cache hit upstream (zero vision spend).
+    const parts = splitOcrCacheKey(key);
+    if (!parts) return null;
+    const fromDisk = ocrPageStore.readOcrPageFromDisk(parts.contentHash, parts.pageNumber);
+    if (fromDisk === null) return null;
+    agentLog.log(`[OCR] Persistent cache hit: ${parts.contentHash.slice(0, 8)} page ${parts.pageNumber}`);
+    ocrPageCache.set(key, fromDisk);
+    return fromDisk;
 }
 
 function writeCachedOcrPage(key, value) {
@@ -338,6 +359,10 @@ function writeCachedOcrPage(key, value) {
     ocrPageCache.set(key, value);
     while (ocrPageCache.size > OCR_PAGE_CACHE_MAX_ENTRIES) {
         ocrPageCache.delete(ocrPageCache.keys().next().value);
+    }
+    const parts = splitOcrCacheKey(key);
+    if (parts) {
+        ocrPageStore.writeOcrPageToDisk(parts.contentHash, parts.pageNumber, value);
     }
 }
 

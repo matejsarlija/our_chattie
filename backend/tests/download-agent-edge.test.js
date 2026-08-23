@@ -1,3 +1,4 @@
+const os = require('os');
 const { DownloadDocumentsTool } = require('../court-analysis/agents/download-agent');
 const fs = require('fs');
 const path = require('path');
@@ -6,6 +7,13 @@ jest.mock('axios');
 const axios = require('axios');
 
 describe('DownloadDocumentsTool edge/error cases', () => {
+    let cacheDir;
+
+    beforeAll(() => {
+        cacheDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dl-cache-edge-test-'));
+        process.env.DOWNLOAD_CACHE_DIR = cacheDir;
+    });
+
     beforeEach(() => {
         axios.mockImplementation(({ url }) => {
             if (url === 'http://invalid.url') {
@@ -33,12 +41,15 @@ describe('DownloadDocumentsTool edge/error cases', () => {
     });
 
     afterAll(() => {
+        delete process.env.DOWNLOAD_CACHE_DIR;
+        if (cacheDir) fs.rmSync(cacheDir, { recursive: true, force: true });
         // Clean up any files
         const uploadsDir = path.resolve(__dirname, '../uploads');
         if (fs.existsSync(uploadsDir)) {
-            fs.readdirSync(uploadsDir).forEach(file => {
-                fs.unlinkSync(path.join(uploadsDir, file));
-            });
+            fs.readdirSync(uploadsDir)
+                .map(file => path.join(uploadsDir, file))
+                .filter(entry => { try { return fs.statSync(entry).isFile(); } catch { return false; } })
+                .forEach(filePath => fs.unlinkSync(filePath));
         }
     });
 });
