@@ -108,3 +108,49 @@ describe('reasoning reportService', () => {
         expect(mockVerifyReport).toHaveBeenCalledWith(synthesizedReport, synthesisEvidence, expect.any(Object));
     });
 });
+
+describe('composeOverviewMarkdown', () => {
+  const { composeOverviewMarkdown } = require('../../court-analysis/reasoning/reportService');
+
+  test('composes narrative, findings, open questions, and next steps', () => {
+    const overview = composeOverviewMarkdown({
+      narrative: 'Predmet je otvoren 2013.',
+      findings: [
+        { text: 'Priznata tražbina od 100.000 EUR.', confidence: 'high' },
+        { text: '', confidence: 'low' },
+      ],
+      openQuestions: ['Nije poznat status GFI izvješća.'],
+      nextSteps: ['Pratiti rok za prijavu potražina.'],
+    });
+
+    expect(overview).toContain('Predmet je otvoren 2013.');
+    expect(overview).toContain('## Ključni nalazi');
+    // English model tokens are rendered as Croatian prose labels.
+    expect(overview).toContain('- Priznata tražbina od 100.000 EUR. _(pouzdanost: visoka)_');
+    // Empty-text findings are dropped: exactly one confidence marker remains.
+    expect(overview.split('_(pouzdanost')).toHaveLength(2);
+    expect(overview).toContain('## Otvorena pitanja\n- Nije poznat status GFI izvješća.');
+    expect(overview).toContain('## Sljedeći koraci\n- Pratiti rok za prijavu potražina.');
+  });
+
+  test('unknown confidence tokens fall through untranslated', () => {
+    const overview = composeOverviewMarkdown({
+      findings: [{ text: 'Nalaz.', confidence: 'very-solid' }],
+    });
+    expect(overview).toContain('- Nalaz. _(pouzdanost: very-solid)_');
+  });
+
+  test('returns only the narrative when no structured sections exist', () => {
+    expect(composeOverviewMarkdown({ narrative: 'Samo narativ.' })).toBe('Samo narativ.');
+  });
+
+  test('returns empty string for null/empty reports so guards skip the visualizer', () => {
+    expect(composeOverviewMarkdown(null)).toBe('');
+    expect(composeOverviewMarkdown({})).toBe('');
+  });
+
+  test('placeholder narratives pass through unchanged (visualizer guard matches them)', () => {
+    const placeholder = 'Nema dovoljno dokaza za generiranje izvješća.';
+    expect(composeOverviewMarkdown({ narrative: placeholder })).toBe(placeholder);
+  });
+});

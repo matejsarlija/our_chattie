@@ -20,7 +20,6 @@ jest.mock('../court-analysis/agents/analysis-agent', () => ({
     AnalyzeDocumentsTool: jest.fn().mockImplementation(() => ({
         _call: mockAnalyzeCall
     })),
-    generateComparativeAnalysis: jest.fn().mockResolvedValue('Comparative Analysis')
 }));
 
 jest.mock('../court-registry/enricher', () => ({
@@ -549,7 +548,9 @@ describe('processScrapedCases discovery reconciliation', () => {
         expect(error.stage).toBe('reasoning');
         expect(error.partialResult.processedCases).toHaveLength(1);
         expect(error.partialResult.processedCases[0].caseResult.caseNumber).toBe('ST-100/2023');
-        expect(error.partialResult.comparativeAnalysis).toBe('Comparative Analysis');
+        // Single-source narrative: when synthesis itself fails there is no
+        // separately-generated overview to salvage.
+        expect(error.partialResult.comparativeAnalysis).toBeNull();
         expect(error.partialResult.report).toBeNull();
         expect(error.partialResult.clusterEvidencePackage.clusterId).toBe('ST-100/2023');
     });

@@ -16,6 +16,12 @@ const mockNormalizeReasoningEvidence = jest.fn((evidencePackage) => ({
   },
 }));
 
+// Pin the plan so the classified per-file reasons are deterministic
+// regardless of the developer's local settings.json.
+jest.mock('../helpers/geminiPlan', () => ({
+  resolveGeminiPlan: jest.fn(() => 'free'),
+}));
+
 jest.mock('../scraper/courtSearchPuppeteer', () => {
   return jest.fn().mockImplementation(() => ({
     init: mockInit,
@@ -34,7 +40,6 @@ jest.mock('../court-analysis/agents/analysis-agent', () => ({
   AnalyzeDocumentsTool: jest.fn().mockImplementation(() => ({
     _call: mockAnalyzeCall,
   })),
-  generateComparativeAnalysis: jest.fn().mockResolvedValue('Comparative Analysis'),
 }));
 
 jest.mock('../court-analysis/agents/visualizer-agent', () => ({
@@ -71,6 +76,7 @@ jest.mock('fs', () => ({
 const { runCourtAnalysis, isUsableAnalysisText } = require('../court-analysis/pipeline');
 const { buildClusterEvidencePackage, attachAnalysesToEvidencePackage } = require('../court-analysis/reasoning/evidencePackage');
 const { collectSources } = require('../court-analysis/reasoning/indexer');
+const { DAILY_LIMIT_MESSAGE } = require('../helpers/friendlyAnalysisError');
 const realSynthesizer = jest.requireActual('../court-analysis/reasoning/synthesizer');
 
 function buildBaseCluster() {
@@ -129,7 +135,14 @@ describe('Track 1: evidence enrichment (1c)', () => {
       total: 3,
       coverageRatio: 0.67,
       complete: false,
-      failedFiles: [{ fileName: 'doc3.pdf', reason: 'Gemini request timed out after 30000ms' }],
+      // Per-file reasons are classified for users: on the free plan a Gemini
+      // timeout IS the daily-cap hang, so the banner says so instead of
+      // echoing the raw SDK message.
+      failedFiles: [{
+        fileName: 'doc3.pdf',
+        code: 'timeout',
+        reason: DAILY_LIMIT_MESSAGE,
+      }],
     });
   });
 
@@ -309,14 +322,11 @@ describe('Track 1: visualizer guards (1e)', () => {
     mockDownloadCall.mockResolvedValue([{ filePath: '/tmp/track1.pdf', url: 'u1' }]);
     mockAnalyzeCall.mockResolvedValue({ individualAnalyses: [], finalSummary: 'Analysis' });
 
-    // Simulate the real-world failure where generateComparativeAnalysis emits a placeholder.
-    require('../court-analysis/agents/analysis-agent').generateComparativeAnalysis.mockResolvedValue(
-      'Greška pri generiranju završnog sažetka.'
-    );
-
+    // Simulate the real-world failure where synthesis has no evidence and the
+    // report carries only the empty-report placeholder narrative.
     mockSynthesizeReport.mockResolvedValue({
       schemaVersion: '1.0.0',
-      narrative: 'Report',
+      narrative: 'Nema dovoljno dokaza za generiranje izvješća.',
       claims: [],
       findings: [],
       openQuestions: [],

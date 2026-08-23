@@ -4,7 +4,7 @@ const CourtSearchPuppeteer = require('../scraper/courtSearchPuppeteer');
 const { DownloadDocumentsTool } = require('./agents/download-agent');
 const { ExtractArchiveTool } = require('./agents/extract-tool');
 // We will modify AnalyzeDocumentsTool, so we need to import it
-const { AnalyzeDocumentsTool, generateComparativeAnalysis } = require('./agents/analysis-agent');
+const { AnalyzeDocumentsTool } = require('./agents/analysis-agent');
 const { VisualizerTool } = require('./agents/visualizer-agent');
 const { enrichParticipants } = require('../court-registry/enricher');
 const {
@@ -15,7 +15,7 @@ const {
 const { groupEntriesByCase } = require('./utils/grouping');
 const { normalizeCaseNumber } = require('./utils/caseNumber');
 const { buildClusterEvidencePackage, attachAnalysesToEvidencePackage } = require('./reasoning/evidencePackage');
-const { generateClusterReport } = require('./reasoning/reportService');
+const { generateClusterReport, composeOverviewMarkdown } = require('./reasoning/reportService');
 const { createUsageTracker } = require('../helpers/geminiUsage');
 const fs = require('fs');
 const path = require('path');
@@ -49,9 +49,9 @@ function buildEmptyPartialResult() {
     };
 }
 
-// Placeholder/error strings produced by generateComparativeAnalysis when the
-// underlying AI call failed. These carry no analyzable substance, so the
-// visualizer must not run against them (it would only emit an empty stub).
+// Placeholder strings emitted by the reasoning layer when synthesis has no
+// usable evidence (createEmptyReport). They carry no analyzable substance, so
+// the visualizer must not run against them (it would only emit an empty stub).
 const USELESS_ANALYSIS_TEXT_RE = /gre[šs]ka pri generiranju|nema dostupnih podataka za generiranje analize|analiza dokumenata nije uspje[šs]no izvr[šs]ena|nema dovoljno dokaza/i;
 
 function isUsableAnalysisText(text) {
@@ -1574,15 +1574,19 @@ async function processScrapedCases(casesToProcess, progressCallback, options = {
         );
         partialResult.clusterEvidencePackage = enrichedEvidencePackage;
 
-        stageAwareProgress?.({ step: 'reasoning', progress: 85, message: 'Generiram usporednu analizu i zaključak...' });
-        let comparativeAnalysis = await generateComparativeAnalysis(allProcessedCases, { clusterEvidencePackage, tracker: usageTracker, onUsage: emitUsage });
-        partialResult.comparativeAnalysis = comparativeAnalysis;
+        stageAwareProgress?.({ step: 'reasoning', progress: 85, message: 'Generiram stručni izvještaj i zaključak...' });
         const report = await generateClusterReport(enrichedEvidencePackage, {
             onStage: (event) => stageAwareProgress?.(event),
             tracker: usageTracker,
             onUsage: emitUsage
         });
         partialResult.report = report;
+
+        // One LLM narrative per run: the human-facing overview is composed
+        // deterministically from the synthesized report instead of asking the
+        // model for a second, overlapping summary.
+        let comparativeAnalysis = composeOverviewMarkdown(report);
+        partialResult.comparativeAnalysis = comparativeAnalysis;
         logger.info('pipeline.processScrapedCases', 'Reasoning report generated', {
             processedCases: allProcessedCases.length,
             reportFindings: Array.isArray(report?.findings) ? report.findings.length : 0,

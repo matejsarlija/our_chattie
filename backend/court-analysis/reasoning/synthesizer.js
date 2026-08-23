@@ -1,8 +1,8 @@
 require("dotenv").config();
-const { ChatGoogleGenerativeAI } = require("@langchain/google-genai");
 const { withGeminiRetry, withGeminiTimeout } = require("../../helpers/geminiRetry");
 const { trackGeminiInvoke } = require("../../helpers/geminiUsage");
-const { GEMINI_MODEL, GEMINI_API_KEY } = require("../../helpers/geminiConfig");
+const { createGeminiClient, outputCapWarning } = require("../../helpers/geminiConfig");
+const { extractJsonBlock } = require("../../helpers/jsonExtract");
 const agentLog = require("../../helpers/agentLog");
 const { SCHEMA_VERSION, validateReport } = require("./schema");
 const { validateClusterEvidencePackage } = require("./evidencePackage");
@@ -12,11 +12,7 @@ const {
     applyCoverageConfidenceGuard
 } = require("./coverageGuard");
 
-const gemini = new ChatGoogleGenerativeAI({
-    model: GEMINI_MODEL,
-    apiKey: GEMINI_API_KEY,
-    temperature: 0.2 // Low temp for factual reporting
-});
+const gemini = createGeminiClient("synthesis");
 
 /**
  * Synthesizes a structured report from the reasoning evidence package.
@@ -86,13 +82,11 @@ async function synthesizeReport(evidencePackage, options = {}) {
 
     try {
         const response = await withGeminiRetry(() => withGeminiTimeout((signal) => trackGeminiInvoke(gemini, prompt, { signal, tracker: options.tracker, onUsage: options.onUsage })));
-        const cleanJson = response.content.replace(/```json\n?|```/g, "").trim();
-        
-        let parsed;
-        try {
-            parsed = JSON.parse(cleanJson);
-        } catch (e) {
-            agentLog.error("Failed to parse synthesizer JSON:", cleanJson);
+        const parsed = extractJsonBlock(response.content);
+
+        if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+            agentLog.warn(outputCapWarning("synthesis"));
+            agentLog.error("Failed to parse synthesizer JSON:", response.content);
             throw new Error("Synthesizer returned invalid JSON.");
         }
 

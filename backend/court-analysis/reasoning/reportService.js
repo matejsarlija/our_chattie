@@ -59,7 +59,56 @@ async function generateClusterReport(clusterEvidencePackage, options = {}) {
     };
 }
 
+// Single-source narrative: the structured report is the only LLM synthesis of
+// a run. The human-facing overview (persisted as result_text) is composed
+// deterministically from that report, so the two surfaces can never disagree
+// and the pipeline spends one narrative call instead of two.
+// Confidence values arrive from the model as English tokens; the overview is
+// user-facing Croatian prose, so they are translated here. Unknown tokens fall
+// through untranslated rather than disappearing.
+const CONFIDENCE_LABELS_HR = { high: 'visoka', medium: 'srednja', low: 'niska' };
+
+function composeOverviewMarkdown(report) {
+    if (!report) return '';
+    const sections = [];
+
+    const narrative = String(report.narrative || '').trim();
+    if (narrative) sections.push(narrative);
+
+    const findings = Array.isArray(report.findings) ? report.findings : [];
+    const findingLines = findings
+        .map((finding) => {
+            const text = String(finding?.text || '').trim();
+            if (!text) return null;
+            const rawConfidence = String(finding?.confidence || '').toLowerCase();
+            const confidenceLabel = CONFIDENCE_LABELS_HR[rawConfidence] || finding?.confidence;
+            const confidence = confidenceLabel ? ` _(pouzdanost: ${confidenceLabel})_` : '';
+            return `- ${text}${confidence}`;
+        })
+        .filter(Boolean);
+    if (findingLines.length > 0) {
+        sections.push(`## Ključni nalazi\n${findingLines.join('\n')}`);
+    }
+
+    const openQuestions = (Array.isArray(report.openQuestions) ? report.openQuestions : [])
+        .map((question) => String(question || '').trim())
+        .filter(Boolean);
+    if (openQuestions.length > 0) {
+        sections.push(`## Otvorena pitanja\n${openQuestions.map((question) => `- ${question}`).join('\n')}`);
+    }
+
+    const nextSteps = (Array.isArray(report.nextSteps) ? report.nextSteps : [])
+        .map((step) => String(step || '').trim())
+        .filter(Boolean);
+    if (nextSteps.length > 0) {
+        sections.push(`## Sljedeći koraci\n${nextSteps.map((step) => `- ${step}`).join('\n')}`);
+    }
+
+    return sections.join('\n\n').trim();
+}
+
 module.exports = {
     generateClusterReport,
-    buildSynthesisInput
+    buildSynthesisInput,
+    composeOverviewMarkdown
 };

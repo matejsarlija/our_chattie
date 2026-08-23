@@ -22,7 +22,6 @@ jest.mock('../court-analysis/agents/analysis-agent', () => ({
     AnalyzeDocumentsTool: jest.fn().mockImplementation(() => ({
         _call: mockAnalyzeCall
     })),
-    generateComparativeAnalysis: jest.fn().mockResolvedValue('Comparative Analysis')
 }));
 
 
