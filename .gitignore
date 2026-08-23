@@ -54,3 +54,12 @@ yarn-error.log*
 storybook-static
 .storybook/
 src/stories/
+
+# Real e-Oglasna document fixtures: local-only binaries + their manifest.
+# Tests self-skip when absent; committing the manifest without the binaries
+# would flip CI from skip to fail. See backend/tests/fixtures/real-documents/README.md
+backend/tests/fixtures/real-documents/*
+!backend/tests/fixtures/real-documents/README.md
+
+# Local architecture-explorer scratch tool (self-contained HTML), not product code.
+/tools/architecture-explorer/
