@@ -1,17 +1,12 @@
 // backend/court-analysis/agents/visualizer-agent.js
 require("dotenv").config();
 const { Tool } = require("@langchain/core/tools");
-const { ChatGoogleGenerativeAI } = require("@langchain/google-genai");
 const { withGeminiRetry, withGeminiTimeout } = require("../../helpers/geminiRetry");
 const { trackGeminiInvoke } = require("../../helpers/geminiUsage");
-const { GEMINI_MODEL, GEMINI_API_KEY } = require("../../helpers/geminiConfig");
+const { createGeminiClient } = require("../../helpers/geminiConfig");
 const agentLog = require("../../helpers/agentLog");
 
-const gemini = new ChatGoogleGenerativeAI({
-    model: GEMINI_MODEL, // Consistent with analysis agent
-    apiKey: GEMINI_API_KEY,
-    temperature: 0.1, // Low temperature for strict syntax adherence
-});
+const gemini = createGeminiClient("visualizer");
 
 /**
  * VisualizerTool: Transforms legal analysis text into a strictly valid Mermaid flowchart.
