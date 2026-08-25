@@ -14,6 +14,8 @@
     "test:nightly-live": "RUN_PUPPETEER_INTEGRATION=1 RUN_PUPPETEER_SMOKE=1 jest backend/tests/pipeline.live.integration.test.js backend/tests/court-analysis-integration.test.js backend/tests/app.smoke.puppeteer.test.js",
     "fixtures:fetch": "node scripts/fetch-real-document-fixtures.js",
     "fixtures:verify": "node scripts/fetch-real-document-fixtures.js --verify-only",
+    "eval:reasoning": "node scripts/eval-reasoning.js",
+    "eval:reasoning:strict": "node scripts/eval-reasoning.js --strict",
     "verify:reasoning": "node scripts/verify-live-reasoning.js",
     "verify:ocr-batch": "node scripts/verify-live-ocr-batch.js"
   },

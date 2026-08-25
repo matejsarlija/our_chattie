@@ -1,0 +1,210 @@
+{
+  "fixtureDescription": "Frozen single-cluster eval fixture: fictional bankruptcy case Stč-2150/2022 (Debtor d.o.o.). Three published announcements plus three production-shaped individualAnalyses. Gold labels state what a correct analysis must surface. rawDocuments holds full document texts simulating OCR-cache content; reserved for the grounding-gap lane until pkg.chunks population lands (Phase 0.1).",
+  "basePackage": {
+    "packageType": "ClusterEvidencePackage",
+    "schemaVersion": 1,
+    "reasoningScope": "single-cluster",
+    "selectedClusterIds": ["Stč-2150/2022"],
+    "clusterId": "Stč-2150/2022",
+    "primaryCaseNumber": "Stč-2150/2022",
+    "query": { "type": "oib", "value": "11223344556" },
+    "identity": {
+      "consistency": "consistent",
+      "notes": [],
+      "participantNames": ["Ducanor d.o.o.", "Ante Anić", "Kupac Prostor d.o.o."],
+      "participantOibs": ["11223344556"]
+    },
+    "discovery": {
+      "reasoningClusterId": "Stč-2150/2022",
+      "recommendedPrimaryClusterId": "Stč-2150/2022",
+      "secondaryClusterIds": ["Stč-2151/2022"],
+      "discoveryMode": "oib-forward-window",
+      "acquisitionModes": ["search-window-forward"],
+      "acquisitionProvenance": [],
+      "totalResults": 12,
+      "totalPages": 2,
+      "pagesScanned": 2,
+      "rawEntryCount": 12,
+      "capturedDistinctCaseCount": 2,
+      "coverageConfidence": "high"
+    },
+    "selection": {
+      "selectedForReasoning": true,
+      "score": 9,
+      "reason": "most-documents",
+      "diagnostics": null
+    },
+    "expansion": {
+      "eligibility": null,
+      "plan": null,
+      "execution": null
+    },
+    "acquisition": {
+      "modes": ["search-window-forward"],
+      "provenance": [],
+      "entryCountsByMode": { "search-window-forward": 3 },
+      "documentCountsByMode": { "search-window-forward": 3 }
+    },
+    "entries": [
+      {
+        "index": 0,
+        "caseNumber": "Stč-2150/2022",
+        "title": "Rješenje kojim se otvara stečajni postupak nad dužnikom Ducanor d.o.o.",
+        "court": "Trgovački sud u Zagrebu",
+        "date": "2022-03-18",
+        "detailLink": "https://e-oglasna.pravosudje.hr/objave/eval-fixture-stc-2150-entry-1",
+        "entryDisplayId": "eval-fixture-stc-2150-entry-1",
+        "participants": [
+          { "name": "Ducanor d.o.o.", "role": "Dužnik", "oib": "11223344556" },
+          { "name": "Ante Anić", "role": "Stečajni upravitelj", "oib": null }
+        ],
+        "acquisition": { "mode": "search-window-forward", "currentPage": 1, "sourceCaseNumber": "Stč-2150/2022", "pass": 1, "strategy": "forward", "reason": null },
+        "documentLinks": [
+          {
+            "id": "Stč-2150/2022::entry-1::doc-1",
+            "url": "https://e-oglasna.pravosudje.hr/attachment/eval-rjesenje-otvaranje.pdf",
+            "text": "Rješenje_o_otvaranju_stecajnog_postupka.pdf",
+            "entryIndex": 0,
+            "entryTitle": "Rješenje kojim se otvara stečajni postupak nad dužnikom Ducanor d.o.o.",
+            "entryDisplayId": "eval-fixture-stc-2150-entry-1",
+            "caseNumber": "Stč-2150/2022",
+            "acquisition": { "mode": "search-window-forward", "currentPage": 1, "sourceCaseNumber": "Stč-2150/2022", "pass": 1, "strategy": "forward", "reason": null },
+            "sourceProvenance": { "acquisitionMode": "search-window-forward", "currentPage": 1, "sourceCaseNumber": "Stč-2150/2022", "pass": 1, "strategy": "forward", "reason": null, "entryDetailLink": "https://e-oglasna.pravosudje.hr/objave/eval-fixture-stc-2150-entry-1" }
+          }
+        ]
+      },
+      {
+        "index": 1,
+        "caseNumber": "Stč-2150/2022",
+        "title": "Objava o roku za prijavu tražbina vjerovnika",
+        "court": "Trgovački sud u Zagrebu",
+        "date": "2022-03-25",
+        "detailLink": "https://e-oglasna.pravosudje.hr/objave/eval-fixture-stc-2150-entry-2",
+        "entryDisplayId": "eval-fixture-stc-2150-entry-2",
+        "participants": [
+          { "name": "Ducanor d.o.o.", "role": "Dužnik", "oib": "11223344556" },
+          { "name": "Ante Anić", "role": "Stečajni upravitelj", "oib": null }
+        ],
+        "acquisition": { "mode": "search-window-forward", "currentPage": 1, "sourceCaseNumber": "Stč-2150/2022", "pass": 1, "strategy": "forward", "reason": null },
+        "documentLinks": [
+          {
+            "id": "Stč-2150/2022::entry-2::doc-1",
+            "url": "https://e-oglasna.pravosudje.hr/attachment/eval-poziv-vjerovnicima.pdf",
+            "text": "Poziv_vjerovnicima_za_prijavu_trazbina.pdf",
+            "entryIndex": 1,
+            "entryTitle": "Objava o roku za prijavu tražbina vjerovnika",
+            "entryDisplayId": "eval-fixture-stc-2150-entry-2",
+            "caseNumber": "Stč-2150/2022",
+            "acquisition": { "mode": "search-window-forward", "currentPage": 1, "sourceCaseNumber": "Stč-2150/2022", "pass": 1, "strategy": "forward", "reason": null },
+            "sourceProvenance": { "acquisitionMode": "search-window-forward", "currentPage": 1, "sourceCaseNumber": "Stč-2150/2022", "pass": 1, "strategy": "forward", "reason": null, "entryDetailLink": "https://e-oglasna.pravosudje.hr/objave/eval-fixture-stc-2150-entry-2" }
+          }
+        ]
+      },
+      {
+        "index": 2,
+        "caseNumber": "Stč-2150/2022",
+        "title": "Izvještaj stečajnog upravitelja i rješenje o prodaji imovine",
+        "court": "Trgovački sud u Zagrebu",
+        "date": "2023-02-14",
+        "detailLink": "https://e-oglasna.pravosudje.hr/objave/eval-fixture-stc-2150-entry-3",
+        "entryDisplayId": "eval-fixture-stc-2150-entry-3",
+        "participants": [
+          { "name": "Ducanor d.o.o.", "role": "Dužnik", "oib": "11223344556" },
+          { "name": "Kupac Prostor d.o.o.", "role": "Kupac", "oib": "99887766554" }
+        ],
+        "acquisition": { "mode": "search-window-forward", "currentPage": 2, "sourceCaseNumber": "Stč-2150/2022", "pass": 1, "strategy": "forward", "reason": null },
+        "documentLinks": [
+          {
+            "id": "Stč-2150/2022::entry-3::doc-1",
+            "url": "https://e-oglasna.pravosudje.hr/attachment/eval-rjesenje-prodaja-imovine.pdf",
+            "text": "Rjesenje_o_prodaji_imovine.pdf",
+            "entryIndex": 2,
+            "entryTitle": "Izvještaj stečajnog upravitelja i rješenje o prodaji imovine",
+            "entryDisplayId": "eval-fixture-stc-2150-entry-3",
+            "caseNumber": "Stč-2150/2022",
+            "acquisition": { "mode": "search-window-forward", "currentPage": 2, "sourceCaseNumber": "Stč-2150/2022", "pass": 1, "strategy": "forward", "reason": null },
+            "sourceProvenance": { "acquisitionMode": "search-window-forward", "currentPage": 2, "sourceCaseNumber": "Stč-2150/2022", "pass": 1, "strategy": "forward", "reason": null, "entryDetailLink": "https://e-oglasna.pravosudje.hr/objave/eval-fixture-stc-2150-entry-3" }
+          }
+        ]
+      }
+    ],
+    "documentLinks": [
+      { "id": "Stč-2150/2022::entry-1::doc-1", "url": "https://e-oglasna.pravosudje.hr/attachment/eval-rjesenje-otvaranje.pdf", "text": "Rješenje_o_otvaranju_stecajnog_postupka.pdf", "entryIndex": 0, "entryTitle": "Rješenje kojim se otvara stečajni postupak nad dužnikom Ducanor d.o.o.", "entryDisplayId": "eval-fixture-stc-2150-entry-1", "caseNumber": "Stč-2150/2022", "acquisition": { "mode": "search-window-forward", "currentPage": 1, "sourceCaseNumber": "Stč-2150/2022", "pass": 1, "strategy": "forward", "reason": null }, "sourceProvenance": { "acquisitionMode": "search-window-forward", "currentPage": 1, "sourceCaseNumber": "Stč-2150/2022", "pass": 1, "strategy": "forward", "reason": null, "entryDetailLink": "https://e-oglasna.pravosudje.hr/objave/eval-fixture-stc-2150-entry-1" } },
+      { "id": "Stč-2150/2022::entry-2::doc-1", "url": "https://e-oglasna.pravosudje.hr/attachment/eval-poziv-vjerovnicima.pdf", "text": "Poziv_vjerovnicima_za_prijavu_trazbina.pdf", "entryIndex": 1, "entryTitle": "Objava o roku za prijavu tražbina vjerovnika", "entryDisplayId": "eval-fixture-stc-2150-entry-2", "caseNumber": "Stč-2150/2022", "acquisition": { "mode": "search-window-forward", "currentPage": 1, "sourceCaseNumber": "Stč-2150/2022", "pass": 1, "strategy": "forward", "reason": null }, "sourceProvenance": { "acquisitionMode": "search-window-forward", "currentPage": 1, "sourceCaseNumber": "Stč-2150/2022", "pass": 1, "strategy": "forward", "reason": null, "entryDetailLink": "https://e-oglasna.pravosudje.hr/objave/eval-fixture-stc-2150-entry-2" } },
+      { "id": "Stč-2150/2022::entry-3::doc-1", "url": "https://e-oglasna.pravosudje.hr/attachment/eval-rjesenje-prodaja-imovine.pdf", "text": "Rjesenje_o_prodaji_imovine.pdf", "entryIndex": 2, "entryTitle": "Izvještaj stečajnog upravitelja i rješenje o prodaji imovine", "entryDisplayId": "eval-fixture-stc-2150-entry-3", "caseNumber": "Stč-2150/2022", "acquisition": { "mode": "search-window-forward", "currentPage": 2, "sourceCaseNumber": "Stč-2150/2022", "pass": 1, "strategy": "forward", "reason": null }, "sourceProvenance": { "acquisitionMode": "search-window-forward", "currentPage": 2, "sourceCaseNumber": "Stč-2150/2022", "pass": 1, "strategy": "forward", "reason": null, "entryDetailLink": "https://e-oglasna.pravosudje.hr/objave/eval-fixture-stc-2150-entry-3" } }
+    ]
+  },
+  "analyses": [
+    {
+      "filePath": "/fixtures/eval/Rjesenje_o_otvaranju_stecajnog_postupka.pdf",
+      "text": "Rješenje_o_otvaranju_stecajnog_postupka.pdf",
+      "aiResult": {
+        "caseNumber": "Stč-2150/2022",
+        "decisionDate": "2022-03-15",
+        "summary": "Trgovački sud u Zagrebu rješenjem od 15.03.2022. otvara se stečajni postupak nad dužnikom Ducanor d.o.o. Za stečajnog upravitelja imenovan je Ante Anić. Vjerovnici se pozivaju da svoje tražbine prijave u roku od 90 dana od dana objave rješenja. Polog za troškove stečajnog postupka u iznosu od 1.200,00 EUR dužnik je uplatio na žiro račun suda.",
+        "parties": [
+          { "name": "Ducanor d.o.o.", "role": "Dužnik", "oib": "11223344556" },
+          { "name": "Ante Anić", "role": "Stečajni upravitelj", "oib": null }
+        ],
+        "amounts": [
+          { "description": "Polog za troškove stečajnog postupka", "amount": 1200, "currency": "EUR", "date": "2022-03-15" }
+        ]
+      }
+    },
+    {
+      "filePath": "/fixtures/eval/Poziv_vjerovnicima_za_prijavu_trazbina.pdf",
+      "text": "Poziv_vjerovnicima_za_prijavu_trazbina.pdf",
+      "aiResult": {
+        "caseNumber": "Stč-2150/2022",
+        "decisionDate": "2022-03-25",
+        "summary": "Objava o roku za prijavu tražbina: vjerovnici Ducanor d.o.o. prijavljuju svoje tražbine stečajnom upravitelju Ante Anić najkasnije do 15.06.2022. Prijave koje kasne smatraju se zakašnjelima. Rok za prijavu tražbina ističe 15. lipnja 2022. godine.",
+        "parties": [
+          { "name": "Ducanor d.o.o.", "role": "Dužnik", "oib": "11223344556" }
+        ],
+        "amounts": []
+      }
+    },
+    {
+      "filePath": "/fixtures/eval/Rjesenje_o_prodaji_imovine.pdf",
+      "text": "Rjesenje_o_prodaji_imovine.pdf",
+      "aiResult": {
+        "caseNumber": "Stč-2150/2022",
+        "decisionDate": "2023-02-10",
+        "summary": "Izvještaj stečajnog upravitelja Ante Anića: ukupno su prijavljene tražbine u iznosu od 84.500,00 EUR. Sudjelovanjem kupca Kupac Prostor d.o.o. prodaje se imovina dužnika — proizvodne strojeve — po cijeni od 25.000,00 EUR. Sredstva od prodaje imovine koriste se za podmirenje prijavljenih tražbina prema redoslijedu iz ZPP.",
+        "parties": [
+          { "name": "Ducanor d.o.o.", "role": "Dužnik", "oib": "11223344556" },
+          { "name": "Kupac Prostor d.o.o.", "role": "Kupac", "oib": "99887766554" }
+        ],
+        "amounts": [
+          { "description": "Ukupno prijavljene tražbine", "amount": 84500, "currency": "EUR" },
+          { "description": "Prodaja proizvodnih strojeva", "amount": 25000, "currency": "EUR", "date": "2023-02-10" }
+        ]
+      }
+    }
+  ],
+  "rawDocuments": [
+    {
+      "fileName": "Rjesenje_o_otvaranju_stecajnog_postupka.pdf",
+      "text": "Rješenje kojim se otvara stečajni postupak nad dužnikom Ducanor d.o.o. — izvorni tekst dokumenta. Sud utvrđuje da dužnik Ducanor d.o.o. (OIB 11223344556) trajno ne može podmirivati svoje obveze prema vjerovnicima. Rješenjem se otvara stečajni postupak i imenuje stečajni upravitelj Ante Anić, koji ima ovlasti upravitelja da nastavlja tekuće poslove i privremeno se ophodi sa stečajnom masom. Stečajna masa čini proizvodne strojeve i zalihe robe. Vjerovnici prijavljuju tražbine stečajnom upravitelju, a rok za prijavu tražbina određen je objavom. Trošak postupka položen je u eur. Iznos pologa nalazi se u priloženoj potvrdi o uplati. Status postupka prati trgovački sud."
+    }
+  ],
+  "gold": {
+    "schemaVersion": 1,
+    "clusterId": "Stč-2150/2022",
+    "citationSpans": [
+      { "textIncludes": "otvara se stečajni postupak nad dužnikom ducanor d.o.o." },
+      { "textIncludes": "za stečajnog upravitelja imenovan je ante anić" },
+      { "textIncludes": "rok za prijavu tražbina ističe 15. lipnja 2022" },
+      { "textIncludes": "84.500,00 eur" },
+      { "textIncludes": "prodaje se imovina dužnika" },
+      { "textIncludes": "polog za troškove stečajnog postupka" },
+      { "textIncludes": "ovlasti upravitelja da nastavlja tekuće poslove" }
+    ],
+    "expectedAmounts": [
+      { "value": 1200, "currency": "EUR", "tolerancePct": 0.001, "descriptionIncludes": "polog" },
+      { "value": 84500, "currency": "EUR", "tolerancePct": 0.001, "descriptionIncludes": "tražbine" },
+      { "value": 25000, "currency": "EUR", "tolerancePct": 0.001, "descriptionIncludes": "strojeva" }
+    ],
+    "expectedDates": ["2022-03-15", "2022-03-25", "2023-02-10"]
+  }
+}

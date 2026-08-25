@@ -1,0 +1,460 @@
+{
+  "fixtureDescription": "Frozen single-cluster eval fixture: fictional enforcement case Ovr-455/2023 (Stambeno Gospodarstvo d.o.o. enforcing an unpaid invoice against Gradnja Plus d.o.o.). Third archetype — exercises ovršni vocabulary (izvršba, namirenje, prodaja pokretnine, kamate) and a partial-payment arc.",
+  "basePackage": {
+    "packageType": "ClusterEvidencePackage",
+    "schemaVersion": 1,
+    "reasoningScope": "single-cluster",
+    "selectedClusterIds": [
+      "Ovr-455/2023"
+    ],
+    "clusterId": "Ovr-455/2023",
+    "primaryCaseNumber": "Ovr-455/2023",
+    "query": {
+      "type": "text",
+      "value": "Gradnja Plus"
+    },
+    "identity": {
+      "consistency": "consistent",
+      "notes": [],
+      "participantNames": [
+        "Stambeno Gospodarstvo d.o.o.",
+        "Gradnja Plus d.o.o."
+      ],
+      "participantOibs": [
+        "44556677889"
+      ]
+    },
+    "discovery": {
+      "reasoningClusterId": "Ovr-455/2023",
+      "recommendedPrimaryClusterId": "Ovr-455/2023",
+      "secondaryClusterIds": [],
+      "discoveryMode": "text-forward-window",
+      "acquisitionModes": [
+        "search-window-forward"
+      ],
+      "acquisitionProvenance": [],
+      "totalResults": 6,
+      "totalPages": 1,
+      "pagesScanned": 1,
+      "rawEntryCount": 6,
+      "capturedDistinctCaseCount": 1,
+      "coverageConfidence": "high"
+    },
+    "selection": {
+      "selectedForReasoning": true,
+      "score": 6,
+      "reason": "single-active-cluster",
+      "diagnostics": null
+    },
+    "expansion": {
+      "eligibility": null,
+      "plan": null,
+      "execution": null
+    },
+    "acquisition": {
+      "modes": [
+        "search-window-forward"
+      ],
+      "provenance": [],
+      "entryCountsByMode": {
+        "search-window-forward": 3
+      },
+      "documentCountsByMode": {
+        "search-window-forward": 3
+      }
+    },
+    "entries": [
+      {
+        "index": 0,
+        "caseNumber": "Ovr-455/2023",
+        "title": "Rješenje o provedbi ovrhe na novčanim sredstvima",
+        "court": "Općinski sud u Zadru",
+        "date": "2023-03-02",
+        "detailLink": "https://e-oglasna.pravosudje.hr/objave/eval-fixture-ovr-455-entry-1",
+        "entryDisplayId": "eval-fixture-ovr-455-entry-1",
+        "participants": [
+          {
+            "name": "Stambeno Gospodarstvo d.o.o.",
+            "role": "Ovršitelj",
+            "oib": "44556677889"
+          },
+          {
+            "name": "Gradnja Plus d.o.o.",
+            "role": "Dužnik",
+            "oib": "55667788990"
+          }
+        ],
+        "acquisition": {
+          "mode": "search-window-forward",
+          "currentPage": 1,
+          "sourceCaseNumber": "Ovr-455/2023",
+          "pass": 1,
+          "strategy": "forward",
+          "reason": null
+        },
+        "documentLinks": [
+          {
+            "id": "Ovr-455/2023::entry-1::doc-1",
+            "url": "https://e-oglasna.pravosudje.hr/attachment/eval-rjesenje-ovrha.pdf",
+            "text": "Rjesenje_o_provedbi_ovrhe.pdf",
+            "entryIndex": 0,
+            "entryTitle": "Rješenje o provedbi ovrhe na novčanim sredstvima",
+            "entryDisplayId": "eval-fixture-ovr-455-entry-1",
+            "caseNumber": "Ovr-455/2023",
+            "acquisition": {
+              "mode": "search-window-forward",
+              "currentPage": 1,
+              "sourceCaseNumber": "Ovr-455/2023",
+              "pass": 1,
+              "strategy": "forward",
+              "reason": null
+            },
+            "sourceProvenance": {
+              "acquisitionMode": "search-window-forward",
+              "currentPage": 1,
+              "sourceCaseNumber": "Ovr-455/2023",
+              "pass": 1,
+              "strategy": "forward",
+              "reason": null,
+              "entryDetailLink": "https://e-oglasna.pravosudje.hr/objave/eval-fixture-ovr-455-entry-1"
+            }
+          }
+        ]
+      },
+      {
+        "index": 1,
+        "caseNumber": "Ovr-455/2023",
+        "title": "Zapisnik o prodaji pokretnina dužnika",
+        "court": "Općinski sud u Zadru",
+        "date": "2023-11-08",
+        "detailLink": "https://e-oglasna.pravosudje.hr/objave/eval-fixture-ovr-455-entry-2",
+        "entryDisplayId": "eval-fixture-ovr-455-entry-2",
+        "participants": [
+          {
+            "name": "Gradnja Plus d.o.o.",
+            "role": "Dužnik",
+            "oib": "55667788990"
+          }
+        ],
+        "acquisition": {
+          "mode": "search-window-forward",
+          "currentPage": 1,
+          "sourceCaseNumber": "Ovr-455/2023",
+          "pass": 1,
+          "strategy": "forward",
+          "reason": null
+        },
+        "documentLinks": [
+          {
+            "id": "Ovr-455/2023::entry-2::doc-1",
+            "url": "https://e-oglasna.pravosudje.hr/attachment/eval-zapisnik-prodaja.pdf",
+            "text": "Zapisnik_o_prodaji_pokretnina.pdf",
+            "entryIndex": 1,
+            "entryTitle": "Zapisnik o prodaji pokretnina dužnika",
+            "entryDisplayId": "eval-fixture-ovr-455-entry-2",
+            "caseNumber": "Ovr-455/2023",
+            "acquisition": {
+              "mode": "search-window-forward",
+              "currentPage": 1,
+              "sourceCaseNumber": "Ovr-455/2023",
+              "pass": 1,
+              "strategy": "forward",
+              "reason": null
+            },
+            "sourceProvenance": {
+              "acquisitionMode": "search-window-forward",
+              "currentPage": 1,
+              "sourceCaseNumber": "Ovr-455/2023",
+              "pass": 1,
+              "strategy": "forward",
+              "reason": null,
+              "entryDetailLink": "https://e-oglasna.pravosudje.hr/objave/eval-fixture-ovr-455-entry-2"
+            }
+          }
+        ]
+      },
+      {
+        "index": 2,
+        "caseNumber": "Ovr-455/2023",
+        "title": "Izvještaj o namirenju povjerioca i završetku izvršbe",
+        "court": "Općinski sud u Zadru",
+        "date": "2024-01-30",
+        "detailLink": "https://e-oglasna.pravosudje.hr/objave/eval-fixture-ovr-455-entry-3",
+        "entryDisplayId": "eval-fixture-ovr-455-entry-3",
+        "participants": [
+          {
+            "name": "Stambeno Gospodarstvo d.o.o.",
+            "role": "Ovršitelj",
+            "oib": "44556677889"
+          }
+        ],
+        "acquisition": {
+          "mode": "search-window-forward",
+          "currentPage": 1,
+          "sourceCaseNumber": "Ovr-455/2023",
+          "pass": 1,
+          "strategy": "forward",
+          "reason": null
+        },
+        "documentLinks": [
+          {
+            "id": "Ovr-455/2023::entry-3::doc-1",
+            "url": "https://e-oglasna.pravosudje.hr/attachment/eval-izvjestaj-namirenje.pdf",
+            "text": "Izvjestaj_o_namirenju_povjerioca.pdf",
+            "entryIndex": 2,
+            "entryTitle": "Izvještaj o namirenju povjerioca i završetku izvršbe",
+            "entryDisplayId": "eval-fixture-ovr-455-entry-3",
+            "caseNumber": "Ovr-455/2023",
+            "acquisition": {
+              "mode": "search-window-forward",
+              "currentPage": 1,
+              "sourceCaseNumber": "Ovr-455/2023",
+              "pass": 1,
+              "strategy": "forward",
+              "reason": null
+            },
+            "sourceProvenance": {
+              "acquisitionMode": "search-window-forward",
+              "currentPage": 1,
+              "sourceCaseNumber": "Ovr-455/2023",
+              "pass": 1,
+              "strategy": "forward",
+              "reason": null,
+              "entryDetailLink": "https://e-oglasna.pravosudje.hr/objave/eval-fixture-ovr-455-entry-3"
+            }
+          }
+        ]
+      }
+    ],
+    "documentLinks": [
+      {
+        "id": "Ovr-455/2023::entry-1::doc-1",
+        "url": "https://e-oglasna.pravosudje.hr/attachment/eval-rjesenje-ovrha.pdf",
+        "text": "Rjesenje_o_provedbi_ovrhe.pdf",
+        "entryIndex": 0,
+        "entryTitle": "Rješenje o provedbi ovrhe na novčanim sredstvima",
+        "entryDisplayId": "eval-fixture-ovr-455-entry-1",
+        "caseNumber": "Ovr-455/2023",
+        "acquisition": {
+          "mode": "search-window-forward",
+          "currentPage": 1,
+          "sourceCaseNumber": "Ovr-455/2023",
+          "pass": 1,
+          "strategy": "forward",
+          "reason": null
+        },
+        "sourceProvenance": {
+          "acquisitionMode": "search-window-forward",
+          "currentPage": 1,
+          "sourceCaseNumber": "Ovr-455/2023",
+          "pass": 1,
+          "strategy": "forward",
+          "reason": null,
+          "entryDetailLink": "https://e-oglasna.pravosudje.hr/objave/eval-fixture-ovr-455-entry-1"
+        }
+      },
+      {
+        "id": "Ovr-455/2023::entry-2::doc-1",
+        "url": "https://e-oglasna.pravosudje.hr/attachment/eval-zapisnik-prodaja.pdf",
+        "text": "Zapisnik_o_prodaji_pokretnina.pdf",
+        "entryIndex": 1,
+        "entryTitle": "Zapisnik o prodaji pokretnina dužnika",
+        "entryDisplayId": "eval-fixture-ovr-455-entry-2",
+        "caseNumber": "Ovr-455/2023",
+        "acquisition": {
+          "mode": "search-window-forward",
+          "currentPage": 1,
+          "sourceCaseNumber": "Ovr-455/2023",
+          "pass": 1,
+          "strategy": "forward",
+          "reason": null
+        },
+        "sourceProvenance": {
+          "acquisitionMode": "search-window-forward",
+          "currentPage": 1,
+          "sourceCaseNumber": "Ovr-455/2023",
+          "pass": 1,
+          "strategy": "forward",
+          "reason": null,
+          "entryDetailLink": "https://e-oglasna.pravosudje.hr/objave/eval-fixture-ovr-455-entry-2"
+        }
+      },
+      {
+        "id": "Ovr-455/2023::entry-3::doc-1",
+        "url": "https://e-oglasna.pravosudje.hr/attachment/eval-izvjestaj-namirenje.pdf",
+        "text": "Izvjestaj_o_namirenju_povjerioca.pdf",
+        "entryIndex": 2,
+        "entryTitle": "Izvještaj o namirenju povjerioca i završetku izvršbe",
+        "entryDisplayId": "eval-fixture-ovr-455-entry-3",
+        "caseNumber": "Ovr-455/2023",
+        "acquisition": {
+          "mode": "search-window-forward",
+          "currentPage": 1,
+          "sourceCaseNumber": "Ovr-455/2023",
+          "pass": 1,
+          "strategy": "forward",
+          "reason": null
+        },
+        "sourceProvenance": {
+          "acquisitionMode": "search-window-forward",
+          "currentPage": 1,
+          "sourceCaseNumber": "Ovr-455/2023",
+          "pass": 1,
+          "strategy": "forward",
+          "reason": null,
+          "entryDetailLink": "https://e-oglasna.pravosudje.hr/objave/eval-fixture-ovr-455-entry-3"
+        }
+      }
+    ]
+  },
+  "analyses": [
+    {
+      "filePath": "/fixtures/eval/Rjesenje_o_provedbi_ovrhe.pdf",
+      "text": "Rjesenje_o_provedbi_ovrhe.pdf",
+      "aiResult": {
+        "caseNumber": "Ovr-455/2023",
+        "decisionDate": "2023-03-02",
+        "summary": "Na temelju vjerodostojne isprave sud odobruje ovrhu na novčanim sredstvima dužnika Gradnja Plus d.o.o. radi namirenja potraživanja ovrsitelja Stambeno Gospodarstvo d.o.o. u iznosu od 4.320,00 EUR glavnice, uz zakonske zatezne kamate od dosliječnosti. Dužniku se nalaže da dug uplati u roku od osam dana pod prijetnjom prodaje pokretnina.",
+        "parties": [
+          {
+            "name": "Stambeno Gospodarstvo d.o.o.",
+            "role": "Ovršitelj",
+            "oib": "44556677889"
+          },
+          {
+            "name": "Gradnja Plus d.o.o.",
+            "role": "Dužnik",
+            "oib": "55667788990"
+          }
+        ],
+        "amounts": [
+          {
+            "description": "Glavnica potraživanja",
+            "amount": 4320,
+            "currency": "EUR",
+            "date": "2023-03-02"
+          }
+        ]
+      }
+    },
+    {
+      "filePath": "/fixtures/eval/Zapisnik_o_prodaji_pokretnina.pdf",
+      "text": "Zapisnik_o_prodaji_pokretnina.pdf",
+      "aiResult": {
+        "caseNumber": "Ovr-455/2023",
+        "decisionDate": "2023-11-08",
+        "summary": "Zapisnikom se konstatira javna prodaja pokretnina dužnika: građevinske alatne mašine prodane su po cijeni od 2.100,00 EUR. Od uplaćene cijene trošak prodaje od 150,00 EUR obračunat je u korist proračuna suda, a ostatak se uplaćuje na ovršni račun za namirenje povjerioca.",
+        "parties": [
+          {
+            "name": "Gradnja Plus d.o.o.",
+            "role": "Dužnik",
+            "oib": "55667788990"
+          }
+        ],
+        "amounts": [
+          {
+            "description": "Cijena prodaje alatnih mašina",
+            "amount": 2100,
+            "currency": "EUR",
+            "date": "2023-11-08"
+          },
+          {
+            "description": "Trošak prodaje",
+            "amount": 150,
+            "currency": "EUR",
+            "date": "2023-11-08"
+          }
+        ]
+      }
+    },
+    {
+      "filePath": "/fixtures/eval/Izvjestaj_o_namirenju_povjerioca.pdf",
+      "text": "Izvjestaj_o_namirenju_povjerioca.pdf",
+      "aiResult": {
+        "caseNumber": "Ovr-455/2023",
+        "decisionDate": "2024-01-30",
+        "summary": "Izvještajom se potvrđuje da je povjerilac Stambeno Gospodarstvo d.o.o. naplaćen u ukupnom iznosu od 4.530,00 EUR, čime je potraživanje namireno u cijelosti zajedno s kamatama. Sud donosi rješenje o prestanku izvršbe i brisanju upisa o vršenju ovrhe.",
+        "parties": [
+          {
+            "name": "Stambeno Gospodarstvo d.o.o.",
+            "role": "Ovršitelj",
+            "oib": "44556677889"
+          }
+        ],
+        "amounts": [
+          {
+            "description": "Ukupno naplaćeno od dužnika",
+            "amount": 4530,
+            "currency": "EUR",
+            "date": "2024-01-30"
+          }
+        ]
+      }
+    }
+  ],
+  "rawDocuments": [
+    {
+      "fileName": "Izvjestaj_o_namirenju_povjerioca.pdf",
+      "text": "Izvorni tekst izvještaja (simulacija punog OCR sloja): u obrascu raspodjele navodi se da je od ukupne svote najprije namirena kamata, potom glavnica, a na kraju preostali troškovi postupka. Izvršne stavke s popisa imovine koje nisu prodane vraćaju se dužniku bez opterećenja."
+    }
+  ],
+  "gold": {
+    "schemaVersion": 1,
+    "clusterId": "Ovr-455/2023",
+    "citationSpans": [
+      {
+        "textIncludes": "ovrhu na novčanim sredstvima dužnika gradnja plus d.o.o."
+      },
+      {
+        "textIncludes": "4.320,00 eur glavnice"
+      },
+      {
+        "textIncludes": "prodaje pokretnina dužnika"
+      },
+      {
+        "textIncludes": "cijeni od 2.100,00 eur"
+      },
+      {
+        "textIncludes": "namireno u cijelosti zajedno s kamatama"
+      },
+      {
+        "textIncludes": "prestanku izvršbe"
+      }
+    ],
+    "expectedAmounts": [
+      {
+        "value": 4320,
+        "currency": "EUR",
+        "tolerancePct": 0.001,
+        "descriptionIncludes": "glavnica"
+      },
+      {
+        "value": 2100,
+        "currency": "EUR",
+        "tolerancePct": 0.001,
+        "descriptionIncludes": "prodaje"
+      },
+      {
+        "value": 150,
+        "currency": "EUR",
+        "tolerancePct": 0.001,
+        "descriptionIncludes": "trošak prodaje"
+      },
+      {
+        "value": 4530,
+        "currency": "EUR",
+        "tolerancePct": 0.001,
+        "descriptionIncludes": "naplaćeno"
+      }
+    ],
+    "expectedDates": [
+      "2023-03-02",
+      "2023-11-08",
+      "2024-01-30"
+    ]
+  },
+  "thresholdFloors": {
+    "retrieval.recall@10": 0.8,
+    "amount.f1": 0.95
+  }
+}

@@ -1,0 +1,459 @@
+{
+  "fixtureDescription": "Frozen single-cluster eval fixture: fictional civil property-dispute case P-1187/2021 (Vinogradarstvo d.o.o. vs Susjed Imovina d.o.o., fence construction damage). Different archetype than the bankruptcy cluster — exercises parnični vocabulary (ročište, vještačenje, presuda) against the fixed template queries.",
+  "basePackage": {
+    "packageType": "ClusterEvidencePackage",
+    "schemaVersion": 1,
+    "reasoningScope": "single-cluster",
+    "selectedClusterIds": [
+      "P-1187/2021"
+    ],
+    "clusterId": "P-1187/2021",
+    "primaryCaseNumber": "P-1187/2021",
+    "query": {
+      "type": "case_number",
+      "value": "P-1187/2021"
+    },
+    "identity": {
+      "consistency": "consistent",
+      "notes": [],
+      "participantNames": [
+        "Vinogradarstvo d.o.o.",
+        "Susjed Imovina d.o.o."
+      ],
+      "participantOibs": [
+        "22334455667"
+      ]
+    },
+    "discovery": {
+      "reasoningClusterId": "P-1187/2021",
+      "recommendedPrimaryClusterId": "P-1187/2021",
+      "secondaryClusterIds": [
+        "P-1190/2021"
+      ],
+      "discoveryMode": "case-number-forward-window",
+      "acquisitionModes": [
+        "search-window-forward"
+      ],
+      "acquisitionProvenance": [],
+      "totalResults": 8,
+      "totalPages": 1,
+      "pagesScanned": 1,
+      "rawEntryCount": 8,
+      "capturedDistinctCaseCount": 2,
+      "coverageConfidence": "high"
+    },
+    "selection": {
+      "selectedForReasoning": true,
+      "score": 7,
+      "reason": "most-documents",
+      "diagnostics": null
+    },
+    "expansion": {
+      "eligibility": null,
+      "plan": null,
+      "execution": null
+    },
+    "acquisition": {
+      "modes": [
+        "search-window-forward"
+      ],
+      "provenance": [],
+      "entryCountsByMode": {
+        "search-window-forward": 3
+      },
+      "documentCountsByMode": {
+        "search-window-forward": 3
+      }
+    },
+    "entries": [
+      {
+        "index": 0,
+        "caseNumber": "P-1187/2021",
+        "title": "Poziv na ročište za izvođenje dokaza vještačenjem",
+        "court": "Općinski sud u Požegi",
+        "date": "2022-04-06",
+        "detailLink": "https://e-oglasna.pravosudje.hr/objave/eval-fixture-p-1187-entry-1",
+        "entryDisplayId": "eval-fixture-p-1187-entry-1",
+        "participants": [
+          {
+            "name": "Vinogradarstvo d.o.o.",
+            "role": "Tužitelj",
+            "oib": "22334455667"
+          },
+          {
+            "name": "Susjed Imovina d.o.o.",
+            "role": "Tuženik",
+            "oib": "33445566778"
+          }
+        ],
+        "acquisition": {
+          "mode": "search-window-forward",
+          "currentPage": 1,
+          "sourceCaseNumber": "P-1187/2021",
+          "pass": 1,
+          "strategy": "forward",
+          "reason": null
+        },
+        "documentLinks": [
+          {
+            "id": "P-1187/2021::entry-1::doc-1",
+            "url": "https://e-oglasna.pravosudje.hr/attachment/eval-poziv-rociste.pdf",
+            "text": "Poziv_na_rociste_vjestacenje.pdf",
+            "entryIndex": 0,
+            "entryTitle": "Poziv na ročište za izvođenje dokaza vještačenjem",
+            "entryDisplayId": "eval-fixture-p-1187-entry-1",
+            "caseNumber": "P-1187/2021",
+            "acquisition": {
+              "mode": "search-window-forward",
+              "currentPage": 1,
+              "sourceCaseNumber": "P-1187/2021",
+              "pass": 1,
+              "strategy": "forward",
+              "reason": null
+            },
+            "sourceProvenance": {
+              "acquisitionMode": "search-window-forward",
+              "currentPage": 1,
+              "sourceCaseNumber": "P-1187/2021",
+              "pass": 1,
+              "strategy": "forward",
+              "reason": null,
+              "entryDetailLink": "https://e-oglasna.pravosudje.hr/objave/eval-fixture-p-1187-entry-1"
+            }
+          }
+        ]
+      },
+      {
+        "index": 1,
+        "caseNumber": "P-1187/2021",
+        "title": "Rješenje o imenovanju sudske vještakinje",
+        "court": "Općinski sud u Požegi",
+        "date": "2022-05-20",
+        "detailLink": "https://e-oglasna.pravosudje.hr/objave/eval-fixture-p-1187-entry-2",
+        "entryDisplayId": "eval-fixture-p-1187-entry-2",
+        "participants": [
+          {
+            "name": "Vinogradarstvo d.o.o.",
+            "role": "Tužitelj",
+            "oib": "22334455667"
+          }
+        ],
+        "acquisition": {
+          "mode": "search-window-forward",
+          "currentPage": 1,
+          "sourceCaseNumber": "P-1187/2021",
+          "pass": 1,
+          "strategy": "forward",
+          "reason": null
+        },
+        "documentLinks": [
+          {
+            "id": "P-1187/2021::entry-2::doc-1",
+            "url": "https://e-oglasna.pravosudje.hr/attachment/eval-rjesenje-vjestakinja.pdf",
+            "text": "Rjesenje_o_imenovanju_vjestakinje.pdf",
+            "entryIndex": 1,
+            "entryTitle": "Rješenje o imenovanju sudske vještakinje",
+            "entryDisplayId": "eval-fixture-p-1187-entry-2",
+            "caseNumber": "P-1187/2021",
+            "acquisition": {
+              "mode": "search-window-forward",
+              "currentPage": 1,
+              "sourceCaseNumber": "P-1187/2021",
+              "pass": 1,
+              "strategy": "forward",
+              "reason": null
+            },
+            "sourceProvenance": {
+              "acquisitionMode": "search-window-forward",
+              "currentPage": 1,
+              "sourceCaseNumber": "P-1187/2021",
+              "pass": 1,
+              "strategy": "forward",
+              "reason": null,
+              "entryDetailLink": "https://e-oglasna.pravosudje.hr/objave/eval-fixture-p-1187-entry-2"
+            }
+          }
+        ]
+      },
+      {
+        "index": 2,
+        "caseNumber": "P-1187/2021",
+        "title": "Presuda kojom se djelomično usvaja tužba",
+        "court": "Općinski sud u Požegi",
+        "date": "2023-09-12",
+        "detailLink": "https://e-oglasna.pravosudje.hr/objave/eval-fixture-p-1187-entry-3",
+        "entryDisplayId": "eval-fixture-p-1187-entry-3",
+        "participants": [
+          {
+            "name": "Vinogradarstvo d.o.o.",
+            "role": "Tužitelj",
+            "oib": "22334455667"
+          },
+          {
+            "name": "Susjed Imovina d.o.o.",
+            "role": "Tuženik",
+            "oib": "33445566778"
+          }
+        ],
+        "acquisition": {
+          "mode": "search-window-forward",
+          "currentPage": 1,
+          "sourceCaseNumber": "P-1187/2021",
+          "pass": 1,
+          "strategy": "forward",
+          "reason": null
+        },
+        "documentLinks": [
+          {
+            "id": "P-1187/2021::entry-3::doc-1",
+            "url": "https://e-oglasna.pravosudje.hr/attachment/eval-presuda-djelomicno.pdf",
+            "text": "Presuda_djelomicno_usvajanje_tuzbe.pdf",
+            "entryIndex": 2,
+            "entryTitle": "Presuda kojom se djelomično usvaja tužba",
+            "entryDisplayId": "eval-fixture-p-1187-entry-3",
+            "caseNumber": "P-1187/2021",
+            "acquisition": {
+              "mode": "search-window-forward",
+              "currentPage": 1,
+              "sourceCaseNumber": "P-1187/2021",
+              "pass": 1,
+              "strategy": "forward",
+              "reason": null
+            },
+            "sourceProvenance": {
+              "acquisitionMode": "search-window-forward",
+              "currentPage": 1,
+              "sourceCaseNumber": "P-1187/2021",
+              "pass": 1,
+              "strategy": "forward",
+              "reason": null,
+              "entryDetailLink": "https://e-oglasna.pravosudje.hr/objave/eval-fixture-p-1187-entry-3"
+            }
+          }
+        ]
+      }
+    ],
+    "documentLinks": [
+      {
+        "id": "P-1187/2021::entry-1::doc-1",
+        "url": "https://e-oglasna.pravosudje.hr/attachment/eval-poziv-rociste.pdf",
+        "text": "Poziv_na_rociste_vjestacenje.pdf",
+        "entryIndex": 0,
+        "entryTitle": "Poziv na ročište za izvođenje dokaza vještačenjem",
+        "entryDisplayId": "eval-fixture-p-1187-entry-1",
+        "caseNumber": "P-1187/2021",
+        "acquisition": {
+          "mode": "search-window-forward",
+          "currentPage": 1,
+          "sourceCaseNumber": "P-1187/2021",
+          "pass": 1,
+          "strategy": "forward",
+          "reason": null
+        },
+        "sourceProvenance": {
+          "acquisitionMode": "search-window-forward",
+          "currentPage": 1,
+          "sourceCaseNumber": "P-1187/2021",
+          "pass": 1,
+          "strategy": "forward",
+          "reason": null,
+          "entryDetailLink": "https://e-oglasna.pravosudje.hr/objave/eval-fixture-p-1187-entry-1"
+        }
+      },
+      {
+        "id": "P-1187/2021::entry-2::doc-1",
+        "url": "https://e-oglasna.pravosudje.hr/attachment/eval-rjesenje-vjestakinja.pdf",
+        "text": "Rjesenje_o_imenovanju_vjestakinje.pdf",
+        "entryIndex": 1,
+        "entryTitle": "Rješenje o imenovanju sudske vještakinje",
+        "entryDisplayId": "eval-fixture-p-1187-entry-2",
+        "caseNumber": "P-1187/2021",
+        "acquisition": {
+          "mode": "search-window-forward",
+          "currentPage": 1,
+          "sourceCaseNumber": "P-1187/2021",
+          "pass": 1,
+          "strategy": "forward",
+          "reason": null
+        },
+        "sourceProvenance": {
+          "acquisitionMode": "search-window-forward",
+          "currentPage": 1,
+          "sourceCaseNumber": "P-1187/2021",
+          "pass": 1,
+          "strategy": "forward",
+          "reason": null,
+          "entryDetailLink": "https://e-oglasna.pravosudje.hr/objave/eval-fixture-p-1187-entry-2"
+        }
+      },
+      {
+        "id": "P-1187/2021::entry-3::doc-1",
+        "url": "https://e-oglasna.pravosudje.hr/attachment/eval-presuda-djelomicno.pdf",
+        "text": "Presuda_djelomicno_usvajanje_tuzbe.pdf",
+        "entryIndex": 2,
+        "entryTitle": "Presuda kojom se djelomično usvaja tužba",
+        "entryDisplayId": "eval-fixture-p-1187-entry-3",
+        "caseNumber": "P-1187/2021",
+        "acquisition": {
+          "mode": "search-window-forward",
+          "currentPage": 1,
+          "sourceCaseNumber": "P-1187/2021",
+          "pass": 1,
+          "strategy": "forward",
+          "reason": null
+        },
+        "sourceProvenance": {
+          "acquisitionMode": "search-window-forward",
+          "currentPage": 1,
+          "sourceCaseNumber": "P-1187/2021",
+          "pass": 1,
+          "strategy": "forward",
+          "reason": null,
+          "entryDetailLink": "https://e-oglasna.pravosudje.hr/objave/eval-fixture-p-1187-entry-3"
+        }
+      }
+    ]
+  },
+  "analyses": [
+    {
+      "filePath": "/fixtures/eval/Poziv_na_rociste_vjestacenje.pdf",
+      "text": "Poziv_na_rociste_vjestacenje.pdf",
+      "aiResult": {
+        "caseNumber": "P-1187/2021",
+        "decisionDate": "2022-04-06",
+        "summary": "Sud poziva stranice na ročište zakazano za 25.05.2022. godine radi izvođenja dokaza vještačenjem građevinske struke. Tužitelj Vinogradarstvo d.o.o. tvrdi da je tuženik Susjed Imovina d.o.o. pri izgradnji ograde oštetio korijenje vinove loze na graničnom pojasu. Vještakinja ima rok od 60 dana za izradu nalaza i mišljenja.",
+        "parties": [
+          {
+            "name": "Vinogradarstvo d.o.o.",
+            "role": "Tužitelj",
+            "oib": "22334455667"
+          },
+          {
+            "name": "Susjed Imovina d.o.o.",
+            "role": "Tuženik",
+            "oib": "33445566778"
+          }
+        ],
+        "amounts": []
+      }
+    },
+    {
+      "filePath": "/fixtures/eval/Rjesenje_o_imenovanju_vjestakinje.pdf",
+      "text": "Rjesenje_o_imenovanju_vjestakinje.pdf",
+      "aiResult": {
+        "caseNumber": "P-1187/2021",
+        "decisionDate": "2022-05-20",
+        "summary": "Rješenjem se za vještakinju građevinske struke imenuje dipl. ing. građ. Ana Kovač. Troškovi vještačine u iznosu od 800,00 EUR u predujmu polaže tužitelj Vinogradarstvo d.o.o. na žiro račun suda. Konačan trošak vještačenja bit će raspoređen u troškove postupka prema ishodu presude.",
+        "parties": [
+          {
+            "name": "Vinogradarstvo d.o.o.",
+            "role": "Tužitelj",
+            "oib": "22334455667"
+          }
+        ],
+        "amounts": [
+          {
+            "description": "Predujam za troškove vještačine",
+            "amount": 800,
+            "currency": "EUR",
+            "date": "2022-05-20"
+          }
+        ]
+      }
+    },
+    {
+      "filePath": "/fixtures/eval/Presuda_djelomicno_usvajanje_tuzbe.pdf",
+      "text": "Presuda_djelomicno_usvajanje_tuzbe.pdf",
+      "aiResult": {
+        "caseNumber": "P-1187/2021",
+        "decisionDate": "2023-09-12",
+        "summary": "Presudom se djelomično usvaja tužba: tuženik Susjed Imovina d.o.o. obvezuje se da tužitelju Vinogradarstvo d.o.o. isplati 15.000,00 EUR naslova naknada štete zbog uništenih čokota vinove loze, sa zakonskom zateznom kamatom. Ostali dio tužbe odbija se. Tuženiku se nalaže da nadoknadi troškove postupka u iznosu od 2.500,00 EUR. Presuda nije pravomoćna — stranke imaju rok od 15 dana za žalbu.",
+        "parties": [
+          {
+            "name": "Vinogradarstvo d.o.o.",
+            "role": "Tužitelj",
+            "oib": "22334455667"
+          },
+          {
+            "name": "Susjed Imovina d.o.o.",
+            "role": "Tuženik",
+            "oib": "33445566778"
+          }
+        ],
+        "amounts": [
+          {
+            "description": "Naknada štete za uništene čokote vinove loze",
+            "amount": 15000,
+            "currency": "EUR",
+            "date": "2023-09-12"
+          },
+          {
+            "description": "Troškovi postupka",
+            "amount": 2500,
+            "currency": "EUR",
+            "date": "2023-09-12"
+          }
+        ]
+      }
+    }
+  ],
+  "rawDocuments": [
+    {
+      "fileName": "Presuda_djelomicno_usvajanje_tuzbe.pdf",
+      "text": "Izvorni tekst presude (simulacija punog OCR sloja): sud utvrđuje da je oštećenje vinograda posljedica neovlaštene izgradnje temelja ograne izvedene u međusobnom prostornom pojasu. Izvod iz katastra i snimka stanja priloženi su u spisu. O ovlastima vještinika da odgovara na pitanja stranaka o metodologiji mjerenja štete raspravljeno je na ročištu."
+    }
+  ],
+  "gold": {
+    "schemaVersion": 1,
+    "clusterId": "P-1187/2021",
+    "citationSpans": [
+      {
+        "textIncludes": "ročište zakazano za 25.05.2022"
+      },
+      {
+        "textIncludes": "oštetio korijenje vinove loze"
+      },
+      {
+        "textIncludes": "predujam za troškove vještačine"
+      },
+      {
+        "textIncludes": "15.000,00 eur naslova naknada štete"
+      },
+      {
+        "textIncludes": "troškove postupka u iznosu od 2.500,00 eur"
+      },
+      {
+        "textIncludes": "presuda nije pravomoćna"
+      }
+    ],
+    "expectedAmounts": [
+      {
+        "value": 800,
+        "currency": "EUR",
+        "tolerancePct": 0.001,
+        "descriptionIncludes": "vještačine"
+      },
+      {
+        "value": 15000,
+        "currency": "EUR",
+        "tolerancePct": 0.001,
+        "descriptionIncludes": "naknada"
+      },
+      {
+        "value": 2500,
+        "currency": "EUR",
+        "tolerancePct": 0.001,
+        "descriptionIncludes": "troškovi postupka"
+      }
+    ],
+    "expectedDates": [
+      "2022-04-06",
+      "2022-05-20",
+      "2023-09-12"
+    ]
+  },
+  "thresholdFloors": {
+    "retrieval.recall@10": 0.95,
+    "amount.f1": 0.95
+  }
+}
