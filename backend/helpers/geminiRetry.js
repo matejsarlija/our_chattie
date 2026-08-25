@@ -2,21 +2,20 @@ const DEFAULT_MAX_RETRIES = 3;
 const BASE_DELAY_MS = 1500;
 const MAX_DELAY_MS = 15000;
 
-// Fail-fast guard against the Google GenAI free-tier 429 hang:
+// Fail-fast guard against the Google GenAI 429 hang:
 // @langchain/google-genai `invoke` can pend forever on a rate-limit response
 // instead of rejecting, which stalls `withGeminiRetry` (it only reacts to thrown
-// errors) and therefore the whole single-concurrency analysis queue. Each request
-// is capped with a timer-driven AbortSignal so quota spikes reject promptly and
-// the pipeline can surface a transparent error + persist partial results.
+// errors) and therefore the whole analysis queue. Each request is capped with a
+// timer-driven AbortSignal so quota spikes reject promptly and the pipeline can
+// surface a transparent error + persist partial results.
 const GEMINI_REQUEST_TIMEOUT_MS = Number(process.env.GEMINI_REQUEST_TIMEOUT_MS) || 30000;
 
-// Paid-key transient bursts hang inside the SDK until the timeout guard fires,
-// so AbortError timeouts are retried with backoff by default. Set to "0" to
-// restore strict fail-fast behavior (e.g. when conserving a tiny free quota).
+// Transient bursts hang inside the SDK until the timeout guard fires, so
+// AbortError timeouts are retried with backoff by default. Set to "0" to
+// restore strict fail-fast behavior.
 const GEMINI_RETRY_TIMEOUTS = process.env.GEMINI_RETRY_TIMEOUTS !== '0';
 
 const { isDailyQuotaExhaustion } = require('./friendlyAnalysisError');
-const { resolveGeminiPlan } = require('./geminiPlan');
 
 async function withGeminiTimeout(callable, { timeoutMs = GEMINI_REQUEST_TIMEOUT_MS } = {}) {
     if (!timeoutMs || timeoutMs <= 0) {
@@ -80,8 +79,6 @@ function shouldRetry(error, options = {}) {
   // Daily-quota exhaustion is terminal — retrying burns the remaining budget.
   if (isDailyQuotaExhaustion(`${error?.message || ''}`)) return false;
 
-  const plan = options.plan || resolveGeminiPlan();
-
   const status = error?.status || error?.response?.status;
   const message = `${error?.message || ''}`.toLowerCase();
 
@@ -95,9 +92,9 @@ function shouldRetry(error, options = {}) {
   const isTimeout = error?.name === 'AbortError';
 
   if (isRateLimit || isTimeout) {
-    // On the free tier a rate-limit/timeout is the daily-cap hang and is
-    // terminal. On a paid key it is a transient burst that recovers with backoff.
-    if (plan === 'free') return false;
+    // A paid-key rate-limit/timeout is a transient RPM/TPM burst that recovers
+    // with backoff, so it is retried. (The app no longer supports the free
+    // tier, where these were the terminal daily-cap hang.)
     if (isTimeout) return options.retryTimeouts !== false && GEMINI_RETRY_TIMEOUTS;
     return true;
   }

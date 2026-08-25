@@ -47,6 +47,14 @@ jest.mock('../court-analysis/reasoning/verifier', () => ({
   verifyReport: mockVerifyReport,
 }));
 
+// Optional reasoning LLM passes (rerank/planner/follow-up) construct Gemini
+// clients lazily; stub the SDK so the deterministic path runs without network.
+jest.mock('@langchain/google-genai', () => ({
+  ChatGoogleGenerativeAI: jest.fn().mockImplementation(() => ({
+    invoke: jest.fn().mockResolvedValue({ content: '[]' }),
+  })),
+}));
+
 jest.mock('../court-registry/enricher', () => ({
   enrichParticipants: jest.fn().mockImplementation((p) => Promise.resolve(p)),
 }));

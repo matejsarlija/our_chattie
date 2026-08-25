@@ -16,12 +16,6 @@ const mockNormalizeReasoningEvidence = jest.fn((evidencePackage) => ({
   },
 }));
 
-// Pin the plan so the classified per-file reasons are deterministic
-// regardless of the developer's local settings.json.
-jest.mock('../helpers/geminiPlan', () => ({
-  resolveGeminiPlan: jest.fn(() => 'free'),
-}));
-
 jest.mock('../scraper/courtSearchPuppeteer', () => {
   return jest.fn().mockImplementation(() => ({
     init: mockInit,
@@ -57,6 +51,14 @@ jest.mock('../court-analysis/reasoning/verifier', () => ({
   verifyReport: mockVerifyReport,
 }));
 
+// Optional reasoning LLM passes (rerank/planner/follow-up) construct Gemini
+// clients lazily; stub the SDK so the deterministic path runs without network.
+jest.mock('@langchain/google-genai', () => ({
+  ChatGoogleGenerativeAI: jest.fn().mockImplementation(() => ({
+    invoke: jest.fn().mockResolvedValue({ content: '[]' }),
+  })),
+}));
+
 jest.mock('../court-registry/enricher', () => ({
   enrichParticipants: jest.fn().mockImplementation((p) => Promise.resolve(p)),
 }));
@@ -76,7 +78,7 @@ jest.mock('fs', () => ({
 const { runCourtAnalysis, isUsableAnalysisText } = require('../court-analysis/pipeline');
 const { buildClusterEvidencePackage, attachAnalysesToEvidencePackage } = require('../court-analysis/reasoning/evidencePackage');
 const { collectSources } = require('../court-analysis/reasoning/indexer');
-const { DAILY_LIMIT_MESSAGE } = require('../helpers/friendlyAnalysisError');
+const { TIMEOUT_MESSAGE } = require('../helpers/friendlyAnalysisError');
 const realSynthesizer = jest.requireActual('../court-analysis/reasoning/synthesizer');
 
 function buildBaseCluster() {
@@ -135,13 +137,13 @@ describe('Track 1: evidence enrichment (1c)', () => {
       total: 3,
       coverageRatio: 0.67,
       complete: false,
-      // Per-file reasons are classified for users: on the free plan a Gemini
-      // timeout IS the daily-cap hang, so the banner says so instead of
-      // echoing the raw SDK message.
+      // Per-file reasons are classified for users: a Gemini timeout is a
+      // transient timeout, so the banner says so instead of echoing the raw
+      // SDK message.
       failedFiles: [{
         fileName: 'doc3.pdf',
         code: 'timeout',
-        reason: DAILY_LIMIT_MESSAGE,
+        reason: TIMEOUT_MESSAGE,
       }],
     });
   });

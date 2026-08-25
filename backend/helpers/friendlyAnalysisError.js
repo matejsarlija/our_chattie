@@ -8,24 +8,19 @@ const STAGE_LABELS = {
     complete: 'završetka obrade'
 };
 
-const { resolveGeminiPlan } = require('./geminiPlan');
-
 const DAILY_LIMIT_MESSAGE = 'Dnevni limit AI analize je iscrpljen. Pokušajte ponovno sutra ili s manjim brojem predmeta.';
 const TRANSIENT_MESSAGE = 'AI servis je trenutno preopterećen (privremeno ograničenje učestalosti zahtjeva). Pokušajte ponovno za nekoliko minuta.';
 const TIMEOUT_MESSAGE = 'Zahtjev AI servisu je premašio dopušteno vrijeme čekanja i automatski je prekinut. Pokušajte ponovno.';
-
 
 function describeStage(stage) {
     return STAGE_LABELS[stage] || 'obrade zahtjeva';
 }
 
-// Two-class 429 policy, now plan-aware:
-// - Daily quota exhaustion is terminal on every plan: retrying burns the
-//   remaining budget and never succeeds, so surface the day-level limit.
-// - On the free tier, a rate-limit or timeout is the daily-cap hang, so it is
-//   presented as the daily limit too (terminal).
-// - On a paid key, a rate-limit/timeout is a transient RPM/TPM burst that
-//   recovers with backoff; the message must NOT claim the daily limit.
+// Two-class 429 policy (paid key only — the free tier is no longer supported):
+// - Daily quota exhaustion is terminal: retrying burns the remaining budget
+//   and never succeeds, so surface the day-level limit.
+// - A rate-limit/timeout is a transient RPM/TPM burst that recovers with
+//   backoff; the message must NOT claim the daily limit.
 const DAILY_QUOTA_RE =
     /resource has been exhausted|requests[_ -]?per[_-]?day|quota.*(daily|per.?day|exhausted)|dnevni limit|daily limit|limit.*per day|exceeded.*daily/i;
 const TRANSIENT_RATE_LIMIT_RE =
@@ -43,10 +38,9 @@ function isTransientRateLimit(reason) {
 // for user-facing surfaces (coverage banner rows, SSE file events). Backend
 // logs keep the raw technical message; this translation layer exists so the
 // per-file reasons agree with the run-level policy instead of blaming OCR
-// for what is really a quota timeout on the free plan.
-function classifyFileFailure(message, { plan = null } = {}) {
+// for what is really a quota timeout.
+function classifyFileFailure(message) {
     const raw = String(message || '');
-    const resolvedPlan = plan || resolveGeminiPlan();
 
     if (!raw.trim()) {
         return { code: 'unknown', reason: 'Obrada datoteke nije uspjela.' };
@@ -55,16 +49,10 @@ function classifyFileFailure(message, { plan = null } = {}) {
         return { code: 'daily-quota', reason: DAILY_LIMIT_MESSAGE };
     }
     if (isTransientRateLimit(raw)) {
-        return {
-            code: 'rate-limit',
-            reason: resolvedPlan === 'paid' ? TRANSIENT_MESSAGE : DAILY_LIMIT_MESSAGE,
-        };
+        return { code: 'rate-limit', reason: TRANSIENT_MESSAGE };
     }
     if (/timed? ?out|deadline|abort/i.test(raw)) {
-        return {
-            code: 'timeout',
-            reason: resolvedPlan === 'paid' ? TIMEOUT_MESSAGE : DAILY_LIMIT_MESSAGE,
-        };
+        return { code: 'timeout', reason: TIMEOUT_MESSAGE };
     }
     if (/OCR failed/i.test(raw)) {
         return { code: 'ocr-failed', reason: 'OCR čitanje dokumenta nije uspjelo.' };
@@ -78,9 +66,8 @@ function classifyFileFailure(message, { plan = null } = {}) {
     return { code: 'unknown', reason: 'Obrada datoteke nije uspjela.' };
 }
 
-function friendlyAnalysisErrorMessage(error, { stage = null, hasPartial = false, plan = null } = {}) {
+function friendlyAnalysisErrorMessage(error, { stage = null, hasPartial = false } = {}) {
     const raw = (error && typeof error === 'object' && error.message) ? error.message : String(error || '');
-    const resolvedPlan = plan || resolveGeminiPlan();
     let reason = raw || 'Došlo je do greške u obradi.';
 
     if (/no results with documents found|nijedan predmet s dostupnim dokumentima/i.test(reason)) {
@@ -90,9 +77,9 @@ function friendlyAnalysisErrorMessage(error, { stage = null, hasPartial = false,
     } else if (isDailyQuotaExhaustion(reason)) {
         reason = DAILY_LIMIT_MESSAGE;
     } else if (isTransientRateLimit(reason)) {
-        reason = resolvedPlan === 'paid' ? TRANSIENT_MESSAGE : DAILY_LIMIT_MESSAGE;
+        reason = TRANSIENT_MESSAGE;
     } else if (/timed? ?out|ETIMEDOUT|ESOCKETTIMEDOUT|deadline|abort/i.test(reason)) {
-        reason = resolvedPlan === 'paid' ? TIMEOUT_MESSAGE : DAILY_LIMIT_MESSAGE;
+        reason = TIMEOUT_MESSAGE;
     } else if (/network|ECONNREFUSED|ENOTFOUND|EAI_AGAIN|ERR_INTERNET/i.test(reason)) {
         reason = 'Došlo je do mrežne greške pri povezivanju sa servisom. Pokušajte ponovno.';
     } else if (/failed to launch the browser|browser.?process/i.test(reason)) {

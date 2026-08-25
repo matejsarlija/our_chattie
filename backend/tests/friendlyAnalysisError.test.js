@@ -4,8 +4,6 @@ const {
   STAGE_LABELS,
 } = require('../helpers/friendlyAnalysisError');
 
-jest.mock('../helpers/geminiPlan', () => ({ resolveGeminiPlan: () => 'free' }));
-
 describe('friendlyAnalysisErrorMessage', () => {
   test('defaults to a neutral stage message and keeps the raw reason when no pattern matches', () => {
     const message = friendlyAnalysisErrorMessage(new Error('boom'));
@@ -37,35 +35,31 @@ describe('friendlyAnalysisErrorMessage', () => {
     expect(message).toContain('Dnevni limit AI analize je iscrpljen');
   });
 
-  test('presents a transient rate-limit burst as the daily limit on the free tier', () => {
+  test('presents a transient rate-limit burst as a retryable overload', () => {
     const message = friendlyAnalysisErrorMessage(new Error('429 rate limit exceeded, retry later'));
-    expect(message).toContain('Dnevni limit AI analize je iscrpljen');
-  });
-
-  test('presents a transient rate-limit burst as a retryable overload on a paid key', () => {
-    const message = friendlyAnalysisErrorMessage(new Error('429 rate limit exceeded, retry later'), { plan: 'paid' });
     expect(message).toContain('preopterećen (privremeno ograničenje učestalosti zahtjeva)');
     expect(message).not.toContain('Dnevni limit AI analize je iscrpljen');
   });
 
-  test('treats a bare 429 as a transient burst on a paid key, not daily quota', () => {
-    const message = friendlyAnalysisErrorMessage(new Error('429 Too Many Requests'), { plan: 'paid' });
+  test('treats a bare 429 as a transient burst, not daily quota', () => {
+    const message = friendlyAnalysisErrorMessage(new Error('429 Too Many Requests'));
     expect(message).toContain('preopterećen');
     expect(message).not.toContain('Dnevni limit');
   });
 
-  test('does not claim the daily limit for a timeout on a paid key', () => {
-    const message = friendlyAnalysisErrorMessage(new Error('DeadlineExceeded: timed out'), { plan: 'paid' });
+  test('does not claim the daily limit for a timeout', () => {
+    const message = friendlyAnalysisErrorMessage(new Error('DeadlineExceeded: timed out'));
     expect(message).toContain('premašio dopušteno vrijeme čekanja');
     expect(message).not.toContain('Dnevni limit AI analize je iscrpljen');
   });
 
-  test('presents the Gemini fail-fast timeout as the daily limit on the free tier', () => {
+  test('presents the Gemini fail-fast timeout as a transient timeout', () => {
     const message = friendlyAnalysisErrorMessage({
       name: 'AbortError',
       message: 'Gemini request timed out after 30000ms',
     });
-    expect(message).toContain('Dnevni limit AI analize je iscrpljen');
+    expect(message).toContain('premašio dopušteno vrijeme čekanja');
+    expect(message).not.toContain('Dnevni limit AI analize je iscrpljen');
   });
 
   test('appends the partial-results notice when hasPartial is true', () => {
@@ -95,24 +89,18 @@ describe('classifyFileFailure', () => {
     TIMEOUT_MESSAGE,
   } = require('../helpers/friendlyAnalysisError');
 
-  test('daily-quota wording maps to the daily-limit reason on every plan', () => {
-    for (const plan of ['free', 'paid']) {
-      expect(classifyFileFailure('429 Resource has been exhausted', { plan }))
-        .toEqual({ code: 'daily-quota', reason: DAILY_LIMIT_MESSAGE });
-    }
+  test('daily-quota wording maps to the daily-limit reason', () => {
+    expect(classifyFileFailure('429 Resource has been exhausted'))
+      .toEqual({ code: 'daily-quota', reason: DAILY_LIMIT_MESSAGE });
   });
 
-  test('timeouts are the daily-cap hang on free, transient on paid', () => {
-    expect(classifyFileFailure('Gemini request timed out after 30000ms', { plan: 'free' }))
-      .toEqual({ code: 'timeout', reason: DAILY_LIMIT_MESSAGE });
-    expect(classifyFileFailure('Gemini request timed out after 30000ms', { plan: 'paid' }))
+  test('timeouts map to the transient timeout reason', () => {
+    expect(classifyFileFailure('Gemini request timed out after 30000ms'))
       .toEqual({ code: 'timeout', reason: TIMEOUT_MESSAGE });
   });
 
-  test('rate-limit messages follow the same plan split', () => {
-    expect(classifyFileFailure('429 Too Many Requests', { plan: 'free' }).reason)
-      .toBe(DAILY_LIMIT_MESSAGE);
-    expect(classifyFileFailure('429 Too Many Requests', { plan: 'paid' }).reason)
+  test('rate-limit messages map to the transient overload reason', () => {
+    expect(classifyFileFailure('429 Too Many Requests').reason)
       .toBe(TRANSIENT_MESSAGE);
   });
 
@@ -137,6 +125,6 @@ describe('classifyFileFailure', () => {
     // A message matching multiple patterns must classify as the most
     // specific/terminal cause.
     const msg = 'Request failed: resource has been exhausted, request timed out';
-    expect(classifyFileFailure(msg, { plan: 'paid' }).code).toBe('daily-quota');
+    expect(classifyFileFailure(msg).code).toBe('daily-quota');
   });
 });

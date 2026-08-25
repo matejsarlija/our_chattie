@@ -3,16 +3,11 @@ const os = require('os');
 const path = require('path');
 
 const mockGeminiInvoke = jest.fn();
-const mockResolveGeminiPlan = jest.fn(() => 'paid');
 
 jest.mock('@langchain/google-genai', () => ({
   ChatGoogleGenerativeAI: jest.fn().mockImplementation(() => ({
     invoke: mockGeminiInvoke,
   })),
-}));
-
-jest.mock('../helpers/geminiPlan', () => ({
-  resolveGeminiPlan: () => mockResolveGeminiPlan(),
 }));
 
 jest.mock('../helpers/geminiRetry', () => ({
@@ -43,7 +38,15 @@ jest.mock('canvas', () => ({
   })),
 }));
 
-const { AnalyzeDocumentsTool } = require('../court-analysis/agents/analysis-agent');
+const { AnalyzeDocumentsTool, resetOcrPageCacheForTests } = require('../court-analysis/agents/analysis-agent');
+
+// The persistent L2 OCR page cache is content-hash keyed and SHARED on disk:
+// a fake fixture PDF ('fake-pdf' bytes) can collide with an entry written by
+// another suite or a real run, making OCR "succeed" via cache hit and
+// environment-dependently breaking timeout/failure paths. Isolate both tiers
+// per suite — same pattern as document-extraction.test.js.
+const ocrCacheDir = fs.mkdtempSync(path.join(os.tmpdir(), 'edge-ocr-cache-'));
+process.env.OCR_CACHE_DIR = ocrCacheDir;
 
 function mockScannedPdfDoc() {
     return {
@@ -68,6 +71,12 @@ describe('AnalyzeDocumentsTool edge/error cases', () => {
             content: JSON.stringify({ caseNumber: 'X', decisionDate: '2025-01-01', summary: 'Mock.', amounts: [] }),
         });
         mockGetDocument.mockReset();
+        resetOcrPageCacheForTests();
+    });
+
+    afterAll(() => {
+        delete process.env.OCR_CACHE_DIR;
+        fs.rmSync(ocrCacheDir, { recursive: true, force: true });
     });
 
     it('returns error for empty file list', async () => {
@@ -154,7 +163,7 @@ describe('AnalyzeDocumentsTool edge/error cases', () => {
     });
 });
 
-describe('transient second-pass retry gating (plan-aware)', () => {
+describe('transient second-pass retry', () => {
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'edge-retry-'));
     const txtPath = path.join(tmpDir, 'doc.txt');
     fs.writeFileSync(txtPath, 'Some readable court document text for analysis.');
@@ -171,17 +180,11 @@ describe('transient second-pass retry gating (plan-aware)', () => {
         mockGeminiInvoke.mockReset();
     });
 
-    afterEach(() => {
-        mockResolveGeminiPlan.mockReset();
-        mockResolveGeminiPlan.mockImplementation(() => 'paid');
-    });
-
     afterAll(() => {
         fs.rmSync(tmpDir, { recursive: true, force: true });
     });
 
-    it('retries transient failures sequentially on the paid plan', async () => {
-        mockResolveGeminiPlan.mockImplementation(() => 'paid');
+    it('retries transient failures sequentially', async () => {
         // First-pass analysis call fails with the quota-hang signature; the
         // second-pass retry succeeds.
         mockGeminiInvoke
@@ -197,15 +200,14 @@ describe('transient second-pass retry gating (plan-aware)', () => {
         expect(mockGeminiInvoke).toHaveBeenCalledTimes(2);
     });
 
-    it('skips the retry pass on the free plan instead of re-hanging 30s per file', async () => {
-        mockResolveGeminiPlan.mockImplementation(() => 'free');
-        mockGeminiInvoke.mockRejectedValue(new Error('Gemini request timed out after 30000ms'));
+    it('does not retry structural (non-transient) failures', async () => {
+        mockGeminiInvoke.mockRejectedValue(new Error('Could not extract text from file: the PDF could not be parsed'));
 
         const result = await runSingleFile();
 
         expect(result.coverage.failed).toBe(1);
         expect(result.individualAnalyses[0].aiResult).toBeNull();
-        // Exactly one invoke: first pass only — no doomed second attempt.
+        // Exactly one invoke: structural failures are not retried.
         expect(mockGeminiInvoke).toHaveBeenCalledTimes(1);
     });
 });

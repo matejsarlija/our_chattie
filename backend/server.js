@@ -49,7 +49,7 @@ async function startServer() {
   app.set('trust proxy', 1); // Trust the first proxy (e.g., React dev server or production LB)
   const port = Number(process.env.PORT) || 3001;
   const host = '0.0.0.0';
-  const courtAnalysisQueue = new PQueue({ concurrency: 1 }); // This should work now
+  const courtAnalysisQueue = new PQueue({ concurrency: 2 }); // Paid key: allow limited parallel analyses.
 
   // Local, single-tenant analysis persistence store.
   const analysisStore = createLocalStore();
