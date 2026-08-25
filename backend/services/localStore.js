@@ -2,7 +2,11 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 
-const { DEFAULT_GEMINI_PLAN, GEMINI_PLANS } = require('../helpers/geminiPlan');
+const {
+  DEFAULT_REASONING_SETTINGS,
+  REASONING_RERANK_MODES,
+  REASONING_ON_OFF,
+} = require('../helpers/reasoningSettings');
 
 const DEFAULT_DATA_DIR = path.join(__dirname, '..', 'data', 'analysis');
 
@@ -70,7 +74,15 @@ function createLocalStore(options = {}) {
   function readSettings() {
     const settings = readJson(settingsFile, {});
     return {
-      geminiPlan: GEMINI_PLANS.includes(settings.geminiPlan) ? settings.geminiPlan : DEFAULT_GEMINI_PLAN,
+      reasoningRerankMode: REASONING_RERANK_MODES.includes(settings.reasoningRerankMode)
+        ? settings.reasoningRerankMode
+        : DEFAULT_REASONING_SETTINGS.rerankMode,
+      reasoningPlanner: REASONING_ON_OFF.includes(settings.reasoningPlanner)
+        ? settings.reasoningPlanner
+        : DEFAULT_REASONING_SETTINGS.planner,
+      reasoningFollowUp: REASONING_ON_OFF.includes(settings.reasoningFollowUp)
+        ? settings.reasoningFollowUp
+        : DEFAULT_REASONING_SETTINGS.followUp,
     };
   }
 
@@ -212,13 +224,23 @@ function createLocalStore(options = {}) {
   async function updateSettings(patch) {
     return enqueue(() => {
       const next = readSettings();
-      if (patch && typeof patch === 'object' && patch.geminiPlan !== undefined) {
-        if (!GEMINI_PLANS.includes(patch.geminiPlan)) {
-          const err = new Error('Invalid geminiPlan. Expected "free" or "paid".');
+      if (patch && typeof patch === 'object' && patch.reasoningRerankMode !== undefined) {
+        if (!REASONING_RERANK_MODES.includes(patch.reasoningRerankMode)) {
+          const err = new Error('Invalid reasoningRerankMode. Expected "auto", "force" or "off".');
           err.statusCode = 400;
           throw err;
         }
-        next.geminiPlan = patch.geminiPlan;
+        next.reasoningRerankMode = patch.reasoningRerankMode;
+      }
+      for (const key of ['reasoningPlanner', 'reasoningFollowUp']) {
+        if (patch && typeof patch === 'object' && patch[key] !== undefined) {
+          if (!REASONING_ON_OFF.includes(patch[key])) {
+            const err = new Error(`Invalid ${key}. Expected "on" or "off".`);
+            err.statusCode = 400;
+            throw err;
+          }
+          next[key] = patch[key];
+        }
       }
       writeSettings(next);
       return next;

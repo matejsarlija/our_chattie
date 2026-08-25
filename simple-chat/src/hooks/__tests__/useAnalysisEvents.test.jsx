@@ -164,8 +164,8 @@ describe('useAnalysisEvents canonical stage parity', () => {
               failed: 1,
               total: 2,
               error: 'Gemini request timed out after 30000ms',
-              reason: 'Dnevni limit AI analize je iscrpljen. Pokušajte ponovno sutra.',
-              reasonCode: 'daily_limit_free',
+              reason: 'Zahtjev AI servisu je premašio dopušteno vrijeme čekanja i automatski je prekinut. Pokušajte ponovno.',
+              reasonCode: 'timeout',
             },
           },
         ]}
@@ -175,7 +175,7 @@ describe('useAnalysisEvents canonical stage parity', () => {
       />,
     );
 
-    expect(latest.activity[0].reason).toBe('Dnevni limit AI analize je iscrpljen. Pokušajte ponovno sutra.');
+    expect(latest.activity[0].reason).toBe('Zahtjev AI servisu je premašio dopušteno vrijeme čekanja i automatski je prekinut. Pokušajte ponovno.');
     expect(latest.activity[0].error).toBe('Gemini request timed out after 30000ms');
   });
 });

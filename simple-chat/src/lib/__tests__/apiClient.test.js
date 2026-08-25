@@ -72,11 +72,11 @@ describe('apiFetch', () => {
       ok: true,
       status: 200,
       headers: { get: jest.fn(() => null) },
-      text: jest.fn().mockResolvedValue(JSON.stringify({ settings: { geminiPlan: 'paid' } })),
+      text: jest.fn().mockResolvedValue(JSON.stringify({ settings: { reasoningRerankMode: 'force' } })),
     });
 
     const data = await getSettings();
-    expect(data).toEqual({ settings: { geminiPlan: 'paid' } });
+    expect(data).toEqual({ settings: { reasoningRerankMode: 'force' } });
     expect(global.fetch).toHaveBeenCalledWith('/api/settings', expect.objectContaining({ method: 'GET' }));
   });
 
@@ -85,14 +85,14 @@ describe('apiFetch', () => {
       ok: true,
       status: 200,
       headers: { get: jest.fn(() => null) },
-      text: jest.fn().mockResolvedValue(JSON.stringify({ settings: { geminiPlan: 'free' } })),
+      text: jest.fn().mockResolvedValue(JSON.stringify({ settings: { reasoningPlanner: 'off' } })),
     });
 
-    const data = await updateSettings({ geminiPlan: 'free' });
-    expect(data).toEqual({ settings: { geminiPlan: 'free' } });
+    const data = await updateSettings({ reasoningPlanner: 'off' });
+    expect(data).toEqual({ settings: { reasoningPlanner: 'off' } });
 
     const [, options] = global.fetch.mock.calls[0];
     expect(options.method).toBe('PUT');
-    expect(JSON.parse(options.body)).toEqual({ geminiPlan: 'free' });
+    expect(JSON.parse(options.body)).toEqual({ reasoningPlanner: 'off' });
   });
 });

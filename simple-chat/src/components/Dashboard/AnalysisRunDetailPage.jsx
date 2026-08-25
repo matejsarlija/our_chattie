@@ -8,6 +8,7 @@ import RunProgressStepper from './RunProgressStepper';
 import RunEventTimeline from './RunEventTimeline';
 import AnalysisActivityLog from './AnalysisActivityLog';
 import AnalysisReportAnnex from './AnalysisReportAnnex';
+import AnalysisReasoningTelemetry from './AnalysisReasoningTelemetry';
 import AnalysisCoverageBanner from './AnalysisCoverageBanner';
 import AnalysisUsageSummary from './AnalysisUsageSummary';
 import SecondaryClustersSection from './SecondaryClustersSection';
@@ -287,6 +288,8 @@ export default function AnalysisRunDetailPage() {
               openQuestions={openQuestions}
               hasStructuredReport={Boolean(report)}
             />
+
+            <AnalysisReasoningTelemetry report={report} />
           </>
         )}
       </main>
