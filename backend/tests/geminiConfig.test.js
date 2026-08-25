@@ -37,7 +37,7 @@ describe('createGeminiClient role factory', () => {
         expect(GEMINI_ROLE_CONFIG.synthesis.temperature).toBeLessThanOrEqual(0.2);
         expect(GEMINI_ROLE_CONFIG.verify.temperature).toBeLessThanOrEqual(0.1);
         expect(Object.keys(GEMINI_ROLE_CONFIG).sort()).toEqual(
-            ['analysis', 'ocr', 'ocr-batch', 'synthesis', 'verify', 'visualizer'],
+            ['analysis', 'ocr', 'ocr-batch', 'planner', 'rerank', 'synthesis', 'verify', 'visualizer'],
         );
     });
 

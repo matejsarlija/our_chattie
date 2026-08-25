@@ -1,8 +1,8 @@
 const { rerankEvidence } = require('../../court-analysis/reasoning/reranker');
 
 describe('reranker', () => {
-    test('preserves lexical match order when reranking is skipped', () => {
-        const result = rerankEvidence({
+    test('preserves lexical match order when reranking is skipped', async () => {
+        const result = await rerankEvidence({
             queries: [{ id: 'amounts' }],
             results: [{
                 query: { id: 'amounts' },
@@ -26,8 +26,8 @@ describe('reranker', () => {
         }));
     });
 
-    test('marks fallback without changing order when reranking is requested but model-free', () => {
-        const result = rerankEvidence({
+    test('marks fallback without changing order when reranking is requested but model-free', async () => {
+        const result = await rerankEvidence({
             results: [{
                 query: { id: 'timeline' },
                 matches: [
@@ -42,8 +42,8 @@ describe('reranker', () => {
         expect(result.results[0].matches.map((match) => match.sourceId)).toEqual(['entry-1', 'entry-2']);
     });
 
-    test('handles empty retrieval matches gracefully', () => {
-        const result = rerankEvidence({
+    test('handles empty retrieval matches gracefully', async () => {
+        const result = await rerankEvidence({
             queries: [{ id: 'party-roles' }],
             results: [{ query: { id: 'party-roles' }, matches: [] }],
             metrics: { matchCount: 0 }

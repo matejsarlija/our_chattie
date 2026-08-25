@@ -1,6 +1,20 @@
+const path = require('path');
+const os = require('os');
+
 const mockSynthesizeReport = jest.fn();
 const mockNormalizeReasoningEvidence = jest.fn();
 const mockVerifyReport = jest.fn();
+const mockInvoke = jest.fn();
+const mockRunQueryPlanner = jest.fn().mockResolvedValue([]);
+
+jest.mock('@langchain/google-genai', () => ({
+    ChatGoogleGenerativeAI: jest.fn().mockImplementation(() => ({ invoke: mockInvoke }))
+}));
+
+jest.mock('../../helpers/geminiRetry', () => ({
+    withGeminiRetry: (fn) => fn(),
+    withGeminiTimeout: (callable) => callable(undefined)
+}));
 
 jest.mock('../../court-analysis/reasoning/synthesizer', () => ({
     synthesizeReport: mockSynthesizeReport,
@@ -9,6 +23,11 @@ jest.mock('../../court-analysis/reasoning/synthesizer', () => ({
 
 jest.mock('../../court-analysis/reasoning/verifier', () => ({
     verifyReport: mockVerifyReport
+}));
+
+jest.mock('../../court-analysis/reasoning/queryPlanner', () => ({
+    runQueryPlanner: mockRunQueryPlanner,
+    mergeRetrievalQueries: jest.requireActual('../../court-analysis/reasoning/queryPlanner').mergeRetrievalQueries
 }));
 
 const { generateClusterReport } = require('../../court-analysis/reasoning/reportService');
@@ -77,6 +96,10 @@ describe('reasoning reportService', () => {
                 rerankedMatchCount: expect.any(Number)
             })
         }));
+        // Persistence diet: raw retrieval strips match text (the reranked copy
+        // carries it), so runs.json does not persist the same chunk twice.
+        expect(result.meta.retrieval.results[0].matches[0].text).toBeUndefined();
+        expect(typeof result.meta.rerank.results[0].matches[0].text).toBe('string');
         expect(mockNormalizeReasoningEvidence).toHaveBeenCalledWith(evidencePackage);
         expect(synthesisEvidence).toEqual(expect.objectContaining({
             timeline: expect.any(Array),
@@ -106,6 +129,56 @@ describe('reasoning reportService', () => {
         ]));
         expect(onStage).toHaveBeenCalledWith(expect.objectContaining({ step: 'verifying' }));
         expect(mockVerifyReport).toHaveBeenCalledWith(synthesizedReport, synthesisEvidence, expect.any(Object));
+    });
+});
+
+describe('reasoning reportService optional-pass gating', () => {
+    const originalEnv = { ...process.env };
+    const tmpDataDir = path.join(os.tmpdir(), `report-service-gating-${process.pid}`);
+
+    function buildPackage() {
+        return {
+            packageType: 'ClusterEvidencePackage',
+            clusterId: 'ST-100/2023',
+            primaryCaseNumber: 'ST-100/2023',
+            query: { type: 'case_number', value: 'ST-100/2023' },
+            documentLinks: [{ id: 'doc-1', text: 'Rješenje navodi tražbinu', caseNumber: 'ST-100/2023' }]
+        };
+    }
+
+    beforeEach(() => {
+        jest.clearAllMocks();
+        process.env.ANALYSIS_DATA_DIR = tmpDataDir;
+        delete process.env.REASONING_PLANNER;
+        delete process.env.REASONING_FOLLOWUP;
+        mockNormalizeReasoningEvidence.mockImplementation((evidencePackage) => ({
+            timeline: [{ date: null, description: `Objava ${evidencePackage.clusterId}`, evidence: [] }],
+            claims: [],
+            meta: { clusterId: evidencePackage.clusterId }
+        }));
+        mockSynthesizeReport.mockResolvedValue({ schemaVersion: '1.0.0', narrative: 'x', findings: [], claims: [], openQuestions: [], nextSteps: [], conflicts: [], meta: {} });
+        mockVerifyReport.mockResolvedValue({ schemaVersion: '1.0.0', narrative: 'x', findings: [], verifiedFindings: [], claims: [], openQuestions: [], nextSteps: [], conflicts: [], meta: {} });
+    });
+
+    afterEach(() => {
+        process.env = originalEnv;
+    });
+
+    test('planner runs by default', async () => {
+        await generateClusterReport(buildPackage(), {});
+        expect(mockRunQueryPlanner).toHaveBeenCalled();
+    });
+
+    test('force runs planner', async () => {
+        process.env.REASONING_PLANNER = 'force';
+        await generateClusterReport(buildPackage(), {});
+        expect(mockRunQueryPlanner).toHaveBeenCalled();
+    });
+
+    test('off skips planner', async () => {
+        process.env.REASONING_PLANNER = 'off';
+        await generateClusterReport(buildPackage(), {});
+        expect(mockRunQueryPlanner).not.toHaveBeenCalled();
     });
 });
 

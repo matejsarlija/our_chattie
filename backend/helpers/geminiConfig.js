@@ -21,8 +21,8 @@ function assertGeminiConfig() {
 
 // Role-based client factory: one construction site per concern keeps model,
 // temperature, and output-token policy auditable, and makes per-role model
-// routing (e.g. flash-lite for diagrams) a one-line change once a paid key
-// lands. Output caps bound the billing exposure of any single completion.
+// routing (e.g. flash-lite for diagrams) a one-line change. Output caps bound
+// the billing exposure of any single completion.
 const { ChatGoogleGenerativeAI } = require('@langchain/google-genai');
 
 const GEMINI_ROLE_CONFIG = {
@@ -39,6 +39,11 @@ const GEMINI_ROLE_CONFIG = {
     synthesis: { temperature: 0.2, maxOutputTokens: 4096 },
     // Strict verification pass over findings.
     verify: { temperature: 0.1, maxOutputTokens: 2048 },
+    // Listwise evidence reranking: one JSON array of {id, score} over ≤24
+    // candidates — a tiny, strictly-bounded output.
+    rerank: { temperature: 0.0, maxOutputTokens: 1024 },
+    // Retrieval query planning: ≤6 short query objects as one JSON array.
+    planner: { temperature: 0.1, maxOutputTokens: 512 },
     // Mermaid diagram generation.
     visualizer: { temperature: 0.1, maxOutputTokens: 2048 },
 };
