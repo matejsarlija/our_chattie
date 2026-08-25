@@ -113,13 +113,37 @@ function buildLexicalIndex(evidencePackage) {
         };
     });
 
+    // Document frequency per unique token across sources — feeds IDF weighting
+    // in the retriever so generic vocabulary (present in nearly every source)
+    // stops dominating lexical scores.
+    const df = new Map();
+    for (const source of sources) {
+        for (const token of new Set(source.tokens)) {
+            df.set(token, (df.get(token) || 0) + 1);
+        }
+    }
+
+    // Per-sourceType composition of the index — persisted via report meta so
+    // chunk-vs-summary grounding ratios are auditable after the run, not just
+    // logged once to a console nobody re-reads.
+    const sourceTypeCounts = {};
+    for (const source of sources) {
+        const type = source.metadata?.sourceType || 'unknown';
+        sourceTypeCounts[type] = (sourceTypeCounts[type] || 0) + 1;
+    }
+
     return {
         indexType: 'lexical',
         clusterId: evidencePackage?.clusterId || null,
         sources,
+        idfStats: {
+            totalSources: sources.length,
+            df: Object.fromEntries(df)
+        },
         metrics: {
             sourceCount: sources.length,
             tokenCount: sources.reduce((sum, source) => sum + source.tokens.length, 0),
+            sourceTypeCounts,
             buildTimeMs: Date.now() - startedAt
         }
     };

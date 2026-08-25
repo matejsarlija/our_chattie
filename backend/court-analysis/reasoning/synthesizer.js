@@ -102,12 +102,18 @@ async function synthesizeReport(evidencePackage, options = {}) {
             openQuestions.push(coverageOpenQuestion(meta.coverage));
         }
 
+        // Deterministic reconciliation conflicts (money-flow arithmetic)
+        // seed the report here; verification appends model-found conflicts on
+        // top. pkg.reconciliation flows through meta — see evidencePackage.
+        const seededConflicts = [...(meta.reconciliation?.conflicts || [])];
+        const seededOpenQuestions = [...(meta.reconciliation?.openQuestions || [])];
+
         const finalReport = {
             schemaVersion: SCHEMA_VERSION,
             narrative: parsed.narrative,
-            openQuestions,
+            openQuestions: [...seededOpenQuestions, ...openQuestions],
             nextSteps: parsed.nextSteps || [],
-            conflicts: [],
+            conflicts: seededConflicts,
             claims,
             findings: findings.length > 0 ? findings : applyCoverageConfidenceGuard(claims.map((claim, index) => ({
                 id: `finding-${index + 1}`,
@@ -239,6 +245,7 @@ function buildPackageMeta(pkg) {
         expansion: pkg.expansion || null,
         acquisition: pkg.acquisition || null,
         coverage: pkg.coverage || null,
+        reconciliation: pkg.reconciliation || null,
         analysesCount: Array.isArray(pkg.analyses) ? pkg.analyses.length : 0,
         moneyFlow: pkg.moneyFlow || {
             count: 0,

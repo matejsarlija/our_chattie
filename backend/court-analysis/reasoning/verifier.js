@@ -43,6 +43,48 @@ function isVerifiableFinding(finding) {
     return !sourceTypes.every((type) => NON_VERIFIABLE_SOURCE_TYPES.has(type));
 }
 
+// Evidence budget for the verify prompt (refinement: verifier input needs the
+// same discipline synthesis got). Ground-truth chunk passages grow this
+// assembly per finding; without a ceiling, dense clusters pay real input
+// tokens for marginal verification signal. Timeline lines go in first (they
+// are compact and anchor dates); the cap then walks claim/citation lines.
+const VERIFIER_EVIDENCE_CHAR_BUDGET = 24000;
+
+function buildEvidenceLines(evidencePackage) {
+    const lines = [
+        ...(evidencePackage.timeline || []).map(event => `[Date: ${event.date}] ${event.description}`),
+    ];
+    // Evidence is assembled once per unique snippet: claim texts are printed
+    // as claims, so a citation whose text merely echoes its own claim adds
+    // nothing but billed tokens.
+    const verifiableClaims = (evidencePackage.claims || [])
+        .filter((claim) => isVerifiableFinding({ evidence: claim.evidence }));
+    const claimTexts = new Set(
+        verifiableClaims.map((claim) => String(claim.text || '').trim()),
+    );
+
+    const seenSnippets = new Set();
+    let budgetUsed = lines.reduce((sum, line) => sum + line.length + 1, 0);
+    for (const claim of verifiableClaims) {
+        if (budgetUsed >= VERIFIER_EVIDENCE_CHAR_BUDGET) break;
+        const claimText = String(claim.text || '').trim();
+        if (claimText && !seenSnippets.has(claimText)) {
+            seenSnippets.add(claimText);
+            lines.push(`[Source Claim] ${claimText}`);
+            budgetUsed += claimText.length + 1;
+        }
+        for (const snippet of claim.evidence || []) {
+            if (budgetUsed >= VERIFIER_EVIDENCE_CHAR_BUDGET) break;
+            const snippetText = String(snippet?.text || '').trim();
+            if (!snippetText || seenSnippets.has(snippetText) || claimTexts.has(snippetText)) continue;
+            seenSnippets.add(snippetText);
+            lines.push(`[Citation ${snippet.sourceId || ''}] ${snippetText}`);
+            budgetUsed += snippetText.length + 1;
+        }
+    }
+    return { lines, truncated: budgetUsed >= VERIFIER_EVIDENCE_CHAR_BUDGET };
+}
+
 async function verifyReport(report, evidencePackage, options = {}) {
     // Mechanical findings are skipped by the model but must survive verbatim
     // in the output at their original positions — skipping is not deleting.
@@ -60,33 +102,11 @@ async function verifyReport(report, evidencePackage, options = {}) {
     const openQuestions = [...(report.openQuestions || [])];
     const conflicts = [...(report.conflicts || [])];
 
-    // Evidence is assembled once per unique snippet: claim texts are printed
-    // as claims, so a citation whose text merely echoes its own claim adds
-    // nothing but billed tokens.
-    const verifiableClaims = (evidencePackage.claims || [])
-        .filter((claim) => isVerifiableFinding({ evidence: claim.evidence }));
-    const claimTexts = new Set(
-        verifiableClaims.map((claim) => String(claim.text || '').trim()),
-    );
-
-    const evidenceLines = [
-        ...(evidencePackage.timeline || []).map(event => `[Date: ${event.date}] ${event.description}`),
-    ];
-    const seenSnippets = new Set();
-    for (const claim of verifiableClaims) {
-        const claimText = String(claim.text || '').trim();
-        if (claimText && !seenSnippets.has(claimText)) {
-            seenSnippets.add(claimText);
-            evidenceLines.push(`[Source Claim] ${claimText}`);
-        }
-        for (const snippet of claim.evidence || []) {
-            const snippetText = String(snippet?.text || '').trim();
-            if (!snippetText || seenSnippets.has(snippetText) || claimTexts.has(snippetText)) continue;
-            seenSnippets.add(snippetText);
-            evidenceLines.push(`[Citation ${snippet.sourceId || ''}] ${snippetText}`);
-        }
+    const { lines: evidenceLineList, truncated } = buildEvidenceLines(evidencePackage);
+    if (truncated) {
+        evidenceLineList.push('[Dokazni materijal je skraćen zbog ograničenja veličine — provjeri samo protiv navedenih dokaza.]');
     }
-    const evidenceText = evidenceLines.join('\n');
+    const evidenceText = evidenceLineList.join('\n');
 
     const claimsList = findingsToVerify.map((finding, index) => `${index + 1}. ${finding.text}`).join('\n');
 

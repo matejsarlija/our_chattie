@@ -19,6 +19,7 @@ jest.mock('../helpers/geminiRetry', () => ({
 
 jest.mock('../court-analysis/reasoning/chunker', () => ({
   splitTextIntoChunks: (...args) => mockSplitTextIntoChunks(...args),
+  buildRetrievalChunks: jest.fn(() => []),
 }));
 
 const { AnalyzeDocumentsTool } = require('../court-analysis/agents/analysis-agent');

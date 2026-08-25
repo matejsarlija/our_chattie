@@ -1,5 +1,6 @@
 const { deriveEntryDisplayId } = require('../utils/entryDisplayId');
 const { collectMoneyFlows } = require('./moneyFlow');
+const { reconcileMoneyFlows } = require('./reconciliation');
 const { classifyFileFailure } = require('../../helpers/friendlyAnalysisError');
 
 function normalizeAcquisition(entry) {
@@ -152,6 +153,28 @@ function attachAnalysesToEvidencePackage(pkg, processedCases, clusterId = null) 
         : [];
 
     const analyses = [];
+    // Ground-truth chunks (Phase 0.1): collected from BOTH successful analyses
+    // and analysis-failures-with-extracted-text. The chunk-only branch is the
+    // point of the exercise — quota-failed files keep contributing grounding.
+    const chunks = [];
+    for (const item of individualAnalyses) {
+        const itemChunks = Array.isArray(item?.retrievalChunks) ? item.retrievalChunks : [];
+        if (itemChunks.length === 0) continue;
+        const itemFileName = item.text || item.filePath || 'nepoznata datoteka';
+        for (const chunk of itemChunks) {
+            chunks.push({
+                id: chunk.id,
+                text: chunk.text,
+                metadata: {
+                    fileName: itemFileName,
+                    caseNumber: pkg.clusterId || null,
+                    startIndex: chunk.metadata?.startIndex ?? null,
+                    endIndex: chunk.metadata?.endIndex ?? null
+                }
+            });
+        }
+    }
+
     for (const item of individualAnalyses) {
         if (!item?.aiResult) continue;
         analyses.push({
@@ -167,6 +190,10 @@ function attachAnalysesToEvidencePackage(pkg, processedCases, clusterId = null) 
     }
 
     const moneyFlow = collectMoneyFlows(analyses);
+    // Deterministic reconciliation (Phase 0.3): arithmetic conflicts are
+    // computed here and seeded into the report by the synthesizer — the
+    // single ownership chain pkg.reconciliation → meta → report.conflicts.
+    const reconciliation = reconcileMoneyFlows(moneyFlow);
 
     const total = individualAnalyses.length;
     const analyzed = analyses.length;
@@ -193,8 +220,10 @@ function attachAnalysesToEvidencePackage(pkg, processedCases, clusterId = null) 
     return {
         ...pkg,
         analyses,
+        chunks,
         coverage,
-        moneyFlow
+        moneyFlow,
+        reconciliation
     };
 }
 

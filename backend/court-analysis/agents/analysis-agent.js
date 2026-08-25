@@ -9,11 +9,10 @@ const os = require("os");
 const path = require("path");
 const mammoth = require("mammoth");
 const WordExtractor = require("word-extractor");
-const { splitTextIntoChunks } = require("../reasoning/chunker");
+const { buildRetrievalChunks, splitTextIntoChunks } = require("../reasoning/chunker");
 const agentLog = require("../../helpers/agentLog");
 
 const { GEMINI_MODEL, GEMINI_API_KEY, createGeminiClient, outputCapWarning } = require("../../helpers/geminiConfig");
-const { resolveGeminiPlan } = require("../../helpers/geminiPlan");
 const { classifyFileFailure } = require("../../helpers/friendlyAnalysisError");
 const { extractJsonBlock } = require("../../helpers/jsonExtract");
 const ocrPageStore = require("../../helpers/ocrPageStore");
@@ -56,12 +55,12 @@ const ANALYSIS_CHUNK_SIZE = 3500;
 const ANALYSIS_CHUNK_OVERLAP = 350;
 const ANALYSIS_RETRIEVAL_LIMIT = 6;
 
-// Pacing for document analysis. Free-tier quota is exhausted the moment many
-// files hit Gemini in parallel, so within a batch we process files with bounded
-// concurrency. On the free plan keep it serial; on a paid key allow more.
+// Pacing for document analysis. Files are processed with bounded concurrency
+// so a batch does not fan out every file in parallel and burst the provider's
+// RPM/TPM limits. Default 3 (paid key); override via ANALYSIS_FILE_CONCURRENCY.
 const ANALYSIS_FILE_CONCURRENCY = (() => {
     const raw = Number(process.env.ANALYSIS_FILE_CONCURRENCY);
-    return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 1;
+    return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 3;
 })();
 const ANALYSIS_FILE_DELAY_MS = (() => {
     const raw = Number(process.env.ANALYSIS_FILE_DELAY_MS);
@@ -740,6 +739,13 @@ class AnalyzeDocumentsTool extends Tool {
         const analyzeFile = async (file, { retried = false } = {}) => {
             const startedAt = Date.now();
             currentFileName = file.text || path.basename(file.filePath || "");
+            // Ground-truth chunks (Phase 0.1) are captured as soon as full text
+            // exists and attached to the result on BOTH outcomes: success and
+            // analysis-failure-with-extracted-text. Quota-failed files whose
+            // OCR text is already paid for are precisely the worst-covered
+            // documents — dropping their chunks there would re-create the
+            // grounding gap for the clusters that need grounding most.
+            let retrievalChunks = null;
             try {
                 let extraction = await extractTextFromFile(file.filePath);
                 let text = extraction.text;
@@ -777,6 +783,12 @@ class AnalyzeDocumentsTool extends Tool {
                 if (!text || text.trim().length === 0) {
                     throw new Error(buildExtractionErrorMessage(extraction));
                 }
+
+                // Full text exists — capture the capped ground-truth chunk set
+                // now while the document content is in hand.
+                retrievalChunks = buildRetrievalChunks(text, {
+                    docId: path.basename(file?.filePath || file?.text || "analysis-doc"),
+                });
 
                 //console.log('Case info for analysis:', caseInfo);
 
@@ -865,7 +877,11 @@ class AnalyzeDocumentsTool extends Tool {
                     durationMs: Date.now() - startedAt,
                     retried,
                 });
-                return { ...file, aiResult };
+                return {
+                    ...file,
+                    aiResult,
+                    ...(retrievalChunks ? { retrievalChunks } : {}),
+                };
             } catch (err) {
                 agentLog.error(
                     `Error analyzing file ${file.filePath}:`,
@@ -877,13 +893,21 @@ class AnalyzeDocumentsTool extends Tool {
                     retried,
                     error: err.message,
                 });
-                return { ...file, aiResult: null, error: err.message };
+                // Chunk-only branch: the AI result is gone but the extracted
+                // text was real — keep its chunks so the reasoning index can
+                // still ground findings in this document's content.
+                return {
+                    ...file,
+                    aiResult: null,
+                    error: err.message,
+                    ...(retrievalChunks ? { retrievalChunks } : {}),
+                };
             }
         };
 
         try {
-            // First pass with bounded concurrency so free-tier quota is not
-            // exhausted by a parallel fan-out of every file in the batch.
+            // First pass with bounded concurrency so a parallel fan-out of
+            // every file in the batch does not burst the provider's rate limits.
             const firstPassResults = await mapWithConcurrency(
                 files,
                 ANALYSIS_FILE_CONCURRENCY,
@@ -901,7 +925,7 @@ class AnalyzeDocumentsTool extends Tool {
                 .map(({ index }) => index);
 
             let individualAnalyses = firstPassResults;
-            if (retryableIndexes.length > 0 && resolveGeminiPlan() === "paid") {
+            if (retryableIndexes.length > 0) {
                 agentLog.log(`[Analyzer] ${retryableIndexes.length} file(s) failed with transient errors; retrying sequentially...`);
                 const retryFiles = retryableIndexes.map((index) => files[index]);
                 const retryResults = await mapWithConcurrency(
@@ -913,14 +937,6 @@ class AnalyzeDocumentsTool extends Tool {
                 retryResults.forEach((result, position) => {
                     individualAnalyses[retryableIndexes[position]] = result;
                 });
-            } else if (retryableIndexes.length > 0) {
-                // On the free plan a transient-looking error is the terminal
-                // daily-cap hang: every retry is another guaranteed 30s wait
-                // followed by the same failure. The paid plan keeps retries.
-                agentLog.log(
-                    `[Analyzer] Skipping transient retry pass on the ${resolveGeminiPlan()} plan ` +
-                        `(${retryableIndexes.length} file(s) affected).`,
-                );
             }
 
             return {
