@@ -35,6 +35,8 @@ const {
 const rateLimiter = require('./court-analysis/utils/rateLimiter');
 const { runCourtAnalysis } = require('./court-analysis/pipeline');
 const { createLocalStore } = require('./services/localStore');
+const { createChangeCheckService } = require('./change-detection/service');
+const { createChangeDetectionRouter } = require('./change-detection/api');
 
 // ========= WRAP THE ENTIRE SERVER LOGIC IN AN ASYNC FUNCTION =========
 async function startServer() {
@@ -53,6 +55,10 @@ async function startServer() {
 
   // Local, single-tenant analysis persistence store.
   const analysisStore = createLocalStore();
+
+  // Change detection (Phase B): one shared service over the CSV export client
+  // and the JSON snapshot store; CLI and REST reuse the same instance shape.
+  const changeCheckService = createChangeCheckService();
 
   // Middleware
   app.use(helmet());
@@ -356,6 +362,13 @@ async function startServer() {
       res.status(500).json({ error: 'Failed to load settings.' });
     }
   });
+
+  // Change detection (Phase B2): run a check / inspect history.
+  app.use('/api/change-detection', createChangeDetectionRouter({
+    service: changeCheckService,
+    writeLimiter: analysisWriteIpLimiter,
+    readLimiter: analysisReadIpLimiter
+  }));
 
   app.put('/api/settings', analysisWriteIpLimiter, async (req, res) => {
     try {
