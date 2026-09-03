@@ -535,13 +535,19 @@ describe('processScrapedCases discovery reconciliation', () => {
         expect(mockSynthesizeReport).not.toHaveBeenCalled();
     });
 
-    test('attaches partially processed cases and narrative when the reasoning report stage fails', async () => {
+    test('degrades gracefully instead of throwing when the reasoning report stage fails', async () => {
+        // Report generation failures (dense-cluster JSON truncation, transient
+        // model errors, etc.) must not discard the already-succeeded, real-money
+        // per-document analyses. Unlike an earlier analysis-stage failure (see
+        // the previous test), this one no longer propagates as a
+        // PartialAnalysisError — it resolves normally with report: null and a
+        // reportError message, exactly like rerank/planner already degrade.
         const fixture = require('../fixtures/analysis-baselines/mixed-multi-cluster.json');
 
         mockSynthesizeReport.mockRejectedValue(new Error('Dnevni limit AI analize je iscrpljen.'));
         const progress = jest.fn();
 
-        const error = await processScrapedCases(
+        const result = await processScrapedCases(
             fixture.casesToProcess,
             progress,
             {
@@ -550,17 +556,18 @@ describe('processScrapedCases discovery reconciliation', () => {
                 query: fixture.query,
                 discoveryMetadata: fixture.discoveryMetadata
             }
-        ).catch((err) => err);
+        );
 
-        expect(error).toBeInstanceOf(PartialAnalysisError);
-        expect(error.stage).toBe('reasoning');
-        expect(error.partialResult.processedCases).toHaveLength(1);
-        expect(error.partialResult.processedCases[0].caseResult.caseNumber).toBe('ST-100/2023');
-        // Single-source narrative: when synthesis itself fails there is no
-        // separately-generated overview to salvage.
-        expect(error.partialResult.comparativeAnalysis).toBeNull();
-        expect(error.partialResult.report).toBeNull();
-        expect(error.partialResult.clusterEvidencePackage.clusterId).toBe('ST-100/2023');
+        expect(result.processedCases).toHaveLength(1);
+        expect(result.processedCases[0].caseResult.caseNumber).toBe('ST-100/2023');
+        expect(result.report).toBeNull();
+        expect(result.reportError).toBe('Dnevni limit AI analize je iscrpljen.');
+        // No per-document summaries exist in this fixture's mocked analyses, so
+        // the fallback overview (built from allProcessedCases) is empty rather
+        // than null — the function returned successfully, it just had nothing
+        // to report on.
+        expect(result.comparativeAnalysis).toBe('');
+        expect(result.clusterEvidencePackage.clusterId).toBe('ST-100/2023');
     });
 });
 

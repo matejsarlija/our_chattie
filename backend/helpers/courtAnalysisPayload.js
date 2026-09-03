@@ -44,6 +44,10 @@ function buildCourtAnalysisPayload(finalResult) {
             : [],
         clusterEvidencePackage: finalResult?.clusterEvidencePackage || null,
         report: finalResult?.report || null,
+        // Present only when generateClusterReport failed but per-document analyses
+        // still succeeded (see pipeline.js processScrapedCases); null on the
+        // normal, fully-synthesized path.
+        reportError: finalResult?.reportError || null,
         usage: finalResult?.usage || null
     };
 }

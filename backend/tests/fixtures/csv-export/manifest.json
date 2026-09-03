@@ -1,0 +1,44 @@
+{
+  "description": "Frozen e-Oglasna CSV export fixtures for the csv-export discovery lane. Committed (CSV is plain text) so CI runs deterministically without live e-Oglasna. Refresh via `npm run fixtures:fetch:csv`.",
+  "source": "https://e-oglasna.pravosudje.hr/objave/izvoz/csv",
+  "fetchedAt": "2026-08-25",
+  "refreshCommand": "npm run fixtures:fetch:csv",
+  "sort": "datePublished,desc",
+  "fixtures": [
+    {
+      "file": "oib-66124057408.csv",
+      "query": { "type": "oib", "value": "66124057408" },
+      "rows": 381,
+      "purpose": "Dense dominant-cluster OIB query; contains multi-file rows, ULOGA/OIB-labelled participants, and the '4 St-2/2013' register-prefix case number.",
+      "note": "Full live export, unmodified."
+    },
+    {
+      "file": "case-number-st-2-2013.csv",
+      "query": { "type": "case_number", "value": "St-2/2013" },
+      "rows": 358,
+      "purpose": "Single-cluster case-number query.",
+      "note": "Full live export, unmodified."
+    },
+    {
+      "file": "text-kerum.csv",
+      "query": { "type": "text", "value": "KERUM" },
+      "rows": 413,
+      "purpose": "Text/company-name query.",
+      "note": "Full live export, unmodified."
+    },
+    {
+      "file": "drift-missing-oib-column.csv",
+      "query": null,
+      "rows": 1,
+      "purpose": "Schema-drift fixture: header omits the required 'OIB stečajnog dužnika' column.",
+      "note": "Synthetic."
+    },
+    {
+      "file": "broken-not-csv.csv",
+      "query": null,
+      "rows": 0,
+      "purpose": "Broken-body fixture: non-CSV (HTML error page) body.",
+      "note": "Synthetic."
+    }
+  ]
+}

@@ -20,6 +20,14 @@ jest.mock('../scraper/courtSearchPuppeteer', () => {
   }));
 });
 
+jest.mock('../scraper/discoveryClient', () => ({
+  createDiscoveryClient: jest.fn(() => ({
+    init: mockInit,
+    close: mockClose,
+    searchAndGetLatestCasesWithDocuments: mockSearchAndGetLatestCasesWithDocuments,
+  })),
+}));
+
 jest.mock('../court-analysis/agents/download-agent', () => ({
   DownloadDocumentsTool: jest.fn().mockImplementation(() => ({
     _call: mockDownloadCall,

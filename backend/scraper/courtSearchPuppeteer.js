@@ -1,6 +1,10 @@
 // courtSearchPuppeteer.js
 require('dotenv').config();
 const { normalizeCaseNumber } = require('../court-analysis/utils/caseNumber');
+const {
+    COURT_ENTRIES_PER_PAGE,
+    SCAN_DEPTH_MAX_ENTRIES
+} = require('../court-analysis/utils/scanDepth');
 let puppeteer;
 
 if (process.env.NODE_ENV === 'production' || process.env.BROWSERLESS_TOKEN) {
@@ -19,12 +23,15 @@ function resolveMaxPagesScanned() {
     return Number.isFinite(raw) && raw >= 1 ? raw : 5;
 }
 
-// Hard ceiling for `full` depth. "Every page" is bounded so a mis-parsed
-// hasNextPage or a huge text-query window cannot walk unbounded pages while
-// holding the concurrency-1 analysis queue.
+// Hard page budget for `full` depth, derived from the shared 400-court-entry
+// ceiling and the confirmed 10-court-entries-per-page density. Bounding the
+// page walk is a genuine safety cap: a mis-parsed hasNextPage or a huge
+// text-query result set must not crawl unbounded pages while holding the
+// concurrency-1 analysis queue.
 function resolveFullScanMaxPages() {
     const raw = Number.parseInt(process.env.FULL_SCAN_MAX_PAGES, 10);
-    return Number.isFinite(raw) && raw >= 1 ? raw : 200;
+    if (Number.isFinite(raw) && raw >= 1) return Math.floor(raw);
+    return Math.ceil(SCAN_DEPTH_MAX_ENTRIES / COURT_ENTRIES_PER_PAGE);
 }
 
 // Tail sampling: when a case has more history than the forward scan window
@@ -941,14 +948,19 @@ class CourtSearchPuppeteer {
     }
 
     /**
-     * The new primary method for the analysis pipeline. It finds the latest N cases
+     * The new primary method for the analysis pipeline. It finds the latest N court entries
      * that have direct document download links.
      * @param {string} searchTerm
-     * @param {number|null} limit - The number of cases to return. A null limit
+     * @param {number|null} limit - The number of court entries to return. A null limit
      *  captures the full scanned window (full document history).
-     * @returns {Promise<Array<{caseInfo: object, documentLinks: Array<object>}>>}
+     * @param {number|null} maxPages
+     * @param {boolean} tailSample
+     * @param {string|null} debtorOib - Accepted only for signature parity with the CSV
+     *  client; it is intentionally ignored here because Puppeteer has no reliable
+     *  per-entry debtor-OIB field.
+     * @returns {Promise<{ casesToProcess: Array<object>, discoveryMetadata: object }>}
      */
-    async searchAndGetLatestCasesWithDocuments(searchTerm, limit = 2, maxPages = null, tailSample = false) {
+    async searchAndGetLatestCasesWithDocuments(searchTerm, limit = 2, maxPages = null, tailSample = false, debtorOib = null) {
         console.log('[searchAndGetLatestCasesWithDocuments] Starting search...');
         const { results: allResults, searchMetadata } = await this.performSearchAcrossPages(searchTerm, maxPages, { tailSample });
 
@@ -992,7 +1004,11 @@ class CourtSearchPuppeteer {
         };
     }
 
-    async searchAndGetLatestCases(searchTerm, limit = null, maxPages = null, tailSample = false) {
+    async searchAndGetLatestCases(searchTerm, limit = null, maxPages = null, tailSample = false, debtorOib = null) {
+        // Accepted only for signature parity with the CSV client; it is
+        // intentionally ignored because Puppeteer has no reliable per-entry
+        // debtor-OIB field.
+        void debtorOib;
         console.log('[searchAndGetLatestCases] Starting search...');
         const { results: allResults, searchMetadata } = await this.performSearchAcrossPages(searchTerm, maxPages, { tailSample });
 

@@ -70,7 +70,14 @@ function friendlyAnalysisErrorMessage(error, { stage = null, hasPartial = false 
     const raw = (error && typeof error === 'object' && error.message) ? error.message : String(error || '');
     let reason = raw || 'Došlo je do greške u obradi.';
 
-    if (/no results with documents found|nijedan predmet s dostupnim dokumentima/i.test(reason)) {
+    // CSV export discovery failures carry a stable `reason` on the error; map
+    // them to a transparent Croatian message (mirrors classifyFileFailure).
+    const csvExportReason = (error && typeof error === 'object' && error.name === 'CsvExportError') ? error.reason : null;
+    if (csvExportReason === 'schema-drift' || csvExportReason === 'empty') {
+        reason = 'Izvoz podataka e-Oglasne ploče trenutno nije dostupan. Pokušajte ponovno za nekoliko minuta.';
+    } else if (csvExportReason === 'http' || csvExportReason === 'network') {
+        reason = 'Došlo je do mrežne greške pri dohvaćanju sudskih zapisa. Pokušajte ponovno.';
+    } else if (/no results with documents found|nijedan predmet s dostupnim dokumentima/i.test(reason)) {
         reason = 'Nije pronađen nijedan predmet s dostupnim dokumentima za traženi pojam.';
     } else if (/nije pronađen nijedan predmet/i.test(reason)) {
         reason = 'Nije pronađen nijedan predmet za traženi pojam.';

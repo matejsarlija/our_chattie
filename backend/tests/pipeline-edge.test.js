@@ -7,6 +7,15 @@ jest.mock('../scraper/courtSearchPuppeteer', () => {
     }));
 });
 
+jest.mock('../scraper/discoveryClient', () => ({
+    createDiscoveryClient: jest.fn(() => ({
+        init: jest.fn(),
+        searchAndGetLatestCasesWithDocuments: jest.fn().mockResolvedValue(null),
+        searchAndGetLatestCases: jest.fn().mockResolvedValue(null),
+        close: jest.fn()
+    })),
+}));
+
 const { runCourtAnalysis, runCourtDiscovery } = require('../court-analysis/pipeline');
 
 jest.setTimeout(30000); // Increase timeout for slow browser tests

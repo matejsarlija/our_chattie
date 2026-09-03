@@ -422,6 +422,44 @@ describe('CourtSearchPuppeteer discovery metadata', () => {
         }
     });
 
+    test('a default full scan stops after the 400-court-entry page budget', async () => {
+        delete process.env.FULL_SCAN_MAX_PAGES;
+        try {
+            let parsedPage = 0;
+            scraper.performSearch = jest.fn().mockResolvedValue(undefined);
+            scraper.parseSearchResultsPage = jest.fn().mockImplementation(() => {
+                parsedPage += 1;
+                return Promise.resolve({
+                    results: [{ caseNumber: `St-${parsedPage}/2020`, documentDownloadLink: 'http://d1' }],
+                    searchMetadata: { currentPage: parsedPage, hasNextPage: true, totalResults: 500, totalPages: 50 }
+                });
+            });
+            scraper.navigateToSearchResultsPage = jest.fn().mockResolvedValue(undefined);
+
+            const { results, searchMetadata } = await scraper.performSearchAcrossPages('KERUM', Infinity, { tailSample: false });
+
+            expect(results).toHaveLength(40);
+            expect(searchMetadata.pagesScanned).toBe(40);
+            expect(searchMetadata.fullScanCapped).toBe(true);
+            expect(scraper.navigateToSearchResultsPage).toHaveBeenCalledTimes(39);
+        } finally {
+            delete process.env.FULL_SCAN_MAX_PAGES;
+        }
+    });
+
+    test('searchAndGetLatestCasesWithDocuments keeps the debtorOib slot without filtering on Puppeteer', async () => {
+        scraper.performSearchAcrossPages = jest.fn().mockResolvedValue({
+            results: [{ caseNumber: 'St-1/2013', documentDownloadLink: 'http://d1' }],
+            searchMetadata: { pagesScanned: 1, currentPage: 1, hasNextPage: false }
+        });
+
+        const result = await scraper.searchAndGetLatestCasesWithDocuments('ST-1/2013', 5, 3, true, '66124057408');
+
+        expect(scraper.performSearchAcrossPages).toHaveBeenCalledWith('ST-1/2013', 3, { tailSample: true });
+        expect(result.casesToProcess).toHaveLength(1);
+        expect(result.casesToProcess[0].caseInfo.caseNumber).toBe('St-1/2013');
+    });
+
     test('performSearchAcrossPages scans every page when maxPages is Infinity (full depth)', async () => {
         scraper.performSearch = jest.fn().mockResolvedValue(undefined);
         scraper.parseSearchResultsPage = jest.fn()
