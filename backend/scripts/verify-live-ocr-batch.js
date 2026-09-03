@@ -38,6 +38,7 @@
 
     const { createCanvas } = require('canvas');
     const { extractTextViaOCR } = require('../court-analysis/agents/analysis-agent');
+    const { createUsageTracker } = require('../helpers/geminiUsage');
 
     // --- Minimal image-only PDF writer (JPEG/DCTDecode, no deps) ------------
 
@@ -168,11 +169,21 @@
     console.log(`[probe] input: ${filePath}${synthetic ? ' (synthetic)' : ' (real fixture)'}`);
 
     const progressMessages = [];
+    // Thread the tracker so vision spend is surfaced, not silently dropped.
+    // A zero snapshot is legitimate here when every page was served from the
+    // OCR page cache — say so instead of letting it look like a broken meter.
+    const usageTracker = createUsageTracker();
     let result;
     try {
-        result = await extractTextViaOCR(filePath, (event) => progressMessages.push(event.message || ''), {});
+        result = await extractTextViaOCR(filePath, (event) => progressMessages.push(event.message || ''), { tracker: usageTracker });
     } finally {
         if (synthetic) fs.unlinkSync(filePath);
+        const usage = usageTracker.snapshot();
+        console.log(
+            `[token-usage] ocr-batch probe: ${usage.calls} calls, ` +
+            `${usage.inputTokens} in / ${usage.outputTokens} out / ${usage.totalTokens} total tokens` +
+            (usage.calls === 0 ? ' (0 calls: all pages served from the OCR page cache)' : '')
+        );
     }
 
     console.log(`[probe] result: method=${result.method} pages=${result.pages}/${expectedPages} error=${result.error}`);

@@ -14,12 +14,12 @@ describe('createGeminiClient role factory', () => {
         ChatGoogleGenerativeAI.mockClear();
     });
 
-    test('every declared role applies its temperature and output cap', () => {
+    test('every declared role applies its configured model, temperature, and output cap', () => {
         for (const [role, expected] of Object.entries(GEMINI_ROLE_CONFIG)) {
             createGeminiClient(role);
             expect(ChatGoogleGenerativeAI).toHaveBeenLastCalledWith(
                 expect.objectContaining({
-                    model: DEFAULT_GEMINI_MODEL,
+                    model: expected.model,
                     temperature: expected.temperature,
                     maxOutputTokens: expected.maxOutputTokens,
                 }),
@@ -47,5 +47,32 @@ describe('createGeminiClient role factory', () => {
         expect(warning).toContain("'analysis'");
         expect(warning).toContain(`maxOutputTokens=${GEMINI_ROLE_CONFIG.analysis.maxOutputTokens}`);
         expect(outputCapWarning('unknown-role')).toContain('provider default');
+    });
+
+    test('the env override wins over a role-specific model when explicitly set', () => {
+        const role = 'rerank';
+        // Without an env override, the role's own model is used.
+        createGeminiClient(role);
+        expect(ChatGoogleGenerativeAI).toHaveBeenLastCalledWith(
+            expect.objectContaining({ model: GEMINI_ROLE_CONFIG[role].model }),
+        );
+
+        // With GEMINI_MODEL set, it must win over the role's model. Both the
+        // config module and the mocked SDK need re-requiring after
+        // resetModules(), since the mock factory re-runs and produces a new
+        // jest.fn() instance distinct from the top-level `ChatGoogleGenerativeAI`.
+        jest.resetModules();
+        process.env.GEMINI_MODEL = 'gemini-env-override-test';
+        try {
+            const { ChatGoogleGenerativeAI: FreshChatGoogleGenerativeAI } = require('@langchain/google-genai');
+            const { createGeminiClient: createGeminiClientWithEnv } = require('../helpers/geminiConfig');
+            createGeminiClientWithEnv(role);
+            expect(FreshChatGoogleGenerativeAI).toHaveBeenLastCalledWith(
+                expect.objectContaining({ model: 'gemini-env-override-test' }),
+            );
+        } finally {
+            delete process.env.GEMINI_MODEL;
+            jest.resetModules();
+        }
     });
 });
