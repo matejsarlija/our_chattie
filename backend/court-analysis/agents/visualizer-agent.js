@@ -42,17 +42,36 @@ class VisualizerTool extends Tool {
             ).join('\n')}`
             : '';
 
+        // Property flow: parallel structured surface feeding the "Tijek imovine"
+        // subgraph. Tražbina entries linked via supersedes render as a
+        // directional chain (original holder → assignee), not disconnected nodes.
+        const propertyFlow = Array.isArray(options.propertyFlow?.entries)
+            ? options.propertyFlow.entries
+            : [];
+        const propertyFlowBlock = propertyFlow.length > 0
+            ? `\n\nSTRUCTURED PROPERTY-FLOW DATA (use only as asset source material for the "Tijek imovine" subgraph; render "tražbina" supersedes links as a directional chain original-holder → assignee):\n${propertyFlow.map((entry) =>
+                `- ${entry.value ?? '?'} ${entry.currency || '?'} [${entry.assetType || 'drugo'}]${entry.eventType ? ` {${entry.eventType}}` : ''} — ${entry.description || 'bez opisa'}${entry.transferor || entry.transferee ? ` (${entry.transferor || '?'} → ${entry.transferee || '?'})` : ''}${entry.date ? ` (${entry.date})` : ''}${entry.supersedes ? ` [supersedes: ${entry.supersedes}]` : ''}${entry.fileName ? ` [source: ${entry.fileName}]` : ''}`
+            ).join('\n')}`
+            : '';
+
+        const subgraphInstructions = propertyFlow.length > 0
+            ? `2. Organize the diagram into exactly three subgraphs:
+           - subgraph "Tijek novca" (Visualizing all financial movements, payments, and reservations).
+           - subgraph "Tijek imovine" (Visualizing all property/asset transfers from the STRUCTURED PROPERTY-FLOW DATA, including tražbina cession chains).
+           - subgraph "Kronologija i napredak" (Visualizing the sequence of court events and future steps).`
+            : `2. Organize the diagram into exactly two subgraphs:
+           - subgraph "Tijek novca" (Visualizing all financial movements, payments, and reservations).
+           - subgraph "Kronologija i napredak" (Visualizing the sequence of court events and future steps).`;
+
         const prompt = `
         You are a specialized Data Visualization Agent. Your ONLY job is to transform the provided legal analysis text into a strictly valid Mermaid flowchart.
         
         INPUT TEXT:
-        ${usableText}${moneyFlowBlock}
+        ${usableText}${moneyFlowBlock}${propertyFlowBlock}
 
         INSTRUCTIONS:
         1. Produce ONLY a Mermaid code block using 'flowchart TD'.
-        2. Organize the diagram into exactly two subgraphs:
-           - subgraph "Tijek novca" (Visualizing all financial movements, payments, and reservations).
-           - subgraph "Kronologija i napredak" (Visualizing the sequence of court events and future steps).
+        ${subgraphInstructions}
         3. Use square brackets [ ] for all nodes.
         4. STRICT SYNTAX RULES:
            - ALWAYS wrap ALL node labels and edge text in double quotes. 
@@ -61,6 +80,7 @@ class VisualizerTool extends Tool {
            - NEVER use colons (:) for labels on arrows.
            - NEVER include comments or extra text outside the code block.
         5. If no financial data is present, omit the "Tijek novca" subgraph but still produce the timeline.
+        6. If no property data is present, omit the "Tijek imovine" subgraph entirely — never emit an empty or placeholder property subgraph.
 
         OUTPUT FORMAT:
         \`\`\`mermaid

@@ -44,6 +44,13 @@ function createRetrievalQueries({ query = null, clusterId = null, primaryCaseNum
             text: ['dužnik vjerovnik stranka sudionik oib tvrtka osoba', ...participantNames].filter(Boolean).join(' '),
             anchors,
             queryType
+        },
+        {
+            id: 'property-flow',
+            purpose: 'property-assets',
+            text: ['imovina nekretnina pokretnina tražbina ustup cesija hipoteka katastar prodaja imovine', caseNumber].filter(Boolean).join(' '),
+            anchors,
+            queryType
         }
     ];
 }

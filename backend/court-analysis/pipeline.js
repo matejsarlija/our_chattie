@@ -1672,6 +1672,7 @@ async function processScrapedCases(casesToProcess, progressCallback, options = {
                 const visualizerTool = new VisualizerTool();
                 const diagramCode = await visualizerTool._call(comparativeAnalysis, {
                     moneyFlow: enrichedEvidencePackage?.moneyFlow || null,
+                    propertyFlow: enrichedEvidencePackage?.propertyFlow || null,
                     tracker: usageTracker,
                     onUsage: emitUsage
                 });
