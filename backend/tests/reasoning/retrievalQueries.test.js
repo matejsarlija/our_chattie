@@ -15,7 +15,8 @@ describe('retrievalQueries', () => {
             'timeline',
             'amounts',
             'procedural-status',
-            'party-roles'
+            'party-roles',
+            'property-flow'
         ]);
         expect(queries[0]).toEqual(expect.objectContaining({
             queryType: 'oib',
@@ -34,5 +35,42 @@ describe('retrievalQueries', () => {
         });
 
         expect(queries.every((query) => query.queryType === 'text')).toBe(true);
+    });
+
+    test('property-flow template targets asset/receivable vocabulary', () => {
+        const queries = createRetrievalQueries({ clusterId: 'Stč-2150/2022' });
+        const template = queries.find((query) => query.id === 'property-flow');
+        expect(template).toEqual(expect.objectContaining({ purpose: 'property-assets' }));
+        for (const term of ['imovina', 'nekretnina', 'tražbina', 'ustup']) {
+            expect(template.text).toContain(term);
+        }
+    });
+
+    test('property-flow-relevant chunks are retrievable via the new template', () => {
+        const { retrieveEvidence } = require('../../court-analysis/reasoning/retriever');
+        const pkg = {
+            packageType: 'ClusterEvidencePackage',
+            schemaVersion: 1,
+            reasoningScope: 'single-cluster',
+            selectedClusterIds: ['Stč-2150/2022'],
+            clusterId: 'Stč-2150/2022',
+            primaryCaseNumber: 'Stč-2150/2022',
+            query: { type: 'text', value: 'Ducanor' },
+            identity: { consistency: 'consistent', notes: [], participantNames: [], participantOibs: [] },
+            discovery: { reasoningClusterId: 'Stč-2150/2022', recommendedPrimaryClusterId: 'Stč-2150/2022', secondaryClusterIds: [] },
+            entries: [],
+            documentLinks: [],
+            chunks: [
+                {
+                    id: 'c-1',
+                    text: 'Ugovor o ustupu tražbina: vjerovnik ustupa tražbinu prema dužniku u iznosu od 15.000,00 EUR. Prodaja nekretnine upisane u katastar provodi se radi namirenja.',
+                    metadata: { fileName: 'ustup.pdf', caseNumber: 'Stč-2150/2022' },
+                },
+            ],
+        };
+        const retrieval = retrieveEvidence(pkg, { topK: 10 });
+        const propertyResult = retrieval.results.find((result) => result.query?.id === 'property-flow');
+        expect(propertyResult).toBeDefined();
+        expect(propertyResult.matches.map((match) => match.sourceId)).toContain('c-1');
     });
 });

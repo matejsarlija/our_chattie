@@ -147,8 +147,9 @@
           { "name": "Ante Anić", "role": "Stečajni upravitelj", "oib": null }
         ],
         "amounts": [
-          { "description": "Polog za troškove stečajnog postupka", "amount": 1200, "currency": "EUR", "date": "2022-03-15" }
-        ]
+          { "description": "Polog za troškove stečajnog postupka", "amount": 1200, "currency": "EUR", "date": "2022-03-15", "quote": "Polog za troškove stečajnog postupka u iznosu od 1.200,00 EUR dužnik je uplatio na žiro račun suda." }
+        ],
+        "propertyFlow": []
       }
     },
     {
@@ -161,7 +162,21 @@
         "parties": [
           { "name": "Ducanor d.o.o.", "role": "Dužnik", "oib": "11223344556" }
         ],
-        "amounts": []
+        "amounts": [],
+        "propertyFlow": [
+          {
+            "description": "Tražbina vjerovnika prema dužniku Ducanor d.o.o.",
+            "identifier": null,
+            "assetType": "tražbina",
+            "eventType": "prijava",
+            "transferor": "Vjerovnik A d.o.o.",
+            "transferee": null,
+            "value": 84500,
+            "currency": "EUR",
+            "date": "2022-06-15",
+            "quote": "Vjerovnici Ducanor d.o.o. prijavljuju svoje tražbine stečajnom upravitelju najkasnije do 15.06.2022."
+          }
+        ]
       }
     },
     {
@@ -176,8 +191,34 @@
           { "name": "Kupac Prostor d.o.o.", "role": "Kupac", "oib": "99887766554" }
         ],
         "amounts": [
-          { "description": "Ukupno prijavljene tražbine", "amount": 84500, "currency": "EUR" },
-          { "description": "Prodaja proizvodnih strojeva", "amount": 25000, "currency": "EUR", "date": "2023-02-10" }
+          { "description": "Ukupno prijavljene tražbine", "amount": 84500, "currency": "EUR", "quote": "ukupno su prijavljene tražbine u iznosu od 84.500,00 EUR" },
+          { "description": "Prodaja proizvodnih strojeva", "amount": 25000, "currency": "EUR", "date": "2023-02-10", "quote": "prodaje se imovina dužnika — proizvodne strojeve — po cijeni od 25.000,00 EUR" }
+        ],
+        "propertyFlow": [
+          {
+            "description": "Proizvodni strojevi",
+            "identifier": null,
+            "assetType": "pokretnina",
+            "transferor": "Ducanor d.o.o.",
+            "transferee": "Kupac Prostor d.o.o.",
+            "value": 25000,
+            "currency": "EUR",
+            "date": "2023-02-10",
+            "quote": "prodaje se imovina dužnika — proizvodne strojeve — po cijeni od 25.000,00 EUR"
+          },
+          {
+            "description": "Tražbina vjerovnika prema dužniku Ducanor d.o.o.",
+            "identifier": null,
+            "assetType": "tražbina",
+            "eventType": "ustup",
+            "transferor": "Vjerovnik A d.o.o.",
+            "transferee": "Kupac Tražbina d.o.o.",
+            "value": 15000,
+            "currency": "EUR",
+            "date": "2023-06-01",
+            "supersedes": "prop-1",
+            "quote": "Tražbina vjerovnika prema dužniku Ducanor d.o.o. u iznosu od 84.500,00 EUR ustupljena je za 15.000,00 EUR."
+          }
         ]
       }
     }

@@ -332,9 +332,11 @@
             "description": "Glavnica potraživanja",
             "amount": 4320,
             "currency": "EUR",
-            "date": "2023-03-02"
+            "date": "2023-03-02",
+            "quote": "radi namirenja potraživanja ovrsitelja Stambeno Gospodarstvo d.o.o. u iznosu od 4.320,00 EUR glavnice"
           }
-        ]
+        ],
+        "propertyFlow": []
       }
     },
     {
@@ -356,13 +358,28 @@
             "description": "Cijena prodaje alatnih mašina",
             "amount": 2100,
             "currency": "EUR",
-            "date": "2023-11-08"
+            "date": "2023-11-08",
+            "quote": "građevinske alatne mašine prodane su po cijeni od 2.100,00 EUR"
           },
           {
             "description": "Trošak prodaje",
             "amount": 150,
             "currency": "EUR",
-            "date": "2023-11-08"
+            "date": "2023-11-08",
+            "quote": "trošak prodaje od 150,00 EUR obračunat je u korist proračuna suda"
+          }
+        ],
+        "propertyFlow": [
+          {
+            "description": "Građevinske alatne mašine",
+            "identifier": null,
+            "assetType": "pokretnina",
+            "transferor": "Gradnja Plus d.o.o.",
+            "transferee": null,
+            "value": 2100,
+            "currency": "EUR",
+            "date": "2023-11-08",
+            "quote": "građevinske alatne mašine prodane su po cijeni od 2.100,00 EUR"
           }
         ]
       }
@@ -386,9 +403,11 @@
             "description": "Ukupno naplaćeno od dužnika",
             "amount": 4530,
             "currency": "EUR",
-            "date": "2024-01-30"
+            "date": "2024-01-30",
+            "quote": "naplaćen u ukupnom iznosu od 4.530,00 EUR"
           }
-        ]
+        ],
+        "propertyFlow": []
       }
     }
   ],

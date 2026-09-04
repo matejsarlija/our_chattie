@@ -80,8 +80,7 @@ describe('synthesisInputBuilder budget tiers (Phase 0.5)', () => {
         expect(money.text).toContain('100 EUR');
     });
 
-    test('hard char budget drops retrieved claims from the tail first', () => {
-        // 30 uncited analysis claims digest to ~280 chars each (~8.5k); 50
+    test('hard char budget drops retrieved claims from the tail first', () => {        // 30 uncited analysis claims digest to ~280 chars each (~8.5k); 50
         // retrieved claims of 900 chars add ~45k — total exceeds the 48k
         // budget, so the tail-drop loop must remove retrieved claims while
         // money-flow/structural entries survive untouched.
@@ -106,5 +105,33 @@ describe('synthesisInputBuilder budget tiers (Phase 0.5)', () => {
         expect(totalChars).toBeLessThanOrEqual(48000);
         // Money-flow survives tail-dropping.
         expect(input.claims.some((c) => c.id === 'money-flow-1')).toBe(true);
+    });
+
+    test('ungrounded money/property claims degrade to digests; grounded ones stay full', () => {
+        const groundedMoney = {
+            id: 'money-flow-1',
+            text: 'Financijski iznos 1,200 EUR (Polog).',
+            confidence: 'medium',
+            evidence: [{ sourceId: 'src-money-1', text: 'Polog 1200 EUR', metadata: { sourceType: 'analysis-amount', grounded: true } }]
+        };
+        const ungroundedMoney = {
+            id: 'money-flow-2',
+            text: 'U'.repeat(600),
+            confidence: 'medium',
+            evidence: [{ sourceId: 'src-money-2', text: 'U'.repeat(600), metadata: { sourceType: 'analysis-amount', grounded: false } }]
+        };
+        const ungroundedProperty = {
+            id: 'property-flow-1',
+            text: 'P'.repeat(600),
+            confidence: 'medium',
+            evidence: [{ sourceId: 'src-prop-1', text: 'P'.repeat(600), metadata: { sourceType: 'analysis-property', grounded: false } }]
+        };
+        mockNormalize.mockReturnValue({ timeline: [], claims: [groundedMoney, ungroundedMoney, ungroundedProperty], meta: {} });
+        const retrieval = { results: [] };
+
+        const input = buildSynthesisInput(pkg, retrieval);
+        expect(input.claims.find((c) => c.id === 'money-flow-1').digest).toBeUndefined();
+        expect(input.claims.find((c) => c.id === 'money-flow-2').digest).toBe(true);
+        expect(input.claims.find((c) => c.id === 'property-flow-1').digest).toBe(true);
     });
 });

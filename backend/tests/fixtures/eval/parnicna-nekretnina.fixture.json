@@ -334,7 +334,8 @@
             "oib": "33445566778"
           }
         ],
-        "amounts": []
+        "amounts": [],
+        "propertyFlow": []
       }
     },
     {
@@ -356,9 +357,11 @@
             "description": "Predujam za troškove vještačine",
             "amount": 800,
             "currency": "EUR",
-            "date": "2022-05-20"
+            "date": "2022-05-20",
+            "quote": "Troškovi vještačine u iznosu od 800,00 EUR u predujmu polaže tužitelj"
           }
-        ]
+        ],
+        "propertyFlow": []
       }
     },
     {
@@ -385,13 +388,28 @@
             "description": "Naknada štete za uništene čokote vinove loze",
             "amount": 15000,
             "currency": "EUR",
-            "date": "2023-09-12"
+            "date": "2023-09-12",
+            "quote": "isplati 15.000,00 EUR naslova naknada štete zbog uništenih čokota vinove loze"
           },
           {
             "description": "Troškovi postupka",
             "amount": 2500,
             "currency": "EUR",
-            "date": "2023-09-12"
+            "date": "2023-09-12",
+            "quote": "nadoknadi troškove postupka u iznosu od 2.500,00 EUR"
+          }
+        ],
+        "propertyFlow": [
+          {
+            "description": "Vinograd na graničnom pojasu",
+            "identifier": "k.o. Požega",
+            "assetType": "nekretnina",
+            "transferor": null,
+            "transferee": null,
+            "value": null,
+            "currency": null,
+            "date": null,
+            "quote": "oštetio korijenje vinove loze na graničnom pojasu"
           }
         ]
       }

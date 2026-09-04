@@ -87,7 +87,7 @@ describe('reasoning reportService', () => {
         }));
         expect(result.meta.retrieval).toEqual(expect.objectContaining({
             metrics: expect.objectContaining({
-                queryCount: 4
+                queryCount: 5
             })
         }));
         expect(result.meta.rerank).toEqual(expect.objectContaining({

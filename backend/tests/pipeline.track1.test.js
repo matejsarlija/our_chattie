@@ -153,6 +153,10 @@ describe('Track 1: evidence enrichment (1c)', () => {
         code: 'timeout',
         reason: TIMEOUT_MESSAGE,
       }],
+      // Grounding dimension: no quotes in these legacy-shaped analyses, so
+      // zero of zero claims verify (additive signal, never a failure).
+      groundedClaims: 0,
+      totalClaims: 0,
     });
   });
 
@@ -199,6 +203,8 @@ describe('Track 1: evidence enrichment (1c)', () => {
       coverageRatio: 0,
       complete: false,
       failedFiles: [],
+      groundedClaims: 0,
+      totalClaims: 0,
     });
   });
 
