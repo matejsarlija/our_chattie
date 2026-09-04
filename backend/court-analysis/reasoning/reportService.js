@@ -39,6 +39,10 @@ function shouldRunOptionalPass(mode) {
 }
 
 async function generateClusterReport(clusterEvidencePackage, options = {}) {
+    // Run correlation, same plumbing shape as tracker/onUsage: callers pass
+    // options.runId (null outside real runs); every logger.* call below
+    // carries it so one run's lines isolate with a single grep.
+    const runId = options.runId || null;
     // Query planning (Phase 1.3): one small call lets the model add case-
     // specific queries on top of the fixed templates. Off/plan-gated via
     // shouldRunOptionalPass; any planner failure silently degrades to templates.
@@ -75,6 +79,7 @@ async function generateClusterReport(clusterEvidencePackage, options = {}) {
 
     const retrieval = retrieveEvidence(clusterEvidencePackage, retrievalOptions);
     logger.info('reportService.retrieve', 'Evidence retrieval completed', {
+        runId,
         queries: Array.isArray(retrieval?.queries) ? retrieval.queries.length : 0,
         plannedQueries: plannedQueryCount,
         results: Array.isArray(retrieval?.results) ? retrieval.results.length : 0,
@@ -99,6 +104,7 @@ async function generateClusterReport(clusterEvidencePackage, options = {}) {
 
     const rerankedRetrieval = await rerankEvidence(retrieval, rerankOptions);
     logger.info('reportService.rerank', 'Evidence rerank completed', {
+        runId,
         status: rerankedRetrieval?.rerankStatus || null,
         reason: rerankedRetrieval?.metrics?.rerankReason || null,
         results: Array.isArray(rerankedRetrieval?.results) ? rerankedRetrieval.results.length : 0,
@@ -106,6 +112,7 @@ async function generateClusterReport(clusterEvidencePackage, options = {}) {
 
     const reasoningEvidence = buildSynthesisInput(clusterEvidencePackage, retrieval, rerankedRetrieval);
     logger.info('reportService.synthesize', 'Synthesis input built', {
+        runId,
         timeline: Array.isArray(reasoningEvidence?.timeline) ? reasoningEvidence.timeline.length : 0,
         claims: Array.isArray(reasoningEvidence?.claims) ? reasoningEvidence.claims.length : 0,
     });
@@ -115,6 +122,7 @@ async function generateClusterReport(clusterEvidencePackage, options = {}) {
         onUsage: options.onUsage,
     });
     logger.info('reportService.synthesize', 'Report synthesized', {
+        runId,
         findings: Array.isArray(report?.findings) ? report.findings.length : 0,
     });
 
@@ -129,6 +137,7 @@ async function generateClusterReport(clusterEvidencePackage, options = {}) {
         onUsage: options.onUsage,
     });
     logger.info('reportService.verify', 'Report verified', {
+        runId,
         findings: Array.isArray(verifiedReport?.findings) ? verifiedReport.findings.length : 0,
         verified: Array.isArray(verifiedReport?.verifiedFindings) ? verifiedReport.verifiedFindings.length : 0,
         openQuestions: Array.isArray(verifiedReport?.openQuestions) ? verifiedReport.openQuestions.length : 0,
@@ -156,6 +165,7 @@ async function generateClusterReport(clusterEvidencePackage, options = {}) {
             finalReport = followUp.report;
             if (followUp.called) {
                 logger.info('reportService.followUp', 'Conflict re-verification ran', {
+                    runId,
                     conflicts: Array.isArray(finalReport?.conflicts) ? finalReport.conflicts.length : 0,
                 });
             }

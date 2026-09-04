@@ -51,6 +51,18 @@ function buildEmptyPartialResult() {
     };
 }
 
+// Reuses the per-case coverage objects the analysis tool already computed —
+// never recomputed here, so the summary can never disagree with them.
+function sumDocumentCoverage(processedCases) {
+    return (processedCases || []).reduce(
+        (totals, processedCase) => ({
+            analyzed: totals.analyzed + (processedCase?.analysis?.coverage?.analyzed ?? 0),
+            failed: totals.failed + (processedCase?.analysis?.coverage?.failed ?? 0),
+        }),
+        { analyzed: 0, failed: 0 }
+    );
+}
+
 // Degraded-but-useful overview for when generateClusterReport fails (dense-
 // cluster JSON truncation, model hiccups, etc.). The per-document analyses
 // already cost real Gemini calls and are real, verified content — losing them
@@ -1106,6 +1118,7 @@ function buildDiscoveryResult(casesToProcess, options = {}, progressCallback) {
     const primaryClusterId = discoverySummary.recommendedPrimaryClusterId;
 
     logger.info('pipeline.buildDiscoveryResult', 'Discovery completed', {
+        runId: options?.runId || null,
         clusters,
         allClusters: allClusters.length,
         primaryClusterId: primaryClusterId || null,
@@ -1150,6 +1163,7 @@ function resolveAnalysisArgs(caseLimitOrOptions, maybeProgressCallback) {
             caseLimit: DEFAULT_CASE_LIMIT,
             scrapeLimit: computeRawScrapeLimit(depth.maxEntries),
             enableVisualizer: true,
+            runId: null,
             ...depth,
             progressCallback: caseLimitOrOptions,
         };
@@ -1162,6 +1176,7 @@ function resolveAnalysisArgs(caseLimitOrOptions, maybeProgressCallback) {
             caseLimit,
             scrapeLimit: computeRawScrapeLimit(depth.maxEntries),
             enableVisualizer: true,
+            runId: null,
             ...depth,
             progressCallback: maybeProgressCallback,
         };
@@ -1177,6 +1192,7 @@ function resolveAnalysisArgs(caseLimitOrOptions, maybeProgressCallback) {
             query: caseLimitOrOptions.query || null,
             clusterExpansion: caseLimitOrOptions.clusterExpansion || null,
             discoverySource: caseLimitOrOptions.discoverySource || null,
+            runId: caseLimitOrOptions.runId || null,
             ...depth,
             progressCallback: maybeProgressCallback,
         };
@@ -1188,6 +1204,7 @@ function resolveAnalysisArgs(caseLimitOrOptions, maybeProgressCallback) {
         scrapeLimit: computeRawScrapeLimit(depth.maxEntries),
         enableVisualizer: true,
         query: null,
+        runId: null,
         ...depth,
         progressCallback: maybeProgressCallback,
     };
@@ -1248,6 +1265,7 @@ async function runCourtAnalysis(searchTerm, caseLimitOrOptions, progressCallback
     try {
         // 1. Scrape for the N latest cases
         logger.info('pipeline.runCourtAnalysis', 'Starting court analysis', {
+            runId: resolved.runId || null,
             queryType: resolved.query?.type || null,
             caseLimit: resolved.caseLimit,
             scrapeLimit: resolved.scrapeLimit,
@@ -1273,6 +1291,7 @@ async function runCourtAnalysis(searchTerm, caseLimitOrOptions, progressCallback
             throw new Error('Nije pronađen nijedan predmet s dostupnim dokumentima za traženi pojam.');
         }
         logger.info('pipeline.runCourtAnalysis', 'Scrape completed', {
+            runId: resolved.runId || null,
             cases: casesToProcess.length,
             discoveryMode: discoveryMetadata?.discoveryMode || null,
         });
@@ -1291,11 +1310,12 @@ async function runCourtAnalysis(searchTerm, caseLimitOrOptions, progressCallback
             query: expandedResolved.query || { value: searchTerm },
             clusterExpansion: expandedResolved.clusterExpansion,
             discoveryMetadata,
+            runId: expandedResolved.runId || null,
         });
         return result;
 
     } catch (error) {
-        logger.error('pipeline.runCourtAnalysis', 'Court analysis failed', { error: error.message });
+        logger.error('pipeline.runCourtAnalysis', 'Court analysis failed', { runId: resolved.runId || null, error: error.message });
         callback?.({ step: 'error', progress: 100, message: error.message });
         throw error;
     } finally {
@@ -1379,6 +1399,7 @@ async function runCourtAnalysisWithExistingAutomator(searchTerm, caseLimitOrOpti
             query: expandedResolved.query || { value: searchTerm },
             clusterExpansion: expandedResolved.clusterExpansion,
             discoveryMetadata,
+            runId: expandedResolved.runId || null,
         });
         return result;
 
@@ -1403,6 +1424,12 @@ async function processScrapedCases(casesToProcess, progressCallback, options = {
         enableVisualizer: true,
         ...options,
     };
+    // Run correlation: server.js mints a run id per analysis request and
+    // threads it here via options (same plumbing shape as usageTracker).
+    // Every logger.* call in this function carries it in meta so concurrent
+    // runs can be isolated with a single grep. Null outside HTTP requests.
+    const runId = resolvedOptions.runId || null;
+    const runStartedAt = Date.now();
     const allProcessedCases = [];
     let allFilesToCleanup = [];
     let lastStage = null;
@@ -1463,6 +1490,7 @@ async function processScrapedCases(casesToProcess, progressCallback, options = {
         const totalCases = reasoningClusters.length;
 
         logger.info('pipeline.processScrapedCases', 'Discovery grouped', {
+            runId,
             clusters: clusters.length,
             reasoningClusters: totalCases,
             primaryClusterId: primaryClusterId || null,
@@ -1571,13 +1599,14 @@ async function processScrapedCases(casesToProcess, progressCallback, options = {
 
             // 2c. Analyze THIS case's documents
             stageAwareProgress?.({ step: 'reasoning', message: `Analiziram ${filesForAnalysis.length} datoteka za predmet ${i + 1}...` });
-            const analysis = await analyzeTool._call({ files: filesForAnalysis, caseInfo: caseInfo, progressCallback: stageAwareProgress, usageTracker, onUsage: emitUsage });
+            const analysis = await analyzeTool._call({ files: filesForAnalysis, caseInfo: caseInfo, progressCallback: stageAwareProgress, usageTracker, onUsage: emitUsage, runId });
             const analysisCoverage = analysis?.coverage || {};
             stageAwareProgress?.({
                 step: 'reasoning',
                 message: `AI analiza predmeta ${i + 1} dovršena: ${analysisCoverage.analyzed ?? 0} uspješno, ${analysisCoverage.failed ?? 0} neuspjelo od ${analysisCoverage.total ?? filesForAnalysis.length} datoteka.`
             });
             logger.info('pipeline.processScrapedCases', 'Case analyzed', {
+                runId,
                 caseIndex: i + 1,
                 totalCases,
                 filesAnalyzed: filesForAnalysis.length,
@@ -1640,12 +1669,13 @@ async function processScrapedCases(casesToProcess, progressCallback, options = {
             report = await generateClusterReport(enrichedEvidencePackage, {
                 onStage: (event) => stageAwareProgress?.(event),
                 tracker: usageTracker,
-                onUsage: emitUsage
+                onUsage: emitUsage,
+                runId
             });
         } catch (err) {
             reportError = err.message;
             agentLog.error('Report generation failed; returning partial per-document results without a synthesized report:', err.message);
-            logger.error('pipeline.processScrapedCases', 'Report generation failed', { error: reportError });
+            logger.error('pipeline.processScrapedCases', 'Report generation failed', { runId, error: reportError });
         }
         partialResult.report = report;
         partialResult.reportError = reportError;
@@ -1659,6 +1689,7 @@ async function processScrapedCases(casesToProcess, progressCallback, options = {
             : composeFallbackOverviewMarkdown(allProcessedCases);
         partialResult.comparativeAnalysis = comparativeAnalysis;
         logger.info('pipeline.processScrapedCases', 'Reasoning report generated', {
+            runId,
             processedCases: allProcessedCases.length,
             reportFindings: Array.isArray(report?.findings) ? report.findings.length : 0,
             verificationStatus: report?.verification?.status || null,
@@ -1687,8 +1718,35 @@ async function processScrapedCases(casesToProcess, progressCallback, options = {
 
         stageAwareProgress?.({ step: 'complete', progress: 100, message: 'Analiza je završena!' });
         logger.info('pipeline.processScrapedCases', 'Analysis complete', {
+            runId,
             processedCases: allProcessedCases.length,
             hasReport: Boolean(report),
+            reportError,
+        });
+
+        // Structured end-of-run summary: ONE greppable line per run carrying
+        // only counts/totals that genuinely exist at this point (never full
+        // arrays). Extension point: any future run-level aggregate gets one
+        // more bounded field here — this is the single place to add it.
+        const summaryCoverage = sumDocumentCoverage(allProcessedCases);
+        logger.info('pipeline.processScrapedCases', 'Run summary', {
+            runId,
+            status: 'complete',
+            query: {
+                type: resolvedOptions.query?.type || null,
+                value: resolvedOptions.query?.value || null,
+            },
+            discoveryMode: discoverySummary?.discoveryMode || null,
+            scanDepth: resolvedOptions.scanDepth || null,
+            processedCases: allProcessedCases.length,
+            documentsAnalyzed: summaryCoverage.analyzed,
+            documentsFailed: summaryCoverage.failed,
+            groundedClaims: enrichedEvidencePackage?.coverage?.groundedClaims ?? null,
+            totalClaims: enrichedEvidencePackage?.coverage?.totalClaims ?? null,
+            propertyFlowEntries: enrichedEvidencePackage?.propertyFlow?.count ?? 0,
+            propertyConflicts: enrichedEvidencePackage?.propertyReconciliation?.conflicts?.length ?? 0,
+            usage: usageTracker.snapshot(),
+            durationMs: Date.now() - runStartedAt,
             reportError,
         });
 
@@ -1709,6 +1767,29 @@ async function processScrapedCases(casesToProcess, progressCallback, options = {
         // failing stage, so the API layer can persist discovery data + a transparent
         // error instead of discarding everything.
         partialResult.usage = usageTracker.snapshot();
+        // Failure-side twin of the success summary above: same bounded shape,
+        // partial counts where the run got that far, nulls where it didn't.
+        const failureCoverage = sumDocumentCoverage(allProcessedCases);
+        logger.error('pipeline.processScrapedCases', 'Run summary', {
+            runId,
+            status: 'failed',
+            query: {
+                type: resolvedOptions.query?.type || null,
+                value: resolvedOptions.query?.value || null,
+            },
+            discoveryMode: partialResult.discoverySummary?.discoveryMode || null,
+            scanDepth: resolvedOptions.scanDepth || null,
+            processedCases: allProcessedCases.length,
+            documentsAnalyzed: failureCoverage.analyzed,
+            documentsFailed: failureCoverage.failed,
+            groundedClaims: partialResult.clusterEvidencePackage?.coverage?.groundedClaims ?? null,
+            totalClaims: partialResult.clusterEvidencePackage?.coverage?.totalClaims ?? null,
+            propertyFlowEntries: partialResult.clusterEvidencePackage?.propertyFlow?.count ?? 0,
+            propertyConflicts: partialResult.clusterEvidencePackage?.propertyReconciliation?.conflicts?.length ?? 0,
+            usage: usageTracker.snapshot(),
+            durationMs: Date.now() - runStartedAt,
+            error: error.message,
+        });
         throw new PartialAnalysisError(error.message, partialResult, { stage: lastStage });
     } finally {
         // The cleanup function needs to be available in the scope of this file.

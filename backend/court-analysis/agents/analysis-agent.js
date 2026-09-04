@@ -1,4 +1,13 @@
 // analysis-agent.js
+//
+// Logging convention for this file: `agentLog` stays per-file,
+// human-readable operational trace (extraction attempts, OCR fallback,
+// per-file results) — including OIBs, which are deliberately visible here.
+// Genuine pipeline-outcome signals (a check that failed, a batch-level
+// result) go to the structured `logger.js` WITH the run's `runId` so
+// concurrent runs isolate with one grep. Future structured surfaces
+// (reconciliation outcomes, scan-depth resolution, …) must follow the same
+// split: trace on agentLog, outcomes on logger + runId.
 
 require("dotenv").config();
 const { Tool } = require("@langchain/core/tools");
@@ -11,6 +20,7 @@ const mammoth = require("mammoth");
 const WordExtractor = require("word-extractor");
 const { buildRetrievalChunks, splitTextIntoChunks } = require("../reasoning/chunker");
 const agentLog = require("../../helpers/agentLog");
+const logger = require("../../helpers/logger");
 
 const { GEMINI_MODEL, GEMINI_API_KEY, createGeminiClient, outputCapWarning } = require("../../helpers/geminiConfig");
 const { classifyFileFailure } = require("../../helpers/friendlyAnalysisError");
@@ -687,7 +697,10 @@ class AnalyzeDocumentsTool extends Tool {
     }
 
     async _call(input) {
-        const { files, caseInfo, progressCallback, usageTracker, onUsage } = input;
+        const { files, caseInfo, progressCallback, usageTracker, onUsage, runId } = input;
+        // Run correlation for the one outcome signal this tool emits via the
+        // structured logger (see grounding catch below). Null outside runs.
+        const toolRunId = runId || null;
 
         // Live-activity tracking: structured per-file events plus a periodic
         // heartbeat so the UI can show real progress (and detect stalls)
@@ -881,7 +894,13 @@ class AnalyzeDocumentsTool extends Tool {
                 try {
                     applyGroundingToAnalysis(aiResult, text);
                 } catch (groundingErr) {
-                    agentLog.warn(`[Analyzer] Grounding check failed gracefully for ${file.filePath}: ${groundingErr?.message || groundingErr}`);
+                    // Outcome signal, not trace: structured + correlated so a
+                    // run's grounding misses isolate with one grep.
+                    logger.warn('analysis-agent.grounding', 'Grounding check failed', {
+                        runId: toolRunId,
+                        filePath: file.filePath,
+                        error: groundingErr?.message || String(groundingErr),
+                    });
                 }
                 // END of fix
 

@@ -206,6 +206,7 @@ async function startServer() {
             query: parsedRequest.query,
             clusterExpansion: parsedRequest.options.clusterExpansion,
             scanDepth: parsedRequest.options.scanDepth,
+            runId,
           },
           safeProgress
         );
