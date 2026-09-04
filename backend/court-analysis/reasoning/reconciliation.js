@@ -16,6 +16,7 @@
 // Everything softer stays an openQuestion, not a conflict.
 
 const { normalizeText } = require('./indexer');
+const { reconcilePropertyFlows } = require('./propertyFlow');
 
 const DIVERGENCE_RATIO_THRESHOLD = 1.05;
 // Description keys shorter than this are too generic to group safely
@@ -98,4 +99,4 @@ function reconcileMoneyFlows(moneyFlow) {
     return { conflicts, openQuestions };
 }
 
-module.exports = { reconcileMoneyFlows };
+module.exports = { reconcileMoneyFlows, reconcilePropertyFlows };

@@ -116,7 +116,15 @@ function applyBudgetTiers(claims, rerankedRetrieval) {
 
     const decorated = claims.map((claim) => {
         const id = String(claim.id || '');
+        const groundedMeta = claimPrimarySource(claim)?.metadata?.grounded;
+        // Unverified extraction-time claims never keep full length: an
+        // ungrounded money/property entry degrades to a digest even though
+        // those families are otherwise always full (short + load-bearing).
+        if ((id.startsWith('money-flow') || id.startsWith('property-flow')) && groundedMeta === false) {
+            return { claim, tier: 'digest' };
+        }
         if (id.startsWith('money-flow')) return { claim, tier: 'full' };
+        if (id.startsWith('property-flow') || id.startsWith('property-value-change')) return { claim, tier: 'full' };
         if (id.startsWith('analysis-') || claimPrimarySource(claim)?.metadata?.sourceType === 'analysis') {
             return { claim, tier: isClaimCited(claim, cited) ? 'full-cited' : 'digest' };
         }

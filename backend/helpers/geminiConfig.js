@@ -35,8 +35,10 @@ const ENV_MODEL_OVERRIDE = process.env.GEMINI_MODEL || null;
 const GEMINI_ROLE_CONFIG = {
     // JSON extraction from document text. Dense documents (long summaries,
     // many amounts entries) can exceed smaller ceilings and truncate
-    // mid-JSON — the cap must leave generous headroom.
-    analysis: { model: DEFAULT_GEMINI_MODEL, temperature: 0.2, maxOutputTokens: 8192 },
+    // mid-JSON — the cap must leave generous headroom. Raised for the
+    // grounding + property-flow schema extension (quote per amount entry plus
+    // an optional propertyFlow array add measurable output per document).
+    analysis: { model: DEFAULT_GEMINI_MODEL, temperature: 0.2, maxOutputTokens: 12288 },
     // Vision OCR of rasterized pages — longer raw-text outputs.
     ocr: { model: DEFAULT_GEMINI_MODEL, temperature: 0.1, maxOutputTokens: 4096 },
     // Multi-page OCR batching: several page images in one request, so the

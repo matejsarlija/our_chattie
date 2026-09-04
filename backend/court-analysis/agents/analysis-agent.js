@@ -15,6 +15,7 @@ const agentLog = require("../../helpers/agentLog");
 const { GEMINI_MODEL, GEMINI_API_KEY, createGeminiClient, outputCapWarning } = require("../../helpers/geminiConfig");
 const { classifyFileFailure } = require("../../helpers/friendlyAnalysisError");
 const { extractJsonBlock } = require("../../helpers/jsonExtract");
+const { applyGroundingToAnalysis } = require("../reasoning/grounding");
 const ocrPageStore = require("../../helpers/ocrPageStore");
 // Two role-scoped clients: document JSON analysis and vision OCR differ in
 // temperature and output-token policy.
@@ -828,7 +829,8 @@ class AnalyzeDocumentsTool extends Tool {
 
                 From the court document text below, extract key information as a JSON object with the following keys: "caseNumber", "decisionDate", and "summary" (a medium-sized paragraph, nicely formatted, to be in Croatian please, as that is what our customers speak).
                 Do include any important figures (currency amounts) you find in the summary.
-                Also extract any financial amounts (payments, claims, costs, reservations) into an optional "amounts" array, each item being a JSON object with: "description" (what the money is for, in Croatian), "amount" (number), "currency" ("EUR" or "HRK"), and "date" (if known). If the document contains no amounts, set "amounts" to an empty array.
+                Also extract any financial amounts (payments, claims, costs, reservations) into an optional "amounts" array, each item being a JSON object with: "description" (what the money is for, in Croatian), "amount" (number), "currency" ("EUR" or "HRK"), "date" (if known), and "quote" (a verbatim supporting quote copied exactly from the source text below that proves this amount; copy 1-2 sentences word-for-word, do not paraphrase). If the document contains no amounts, set "amounts" to an empty array.
+                Also extract any property/asset transactions (real estate sales, movable-asset sales, receivable assignments/cessions) into an optional "propertyFlow" array, each item being a JSON object with: "description" (what the asset is, in Croatian), "identifier" (cadastral parcel, registration number, or null when absent), "assetType" (one of "nekretnina" | "pokretnina" | "tražbina" | "drugo"), "transferor" (seller/assignor, if known), "transferee" (buyer/assignee, if known), "value" (number, if known), "currency" ("EUR" or "HRK", if known), "date" (if known), and "quote" (verbatim supporting quote as above). For assetType "tražbina" (receivable/claim, e.g. "Ugovor o ustupu tražbina") additionally include "eventType" (one of "prijava" | "ustup" | "namirenje" | "drugo" — the lifecycle stage) and, when this entry continues an earlier lifecycle stage of the SAME receivable described in the analysed documents, "supersedes" (a short textual reference to that earlier entry, e.g. its description, case number, filing date or original creditor as cited in the source text). If the document contains no property transactions, set "propertyFlow" to an empty array.
                 Provide ONLY the json object and nothing else. Text:\n\n${analysisInput.analysisText}`;
 
                 const response = await withGeminiRetry(
@@ -864,6 +866,23 @@ class AnalyzeDocumentsTool extends Tool {
                     // Inject the reliably scraped parties into the final result object.
                     parties: caseInfo.participants || [],
                 };
+                // Property flow is additive: a missing/malformed array from the
+                // model degrades to [] (same empty-array fallback as amounts).
+                if (!Array.isArray(aiResult.propertyFlow)) {
+                    aiResult.propertyFlow = [];
+                }
+                if (!Array.isArray(aiResult.amounts)) {
+                    aiResult.amounts = [];
+                }
+                // Per-document grounding check (deterministic containment,
+                // never an LLM judge): verify each quote against the FULL
+                // extracted source text and mark grounded true/false. A miss
+                // never fails the run — it degrades to a UI-visible signal.
+                try {
+                    applyGroundingToAnalysis(aiResult, text);
+                } catch (groundingErr) {
+                    agentLog.warn(`[Analyzer] Grounding check failed gracefully for ${file.filePath}: ${groundingErr?.message || groundingErr}`);
+                }
                 // END of fix
 
                 // added by a human
@@ -1004,12 +1023,29 @@ function buildAnalysisCoverage(individualAnalyses) {
     const failed = (individualAnalyses || []).filter((item) => !item?.aiResult);
     const coverageRatio = total > 0 ? Number((analyzed.length / total).toFixed(2)) : 0;
 
+    // Grounding dimension: counted across amounts[] + propertyFlow[] entries
+    // whose quote verified (grounded:true). Pure additive signal.
+    let groundedClaims = 0;
+    let totalClaims = 0;
+    for (const item of analyzed) {
+        for (const key of ['amounts', 'propertyFlow']) {
+            const entries = item?.aiResult?.[key];
+            if (!Array.isArray(entries)) continue;
+            for (const entry of entries) {
+                totalClaims += 1;
+                if (entry?.grounded === true) groundedClaims += 1;
+            }
+        }
+    }
+
     return {
         analyzed: analyzed.length,
         failed: failed.length,
         total,
         coverageRatio,
         complete: total > 0 && analyzed.length === total,
+        groundedClaims,
+        totalClaims,
         failedFiles: failed.map((item) => {
             const classified = classifyFileFailure(item?.error);
             return {

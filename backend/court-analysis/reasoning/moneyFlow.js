@@ -66,6 +66,8 @@ function normalizeAmountItem(raw, index, analysis) {
         date: raw.date || raw.datum || null,
         from: raw.from || raw.source || raw.platitelj || null,
         to: raw.to || raw.target || raw.primatelj || null,
+        quote: typeof raw.quote === 'string' ? raw.quote : null,
+        grounded: raw.grounded === true,
         sourceId: analysis?.id || null,
         fileName: analysis?.fileName || null,
         caseNumber: analysis?.caseNumber || null

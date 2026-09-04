@@ -246,12 +246,18 @@ function buildPackageMeta(pkg) {
         acquisition: pkg.acquisition || null,
         coverage: pkg.coverage || null,
         reconciliation: pkg.reconciliation || null,
+        propertyReconciliation: pkg.propertyReconciliation || null,
         analysesCount: Array.isArray(pkg.analyses) ? pkg.analyses.length : 0,
         moneyFlow: pkg.moneyFlow || {
             count: 0,
             entries: [],
             currencyTotals: {},
             hasMoneyFlow: false
+        },
+        propertyFlow: pkg.propertyFlow || {
+            count: 0,
+            entries: [],
+            hasPropertyFlow: false
         },
         documentLinks: (pkg.documentLinks || []).map((link) => ({
             id: link.id,
@@ -318,7 +324,7 @@ function createReasoningEvidenceFromPackage(pkg) {
             : String(entry.amount ?? '');
         return {
             id: `money-flow-${index + 1}`,
-            text: `Financijski iznos ${displayAmount} ${entry.currency || ''} ${entry.description ? `(${entry.description})` : ''}${entry.date ? ` — ${entry.date}` : ''}${entry.fileName ? ` iz dokumenta "${entry.fileName}"` : ''}.`,
+            text: `Financijski iznos ${displayAmount} ${entry.currency || ''} ${entry.description ? `(${entry.description})` : ''}${entry.date ? ` — ${entry.date}` : ''}${entry.fileName ? ` iz dokumenta "${entry.fileName}"` : ''}${entry.grounded === false ? ' [nepotvrđeno u izvornom tekstu]' : ''}.`,
             confidence: 'medium',
             evidence: [{
                 sourceId: entry.sourceId || `${pkg.clusterId}:money-flow-${index + 1}`,
@@ -329,18 +335,66 @@ function createReasoningEvidenceFromPackage(pkg) {
                     caseNumber: entry.caseNumber || null,
                     date: entry.date || null,
                     from: entry.from || null,
-                    to: entry.to || null
+                    to: entry.to || null,
+                    grounded: entry.grounded === true
                 }
             }]
         };
     });
+
+    // Structured property-flow entries become first-class claims the same way,
+    // with tražbina lifecycle chains rendered as directional value-change text.
+    const propertyFlowClaims = (pkg.propertyFlow?.entries || []).map((entry, index) => {
+        const displayValue = Number.isFinite(entry.value)
+            ? entry.value.toLocaleString('en-US')
+            : (entry.value ?? '');
+        return {
+            id: `property-flow-${index + 1}`,
+            text: `Imovina (${entry.assetType || 'drugo'}) ${displayValue} ${entry.currency || ''} ${entry.description ? `(${entry.description})` : ''}${entry.transferor || entry.transferee ? ` — ${entry.transferor || '?'} → ${entry.transferee || '?'}` : ''}${entry.eventType ? ` [${entry.eventType}]` : ''}${entry.date ? ` — ${entry.date}` : ''}${entry.fileName ? ` iz dokumenta "${entry.fileName}"` : ''}${entry.grounded === false ? ' [nepotvrđeno u izvornom tekstu]' : ''}.`,
+            confidence: 'medium',
+            evidence: [{
+                sourceId: entry.sourceId || `${pkg.clusterId}:property-flow-${index + 1}`,
+                text: `${entry.value ?? ''} ${entry.currency || ''} ${entry.description || ''}`.trim(),
+                metadata: {
+                    sourceType: 'analysis-property',
+                    fileName: entry.fileName || null,
+                    caseNumber: entry.caseNumber || null,
+                    date: entry.date || null,
+                    assetType: entry.assetType || null,
+                    eventType: entry.eventType || null,
+                    grounded: entry.grounded === true
+                }
+            }]
+        };
+    });
+
+    // Tražbina value-change timelines surface as findings-grade claims so the
+    // discount signal (filed at face value, later sold at a discount) is never
+    // lost between reconciliation and synthesis.
+    const propertyValueChangeClaims = ((pkg.propertyReconciliation?.valueChanges || [])).map((change, index) => ({
+        id: `property-value-change-${index + 1}`,
+        text: change.finding || `Vrijednosna promjena tražbine "${change.description}".`,
+        confidence: 'medium',
+        evidence: (change.stages || []).map((stage) => ({
+            sourceId: stage.sourceId || `${pkg.clusterId}:property-value-change-${index + 1}`,
+            text: `${stage.value ?? ''} ${change.currency || ''} ${change.description || ''}`.trim(),
+            metadata: {
+                sourceType: 'analysis-property',
+                fileName: stage.fileName || null,
+                eventType: stage.eventType || null,
+                grounded: true
+            }
+        }))
+    }));
 
     return {
         timeline,
         claims: [
             ...claims,
             ...analysisClaims,
-            ...moneyFlowClaims
+            ...moneyFlowClaims,
+            ...propertyFlowClaims,
+            ...propertyValueChangeClaims
         ],
         meta: buildPackageMeta(pkg)
     };

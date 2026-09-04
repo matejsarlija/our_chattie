@@ -1,6 +1,8 @@
 const { deriveEntryDisplayId } = require('../utils/entryDisplayId');
 const { collectMoneyFlows } = require('./moneyFlow');
+const { collectPropertyFlows, reconcilePropertyFlows } = require('./propertyFlow');
 const { reconcileMoneyFlows } = require('./reconciliation');
+const { countGroundedClaims } = require('./grounding');
 const { classifyFileFailure } = require('../../helpers/friendlyAnalysisError');
 
 function normalizeAcquisition(entry) {
@@ -185,15 +187,22 @@ function attachAnalysesToEvidencePackage(pkg, processedCases, clusterId = null) 
             decisionDate: item.aiResult.decisionDate || null,
             summary: item.aiResult.summary || null,
             parties: Array.isArray(item.aiResult.parties) ? item.aiResult.parties : [],
-            amounts: Array.isArray(item.aiResult.amounts) ? item.aiResult.amounts : []
+            amounts: Array.isArray(item.aiResult.amounts) ? item.aiResult.amounts : [],
+            propertyFlow: Array.isArray(item.aiResult.propertyFlow) ? item.aiResult.propertyFlow : []
         });
     }
 
     const moneyFlow = collectMoneyFlows(analyses);
+    const propertyFlow = collectPropertyFlows(analyses);
     // Deterministic reconciliation (Phase 0.3): arithmetic conflicts are
     // computed here and seeded into the report by the synthesizer — the
     // single ownership chain pkg.reconciliation → meta → report.conflicts.
-    const reconciliation = reconcileMoneyFlows(moneyFlow);
+    const moneyReconciliation = reconcileMoneyFlows(moneyFlow);
+    const propertyReconciliation = reconcilePropertyFlows(propertyFlow);
+    const reconciliation = {
+        conflicts: [...(moneyReconciliation.conflicts || []), ...(propertyReconciliation.conflicts || [])],
+        openQuestions: [...(moneyReconciliation.openQuestions || []), ...(propertyReconciliation.openQuestions || [])],
+    };
 
     const total = individualAnalyses.length;
     const analyzed = analyses.length;
@@ -215,6 +224,7 @@ function attachAnalysesToEvidencePackage(pkg, processedCases, clusterId = null) 
         coverageRatio: total > 0 ? Number((analyzed / total).toFixed(2)) : 0,
         complete: total > 0 && analyzed === total,
         failedFiles,
+        ...countGroundedClaims(analyses),
     };
 
     return {
@@ -223,6 +233,8 @@ function attachAnalysesToEvidencePackage(pkg, processedCases, clusterId = null) 
         chunks,
         coverage,
         moneyFlow,
+        propertyFlow,
+        propertyReconciliation,
         reconciliation
     };
 }
