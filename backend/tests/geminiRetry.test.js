@@ -1,4 +1,4 @@
-const { withGeminiTimeout, GEMINI_REQUEST_TIMEOUT_MS, shouldRetry } = require('../helpers/geminiRetry');
+const { withGeminiTimeout, GEMINI_REQUEST_TIMEOUT_MS, shouldRetry, parseRetryAfterMs } = require('../helpers/geminiRetry');
 
 describe('withGeminiTimeout', () => {
   test('defaults to a positive, env-overridable timeout', () => {
@@ -95,5 +95,63 @@ describe('shouldRetry (two-class 429 policy, paid key)', () => {
 
   test('does not retry arbitrary errors', () => {
     expect(shouldRetry(new Error('boom'))).toBe(false);
+  });
+});
+
+describe('parseRetryAfterMs (structured google.rpc.RetryInfo)', () => {
+  test('extracts retryDelayMs from a real Google RetryInfo error shape', () => {
+    const error = {
+      status: 429,
+      message: '[429 Too Many Requests] Resource has been exhausted (e.g. check quota).',
+      response: {
+        status: 429,
+        data: {
+          error: {
+            code: 429,
+            message: 'Resource has been exhausted (e.g. check quota).',
+            details: [
+              {
+                '@type': 'type.googleapis.com/google.rpc.QuotaFailure',
+                violations: [{ quotaMetric: 'generate_content_tokens_per_minute', quotaId: 'GenerateContentTPMPerProjectPerModel' }]
+              },
+              {
+                '@type': 'type.googleapis.com/google.rpc.RetryInfo',
+                retryDelay: '38s'
+              }
+            ]
+          }
+        }
+      }
+    };
+
+    expect(parseRetryAfterMs(error)).toBe(15000); // capped at MAX_DELAY_MS (15000ms)
+  });
+
+  test('uses the uncapped RetryInfo delay when below MAX_DELAY_MS', () => {
+    const error = {
+      status: 429,
+      message: '[429 Too Many Requests] Resource has been exhausted.',
+      response: {
+        status: 429,
+        data: {
+          error: {
+            code: 429,
+            message: 'Resource has been exhausted.',
+            details: [
+              {
+                '@type': 'type.googleapis.com/google.rpc.RetryInfo',
+                retryDelay: '3s'
+              }
+            ]
+          }
+        }
+      }
+    };
+
+    expect(parseRetryAfterMs(error)).toBe(3000);
+  });
+
+  test('falls back to null when no retry-after header or RetryInfo is present', () => {
+    expect(parseRetryAfterMs(new Error('boom'))).toBeNull();
   });
 });

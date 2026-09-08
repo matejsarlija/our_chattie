@@ -44,8 +44,7 @@ describe('localStore.createAnalysisRun', () => {
   });
 });
 
-describe('localStore.appendAnalysisEvent', () => {
-  test('appends events in order and stamps fields', async () => {
+describe('localStore.appendAnalysisEvent', () => {  test('appends events in order and stamps fields', async () => {
     const { store } = makeStore();
     const run = await store.createAnalysisRun({ oib: '66124057408', queryType: 'oib', queryValue: '66124057408' });
 
@@ -140,6 +139,38 @@ describe('localStore.failAnalysisRun', () => {
     const reloaded = await store.getAnalysisRun({ id: run.id });
     expect(reloaded.result_json.discoverySummary.capturedDistinctCaseCount).toBe(1);
     expect(reloaded.result_text).toBe('Djelomični nalaz');
+  });
+});
+
+describe('localStore.updateAnalysisRunReport', () => {
+  test('merges report fields preserving status and other payload', async () => {
+    const { store } = makeStore();
+    const run = await store.createAnalysisRun({ oib: '66124057408', queryType: 'oib', queryValue: '66124057408' });
+    await store.completeAnalysisRun({
+      analysisId: run.id,
+      resultText: 'fallback',
+      resultJson: { comparativeAnalysis: 'fallback', report: null, reportError: 'boom', discoverySummary: { ok: true } },
+    });
+
+    const updated = await store.updateAnalysisRunReport({
+      analysisId: run.id,
+      resultText: 'full report narrative',
+      resultJson: { report: { findings: [] }, reportError: null },
+    });
+
+    expect(updated.status).toBe('done');
+    expect(updated.result_text).toBe('full report narrative');
+    expect(updated.result_json.report).toEqual({ findings: [] });
+    expect(updated.result_json.reportError).toBeNull();
+    expect(updated.result_json.discoverySummary).toEqual({ ok: true });
+    expect(updated.result_json.comparativeAnalysis).toBe('fallback');
+  });
+
+  test('throws for unknown run', async () => {
+    const { store } = makeStore();
+    await expect(
+      store.updateAnalysisRunReport({ analysisId: 'missing', resultJson: {} }),
+    ).rejects.toThrow('Analysis run not found');
   });
 });
 

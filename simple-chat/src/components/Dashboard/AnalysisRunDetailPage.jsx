@@ -16,6 +16,7 @@ import SecondaryClustersSection from './SecondaryClustersSection';
 import DashboardShell from './DashboardShell';
 import { useAnalysisRunDetail } from '../../hooks/useAnalysisRunDetail';
 import { useAnalysisEvents } from '../../hooks/useAnalysisEvents';
+import { apiFetch } from '../../lib/apiClient';
 import { env } from '../../lib/env';
 
 const parseMaybeJson = (value) => {
@@ -92,6 +93,8 @@ const formatDate = (iso) => {
 export default function AnalysisRunDetailPage() {
   const { id } = useParams();
   const [showFullTimeline, setShowFullTimeline] = useState(false);
+  const [showMetadata, setShowMetadata] = useState(false);
+  const [retryState, setRetryState] = useState({ loading: false, error: '' });
   const CONNECTION_LABELS = {
     live: 'Live',
     syncing: 'Syncing',
@@ -103,7 +106,7 @@ export default function AnalysisRunDetailPage() {
     streamEnabled: env.analysisDetailSseEnabled,
   });
 
-  const { timeline, stages, activity, isErrored } = useAnalysisEvents(events);
+  const { timeline, stages, activity, isErrored, headerCounter, counterKnown } = useAnalysisEvents(events);
   const timelineToRender = showFullTimeline ? timeline : timeline.slice(-2);
 
   const parsedResult = useMemo(() => parseMaybeJson(run?.result_json ?? run?.resultJson), [run?.result_json, run?.resultJson]);
@@ -130,6 +133,20 @@ export default function AnalysisRunDetailPage() {
     };
   }, [parsedResult, report]);
   const secondaryClusters = useMemo(() => getSecondaryClusters(parsedResult, run), [parsedResult, run]);
+  const hasEvidencePackage = Boolean(parsedResult?.clusterEvidencePackage);
+  const canRetryReport = !isRunning && !loading && !report && hasEvidencePackage;
+
+  const handleRetryReport = async () => {
+    if (!canRetryReport || retryState.loading) return;
+    setRetryState({ loading: true, error: '' });
+    try {
+      await apiFetch(`/api/analysis/runs/${id}/report`, { method: 'POST' });
+      await refresh();
+      setRetryState({ loading: false, error: '' });
+    } catch (err) {
+      setRetryState({ loading: false, error: err?.message || 'Ponovna izrada izvještaja nije uspjela.' });
+    }
+  };
   const queryLabel = useMemo(() => getQueryLabel(run?.query_type), [run?.query_type]);
   const queryValue = useMemo(() => run?.query_value || run?.oib || id, [run?.query_value, run?.oib, id]);
   const metadataEntries = useMemo(() => {
@@ -195,44 +212,11 @@ export default function AnalysisRunDetailPage() {
               </div>
             </section>
 
-            {metadataEntries.length > 0 && (
-              <section className="mb-5 rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4">
-                <h2 className="mb-3 text-sm font-semibold text-[var(--text)]">Povezane objave i metapodaci predmeta</h2>
-                <div className="space-y-3">
-                  {metadataEntries.map((entry) => (
-                    <article key={entry.key} className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4">
-                      <div className="grid gap-2 sm:grid-cols-3">
-                        <div className="rounded-lg border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-2">
-                          <p className="text-[11px] uppercase tracking-wide text-[var(--text-muted)]">Naziv objave</p>
-                          <p className="mt-0.5 text-sm font-medium text-[var(--text)]">{entry.title}</p>
-                        </div>
-                        <div className="rounded-lg border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-2">
-                          <p className="text-[11px] uppercase tracking-wide text-[var(--text-muted)]">Broj predmeta</p>
-                          <p className="mt-0.5 text-sm font-medium text-[var(--text)]">{entry.caseNumber}</p>
-                        </div>
-                        <div className="rounded-lg border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-2">
-                          <p className="text-[11px] uppercase tracking-wide text-[var(--text-muted)]">ID objave</p>
-                          <p className="mt-0.5 text-sm font-medium text-[var(--text)]">{entry.entryDisplayId || '-'}</p>
-                        </div>
-                      </div>
-                      {entry.detailLink && (
-                        <div className="mt-3 border-t border-[var(--border)] pt-3">
-                          <a href={entry.detailLink} target="_blank" rel="noreferrer" className="text-xs text-[var(--accent)] hover:underline">
-                            Vidi izvornu objavu
-                          </a>
-                        </div>
-                      )}
-                    </article>
-                  ))}
-                </div>
-              </section>
-            )}
-
             <section className="mb-5">
               <RunProgressStepper stages={stages} isErrored={isErrored} />
             </section>
 
-            <AnalysisActivityLog activity={activity} isRunning={isRunning} />
+            <AnalysisActivityLog activity={activity} isRunning={isRunning} headerCounter={headerCounter} counterKnown={counterKnown} />
 
             <AnalysisUsageSummary usage={usage} isRunning={isRunning} />
 
@@ -264,7 +248,22 @@ export default function AnalysisRunDetailPage() {
             </section>
 
             <section className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-5">
-              <h2 className="mb-3 text-sm font-semibold text-[var(--text)]">Rezultat analize</h2>
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <h2 className="text-sm font-semibold text-[var(--text)]">Rezultat analize</h2>
+                {canRetryReport && (
+                  <button
+                    type="button"
+                    onClick={handleRetryReport}
+                    disabled={retryState.loading}
+                    className="rounded-lg border border-[var(--border)] px-3 py-1.5 text-xs font-medium text-[var(--text)] hover:bg-[var(--surface-muted)] disabled:opacity-60"
+                  >
+                    {retryState.loading ? 'Izrađujem izvještaj…' : 'Ponovi izradu izvještaja'}
+                  </button>
+                )}
+              </div>
+              {retryState.error && (
+                <p className="mb-3 text-sm text-[var(--danger)]">{retryState.error}</p>
+              )}
 
               {!resultMarkdown ? (
                 <p className="text-sm text-[var(--text-muted)]">
@@ -305,6 +304,51 @@ export default function AnalysisRunDetailPage() {
               openQuestions={openQuestions}
               hasStructuredReport={Boolean(report)}
             />
+
+            {metadataEntries.length > 0 && (
+              <section className="mt-5 rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4">
+                <button
+                  type="button"
+                  onClick={() => setShowMetadata((prev) => !prev)}
+                  aria-expanded={showMetadata}
+                  className="flex w-full items-center justify-between gap-3 text-left"
+                >
+                  <h2 className="text-sm font-semibold text-[var(--text)]">Povezane objave i metapodaci predmeta</h2>
+                  <span className="rounded-full border border-[var(--border)] bg-[var(--surface-muted)] px-2.5 py-0.5 text-xs text-[var(--text-muted)]">
+                    {metadataEntries.length} {showMetadata ? '▾' : '▸'}
+                  </span>
+                </button>
+                {showMetadata && (
+                  <div className="mt-3 space-y-3">
+                    {metadataEntries.map((entry) => (
+                      <article key={entry.key} className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4">
+                        <div className="grid gap-2 sm:grid-cols-3">
+                          <div className="rounded-lg border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-2">
+                            <p className="text-[11px] uppercase tracking-wide text-[var(--text-muted)]">Naziv objave</p>
+                            <p className="mt-0.5 text-sm font-medium text-[var(--text)]">{entry.title}</p>
+                          </div>
+                          <div className="rounded-lg border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-2">
+                            <p className="text-[11px] uppercase tracking-wide text-[var(--text-muted)]">Broj predmeta</p>
+                            <p className="mt-0.5 text-sm font-medium text-[var(--text)]">{entry.caseNumber}</p>
+                          </div>
+                          <div className="rounded-lg border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-2">
+                            <p className="text-[11px] uppercase tracking-wide text-[var(--text-muted)]">ID objave</p>
+                            <p className="mt-0.5 text-sm font-medium text-[var(--text)]">{entry.entryDisplayId || '-'}</p>
+                          </div>
+                        </div>
+                        {entry.detailLink && (
+                          <div className="mt-3 border-t border-[var(--border)] pt-3">
+                            <a href={entry.detailLink} target="_blank" rel="noreferrer" className="text-xs text-[var(--accent)] hover:underline">
+                              Vidi izvornu objavu
+                            </a>
+                          </div>
+                        )}
+                      </article>
+                    ))}
+                  </div>
+                )}
+              </section>
+            )}
 
             <AnalysisReasoningTelemetry report={report} />
           </>

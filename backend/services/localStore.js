@@ -158,6 +158,21 @@ function createLocalStore(options = {}) {
     });
   }
 
+  async function updateAnalysisRunReport({ analysisId, resultText, resultJson = null }) {
+    return enqueue(() => {
+      const runs = readRuns();
+      const run = findRun(runs, analysisId);
+      if (typeof resultText === 'string') run.result_text = resultText;
+      if (resultJson !== null && resultJson !== undefined) {
+        const stored = (run.result_json && typeof run.result_json === 'object') ? run.result_json : {};
+        run.result_json = { ...stored, ...resultJson };
+      }
+      run.updated_at = nowIso();
+      writeRuns(runs);
+      return run;
+    });
+  }
+
   async function completeAnalysisRun({ analysisId, resultText, resultJson = null }) {
     return enqueue(() => {
       const runs = readRuns();
@@ -260,6 +275,7 @@ function createLocalStore(options = {}) {
     dataDir,
     createAnalysisRun,
     appendAnalysisEvent,
+    updateAnalysisRunReport,
     completeAnalysisRun,
     failAnalysisRun,
     updateAnalysisRunUsage,

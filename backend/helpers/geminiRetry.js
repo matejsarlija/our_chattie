@@ -2,20 +2,20 @@ const DEFAULT_MAX_RETRIES = 3;
 const BASE_DELAY_MS = 1500;
 const MAX_DELAY_MS = 15000;
 
-// Fail-fast guard against the Google GenAI 429 hang:
-// @langchain/google-genai `invoke` can pend forever on a rate-limit response
-// instead of rejecting, which stalls `withGeminiRetry` (it only reacts to thrown
-// errors) and therefore the whole analysis queue. Each request is capped with a
-// timer-driven AbortSignal so quota spikes reject promptly and the pipeline can
-// surface a transparent error + persist partial results.
-const GEMINI_REQUEST_TIMEOUT_MS = Number(process.env.GEMINI_REQUEST_TIMEOUT_MS) || 30000;
+// Fail-fast guard against hung GenAI requests: `invoke` can pend without
+// ever settling, which stalls `withGeminiRetry` (it only reacts to thrown
+// errors) and therefore the whole analysis queue. Each request is capped with
+// a timer-driven AbortSignal so stuck calls reject promptly and the pipeline
+// can surface a transparent error + persist partial results. Sized for paid
+// quotas and synthesis-scale prompts; override with GEMINI_REQUEST_TIMEOUT_MS.
+const GEMINI_REQUEST_TIMEOUT_MS = Number(process.env.GEMINI_REQUEST_TIMEOUT_MS) || 120000;
 
 // Transient bursts hang inside the SDK until the timeout guard fires, so
 // AbortError timeouts are retried with backoff by default. Set to "0" to
 // restore strict fail-fast behavior.
 const GEMINI_RETRY_TIMEOUTS = process.env.GEMINI_RETRY_TIMEOUTS !== '0';
 
-const { isDailyQuotaExhaustion } = require('./friendlyAnalysisError');
+const { isDailyQuotaExhaustion, extractProviderError } = require('./friendlyAnalysisError');
 
 async function withGeminiTimeout(callable, { timeoutMs = GEMINI_REQUEST_TIMEOUT_MS } = {}) {
     if (!timeoutMs || timeoutMs <= 0) {
@@ -55,12 +55,15 @@ function parseRetryAfterMs(error) {
     error?.response?.headers?.['x-retry-after-ms'] ||
     error?.response?.headers?.['X-Retry-After-Ms'];
 
-  if (header) {
-    const parsed = Number(header);
-    if (Number.isFinite(parsed) && parsed > 0) {
-      // retry-after can be seconds
-      return parsed < 1000 ? parsed * 1000 : parsed;
-    }
+  const headerNumber = Number(header);
+  if (header && Number.isFinite(headerNumber) && headerNumber > 0) {
+    // retry-after can be seconds
+    return headerNumber < 1000 ? headerNumber * 1000 : headerNumber;
+  }
+
+  const extracted = (error && typeof error === 'object') ? extractProviderError(error) : null;
+  if (extracted && Number.isFinite(extracted.retryDelayMs) && extracted.retryDelayMs > 0) {
+    return Math.min(extracted.retryDelayMs, MAX_DELAY_MS);
   }
 
   const message = `${error?.message || ''}`.toLowerCase();
@@ -76,8 +79,9 @@ function parseRetryAfterMs(error) {
 }
 
 function shouldRetry(error, options = {}) {
-  // Daily-quota exhaustion is terminal — retrying burns the remaining budget.
-  if (isDailyQuotaExhaustion(`${error?.message || ''}`)) return false;
+  // Explicit daily-quota exhaustion is terminal — retrying burns the remaining
+  // budget. Anything less specific retries: bursts recover with backoff.
+  if (isDailyQuotaExhaustion(error && typeof error === 'object' ? error : `${error?.message || ''}`)) return false;
 
   const status = error?.status || error?.response?.status;
   const message = `${error?.message || ''}`.toLowerCase();
@@ -92,9 +96,9 @@ function shouldRetry(error, options = {}) {
   const isTimeout = error?.name === 'AbortError';
 
   if (isRateLimit || isTimeout) {
-    // A paid-key rate-limit/timeout is a transient RPM/TPM burst that recovers
-    // with backoff, so it is retried. (The app no longer supports the free
-    // tier, where these were the terminal daily-cap hang.)
+    // A rate-limit/timeout is a transient burst that recovers with backoff,
+    // so it is retried. Only an explicit daily-quota signal (checked above)
+    // stops retries.
     if (isTimeout) return options.retryTimeouts !== false && GEMINI_RETRY_TIMEOUTS;
     return true;
   }

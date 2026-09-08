@@ -16,22 +16,75 @@ function describeStage(stage) {
     return STAGE_LABELS[stage] || 'obrade zahtjeva';
 }
 
-// Two-class 429 policy (paid key only — the free tier is no longer supported):
-// - Daily quota exhaustion is terminal: retrying burns the remaining budget
-//   and never succeeds, so surface the day-level limit.
-// - A rate-limit/timeout is a transient RPM/TPM burst that recovers with
-//   backoff; the message must NOT claim the daily limit.
-const DAILY_QUOTA_RE =
-    /resource has been exhausted|requests[_ -]?per[_-]?day|quota.*(daily|per.?day|exhausted)|dnevni limit|daily limit|limit.*per day|exceeded.*daily/i;
+// Error taxonomy is programmatic, not textual: classification reads the
+// provider's structured fields (status, quota metric, retry delay) first and
+// treats message text as a fallback. A bare "resource exhausted" without a
+// daily signal is a transient burst, never a daily limit — the daily verdict
+// requires an explicit per-day marker.
+function parseRetryDelayMs(value) {
+    if (typeof value === 'number' && Number.isFinite(value) && value > 0) return value;
+    const match = /^(\d+(?:\.\d+)?)\s*s$/i.exec(String(value || '').trim());
+    if (match) return Number(match[1]) * 1000;
+    return null;
+}
+
+function extractProviderError(error) {
+    const err = (error && typeof error === 'object') ? error : {};
+    const body = (err.response && typeof err.response.data?.error === 'object')
+        ? err.response.data.error
+        : {};
+    const details = Array.isArray(body.details) ? body.details : [];
+    let quotaMetric = null;
+    let retryDelayMs = null;
+    for (const detail of details) {
+        const type = String(detail?.['@type'] || '');
+        if (type.endsWith('google.rpc.QuotaFailure')) {
+            const violation = Array.isArray(detail.violations) ? detail.violations[0] : null;
+            quotaMetric = violation?.quotaMetric || violation?.quotaId || quotaMetric;
+        }
+        if (type.endsWith('google.rpc.RetryInfo')) {
+            retryDelayMs = parseRetryDelayMs(detail.retryDelay) ?? retryDelayMs;
+        }
+    }
+    const message = typeof err.message === 'string' && err.message
+        ? err.message
+        : (typeof body.message === 'string' ? body.message : String(error || ''));
+    return {
+        __extracted: true,
+        status: err.status ?? err.response?.status ?? body.code ?? null,
+        providerCode: body.code ?? err.code ?? null,
+        quotaMetric,
+        retryDelayMs,
+        message,
+    };
+}
+
+const isExtracted = (value) => Boolean(value && typeof value === 'object' && value.__extracted);
+
+const DAILY_SIGNAL_RE =
+    /per[_-]?day|requests_per_day|\bdaily\b|dnevni limit|daily limit|limit[^.]{0,60}per day|exceeded[^.]{0,60}daily/i;
+const DAILY_METRIC_RE = /perday|per_day|daily/i;
 const TRANSIENT_RATE_LIMIT_RE =
-    /\b429\b|rate[ _-]?limit|too many requests|overloaded|temporarily (unavailable|overloaded)|rpm|tpm|requests[_ -]?per[_-]?(second|minute|token|character)/i;
+    /\b429\b|rate[ _-]?limit|too many requests|overloaded|temporarily (unavailable|overloaded)|resource[ -]?exhausted|exhausted|rpm|tpm|requests[_ -]?per[_-]?(second|minute|token|character)/i;
+
+function hasDailySignal(extracted) {
+    return DAILY_SIGNAL_RE.test(extracted.message || '') || DAILY_METRIC_RE.test(extracted.quotaMetric || '');
+}
 
 function isDailyQuotaExhaustion(reason) {
-    return DAILY_QUOTA_RE.test(reason);
+    if (isExtracted(reason)) return hasDailySignal(reason);
+    if (reason && typeof reason === 'object') return hasDailySignal(extractProviderError(reason));
+    return DAILY_SIGNAL_RE.test(String(reason || ''));
 }
 
 function isTransientRateLimit(reason) {
-    return TRANSIENT_RATE_LIMIT_RE.test(reason) && !isDailyQuotaExhaustion(reason);
+    const extracted = isExtracted(reason)
+        ? reason
+        : ((reason && typeof reason === 'object') ? extractProviderError(reason) : null);
+    const message = extracted ? extracted.message : String(reason || '');
+    if (hasDailySignal(extracted || { message })) return false;
+    if (extracted && (extracted.status === 429 || extracted.providerCode === 429)) return true;
+    return TRANSIENT_RATE_LIMIT_RE.test(message);
 }
 
 // Per-file failure classifier: stable machine code + Croatian display text
@@ -40,15 +93,18 @@ function isTransientRateLimit(reason) {
 // per-file reasons agree with the run-level policy instead of blaming OCR
 // for what is really a quota timeout.
 function classifyFileFailure(message) {
-    const raw = String(message || '');
+    const extracted = isExtracted(message)
+        ? message
+        : ((message && typeof message === 'object') ? extractProviderError(message) : null);
+    const raw = extracted ? extracted.message : String(message || '');
 
     if (!raw.trim()) {
         return { code: 'unknown', reason: 'Obrada datoteke nije uspjela.' };
     }
-    if (isDailyQuotaExhaustion(raw)) {
+    if (isDailyQuotaExhaustion(extracted || raw)) {
         return { code: 'daily-quota', reason: DAILY_LIMIT_MESSAGE };
     }
-    if (isTransientRateLimit(raw)) {
+    if (isTransientRateLimit(extracted || raw)) {
         return { code: 'rate-limit', reason: TRANSIENT_MESSAGE };
     }
     if (/timed? ?out|deadline|abort/i.test(raw)) {
@@ -67,7 +123,8 @@ function classifyFileFailure(message) {
 }
 
 function friendlyAnalysisErrorMessage(error, { stage = null, hasPartial = false } = {}) {
-    const raw = (error && typeof error === 'object' && error.message) ? error.message : String(error || '');
+    const extracted = (error && typeof error === 'object') ? extractProviderError(error) : null;
+    const raw = extracted ? extracted.message : String(error || '');
     let reason = raw || 'Došlo je do greške u obradi.';
 
     // CSV export discovery failures carry a stable `reason` on the error; map
@@ -81,9 +138,9 @@ function friendlyAnalysisErrorMessage(error, { stage = null, hasPartial = false 
         reason = 'Nije pronađen nijedan predmet s dostupnim dokumentima za traženi pojam.';
     } else if (/nije pronađen nijedan predmet/i.test(reason)) {
         reason = 'Nije pronađen nijedan predmet za traženi pojam.';
-    } else if (isDailyQuotaExhaustion(reason)) {
+    } else if (isDailyQuotaExhaustion(extracted || reason)) {
         reason = DAILY_LIMIT_MESSAGE;
-    } else if (isTransientRateLimit(reason)) {
+    } else if (isTransientRateLimit(extracted || reason)) {
         reason = TRANSIENT_MESSAGE;
     } else if (/timed? ?out|ETIMEDOUT|ESOCKETTIMEDOUT|deadline|abort/i.test(reason)) {
         reason = TIMEOUT_MESSAGE;
@@ -108,6 +165,7 @@ module.exports = {
     isDailyQuotaExhaustion,
     isTransientRateLimit,
     classifyFileFailure,
+    extractProviderError,
     DAILY_LIMIT_MESSAGE,
     TRANSIENT_MESSAGE,
     TIMEOUT_MESSAGE

@@ -25,14 +25,59 @@ describe('friendlyAnalysisErrorMessage', () => {
     expect(message).toContain('Nije pronađen nijedan predmet s dostupnim dokumentima');
   });
 
-  test('detects quota exhaustion (daily limit)', () => {
+  test('treats bare exhaustion without a daily signal as transient, not daily', () => {
     const message = friendlyAnalysisErrorMessage(new Error('Resource has been exhausted (quota)'));
-    expect(message).toContain('Dnevni limit AI analize je iscrpljen');
+    expect(message).toContain('preopterećen (privremeno ograničenje učestalosti zahtjeva)');
+    expect(message).not.toContain('Dnevni limit AI analize je iscrpljen');
   });
 
   test('detects per-day quota exhaustion as daily limit', () => {
     const message = friendlyAnalysisErrorMessage(new Error('429 Quota exceeded for quota metric requests_per_day'));
     expect(message).toContain('Dnevni limit AI analize je iscrpljen');
+  });
+
+  test('detects daily quota from structured provider fields', () => {
+    const error = new Error('Request failed');
+    error.status = 429;
+    error.response = {
+      status: 429,
+      data: {
+        error: {
+          code: 429,
+          message: 'Quota exceeded',
+          details: [{
+            '@type': 'type.googleapis.com/google.rpc.QuotaFailure',
+            violations: [{ quotaMetric: 'generativelanguage.googleapis.com/generate_content_per_day' }],
+          }],
+        },
+      },
+    };
+    const message = friendlyAnalysisErrorMessage(error);
+    expect(message).toContain('Dnevni limit AI analize je iscrpljen');
+  });
+
+  test('treats structured per-minute exhaustion as transient', () => {
+    const error = new Error('Resource has been exhausted');
+    error.status = 429;
+    error.response = {
+      status: 429,
+      data: {
+        error: {
+          code: 8,
+          message: 'Resource has been exhausted',
+          details: [{
+            '@type': 'type.googleapis.com/google.rpc.QuotaFailure',
+            violations: [{ quotaMetric: 'generativelanguage.googleapis.com/generate_content_tokens_per_minute' }],
+          }, {
+            '@type': 'type.googleapis.com/google.rpc.RetryInfo',
+            retryDelay: '38s',
+          }],
+        },
+      },
+    };
+    const message = friendlyAnalysisErrorMessage(error);
+    expect(message).toContain('preopterećen (privremeno ograničenje učestalosti zahtjeva)');
+    expect(message).not.toContain('Dnevni limit AI analize je iscrpljen');
   });
 
   test('presents a transient rate-limit burst as a retryable overload', () => {
@@ -90,8 +135,13 @@ describe('classifyFileFailure', () => {
   } = require('../helpers/friendlyAnalysisError');
 
   test('daily-quota wording maps to the daily-limit reason', () => {
-    expect(classifyFileFailure('429 Resource has been exhausted'))
+    expect(classifyFileFailure('429 Quota exceeded for quota metric requests_per_day'))
       .toEqual({ code: 'daily-quota', reason: DAILY_LIMIT_MESSAGE });
+  });
+
+  test('bare exhaustion without a daily signal maps to transient', () => {
+    expect(classifyFileFailure('429 Resource has been exhausted'))
+      .toEqual({ code: 'rate-limit', reason: TRANSIENT_MESSAGE });
   });
 
   test('timeouts map to the transient timeout reason', () => {
@@ -121,10 +171,12 @@ describe('classifyFileFailure', () => {
     expect(classifyFileFailure('Something entirely unexpected happened').code).toBe('unknown');
   });
 
-  test('classification order: quota beats rate-limit beats timeout', () => {
+  test('classification order: explicit daily beats rate-limit beats timeout', () => {
     // A message matching multiple patterns must classify as the most
-    // specific/terminal cause.
-    const msg = 'Request failed: resource has been exhausted, request timed out';
-    expect(classifyFileFailure(msg).code).toBe('daily-quota');
+    // specific cause — but bare exhaustion is transient, never daily.
+    expect(classifyFileFailure('Request failed: resource has been exhausted, request timed out').code)
+      .toBe('rate-limit');
+    expect(classifyFileFailure('quota exceeded for requests_per_day, request timed out').code)
+      .toBe('daily-quota');
   });
 });

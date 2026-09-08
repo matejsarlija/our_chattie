@@ -3,10 +3,11 @@
  */
 
 import React from 'react';
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import AnalysisRunDetailPage from '../AnalysisRunDetailPage';
 import { useAnalysisRunDetail } from '../../../hooks/useAnalysisRunDetail';
 import { useAnalysisEvents } from '../../../hooks/useAnalysisEvents';
+import { apiFetch } from '../../../lib/apiClient';
 
 jest.mock('../../../hooks/useAnalysisRunDetail', () => ({
   useAnalysisRunDetail: jest.fn(),
@@ -20,6 +21,11 @@ jest.mock('../../../lib/env', () => ({
   env: {
     analysisDetailSseEnabled: false,
   },
+}));
+
+jest.mock('../../../lib/apiClient', () => ({
+  apiFetch: jest.fn(),
+  resolveApiUrl: (url) => url,
 }));
 
 jest.mock('../DashboardShell', () => ({
@@ -81,6 +87,7 @@ describe('AnalysisRunDetailPage metadata modules', () => {
   test('renders per-entry metadata cards with naziv objave and broj predmeta', () => {
     render(<AnalysisRunDetailPage />);
 
+    fireEvent.click(screen.getByRole('button', { name: /Povezane objave/i }));
     expect(screen.getByText('Naziv objave')).toBeInTheDocument();
     expect(screen.getByText('Objava 14/2026 - Stecaj duznika')).toBeInTheDocument();
     expect(screen.getByText('Broj predmeta')).toBeInTheDocument();
@@ -90,6 +97,7 @@ describe('AnalysisRunDetailPage metadata modules', () => {
   test('derives ID objave from detailLink when entryDisplayId is missing', () => {
     render(<AnalysisRunDetailPage />);
 
+    fireEvent.click(screen.getByRole('button', { name: /Povezane objave/i }));
     expect(screen.getByText('ID objave')).toBeInTheDocument();
     expect(screen.getByText('128734')).toBeInTheDocument();
   });
@@ -126,7 +134,56 @@ describe('AnalysisRunDetailPage metadata modules', () => {
 
     render(<AnalysisRunDetailPage />);
 
+    fireEvent.click(screen.getByRole('button', { name: /Povezane objave/i }));
     expect(screen.getByText('EXTERNAL-ID-42')).toBeInTheDocument();
+  });
+
+  test('collapses docket metadata by default and renders it below the report annex', () => {
+    useAnalysisRunDetail.mockReturnValue({
+      run: {
+        id: 'run-1',
+        status: 'done',
+        oib: '12345678901',
+        result_text: 'Rezultat',
+        result_json: {
+          processedCases: [
+            {
+              caseResult: {
+                title: 'Objava 14/2026 - Stecaj duznika',
+                caseNumber: 'St-357/2013',
+                detailLink: 'https://e-oglasna.pravosudje.hr/objave/128734',
+              },
+            },
+          ],
+          report: {
+            findings: [{ text: 'Nalaz.', confidence: 'high', citations: [] }],
+          },
+        },
+      },
+      events: [],
+      loading: false,
+      eventsLoading: false,
+      error: '',
+      isRunning: false,
+      connectionMode: 'idle',
+      lastUpdatedAt: '2026-02-27T12:00:00.000Z',
+      refresh: jest.fn(),
+    });
+
+    const { container } = render(<AnalysisRunDetailPage />);
+
+    // Collapsed: toggle visible, inner cards hidden.
+    expect(screen.getByRole('button', { name: /Povezane objave/i })).toBeInTheDocument();
+    expect(screen.queryByText('Objava 14/2026 - Stecaj duznika')).not.toBeInTheDocument();
+
+    // Below the synthesized report: metadata section comes after the annex.
+    const annexIndex = container.textContent.indexOf('Prilozi analize');
+    const metadataIndex = container.textContent.indexOf('Povezane objave');
+    expect(annexIndex).toBeGreaterThanOrEqual(0);
+    expect(metadataIndex).toBeGreaterThan(annexIndex);
+
+    fireEvent.click(screen.getByRole('button', { name: /Povezane objave/i }));
+    expect(screen.getByText('Objava 14/2026 - Stecaj duznika')).toBeInTheDocument();
   });
 
   test('renders Predmet label for case-number query runs', () => {
@@ -488,6 +545,58 @@ describe('AnalysisRunDetailPage metadata modules', () => {
     expect(screen.queryByText('Citati')).not.toBeInTheDocument();
   });
 
+  test('M-09: citations expand into the retrieval that surfaced them', () => {
+    useAnalysisRunDetail.mockReturnValue({
+      run: {
+        id: 'run-1',
+        status: 'done',
+        oib: '12345678901',
+        result_text: 'Narativ',
+        result_json: {
+          processedCases: [],
+          report: {
+            findings: [
+              {
+                claim: 'Utvrđena tražbina od 10.000 EUR.',
+                citations: [
+                  {
+                    source: 'doc-1',
+                    fileName: 'Rjesenje.pdf',
+                    retrievedBy: [
+                      {
+                        queryId: 'planned-trazbina',
+                        queryText: 'trazbina Kerum dug',
+                        queryPurpose: 'trazbina',
+                        planned: true,
+                        score: 4.2,
+                        reasons: ['token:trazbina', 'anchor:St-2/2013'],
+                      },
+                    ],
+                  },
+                ],
+              },
+            ],
+          },
+        },
+      },
+      events: [],
+      loading: false,
+      eventsLoading: false,
+      error: '',
+      isRunning: false,
+      connectionMode: 'idle',
+      lastUpdatedAt: '2026-02-27T12:00:00.000Z',
+      refresh: jest.fn(),
+    });
+
+    render(<AnalysisRunDetailPage />);
+
+    expect(screen.queryByText('trazbina Kerum dug')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Zašto je dohvaćeno/ }));
+    expect(screen.getByText('trazbina Kerum dug')).toBeInTheDocument();
+    expect(screen.getByText(/token:trazbina/)).toBeInTheDocument();
+  });
+
   test('renders annex sections for backend-native report shapes (string open questions, finding/reason conflicts)', () => {
     useAnalysisRunDetail.mockReturnValue({
       run: {
@@ -522,6 +631,49 @@ describe('AnalysisRunDetailPage metadata modules', () => {
     expect(screen.getByText('Utvrdena aktivna parnica.')).toBeInTheDocument();
     expect(screen.getByText('Nedostaje datum dospijeća glavnog potraživanja.')).toBeInTheDocument();
     expect(screen.getByText('Dva različita datuma u dokumentima.')).toBeInTheDocument();
+  });
+
+  test('M-05: conflicts and open questions group by provenance class', () => {
+    useAnalysisRunDetail.mockReturnValue({
+      run: {
+        id: 'run-1',
+        status: 'done',
+        oib: '12345678901',
+        result_text: 'Narativ',
+        result_json: {
+          processedCases: [],
+          report: {
+            schemaVersion: '1.0.0',
+            narrative: 'Narativ',
+            findings: [],
+            conflicts: [
+              { finding: 'Različiti iznosi za istu namjenu (EUR): 1,200 vs 2,500.', kind: 'arithmetic', source: 'reconciliation' },
+              { finding: 'Model sumnja na nedosljednost datuma.', reason: 'Provjeriti.', kind: 'verification', source: 'verification' },
+            ],
+            openQuestions: [
+              { text: 'Tražbina se pojavljuje bez lanca — isti postupak?', source: 'reconciliation', kind: 'lifecycle' },
+              'Treba li pratiti rok za žalbu?',
+            ],
+          },
+        },
+      },
+      events: [],
+      loading: false,
+      eventsLoading: false,
+      error: '',
+      isRunning: false,
+      connectionMode: 'idle',
+      lastUpdatedAt: '2026-02-27T12:00:00.000Z',
+      refresh: jest.fn(),
+    });
+
+    render(<AnalysisRunDetailPage />);
+
+    expect(screen.getByText('Utvrđeno kodom — aritmetička nepodudaranja')).toBeInTheDocument();
+    expect(screen.getByText('Životni ciklus tražbina — nerazriješena pitanja')).toBeInTheDocument();
+    expect(screen.getAllByText('Modelska opažanja i provjera').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText(/Različiti iznosi za istu namjenu/)).toBeInTheDocument();
+    expect(screen.getByText(/Tražbina se pojavljuje bez lanca/)).toBeInTheDocument();
   });
 
   test('renders a transparent error banner with the persisted friendly message for failed runs', () => {
@@ -614,6 +766,7 @@ describe('AnalysisRunDetailPage metadata modules', () => {
     render(<AnalysisRunDetailPage />);
 
     expect(screen.getByText(/Djelomični rezultati su sačuvani/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Povezane objave/i }));
     expect(screen.getByText('Objava 14/2026 - Stecaj duznika')).toBeInTheDocument();
     expect(screen.getByText('St-357/2013')).toBeInTheDocument();
   });
@@ -872,5 +1025,106 @@ describe('AnalysisRunDetailPage metadata modules', () => {
     render(<AnalysisRunDetailPage />);
 
     expect(screen.queryByText('Potrošnja tokena')).not.toBeInTheDocument();
+  });
+});
+
+describe('AnalysisRunDetailPage report retry', () => {
+  const baseRun = {
+    id: 'run-1',
+    status: 'done',
+    oib: '12345678901',
+    result_text: 'fallback',
+    result_json: {
+      comparativeAnalysis: 'fallback',
+      report: null,
+      reportError: 'boom',
+      clusterEvidencePackage: { clusterId: 'ST-2/2013' },
+    },
+  };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    useAnalysisEvents.mockReturnValue({
+      timeline: [],
+      stages: [],
+      activity: [],
+      isErrored: false,
+      headerCounter: null,
+      counterKnown: false,
+    });
+  });
+
+  function mockDetail(run, isRunning = false) {
+    useAnalysisRunDetail.mockReturnValue({
+      run,
+      events: [],
+      loading: false,
+      eventsLoading: false,
+      error: '',
+      isRunning,
+      connectionMode: 'idle',
+      lastUpdatedAt: '2026-02-27T12:00:00.000Z',
+      refresh: jest.fn(),
+    });
+  }
+
+  test('offers a retry when the report is missing but evidence is stored', () => {
+    mockDetail(baseRun);
+    render(<AnalysisRunDetailPage />);
+
+    expect(screen.getByRole('button', { name: 'Ponovi izradu izvještaja' })).toBeInTheDocument();
+  });
+
+  test('hides the retry when a report already exists', () => {
+    mockDetail({
+      ...baseRun,
+      result_json: { ...baseRun.result_json, report: { findings: [] }, reportError: null },
+    });
+    render(<AnalysisRunDetailPage />);
+
+    expect(screen.queryByRole('button', { name: 'Ponovi izradu izvještaja' })).not.toBeInTheDocument();
+  });
+
+  test('hides the retry while the run is still in flight', () => {
+    mockDetail(baseRun, true);
+    render(<AnalysisRunDetailPage />);
+
+    expect(screen.queryByRole('button', { name: 'Ponovi izradu izvještaja' })).not.toBeInTheDocument();
+  });
+
+  test('posts to the retry endpoint and refreshes on success', async () => {
+    const refresh = jest.fn();
+    apiFetch.mockResolvedValue({ run: baseRun });
+    useAnalysisRunDetail.mockReturnValue({
+      run: baseRun,
+      events: [],
+      loading: false,
+      eventsLoading: false,
+      error: '',
+      isRunning: false,
+      connectionMode: 'idle',
+      lastUpdatedAt: '2026-02-27T12:00:00.000Z',
+      refresh,
+    });
+    render(<AnalysisRunDetailPage />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Ponovi izradu izvještaja' }));
+
+    await waitFor(() => {
+      expect(apiFetch).toHaveBeenCalledWith('/api/analysis/runs/run-1/report', { method: 'POST' });
+      expect(refresh).toHaveBeenCalled();
+    });
+  });
+
+  test('shows the server error inline when the retry fails', async () => {
+    apiFetch.mockRejectedValue(new Error('Analiza nije uspjela.'));
+    mockDetail(baseRun);
+    render(<AnalysisRunDetailPage />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Ponovi izradu izvještaja' }));
+
+    await waitFor(() => {
+      expect(screen.getByText('Analiza nije uspjela.')).toBeInTheDocument();
+    });
   });
 });

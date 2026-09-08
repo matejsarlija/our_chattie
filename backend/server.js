@@ -34,6 +34,8 @@ const {
 } = require('./helpers/analysisStream');
 const rateLimiter = require('./court-analysis/utils/rateLimiter');
 const { runCourtAnalysis } = require('./court-analysis/pipeline');
+const { generateClusterReport, composeOverviewMarkdown } = require('./court-analysis/reasoning/reportService');
+const { createAnalysisReportRetryHandler } = require('./helpers/analysisReportRetry');
 const { createLocalStore } = require('./services/localStore');
 const { createChangeCheckService } = require('./change-detection/service');
 const { createChangeDetectionRouter } = require('./change-detection/api');
@@ -350,6 +352,16 @@ async function startServer() {
     heartbeatMs: 25000,
   });
   app.get('/api/analysis/runs/:id/stream', analysisReadIpLimiter, analysisRunStreamHandler);
+
+  app.post(
+    '/api/analysis/runs/:id/report',
+    analysisWriteIpLimiter,
+    createAnalysisReportRetryHandler({
+      store: analysisStore,
+      regenerate: (evidencePackage, opts) => generateClusterReport(evidencePackage, opts),
+      composeNarrative: (report) => composeOverviewMarkdown(report),
+    }),
+  );
 
   app.get('/health', (req, res) => {
     res.status(200).json({ status: 'ok' });
