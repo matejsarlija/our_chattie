@@ -114,4 +114,59 @@ describe('AnalysisActivityLog', () => {
 
     expect(screen.getByText(/Aktivno · prije \d+ s/)).toBeInTheDocument();
   });
+
+  test('renders the counting header with failures and a determinate bar', () => {
+    render(
+      <AnalysisActivityLog
+        activity={[fileEvent(1)]}
+        isRunning
+        headerCounter={{ done: 7, failed: 1, total: 23, unit: 'datoteke', stage: 'downloading' }}
+        counterKnown
+      />,
+    );
+
+    expect(screen.getByText(/Obrađeno 7 od 23 datoteke, 1 neuspjelo/)).toBeInTheDocument();
+    const bar = screen.getByRole('progressbar', { name: /Napredak obrade/ });
+    expect(bar).toHaveAttribute('aria-valuenow', '7');
+    expect(bar).toHaveAttribute('aria-valuemax', '23');
+  });
+
+  test('omits the failure clause when nothing failed', () => {
+    render(
+      <AnalysisActivityLog
+        activity={[fileEvent(1)]}
+        isRunning
+        headerCounter={{ done: 2, failed: 0, total: 4, unit: 'predmeta', stage: 'downloading' }}
+        counterKnown
+      />,
+    );
+
+    expect(screen.getByText(/Obrađeno 2 od 4 predmeta/)).toBeInTheDocument();
+    expect(screen.queryByText(/neuspjelo/)).not.toBeInTheDocument();
+  });
+
+  test('renders the indeterminate header while the total is unknown', () => {
+    render(
+      <AnalysisActivityLog
+        activity={[fileEvent(1)]}
+        isRunning
+        headerCounter={{ done: 2, failed: 0, total: null, unit: 'datoteke', stage: 'extracting' }}
+        counterKnown={false}
+      />,
+    );
+
+    expect(screen.getByText(/Prikupljam popis/)).toBeInTheDocument();
+    const bar = screen.getByRole('progressbar', { name: /Napredak obrade/ });
+    expect(bar).not.toHaveAttribute('aria-valuenow');
+  });
+
+  test('renders no header line for legacy runs without counters', () => {
+    render(
+      <AnalysisActivityLog activity={[fileEvent(1)]} isRunning headerCounter={null} counterKnown={false} />,
+    );
+
+    expect(screen.queryByRole('progressbar', { name: /Napredak obrade/ })).not.toBeInTheDocument();
+    expect(screen.queryByText(/Obrađeno/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Prikupljam popis/)).not.toBeInTheDocument();
+  });
 });

@@ -47,7 +47,7 @@ function ActivityLine({ item }) {
   );
 }
 
-export default function AnalysisActivityLog({ activity = [], isRunning = false }) {
+export default function AnalysisActivityLog({ activity = [], isRunning = false, headerCounter = null, counterKnown = false }) {
   const [expanded, setExpanded] = useState(false);
   const [, setTick] = useState(0);
 
@@ -74,6 +74,18 @@ export default function AnalysisActivityLog({ activity = [], isRunning = false }
 
   const latestCounts = [...activity].reverse().find((item) => item.total != null) || {};
   const visible = expanded ? activity : activity.slice(-COLLAPSED_LINE_COUNT);
+
+  const showCounterHeader = headerCounter !== null && headerCounter !== undefined;
+  const counterTotal = showCounterHeader ? headerCounter.total : null;
+  const counterKnownValue = showCounterHeader && counterKnown && Number.isFinite(counterTotal);
+  const counterPercent = counterKnownValue
+    ? Math.min(100, Math.max(0, (headerCounter.done / Math.max(1, counterTotal)) * 100))
+    : 0;
+  const counterLine = showCounterHeader
+    ? counterKnownValue
+      ? `Obrađeno ${headerCounter.done} od ${counterTotal} ${headerCounter.unit}${headerCounter.failed > 0 ? `, ${headerCounter.failed} neuspjelo` : ''}`
+      : 'Prikupljam popis…'
+    : null;
 
   return (
     <section className="mb-5 rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4" data-testid="analysis-activity-log">
@@ -109,6 +121,24 @@ export default function AnalysisActivityLog({ activity = [], isRunning = false }
           )}
         </div>
       </div>
+      {showCounterHeader && (
+        <div className="mb-3">
+          <p className="mb-1.5 text-sm font-medium text-[var(--text)]">{counterLine}</p>
+          <div
+            className="h-2 overflow-hidden rounded-full bg-[var(--surface-muted)]"
+            role="progressbar"
+            aria-label="Napredak obrade"
+            {...(counterKnownValue
+              ? { 'aria-valuenow': headerCounter.done, 'aria-valuemin': 0, 'aria-valuemax': counterTotal }
+              : {})}
+          >
+            <div
+              className={`h-full rounded-full bg-[var(--accent)] ${counterKnownValue ? '' : 'activity-indeterminate-bar'}`}
+              style={counterKnownValue ? { width: `${counterPercent}%` } : undefined}
+            />
+          </div>
+        </div>
+      )}
       <div className="space-y-1">
         {visible.map((item) => (
           <ActivityLine key={item.id} item={item} />

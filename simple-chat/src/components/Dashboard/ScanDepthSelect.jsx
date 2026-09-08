@@ -9,9 +9,9 @@ export const SCAN_DEPTH_LABELS = {
 };
 
 const HELPERS = {
-  standard: '5 stranica — najnovije objave',
-  balanced: '5 stranica + 10 najstarijih objava',
-  full: 'Sve dostupne objave predmeta',
+  standard: '30 najnovijih objava',
+  balanced: '30 najnovijih + 10 najstarijih objava',
+  full: 'Sve dostupne objave (do 400)',
 };
 
 export default function ScanDepthSelect({ value = 'balanced', onChange, disabled = false }) {

@@ -13,6 +13,7 @@ const {
     MAX_CASE_LIMIT,
 } = require('../helpers/courtAnalysisRequest');
 const { groupEntriesByCase } = require('./utils/grouping');
+const { buildStageCounterEvent } = require('../helpers/analysisStage');
 const { normalizeCaseNumber } = require('./utils/caseNumber');
 const { resolveScanDepthEntries, COURT_ENTRIES_PER_PAGE } = require('./utils/scanDepth');
 const { buildClusterEvidencePackage, attachAnalysesToEvidencePackage } = require('./reasoning/evidencePackage');
@@ -1471,6 +1472,12 @@ async function processScrapedCases(casesToProcess, progressCallback, options = {
             primaryCluster,
             secondaryClusters
         };
+        stageAwareProgress(buildStageCounterEvent({
+            stage: 'discovering',
+            done: 0,
+            total: discoverySummary.rawEntryCount ?? null,
+            unit: 'objava',
+        }));
         const reasoningClusters = primaryClusterId
             ? clusters.filter((cluster) => (cluster.clusterId || cluster.caseNumber) === primaryClusterId)
             : clusters.slice(0, 1);
@@ -1533,12 +1540,35 @@ async function processScrapedCases(casesToProcess, progressCallback, options = {
 
             // 2a. Download
             stageAwareProgress?.({ step: 'downloading', message: `Preuzimam arhivu za predmet ${i + 1} (${documentLinks.length} linkova)...` });
-            downloadedFiles = await downloadTool._call({ documentLinks, progressCallback: null });
+            let downloadFailed = 0;
+            downloadedFiles = await downloadTool._call({
+                documentLinks,
+                progressCallback: (event) => {
+                    stageAwareProgress?.(event);
+                    if (event && Number.isFinite(event.completed) && Number.isFinite(event.total)) {
+                        if (event.failed === true) downloadFailed++;
+                        stageAwareProgress?.(buildStageCounterEvent({
+                            stage: 'downloading',
+                            done: event.completed,
+                            failed: downloadFailed,
+                            total: event.total,
+                            unit: 'datoteka',
+                        }));
+                    }
+                },
+            });
             stageAwareProgress?.({ step: 'downloading', message: `Preuzeto ${downloadedFiles.length}/${documentLinks.length} datoteka za predmet ${i + 1}.` });
 
             // 2b. Unzip
             stageAwareProgress?.({ step: 'extracting', message: `Raspakiram datoteke za predmet ${i + 1}...` });
             const filesForAnalysis = [];
+            let extractedCount = 0;
+            const emitExtractCounter = () => stageAwareProgress?.(buildStageCounterEvent({
+                stage: 'extracting',
+                done: extractedCount,
+                total: null,
+                unit: 'datoteka',
+            }));
             for (const file of downloadedFiles) {
                 extractedFilePaths.push(file.filePath);
                 if (path.extname(file.filePath).toLowerCase() === '.zip') {
@@ -1547,9 +1577,13 @@ async function processScrapedCases(casesToProcess, progressCallback, options = {
                     for (const extracted of (extractionResult.extractedFiles || [])) {
                         filesForAnalysis.push({ filePath: extracted.filePath, text: extracted.entryName, url: file.url });
                         extractedFilePaths.push(extracted.filePath);
+                        extractedCount++;
+                        emitExtractCounter();
                     }
                 } else {
                     filesForAnalysis.push(file);
+                    extractedCount++;
+                    emitExtractCounter();
                 }
             }
             
@@ -1567,6 +1601,12 @@ async function processScrapedCases(casesToProcess, progressCallback, options = {
                 step: 'extracting',
                 message: `Za analizu pripremljeno ${filesForAnalysis.length} datoteka${typeBreakdown ? ` (${typeBreakdown})` : ''}.`
             });
+            stageAwareProgress?.(buildStageCounterEvent({
+                stage: 'extracting',
+                done: filesForAnalysis.length,
+                total: filesForAnalysis.length,
+                unit: 'datoteka',
+            }));
 
             if (filesForAnalysis.length === 0) {
                  agentLog.warn(`No files to analyze for case ${caseInfo.title}. Skipping analysis.`);

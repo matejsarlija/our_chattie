@@ -29,7 +29,7 @@ describe('ScanDepthSelect', () => {
     expect(screen.getByRole('option', { name: 'Standardno' })).toBeInTheDocument();
     expect(screen.getByRole('option', { name: 'Uravnoteženo' })).toBeInTheDocument();
     expect(screen.getByRole('option', { name: 'Sve dostupne' })).toBeInTheDocument();
-    expect(screen.getByText('5 stranica + 10 najstarijih objava')).toBeInTheDocument();
+    expect(screen.getByText('30 najnovijih + 10 najstarijih objava')).toBeInTheDocument();
   });
 
   test('selecting an option emits and renders the depth value', () => {
@@ -40,7 +40,7 @@ describe('ScanDepthSelect', () => {
 
     expect(onChange).toHaveBeenCalledWith('full');
     expect(screen.getByLabelText(/dubina pretrage/i)).toHaveValue('full');
-    expect(screen.getByText('Sve dostupne objave predmeta')).toBeInTheDocument();
+    expect(screen.getByText('Sve dostupne objave (do 400)')).toBeInTheDocument();
   });
 
   test('falls back to balanced for an invalid value', () => {

@@ -49,4 +49,18 @@ describe('downloadDocuments', () => {
         expect(files[0].url).toBe(testUrl);
         expect(progressUpdates.some(p => p.message.includes('Downloaded'))).toBe(true);
     });
+
+    it('reports per-link completion counters in progress callbacks', async () => {
+        const progressUpdates = [];
+        const tool = new DownloadDocumentsTool();
+        const links = [
+            { url: testUrl, text: 'First PDF' },
+            { url: testUrl, text: 'Second PDF' },
+        ];
+        await tool._call({ documentLinks: links, progressCallback: (progress) => progressUpdates.push(progress) });
+        const perLink = progressUpdates.filter((p) => Number.isFinite(p.completed));
+        expect(perLink).toHaveLength(2);
+        expect(perLink[0]).toEqual(expect.objectContaining({ completed: 1, total: 2 }));
+        expect(perLink[1]).toEqual(expect.objectContaining({ completed: 2, total: 2 }));
+    });
 });

@@ -2,6 +2,16 @@
 @tailwind components;
 @tailwind utilities;
 
+@keyframes activity-indeterminate-slide {
+  from { margin-left: -10%; }
+  to { margin-left: 70%; }
+}
+
+.activity-indeterminate-bar {
+  width: 40%;
+  animation: activity-indeterminate-slide 1.2s ease-in-out infinite alternate;
+}
+
 :root {
   --text-size: 16px;
 

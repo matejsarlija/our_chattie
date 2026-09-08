@@ -178,4 +178,79 @@ describe('useAnalysisEvents canonical stage parity', () => {
     expect(latest.activity[0].reason).toBe('Zahtjev AI servisu je premašio dopušteno vrijeme čekanja i automatski je prekinut. Pokušajte ponovno.');
     expect(latest.activity[0].error).toBe('Gemini request timed out after 30000ms');
   });
+
+  test('derives the header counter from the newest stage-counter event', () => {
+    let latest = null;
+
+    render(
+      <Harness
+        events={[
+          { id: 'e1', event_type: 'discovering', message: 'start', created_at: '2026-08-21T10:00:00.000Z' },
+          {
+            id: 'c1',
+            event_type: 'discovering',
+            message: '',
+            created_at: '2026-08-21T10:00:01.000Z',
+            metadata: { kind: 'stage-counter', stage: 'discovering', done: 0, failed: 0, total: 41, unit: 'objava' },
+          },
+          {
+            id: 'c2',
+            event_type: 'downloading',
+            message: '',
+            created_at: '2026-08-21T10:00:09.000Z',
+            metadata: { kind: 'stage-counter', stage: 'downloading', done: 3, failed: 1, total: 7, unit: 'datoteka' },
+          },
+        ]}
+        onValue={(value) => {
+          latest = value;
+        }}
+      />,
+    );
+
+    expect(latest.headerCounter).toEqual({ done: 3, failed: 1, total: 7, unit: 'datoteka', stage: 'downloading' });
+    expect(latest.counterKnown).toBe(true);
+    // Counter events must not leak into the timeline or the console.
+    expect(latest.timeline.map((event) => event.id)).toEqual(['e1']);
+    expect(latest.activity).toEqual([]);
+  });
+
+  test('treats null totals as unknown and absent counters as legacy', () => {
+    let latest = null;
+
+    const unknown = [];
+    render(
+      <Harness
+        events={[
+          {
+            id: 'c1',
+            event_type: 'extracting',
+            message: '',
+            created_at: '2026-08-21T10:00:01.000Z',
+            metadata: { kind: 'stage-counter', stage: 'extracting', done: 2, failed: 0, total: null, unit: 'datoteka' },
+          },
+        ]}
+        onValue={(value) => {
+          unknown.push(value);
+        }}
+      />,
+    );
+    latest = unknown[unknown.length - 1];
+    expect(latest.headerCounter.total).toBeNull();
+    expect(latest.counterKnown).toBe(false);
+    expect(latest.timeline).toEqual([]);
+
+    let legacy = null;
+    render(
+      <Harness
+        events={[
+          { id: 'e1', event_type: 'starting', message: 'start', created_at: '2026-08-21T10:00:00.000Z' },
+        ]}
+        onValue={(value) => {
+          legacy = value;
+        }}
+      />,
+    );
+    expect(legacy.headerCounter).toBeNull();
+    expect(legacy.counterKnown).toBe(false);
+  });
 });

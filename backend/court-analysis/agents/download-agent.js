@@ -162,12 +162,12 @@ class DownloadDocumentsTool extends Tool {
                 const message = fromCache
                     ? `Reused from cache: ${path.basename(filePath)}`
                     : `Downloaded: ${path.basename(filePath)}`;
-                progressCallback && progressCallback({ step: 'downloading', progress: currentProgress, message });
+                progressCallback && progressCallback({ step: 'downloading', progress: currentProgress, message, completed, total: documentLinks.length });
             } catch (err) {
                 agentLog.error(`[Downloader] Failed to download ${link.text} from ${link.url}:`, err.message);
                 completed++;
                 const currentProgress = 50 + Math.round((completed / documentLinks.length) * 30);
-                progressCallback && progressCallback({ step: 'downloading', progress: currentProgress, message: `Failed: ${link.text}` });
+                progressCallback && progressCallback({ step: 'downloading', progress: currentProgress, message: `Failed: ${link.text}`, completed, total: documentLinks.length, failed: true });
             }
         }
 

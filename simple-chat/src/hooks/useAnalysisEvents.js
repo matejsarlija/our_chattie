@@ -86,7 +86,19 @@ export function useAnalysisEvents(events) {
         createdAt: event.created_at,
       }));
 
-    const timelineEvents = all.filter((event) => !['file', 'heartbeat'].includes(event?.metadata?.kind));
+    const timelineEvents = all.filter((event) => !['file', 'heartbeat', 'stage-counter'].includes(event?.metadata?.kind));
+
+    const counterEvents = all.filter((event) => event?.metadata?.kind === 'stage-counter');
+    const newestCounter = counterEvents.length > 0 ? counterEvents[counterEvents.length - 1].metadata : null;
+    const headerCounter = newestCounter
+      ? {
+          done: newestCounter.done,
+          failed: newestCounter.failed ?? 0,
+          total: newestCounter.total ?? null,
+          unit: newestCounter.unit,
+          stage: newestCounter.stage,
+        }
+      : null;
 
     const normalized = timelineEvents.map((event) => {
       const stage = normalizeEventType(event);
@@ -123,6 +135,8 @@ export function useAnalysisEvents(events) {
       activity,
       current,
       isErrored: normalized.some((event) => event.stage === 'error'),
+      headerCounter,
+      counterKnown: Boolean(headerCounter) && Number.isFinite(headerCounter.total),
     };
   }, [events]);
 }
