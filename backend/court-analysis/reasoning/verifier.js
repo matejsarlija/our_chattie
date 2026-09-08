@@ -168,7 +168,9 @@ async function verifyReport(report, evidencePackage, options = {}) {
             if (result.status === 'contradicted') {
                 conflicts.push({
                     finding: finding.text,
-                    reason: result.reason
+                    reason: result.reason,
+                    source: 'verification',
+                    kind: 'verification'
                 });
                 verifiedByPosition.set(index, {
                     ...finding,

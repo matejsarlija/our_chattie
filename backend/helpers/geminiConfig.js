@@ -35,20 +35,22 @@ const ENV_MODEL_OVERRIDE = process.env.GEMINI_MODEL || null;
 const GEMINI_ROLE_CONFIG = {
     // JSON extraction from document text. Dense documents (long summaries,
     // many amounts entries) can exceed smaller ceilings and truncate
-    // mid-JSON — the cap must leave generous headroom. Raised for the
-    // grounding + property-flow schema extension (quote per amount entry plus
-    // an optional propertyFlow array add measurable output per document).
-    analysis: { model: DEFAULT_GEMINI_MODEL, temperature: 0.2, maxOutputTokens: 12288 },
+    // mid-JSON — the cap must leave generous headroom. Raised 12288 → 16384
+    // for the Epic J identity/direction schema extension (direction +
+    // payer/recipient + isplatniRed + claim/filing identifiers per amount
+    // entry plus a citedFilingReferences array add measurable output per
+    // document); previously raised for the grounding + property-flow schema
+    // extension (quote per amount entry plus an optional propertyFlow array).
+    analysis: { model: DEFAULT_GEMINI_MODEL, temperature: 0.2, maxOutputTokens: 16384 },
     // Vision OCR of rasterized pages — longer raw-text outputs.
     ocr: { model: DEFAULT_GEMINI_MODEL, temperature: 0.1, maxOutputTokens: 4096 },
     // Multi-page OCR batching: several page images in one request, so the
     // output ceiling must cover the combined raw text of all pages.
     'ocr-batch': { model: DEFAULT_GEMINI_MODEL, temperature: 0.1, maxOutputTokens: 8192 },
-    // Full structured report synthesis. Raised from 4096: observed truncating
-    // mid-JSON on real multi-document clusters (Synthesizer returned invalid
-    // JSON), matching the outputCapWarning below almost verbatim — dense
-    // narratives + findings + conflicts routinely exceed the smaller ceiling.
-    synthesis: { model: DEFAULT_GEMINI_MODEL, temperature: 0.2, maxOutputTokens: 8192 },
+    // Full structured report synthesis. Raised 4096 → 8192 → 24576 as dense
+    // clusters kept truncating mid-JSON (370 claims + timeline exceeded 8192
+    // on a real run). gemini-2.5-flash allows up to 65536 output tokens.
+    synthesis: { model: DEFAULT_GEMINI_MODEL, temperature: 0.2, maxOutputTokens: 24576 },
     // Strict verification pass over findings.
     verify: { model: DEFAULT_GEMINI_MODEL, temperature: 0.1, maxOutputTokens: 2048 },
     // Listwise evidence reranking: one JSON array of {id, score} over ≤24

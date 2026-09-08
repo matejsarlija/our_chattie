@@ -12,7 +12,9 @@
 //
 // Empty input → empty output, no errors (moneyFlow.js philosophy).
 
-const { normalizeCurrency, parseAmount } = require('./moneyFlow');
+const { normalizeCurrency, parseAmount, parseDualFromQuote, cleanText } = require('./moneyFlow');
+const { convertToEur, dualMismatch } = require('./currencyConversion');
+const { findCitationLinkedPairs } = require('./citationGraph');
 const { normalizeText } = require('./indexer');
 
 const VALID_ASSET_TYPES = ['nekretnina', 'pokretnina', 'tražbina', 'trazbina', 'drugo'];
@@ -31,6 +33,31 @@ function normalizeAssetType(value) {
 function normalizeEventType(value) {
     const raw = String(value || '').trim().toLowerCase();
     return VALID_EVENT_TYPES.includes(raw) ? raw : null;
+}
+
+// K-02/K-04 for property values: same consolidated-EUR + dual-preference
+// semantics as moneyFlow's amountEur. No value → no EUR fields at all.
+function buildValueEur(raw, value) {
+    if (!Number.isFinite(value)) return {};
+    const currency = normalizeCurrency(raw?.currency ?? raw?.valuta) || null;
+    const dual = parseDualFromQuote(raw, value, currency);
+    if (dual && dual.statedEur !== null && dual.statedHrk !== null) {
+        const check = dualMismatch(dual.statedEur, dual.statedHrk);
+        return {
+            valueEur: dual.statedEur,
+            valueEurSource: 'stated',
+            dualCurrency: {
+                statedEur: dual.statedEur,
+                statedHrk: dual.statedHrk,
+                convertedEur: check.convertedEur,
+                deviationPct: check.deviationPct,
+            },
+            ...(check.mismatched ? { currencyNote: 'dual-mismatch' } : {}),
+        };
+    }
+    const valueEur = convertToEur(value, currency);
+    if (valueEur === null) return {};
+    return { valueEur, valueEurSource: currency === 'EUR' ? 'as-is' : 'converted' };
 }
 
 function normalizePropertyItem(raw, index, analysis) {
@@ -64,6 +91,12 @@ function normalizePropertyItem(raw, index, analysis) {
         transferee: raw.transferee || raw.to || raw.stjecatelj || null,
         value: value,
         currency: normalizeCurrency(raw.currency ?? raw.valuta) || null,
+        ...buildValueEur(raw, value),
+        // J-03 — payment-priority rank (tražbina isplatni red).
+        isplatniRed: cleanText(raw.isplatniRed ?? raw.isplatni_red ?? raw.paymentRank),
+        // J-04 — real claim/filing identifiers (seed for Epic L ID-first resolution).
+        claimRegistryNumber: cleanText(raw.claimRegistryNumber ?? raw.redniBroj ?? raw.redni_broj),
+        filingReference: cleanText(raw.filingReference ?? raw.poslovniBroj ?? raw.poslovni_broj),
         date: raw.date || raw.datum || null,
         ...(supersedes ? { supersedes } : {}),
         quote: typeof raw.quote === 'string' ? raw.quote : null,
@@ -115,13 +148,34 @@ function resolveSupersedesTarget(ref, entriesById, entries) {
     // 1. Stable per-run id match (prop-N).
     if (entriesById.has(trimmed)) return entriesById.get(trimmed);
     if (entriesById.has(trimmed.toLowerCase())) return entriesById.get(trimmed.toLowerCase());
-    // 2. Normalized-description containment fallback: the model cites the
+    // L-01 — ID-first: real registry/filing identifiers (J-04) beat fuzzy
+    // text. An explicit supersedes citing "106" or "St-2/2013-1196-1"
+    // resolves by exact identifier equality before any prose guessing.
+    const list = Array.isArray(entries) ? entries : [];
+    const lowered = trimmed.toLowerCase();
+    for (const entry of list) {
+        if (typeof entry?.claimRegistryNumber === 'string'
+            && entry.claimRegistryNumber.trim()
+            && (entry.claimRegistryNumber.trim() === trimmed
+                || entry.claimRegistryNumber.trim().toLowerCase() === lowered)) {
+            return entry;
+        }
+    }
+    for (const entry of list) {
+        if (typeof entry?.filingReference === 'string'
+            && entry.filingReference.trim()
+            && (entry.filingReference.trim() === trimmed
+                || entry.filingReference.trim().toLowerCase() === lowered)) {
+            return entry;
+        }
+    }
+    // 4. Normalized-description containment fallback: the model cites the
     // original claim explicitly (case number, filing date, original creditor)
     // but cannot know our generated ids — a reference containing (or contained
     // in) another entry's description resolves to that entry.
     const normalizedRef = normalizeText(trimmed);
     if (!normalizedRef) return null;
-    for (const entry of entries) {
+    for (const entry of list) {
         const normalizedDesc = normalizeText(entry?.description || '');
         if (!normalizedDesc) continue;
         if (normalizedDesc.includes(normalizedRef) || normalizedRef.includes(normalizedDesc)) {
@@ -132,13 +186,67 @@ function resolveSupersedesTarget(ref, entriesById, entries) {
 }
 
 /**
+ * Builds a value-change timeline finding from a fully-linked tražbina chain.
+ * Extracted so registry-linked (L-01) and supersedes/citation-linked chains
+ * share one math + shape implementation.
+ */
+function buildValueChangeTimeline(groupEntries, linkage, valueFn) {
+    const effective = typeof valueFn === 'function'
+        ? valueFn
+        : (e) => (Number.isFinite(e.valueEur) ? e.valueEur : e.value);
+    const sorted = [...groupEntries].sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')));
+    const first = sorted[0];
+    const last = sorted[sorted.length - 1];
+    // K-03: timeline math on the consolidated EUR scale when both ends
+    // have one; otherwise the legacy raw values.
+    const eurScale = Number.isFinite(first.valueEur) && Number.isFinite(last.valueEur);
+    const originalValue = eurScale
+        ? first.valueEur
+        : (Number.isFinite(first.value) ? first.value : null);
+    const latestValue = eurScale
+        ? last.valueEur
+        : (Number.isFinite(last.value) ? last.value : null);
+    let delta = null;
+    let discountPct = null;
+    if (originalValue !== null && latestValue !== null) {
+        delta = latestValue - originalValue;
+        discountPct = originalValue !== 0 ? Number(((delta / originalValue) * 100).toFixed(2)) : null;
+    }
+    const currency = eurScale ? 'EUR' : (last.currency || first.currency || '');
+    return {
+        description: first.description,
+        linkage,
+        stages: sorted.map((e) => ({
+            id: e.id,
+            eventType: e.eventType || null,
+            value: effective(e) ?? null,
+            currency: eurScale ? 'EUR' : (e.currency || null),
+            date: e.date || null,
+            transferor: e.transferor || null,
+            transferee: e.transferee || null,
+            sourceId: e.sourceId || null,
+            fileName: e.fileName || null,
+        })),
+        originalValue,
+        latestValue,
+        currency,
+        delta,
+        discountPct,
+        finding: `Tražbina "${first.description}" u iznosu od ${formatValue(originalValue, currency)} ustupljena je za ${formatValue(latestValue, currency)}.`,
+        sources: sorted.map((e) => e.sourceId).filter(Boolean),
+    };
+}
+
+/**
  * Deterministic property-flow reconciliation, mirroring reconcileMoneyFlows
  * grouping/conflict philosophy with a distinct tražbina lifecycle path.
  *
  * @param {object} propertyFlow - Output of collectPropertyFlows.
- * @returns {{conflicts: Array, openQuestions: Array<string>, valueChanges: Array<object>}}
+ * @param {object} [context] - Optional `{ analyses }` (normalized analyses
+ * carrying `citedFilingReferences`); enables the L-02 citation-link signal.
+ * @returns {{conflicts: Array, openQuestions: Array<{text: string, source: string, kind: string}>, valueChanges: Array<object>}}
  */
-function reconcilePropertyFlows(propertyFlow) {
+function reconcilePropertyFlows(propertyFlow, context = {}) {
     const conflicts = [];
     const openQuestions = [];
     const valueChanges = [];
@@ -152,37 +260,73 @@ function reconcilePropertyFlows(propertyFlow) {
     const standardEntries = entries.filter((e) => e.assetType !== 'tražbina');
     const trazbinaEntries = entries.filter((e) => e.assetType === 'tražbina');
 
+    // K-03: value comparison runs on the consolidated EUR scale when both
+    // sides have one (valueEur ?? value), mirroring reconcileMoneyFlows.
+    const effectiveValue = (e) => (Number.isFinite(e.valueEur) ? e.valueEur : e.value);
+
     // --- 1. Non-tražbina: group by description + assetType; divergent
     // value/transferee → conflict (same shape as reconcileMoneyFlows). ---
     const groups = new Map();
     for (const entry of standardEntries) {
         const key = propertyGroupKey(entry);
         if (!key) continue;
-        const groupKey = `${entry.currency || 'UNKNOWN'}::${key}`;
+        const scale = Number.isFinite(entry.valueEur) ? 'EUR' : (entry.currency || 'UNKNOWN');
+        const groupKey = `${scale}::${key}`;
         if (!groups.has(groupKey)) groups.set(groupKey, []);
         groups.get(groupKey).push(entry);
     }
     for (const [groupKey, groupEntries] of groups) {
         if (groupEntries.length < 2) continue;
-        const values = groupEntries.map((e) => e.value).filter((v) => Number.isFinite(v));
+        const values = groupEntries.map(effectiveValue).filter((v) => Number.isFinite(v));
         const transferees = [...new Set(groupEntries.map((e) => String(e.transferee || '').trim()).filter(Boolean))];
         const valueDiverges = values.length >= 2 && Math.max(...values) !== Math.min(...values) && Math.abs(Math.max(...values) - Math.min(...values)) > 0.01;
         const transfereeDiverges = transferees.length > 1;
         if (!valueDiverges && !transfereeDiverges) continue;
         const currency = groupKey.split('::')[0];
         conflicts.push({
-            finding: `Različiti podaci o istoj imovini (${currency}): ${groupEntries[0].description} — ${groupEntries.map((e) => formatValue(e.value, e.currency)).join(' vs ')}.`,
+            finding: `Različiti podaci o istoj imovini (${currency}): ${groupEntries[0].description} — ${groupEntries.map((e) => formatValue(effectiveValue(e), Number.isFinite(e.valueEur) ? 'EUR' : e.currency)).join(' vs ')}.`,
             reason: `Opis "${groupEntries[0].description}" nosi različite podatke u ${new Set(groupEntries.map((e) => e.fileName).filter(Boolean)).size} dokument(a).`,
             sources: groupEntries.map((e) => e.sourceId).filter(Boolean),
+            source: 'reconciliation',
+            kind: 'property',
         });
     }
 
     // --- 2. Tražbina lifecycle: supersedes-linked chains are value-change
     // timelines, NOT conflicts. Unlinked competing claims on the same
     // receivable with different transferees ARE genuine conflicts. ---
+    //
+    // L-01 — ID-first: entries sharing a stable `claimRegistryNumber` (J-04)
+    // are the SAME registered claim by definition and form a timeline
+    // directly, without any fuzzy description grouping. Only entries without
+    // a shared registry number fall through to the description path below.
+    const registryClusters = new Map();
+    const registryConsumed = new Set();
+    for (const entry of trazbinaEntries) {
+        const reg = typeof entry?.claimRegistryNumber === 'string' ? entry.claimRegistryNumber.trim() : '';
+        if (!reg) continue;
+        if (!registryClusters.has(reg)) registryClusters.set(reg, []);
+        registryClusters.get(reg).push(entry);
+    }
+    for (const [reg, clusterEntries] of registryClusters) {
+        if (clusterEntries.length < 2) continue;
+        for (const entry of clusterEntries) registryConsumed.add(entry.id);
+        valueChanges.push(buildValueChangeTimeline(clusterEntries, 'claimRegistryNumber', effectiveValue));
+    }
+
+    // L-02 — citation edges are a second explicit link signal: entries whose
+    // documents directly cite each other's filing references join the same
+    // chain instead of being guessed from prose.
+    const citationPairs = findCitationLinkedPairs(
+        trazbinaEntries.filter((e) => !registryConsumed.has(e.id)),
+        context?.analyses
+    );
+    const citationKey = (a, b) => [String(a.id), String(b.id)].sort().join('::');
+
     const trazbinaGroups = new Map();
     const ungroupedTrazbina = [];
     for (const entry of trazbinaEntries) {
+        if (registryConsumed.has(entry.id)) continue;
         const key = propertyGroupKey(entry);
         if (!key) {
             ungroupedTrazbina.push(entry);
@@ -210,42 +354,19 @@ function reconcilePropertyFlows(propertyFlow) {
             }
             // Unresolvable supersedes → standalone treatment (graceful, no error).
         }
+        // L-02: direct citation links join the chain on equal footing.
+        for (let i = 0; i < groupEntries.length; i++) {
+            for (let j = i + 1; j < groupEntries.length; j++) {
+                if (!citationPairs.has(citationKey(groupEntries[i], groupEntries[j]))) continue;
+                linked.add(groupEntries[i].id);
+                linked.add(groupEntries[j].id);
+                chainEdges.push({ from: groupEntries[i], to: groupEntries[j] });
+            }
+        }
 
         if (linked.size === groupEntries.length && chainEdges.length > 0) {
             // Fully chained: surface as a value-change timeline finding.
-            const sorted = [...groupEntries].sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')));
-            const first = sorted[0];
-            const last = sorted[sorted.length - 1];
-            const originalValue = Number.isFinite(first.value) ? first.value : null;
-            const latestValue = Number.isFinite(last.value) ? last.value : null;
-            let delta = null;
-            let discountPct = null;
-            if (originalValue !== null && latestValue !== null) {
-                delta = latestValue - originalValue;
-                discountPct = originalValue !== 0 ? Number(((delta / originalValue) * 100).toFixed(2)) : null;
-            }
-            const currency = last.currency || first.currency || '';
-            valueChanges.push({
-                description: first.description,
-                stages: sorted.map((e) => ({
-                    id: e.id,
-                    eventType: e.eventType || null,
-                    value: e.value ?? null,
-                    currency: e.currency || null,
-                    date: e.date || null,
-                    transferor: e.transferor || null,
-                    transferee: e.transferee || null,
-                    sourceId: e.sourceId || null,
-                    fileName: e.fileName || null,
-                })),
-                originalValue,
-                latestValue,
-                currency,
-                delta,
-                discountPct,
-                finding: `Tražbina "${first.description}" u iznosu od ${formatValue(originalValue, currency)} ustupljena je za ${formatValue(latestValue, currency)}.`,
-                sources: sorted.map((e) => e.sourceId).filter(Boolean),
-            });
+            valueChanges.push(buildValueChangeTimeline(groupEntries, 'supersedes', effectiveValue));
         } else {
             // Not fully chained: competing claims. Flag genuine conflict only
             // when transferees genuinely differ (same receivable, different
@@ -256,13 +377,29 @@ function reconcilePropertyFlows(propertyFlow) {
                     finding: `Konkurentske tvrdnje o istoj tražbini: ${groupEntries[0].description} — stjecatelji ${transferees.join(' vs ')}.`,
                     reason: `Tražbina "${groupEntries[0].description}" prenesena je na različite stjecatelje bez lanca koji bi razriješio koja je tvrdnja mjerodavna.`,
                     sources: groupEntries.map((e) => e.sourceId).filter(Boolean),
+                    source: 'reconciliation',
+                    kind: 'lifecycle',
                 });
             } else {
-                openQuestions.push(
-                    `Tražbina "${groupEntries[0].description}" pojavljuje se u ${groupEntries.length} dokument(a) bez povezujućeg lanca — je li riječ o istom potraživanju u različitim fazama?`
-                );
+                openQuestions.push({
+                    text: `Tražbina "${groupEntries[0].description}" pojavljuje se u ${groupEntries.length} dokument(a) bez povezujućeg lanca — je li riječ o istom potraživanju u različitim fazama?`,
+                    source: 'reconciliation',
+                    kind: 'lifecycle',
+                });
             }
         }
+    }
+
+    // K-04 tie-break residue (property side): same semantics as the money-flow
+    // section 3 — EUR won outright; flag the filing's own inconsistency.
+    for (const entry of entries) {
+        if (entry?.currencyNote !== 'dual-mismatch' || !entry?.dualCurrency) continue;
+        const { statedEur, statedHrk, deviationPct } = entry.dualCurrency;
+        openQuestions.push({
+            text: `Dokument ${entry.fileName || 'nepoznat dokument'} navodi dvojni iznos ${formatValue(statedEur, 'EUR')} (${formatValue(statedHrk, 'HRK')}) koji ne odgovara fiksnom tečaju 7.53450 (odstupanje ${deviationPct ?? '?'}%). Za izračun je uzet iznos u EUR.`,
+            source: 'reconciliation',
+            kind: 'property',
+        });
     }
 
     return { conflicts, openQuestions, valueChanges };

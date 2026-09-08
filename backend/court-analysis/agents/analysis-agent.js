@@ -24,6 +24,7 @@ const logger = require("../../helpers/logger");
 
 const { GEMINI_MODEL, GEMINI_API_KEY, createGeminiClient, outputCapWarning } = require("../../helpers/geminiConfig");
 const { classifyFileFailure } = require("../../helpers/friendlyAnalysisError");
+const { buildStageCounterEvent } = require("../../helpers/analysisStage");
 const { extractJsonBlock } = require("../../helpers/jsonExtract");
 const { applyGroundingToAnalysis } = require("../reasoning/grounding");
 const ocrPageStore = require("../../helpers/ocrPageStore");
@@ -731,6 +732,14 @@ class AnalyzeDocumentsTool extends Tool {
                         ...extra,
                     },
                 });
+            progressCallback &&
+                progressCallback(buildStageCounterEvent({
+                    stage: "reasoning",
+                    done: batchCounters.done + batchCounters.failed,
+                    failed: batchCounters.failed,
+                    total,
+                    unit: "dokument",
+                }));
         };
 
         const emitHeartbeat = () => {
@@ -842,8 +851,9 @@ class AnalyzeDocumentsTool extends Tool {
 
                 From the court document text below, extract key information as a JSON object with the following keys: "caseNumber", "decisionDate", and "summary" (a medium-sized paragraph, nicely formatted, to be in Croatian please, as that is what our customers speak).
                 Do include any important figures (currency amounts) you find in the summary.
-                Also extract any financial amounts (payments, claims, costs, reservations) into an optional "amounts" array, each item being a JSON object with: "description" (what the money is for, in Croatian), "amount" (number), "currency" ("EUR" or "HRK"), "date" (if known), and "quote" (a verbatim supporting quote copied exactly from the source text below that proves this amount; copy 1-2 sentences word-for-word, do not paraphrase). If the document contains no amounts, set "amounts" to an empty array.
-                Also extract any property/asset transactions (real estate sales, movable-asset sales, receivable assignments/cessions) into an optional "propertyFlow" array, each item being a JSON object with: "description" (what the asset is, in Croatian), "identifier" (cadastral parcel, registration number, or null when absent), "assetType" (one of "nekretnina" | "pokretnina" | "tražbina" | "drugo"), "transferor" (seller/assignor, if known), "transferee" (buyer/assignee, if known), "value" (number, if known), "currency" ("EUR" or "HRK", if known), "date" (if known), and "quote" (verbatim supporting quote as above). For assetType "tražbina" (receivable/claim, e.g. "Ugovor o ustupu tražbina") additionally include "eventType" (one of "prijava" | "ustup" | "namirenje" | "drugo" — the lifecycle stage) and, when this entry continues an earlier lifecycle stage of the SAME receivable described in the analysed documents, "supersedes" (a short textual reference to that earlier entry, e.g. its description, case number, filing date or original creditor as cited in the source text). If the document contains no property transactions, set "propertyFlow" to an empty array.
+                Also extract any financial amounts (payments, claims, costs, reservations) into an optional "amounts" array, each item being a JSON object with: "description" (what the money is for, in Croatian), "amount" (number), "currency" ("EUR" or "HRK"), "date" (if known), "direction" (one of "potraživanje" when the amount is a claim in the debtor's favor, "obveza" when it is a liability against the debtor, or "awarded" | "rejected" | "netted" when a ruling decides it), "payerName" and "payerOib" (who pays, OIB is 11 digits, if stated), "recipientName" and "recipientOib" (who receives, if stated), "amountEur" and "amountHrk" (when the source states BOTH currencies for one figure, copy each verbatim; otherwise omit), "isplatniRed" (payment-priority rank such as "drugi viši isplatni red", if stated), "claimRegistryNumber" (the "redni broj" from the claim register, if stated), "filingReference" (this document's "poslovni broj", if stated), and "quote" (a verbatim supporting quote copied exactly from the source text below that proves this amount; copy 1-2 sentences word-for-word, do not paraphrase). If the document contains no amounts, set "amounts" to an empty array.
+                Also extract any property/asset transactions (real estate sales, movable-asset sales, receivable assignments/cessions) into an optional "propertyFlow" array, each item being a JSON object with: "description" (what the asset is, in Croatian), "identifier" (cadastral parcel, registration number, or null when absent), "assetType" (one of "nekretnina" | "pokretnina" | "tražbina" | "drugo"), "transferor" (seller/assignor, if known), "transferee" (buyer/assignee, if known), "value" (number, if known), "currency" ("EUR" or "HRK", if known), "date" (if known), and "quote" (verbatim supporting quote as above). For assetType "tražbina" (receivable/claim, e.g. "Ugovor o ustupu tražbina") additionally include "eventType" (one of "prijava" | "ustup" | "namirenje" | "drugo" — the lifecycle stage), "isplatniRed" (payment-priority rank, if stated), "claimRegistryNumber" (the "redni broj", if stated), "filingReference" (the document's "poslovni broj", if stated) and, when this entry continues an earlier lifecycle stage of the SAME receivable described in the analysed documents, "supersedes" (a short textual reference to that earlier entry, e.g. its description, case number, filing date or original creditor as cited in the source text). If the document contains no property transactions, set "propertyFlow" to an empty array.
+                Also extract "citedFilingReferences": an array of "poslovni broj" values this document explicitly references (e.g. filings it appeals against or decides upon); empty array when none are cited.
                 Provide ONLY the json object and nothing else. Text:\n\n${analysisInput.analysisText}`;
 
                 const response = await withGeminiRetry(
@@ -886,6 +896,15 @@ class AnalyzeDocumentsTool extends Tool {
                 }
                 if (!Array.isArray(aiResult.amounts)) {
                     aiResult.amounts = [];
+                }
+                // J-05 — citation graph seed: filings this document explicitly
+                // references. Same additive semantics: missing/malformed → [].
+                if (!Array.isArray(aiResult.citedFilingReferences)) {
+                    aiResult.citedFilingReferences = [];
+                } else {
+                    aiResult.citedFilingReferences = aiResult.citedFilingReferences
+                        .map((ref) => String(ref || '').trim())
+                        .filter(Boolean);
                 }
                 // Per-document grounding check (deterministic containment,
                 // never an LLM judge): verify each quote against the FULL

@@ -117,4 +117,65 @@ describe('AnalysisReasoningTelemetry', () => {
     render(<AnalysisReasoningTelemetry report={{}} />);
     expect(screen.getByText(/Telemetrija nije dostupna/)).toBeTruthy();
   });
+
+  test('M-07: planned-modelom chip filters the query table', () => {
+    const report = {
+      meta: {
+        retrieval: {
+          queries: [
+            { id: 'planned-prodaja', purpose: 'asset-disposition', text: 'prodaja imovine' },
+            { id: 'timeline', purpose: 'timeline', text: 'datumi ročište' },
+          ],
+          results: [
+            { query: { id: 'planned-prodaja', purpose: 'asset-disposition', text: 'prodaja imovine' }, matches: [] },
+            { query: { id: 'timeline', purpose: 'timeline', text: 'datumi ročište' }, matches: [] },
+          ],
+          metrics: { matchCount: 0 },
+        },
+        rerank: { rerankStatus: 'skipped' },
+      },
+      conflicts: [],
+    };
+    render(<AnalysisReasoningTelemetry report={report} />);
+    expect(screen.getByText('prodaja imovine')).toBeTruthy();
+    expect(screen.getByText('datumi ročište')).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: /planirano modelom/ }));
+    expect(screen.getByText('prodaja imovine')).toBeTruthy();
+    expect(screen.queryByText('datumi ročište')).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: /Poništi filter/ }));
+    expect(screen.getByText('datumi ročište')).toBeTruthy();
+  });
+
+  test('M-08: query rows expand into persisted match detail', () => {
+    const report = {
+      meta: {
+        retrieval: {
+          queries: [{ id: 'planned-prodaja', purpose: 'asset-disposition', text: 'prodaja imovine' }],
+          results: [{
+            query: { id: 'planned-prodaja', purpose: 'asset-disposition', text: 'prodaja imovine' },
+            matches: [{
+              sourceId: 'doc-1',
+              score: 4.2,
+              reasons: ['token:prodaja', 'anchor:St-2/2013'],
+              snippet: 'Rješenje navodi prodaju strojeva kupcu.',
+              fileName: 'Rjesenje.pdf',
+              sourceType: 'analysis',
+            }],
+          }],
+          metrics: { matchCount: 1, sourceTypeCounts: { analysis: 1 } },
+        },
+        rerank: { rerankStatus: 'skipped' },
+      },
+      conflicts: [],
+    };
+    render(<AnalysisReasoningTelemetry report={report} />);
+    expect(screen.queryByText('Rješenje navodi prodaju strojeva kupcu.')).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: /prodaja imovine/ }));
+    expect(screen.getByText('Rješenje navodi prodaju strojeva kupcu.')).toBeTruthy();
+    expect(screen.getByText('Rjesenje.pdf')).toBeTruthy();
+    expect(screen.getByText(/token:prodaja/)).toBeTruthy();
+  });
 });

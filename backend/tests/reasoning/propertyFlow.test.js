@@ -145,11 +145,141 @@ describe('reasoning reconcilePropertyFlows', () => {
         expect(pkg.coverage.totalClaims).toBe(6);
     });
 
-    test('analysis role cap leaves headroom for quotes + propertyFlow on dense documents', () => {
+    test('K-02/K-03: property values consolidate to EUR and reconcile across currencies', () => {        const { reconcilePropertyFlows } = require('../../court-analysis/reasoning/reconciliation');
+        const flow = collectPropertyFlows([
+            makeAnalysis('a-1', 'doc1.pdf', [
+                { description: 'Proizvodni strojevi pogona Rijeka', assetType: 'pokretnina', transferee: 'Kupac A d.o.o.', value: 7534.5, currency: 'HRK' },
+            ]),
+            makeAnalysis('a-2', 'doc2.pdf', [
+                { description: 'Proizvodni strojevi pogona Rijeka', assetType: 'pokretnina', transferee: 'Kupac A d.o.o.', value: 1000, currency: 'EUR' },
+            ]),
+        ]);
+        expect(flow.entries[0].valueEur).toBe(1000);
+        expect(flow.entries[0].valueEurSource).toBe('converted');
+        expect(flow.entries[1].valueEur).toBe(1000);
+        // Same EUR-scale value, same transferee → no conflict.
+        expect(reconcilePropertyFlows(flow).conflicts).toHaveLength(0);
+    });
+
+    test('J-03/J-04: tražbina entries carry rank and registry identifiers', () => {        const flow = collectPropertyFlows([
+            makeAnalysis('a-1', 'prijava.pdf', [
+                {
+                    description: 'Tražbina CroGo d.o.o.',
+                    assetType: 'tražbina',
+                    eventType: 'prijava',
+                    value: 84500,
+                    currency: 'EUR',
+                    isplatniRed: 'drugi viši isplatni red',
+                    claimRegistryNumber: '106',
+                    filingReference: 'St-2/2013-1196-1',
+                },
+            ]),
+        ]);
+        expect(flow.entries[0]).toEqual(expect.objectContaining({
+            isplatniRed: 'drugi viši isplatni red',
+            claimRegistryNumber: '106',
+            filingReference: 'St-2/2013-1196-1',
+        }));
+    });
+
+    test('L-01: shared claimRegistryNumber forms a timeline without fuzzy matching', () => {
+        const { reconcilePropertyFlows } = require('../../court-analysis/reasoning/reconciliation');
+        const flow = collectPropertyFlows([
+            makeAnalysis('a-1', 'prijava.pdf', [
+                {
+                    // Deliberately different prose: only the stable ID joins them.
+                    description: 'Prijava potraživanja vjerovnika CroGo',
+                    assetType: 'tražbina', eventType: 'prijava',
+                    value: 177218.01, currency: 'HRK', date: '2022-06-15',
+                    claimRegistryNumber: '106',
+                },
+            ]),
+            makeAnalysis('a-2', 'rjesenje.pdf', [
+                {
+                    description: 'Utvrđena tražbina drugog višeg isplatnog reda',
+                    assetType: 'tražbina', eventType: 'namirenje',
+                    value: 23520, currency: 'EUR', date: '2023-06-01',
+                    claimRegistryNumber: '106',
+                },
+            ]),
+        ]);
+        const result = reconcilePropertyFlows(flow);
+        expect(result.conflicts).toHaveLength(0);
+        expect(result.valueChanges).toHaveLength(1);
+        expect(result.valueChanges[0]).toEqual(expect.objectContaining({
+            linkage: 'claimRegistryNumber',
+        }));
+    });
+
+    test('L-01: explicit supersedes resolves by registry number, not prop-N', () => {
+        const { reconcilePropertyFlows } = require('../../court-analysis/reasoning/reconciliation');
+        const flow = collectPropertyFlows([
+            makeAnalysis('a-1', 'prijava.pdf', [
+                {
+                    description: 'Tražbina vjerovnika prema dužniku Kerum d.o.o. u stečaju',
+                    assetType: 'tražbina', eventType: 'prijava',
+                    value: 84500, currency: 'EUR', date: '2022-06-15',
+                    claimRegistryNumber: '106',
+                },
+            ]),
+            makeAnalysis('a-2', 'ustup.pdf', [
+                {
+                    description: 'Tražbina vjerovnika prema dužniku Kerum d.o.o. u stečaju',
+                    assetType: 'tražbina', eventType: 'ustup',
+                    value: 15000, currency: 'EUR', date: '2023-06-01',
+                    supersedes: '106',
+                },
+            ]),
+        ]);
+        const result = reconcilePropertyFlows(flow);
+        expect(result.conflicts).toHaveLength(0);
+        expect(result.valueChanges).toHaveLength(1);
+        expect(result.valueChanges[0].linkage).toBe('supersedes');
+    });
+
+    test('L-02: citation-linked entries join the chain via context analyses', () => {
+        const { reconcilePropertyFlows } = require('../../court-analysis/reasoning/reconciliation');
+        const analyses = [
+            {
+                id: 'a-1', fileName: 'prijava.pdf', caseNumber: 'St-2/2013',
+                amounts: [],
+                propertyFlow: [{
+                    description: 'Tražbina vjerovnika prema dužniku Gradnja Plus d.o.o.',
+                    assetType: 'tražbina', eventType: 'prijava',
+                    transferor: 'Vjerovnik A d.o.o.', transferee: 'Kupac Prvi d.o.o.',
+                    value: 84500, currency: 'EUR', date: '2022-06-15',
+                    filingReference: 'St-2/2013-1196-1',
+                }],
+                citedFilingReferences: [],
+            },
+            {
+                id: 'a-2', fileName: 'zalba.pdf', caseNumber: 'St-2/2013',
+                amounts: [],
+                propertyFlow: [{
+                    description: 'Tražbina vjerovnika prema dužniku Gradnja Plus d.o.o.',
+                    assetType: 'tražbina', eventType: 'ustup',
+                    transferor: 'Vjerovnik A d.o.o.', transferee: 'Kupac Drugi d.o.o.',
+                    value: 15000, currency: 'EUR', date: '2023-06-01',
+                    filingReference: 'St-2/2013-1214',
+                }],
+                citedFilingReferences: ['St-2/2013-1196-1'],
+            },
+        ];
+        const flow = collectPropertyFlows(analyses);
+        // Without the citation signal this is a competing-claims conflict.
+        expect(reconcilePropertyFlows(flow).conflicts).toHaveLength(1);
+        // With it, the pair joins one timeline.
+        const linked = reconcilePropertyFlows(flow, { analyses });
+        expect(linked.conflicts).toHaveLength(0);
+        expect(linked.valueChanges).toHaveLength(1);
+    });
+
+    test('analysis role cap leaves headroom for J-era schema on dense documents', () => {
         const { GEMINI_ROLE_CONFIG } = require('../../helpers/geminiConfig');
-        expect(GEMINI_ROLE_CONFIG.analysis.maxOutputTokens).toBeGreaterThanOrEqual(12288);
-        // Dense synthetic document: 30 amounts with verbatim quotes + 10
-        // property entries. At ~4 chars/token, the cap must hold this with margin.
+        expect(GEMINI_ROLE_CONFIG.analysis.maxOutputTokens).toBeGreaterThanOrEqual(16384);
+        // Dense synthetic document: 30 amounts with verbatim quotes + J
+        // identity/direction fields + 10 property entries + citation refs.
+        // At ~4 chars/token, the cap must hold this with margin.
         const dense = {
             caseNumber: 'Stč-2150/2022',
             decisionDate: '2023-02-10',
@@ -158,6 +288,14 @@ describe('reasoning reconcilePropertyFlows', () => {
                 description: `Stavka broj ${i + 1} za troškove postupka`,
                 amount: 1000 + i,
                 currency: 'EUR',
+                direction: 'obveza',
+                payerName: 'Dužnik d.o.o.',
+                payerOib: '12345678901',
+                recipientName: 'Vjerovnik d.o.o.',
+                recipientOib: '10987654321',
+                isplatniRed: 'drugi viši isplatni red',
+                claimRegistryNumber: `${100 + i}`,
+                filingReference: `St-2/2013-${1196 + i}-1`,
                 quote: 'Q'.repeat(160),
             })),
             propertyFlow: Array.from({ length: 10 }, (_, i) => ({
@@ -165,8 +303,12 @@ describe('reasoning reconcilePropertyFlows', () => {
                 assetType: 'pokretnina',
                 value: 5000 + i,
                 currency: 'EUR',
+                isplatniRed: 'drugi viši isplatni red',
+                claimRegistryNumber: `${100 + i}`,
+                filingReference: `St-2/2013-${1196 + i}-1`,
                 quote: 'Q'.repeat(160),
             })),
+            citedFilingReferences: ['St-2/2013-1214', 'St-2/2013-1215'],
         };
         const chars = JSON.stringify(dense).length;
         const estimatedCapacity = GEMINI_ROLE_CONFIG.analysis.maxOutputTokens * 4;

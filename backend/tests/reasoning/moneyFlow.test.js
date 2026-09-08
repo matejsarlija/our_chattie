@@ -116,5 +116,122 @@ describe('reasoning moneyFlow', () => {
             expect(flow.entries[0].amount).toBe(12.5);
             expect(flow.entries[0].currency).toBe('HRK');
         });
+
+        test('K-02: every entry carries a consolidated amountEur', () => {
+            const flow = collectMoneyFlows([
+                {
+                    id: 'a-1',
+                    fileName: 'x.pdf',
+                    amounts: [
+                        { description: 'Isplata', amount: 1000, currency: 'EUR' },
+                        { description: 'Stara obveza', amount: '7.534,50', currency: 'HRK' },
+                        { description: 'Nepoznata valuta', amount: 5, currency: 'USD' },
+                    ]
+                }
+            ]);
+
+            expect(flow.entries[0]).toEqual(expect.objectContaining({
+                amountEur: 1000, amountEurSource: 'as-is',
+            }));
+            expect(flow.entries[1]).toEqual(expect.objectContaining({
+                amountEur: 1000, amountEurSource: 'converted',
+            }));
+            expect(flow.entries[2].amountEur).toBeNull();
+            expect(flow.entries[2].amountEurSource).toBeNull();
+            expect(flow.eurTotal).toBe(2000);
+        });
+
+        test('K-04: source-stated dual quote prefers EUR and records the pair', () => {
+            const flow = collectMoneyFlows([
+                {
+                    id: 'a-1',
+                    fileName: 'Troškovnik.pdf',
+                    amounts: [{
+                        description: 'Trošak prijeboja',
+                        amount: '248,86',
+                        currency: 'EUR',
+                        quote: 'Trošak prijeboja iznosi 248,86 € (1.875,oo kn).',
+                    }]
+                }
+            ]);
+
+            expect(flow.entries[0]).toEqual(expect.objectContaining({
+                amountEur: 248.86,
+                amountEurSource: 'stated',
+                dualCurrency: expect.objectContaining({ statedEur: 248.86, statedHrk: 1875 }),
+            }));
+            expect(flow.entries[0].currencyNote).toBeUndefined();
+        });
+
+        test('K-04: inconsistent dual figures keep EUR but flag dual-mismatch', () => {
+            const flow = collectMoneyFlows([
+                {
+                    id: 'a-1',
+                    fileName: 'x.pdf',
+                    amounts: [{
+                        description: 'Sporni trošak',
+                        amount: 248.86,
+                        currency: 'EUR',
+                        amountHrk: 1500,
+                    }]
+                }
+            ]);
+
+            expect(flow.entries[0].amountEur).toBe(248.86);
+            expect(flow.entries[0].currencyNote).toBe('dual-mismatch');
+            expect(flow.entries[0].dualCurrency.deviationPct).toBeGreaterThan(1);
+        });
+
+        test('J-01: direction normalizes Croatian rulings to the enum', () => {
+            const { normalizeDirection } = require('../../court-analysis/reasoning/moneyFlow');
+            expect(normalizeDirection('potraživanje')).toBe('potraživanje');
+            expect(normalizeDirection('obveza')).toBe('obveza');
+            expect(normalizeDirection('dosuđeno')).toBe('awarded');
+            expect(normalizeDirection('odbijeno')).toBe('rejected');
+            expect(normalizeDirection('prijeboj')).toBe('netted');
+            expect(normalizeDirection('nepoznato')).toBeNull();
+            expect(normalizeDirection(null)).toBeNull();
+        });
+
+        test('J-02/J-03/J-04: identity, rank and registry identifiers normalize', () => {
+            const { normalizeOib } = require('../../court-analysis/reasoning/moneyFlow');
+            expect(normalizeOib('66124057408')).toBe('66124057408');
+            expect(normalizeOib('HR 66124057408')).toBe('66124057408');
+            expect(normalizeOib('123')).toBeNull();
+
+            const flow = collectMoneyFlows([
+                {
+                    id: 'a-1',
+                    fileName: 'Prilog.pdf',
+                    caseNumber: 'St-2/2013',
+                    amounts: [{
+                        description: 'Tražbina CroGo',
+                        amount: 1000,
+                        currency: 'EUR',
+                        direction: 'potraživanje',
+                        payerName: 'Kerum d.o.o.',
+                        payerOib: '66124057408',
+                        recipientName: 'CroGo d.o.o.',
+                        recipientOib: '12345678901',
+                        isplatniRed: 'drugi viši isplatni red',
+                        claimRegistryNumber: '106',
+                        filingReference: 'St-2/2013-1196-1',
+                    }]
+                }
+            ]);
+            expect(flow.entries[0]).toEqual(expect.objectContaining({
+                direction: 'potraživanje',
+                payerName: 'Kerum d.o.o.',
+                payerOib: '66124057408',
+                recipientName: 'CroGo d.o.o.',
+                recipientOib: '12345678901',
+                isplatniRed: 'drugi viši isplatni red',
+                claimRegistryNumber: '106',
+                filingReference: 'St-2/2013-1196-1',
+                // J-02 bridges the legacy from/to plumbing so it receives data.
+                from: 'Kerum d.o.o.',
+                to: 'CroGo d.o.o.',
+            }));
+        });
     });
 });

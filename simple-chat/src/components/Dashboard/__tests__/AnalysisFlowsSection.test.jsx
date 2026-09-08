@@ -49,8 +49,45 @@ describe('grounding + property-flow UI surfacing', () => {
     expect(container).toBeEmptyDOMElement();
   });
 
-  test('flows section renders tražbina value-change timelines', () => {
+  test('M-04: money flow renders payer→recipient and direction', () => {
     render(
+      <AnalysisFlowsSection
+        moneyFlow={{
+          entries: [
+            {
+              id: 'money-1', description: 'Tražbina CroGo', amount: 1000, currency: 'EUR',
+              amountEur: 1000, direction: 'potraživanje',
+              from: 'Kerum d.o.o.', to: 'CroGo d.o.o.',
+              fileName: 'Prilog.pdf',
+            },
+          ],
+        }}
+        propertyFlow={{ entries: [] }}
+        valueChanges={[]}
+      />
+    );
+    expect(screen.getByText('Tijek novca')).toBeInTheDocument();
+    expect(screen.getByText('Kerum d.o.o. → CroGo d.o.o.')).toBeInTheDocument();
+    expect(screen.getByText('potraživanje')).toBeInTheDocument();
+  });
+
+  test('money flow renders English ruling-outcome directions as Croatian labels', () => {
+    render(
+      <AnalysisFlowsSection
+        moneyFlow={{
+          entries: [
+            { id: 'money-2', description: 'Trosak zalbenog postupka', amount: 63.38, currency: 'EUR', amountEur: 63.38, direction: 'netted' },
+          ],
+        }}
+        propertyFlow={{ entries: [] }}
+        valueChanges={[]}
+      />
+    );
+    expect(screen.getByText('prebijeno')).toBeInTheDocument();
+    expect(screen.queryByText('netted')).not.toBeInTheDocument();
+  });
+
+  test('flows section renders tražbina value-change timelines', () => {    render(
       <AnalysisFlowsSection
         moneyFlow={{ entries: [] }}
         propertyFlow={{ entries: [] }}

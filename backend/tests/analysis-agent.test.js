@@ -138,6 +138,38 @@ describe('AnalyzeDocumentsTool', () => {
         }
     });
 
+    it('emits reasoning stage-counter events beside file events', async () => {
+        const fileA = path.resolve(__dirname, 'live-c.txt');
+        const fileB = path.resolve(__dirname, 'live-d.txt');
+        fs.writeFileSync(fileA, 'Case C text');
+        fs.writeFileSync(fileB, 'Case D text');
+        try {
+            const events = [];
+            const tool = new AnalyzeDocumentsTool();
+            await tool._call({
+                files: [
+                    { filePath: fileA, url: 'mock', text: 'C.txt' },
+                    { filePath: fileB, url: 'mock', text: 'D.txt' },
+                ],
+                caseInfo: { participants: [] },
+                progressCallback: (event) => events.push(event),
+            });
+
+            const counters = events.filter((event) => event?.metadata?.kind === 'stage-counter');
+            expect(counters.length).toBeGreaterThanOrEqual(2);
+            expect(counters[0].metadata).toEqual(expect.objectContaining({
+                stage: 'reasoning',
+                unit: 'dokument',
+                total: 2,
+            }));
+            const last = counters[counters.length - 1];
+            expect(last.metadata.done).toBe(2);
+        } finally {
+            fs.unlinkSync(fileA);
+            fs.unlinkSync(fileB);
+        }
+    });
+
     it('emits a failed file event carrying the extraction error reason', async () => {
         const events = [];
         const tool = new AnalyzeDocumentsTool();
@@ -213,5 +245,45 @@ describe('AnalyzeDocumentsTool', () => {
         } finally {
             jest.useRealTimers();
         }
+    });
+
+    it('asks the model for J identity/direction fields in the extraction prompt', async () => {
+        const tool = new AnalyzeDocumentsTool();
+        await tool._call({
+            files: [{ filePath: testTxtPath, url: 'mock', text: 'Test TXT' }],
+            caseInfo: { participants: [] },
+        });
+        const prompt = String(mockGeminiInvoke.mock.calls[0][0] || '');
+        for (const field of ['direction', 'payerOib', 'recipientOib', 'isplatniRed', 'claimRegistryNumber', 'filingReference', 'citedFilingReferences']) {
+            expect(prompt).toContain(field);
+        }
+    });
+
+    it('carries J-05 citedFilingReferences through, defaulting to []', async () => {
+        mockGeminiInvoke.mockResolvedValue({
+            content: JSON.stringify({
+                caseNumber: 'St-2/2013',
+                decisionDate: '2026-05-19',
+                summary: 'Žalba.',
+                amounts: [],
+                propertyFlow: [],
+                citedFilingReferences: ['St-2/2013-1214', ''],
+            }),
+        });
+        const tool = new AnalyzeDocumentsTool();
+        const result = await tool._call({
+            files: [{ filePath: testTxtPath, url: 'mock', text: 'Test TXT' }],
+            caseInfo: { participants: [] },
+        });
+        expect(result.individualAnalyses[0].aiResult.citedFilingReferences).toEqual(['St-2/2013-1214']);
+
+        mockGeminiInvoke.mockResolvedValue({
+            content: JSON.stringify({ caseNumber: '1', decisionDate: 'd', summary: 's', amounts: [] }),
+        });
+        const result2 = await tool._call({
+            files: [{ filePath: testTxtPath, url: 'mock', text: 'Test TXT' }],
+            caseInfo: { participants: [] },
+        });
+        expect(result2.individualAnalyses[0].aiResult.citedFilingReferences).toEqual([]);
     });
 });

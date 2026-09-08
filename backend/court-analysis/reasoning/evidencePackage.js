@@ -1,6 +1,7 @@
 const { deriveEntryDisplayId } = require('../utils/entryDisplayId');
 const { collectMoneyFlows } = require('./moneyFlow');
 const { collectPropertyFlows, reconcilePropertyFlows } = require('./propertyFlow');
+const { buildCitationGraph } = require('./citationGraph');
 const { reconcileMoneyFlows } = require('./reconciliation');
 const { countGroundedClaims } = require('./grounding');
 const { classifyFileFailure } = require('../../helpers/friendlyAnalysisError');
@@ -188,7 +189,11 @@ function attachAnalysesToEvidencePackage(pkg, processedCases, clusterId = null) 
             summary: item.aiResult.summary || null,
             parties: Array.isArray(item.aiResult.parties) ? item.aiResult.parties : [],
             amounts: Array.isArray(item.aiResult.amounts) ? item.aiResult.amounts : [],
-            propertyFlow: Array.isArray(item.aiResult.propertyFlow) ? item.aiResult.propertyFlow : []
+            propertyFlow: Array.isArray(item.aiResult.propertyFlow) ? item.aiResult.propertyFlow : [],
+            // J-05 — citation graph seed passthrough (Epic L builds the graph).
+            citedFilingReferences: Array.isArray(item.aiResult.citedFilingReferences)
+                ? item.aiResult.citedFilingReferences
+                : []
         });
     }
 
@@ -198,7 +203,11 @@ function attachAnalysesToEvidencePackage(pkg, processedCases, clusterId = null) 
     // computed here and seeded into the report by the synthesizer — the
     // single ownership chain pkg.reconciliation → meta → report.conflicts.
     const moneyReconciliation = reconcileMoneyFlows(moneyFlow);
-    const propertyReconciliation = reconcilePropertyFlows(propertyFlow);
+    // L-02 needs the normalized analyses (citedFilingReferences) alongside
+    // the flow, so the citation-link signal resolves against real nodes.
+    const propertyReconciliation = reconcilePropertyFlows(propertyFlow, { analyses });
+    // L-02 — filing citation graph attached for downstream consumers.
+    const citationGraph = buildCitationGraph(analyses);
     const reconciliation = {
         conflicts: [...(moneyReconciliation.conflicts || []), ...(propertyReconciliation.conflicts || [])],
         openQuestions: [...(moneyReconciliation.openQuestions || []), ...(propertyReconciliation.openQuestions || [])],
@@ -235,6 +244,7 @@ function attachAnalysesToEvidencePackage(pkg, processedCases, clusterId = null) 
         moneyFlow,
         propertyFlow,
         propertyReconciliation,
+        citationGraph,
         reconciliation
     };
 }

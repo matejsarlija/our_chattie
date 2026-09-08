@@ -96,9 +96,14 @@ describe('reasoning reportService', () => {
                 rerankedMatchCount: expect.any(Number)
             })
         }));
-        // Persistence diet: raw retrieval strips match text (the reranked copy
-        // carries it), so runs.json does not persist the same chunk twice.
+        // Persistence diet (M-06): raw retrieval keeps a trimmed provenance
+        // record per match (snippet/score/reasons/sourceId), not the full
+        // chunk text (the reranked copy carries that).
         expect(result.meta.retrieval.results[0].matches[0].text).toBeUndefined();
+        expect(typeof result.meta.retrieval.results[0].matches[0].snippet).toBe('string');
+        expect(result.meta.retrieval.results[0].matches[0].snippet.length).toBeLessThanOrEqual(501);
+        expect(typeof result.meta.retrieval.results[0].matches[0].score).toBe('number');
+        expect(Array.isArray(result.meta.retrieval.results[0].matches[0].reasons)).toBe(true);
         expect(typeof result.meta.rerank.results[0].matches[0].text).toBe('string');
         expect(mockNormalizeReasoningEvidence).toHaveBeenCalledWith(evidencePackage);
         expect(synthesisEvidence).toEqual(expect.objectContaining({
@@ -129,6 +134,45 @@ describe('reasoning reportService', () => {
         ]));
         expect(onStage).toHaveBeenCalledWith(expect.objectContaining({ step: 'verifying' }));
         expect(mockVerifyReport).toHaveBeenCalledWith(synthesizedReport, synthesisEvidence, expect.any(Object));
+    });
+
+    test('M-09: finding citations link back to the retrieval query that surfaced them', async () => {
+        const evidencePackage = {
+            packageType: 'ClusterEvidencePackage',
+            clusterId: 'ST-100/2023',
+            primaryCaseNumber: 'ST-100/2023',
+            query: { type: 'case_number', value: 'ST-100/2023' },
+            documentLinks: [{
+                id: 'doc-1',
+                text: 'Rješenje navodi tražbinu od 10.000 EUR',
+                caseNumber: 'ST-100/2023'
+            }]
+        };
+        mockSynthesizeReport.mockResolvedValue({
+            schemaVersion: '1.0.0',
+            narrative: 'Sažetak',
+            findings: [{
+                text: 'Tražbina od 10.000 EUR je utvrđena.',
+                confidence: 'high',
+                citations: [{ source: 'doc-1', text: 'Rješenje navodi tražbinu od 10.000 EUR' }]
+            }],
+            claims: [],
+            openQuestions: [],
+            nextSteps: [],
+            conflicts: [],
+            meta: { clusterId: 'ST-100/2023' }
+        });
+        mockVerifyReport.mockImplementation(async (report) => report);
+
+        const result = await generateClusterReport(evidencePackage, {});
+        const links = result.findings[0].citations[0].retrievedBy;
+        expect(Array.isArray(links)).toBe(true);
+        expect(links.length).toBeGreaterThan(0);
+        expect(links[0]).toEqual(expect.objectContaining({
+            queryText: expect.any(String),
+            score: expect.any(Number),
+            reasons: expect.any(Array)
+        }));
     });
 });
 
@@ -182,10 +226,53 @@ describe('reasoning reportService optional-pass gating', () => {
     });
 });
 
+describe('stripRetrievalText provenance record (M-06)', () => {
+  const { stripRetrievalText, RETRIEVAL_SNIPPET_MAX_CHARS } = require('../../court-analysis/reasoning/reportService');
+
+  test('keeps snippet/score/reasons/sourceId/fileName per match, drops full text', () => {
+    const out = stripRetrievalText({
+      queries: [{ id: 'q-1', text: 'trazbina' }],
+      results: [{
+        query: { id: 'q-1', text: 'trazbina' },
+        matches: [{
+          sourceId: 'doc-1',
+          text: 'Rješenje navodi tražbinu od 10.000 EUR uz obrazloženje.',
+          score: 4.2,
+          reasons: ['token:trazbina', 'anchor:123'],
+          metadata: { fileName: 'Rjesenje.pdf', sourceType: 'analysis' },
+        }],
+      }],
+      metrics: { queryCount: 1 },
+    });
+    const match = out.results[0].matches[0];
+    expect(match.text).toBeUndefined();
+    expect(match.snippet).toBe('Rješenje navodi tražbinu od 10.000 EUR uz obrazloženje.');
+    expect(match.score).toBe(4.2);
+    expect(match.reasons).toEqual(['token:trazbina', 'anchor:123']);
+    expect(match.sourceId).toBe('doc-1');
+    expect(match.fileName).toBe('Rjesenje.pdf');
+    expect(match.sourceType).toBe('analysis');
+  });
+
+  test('bounds long snippets to RETRIEVAL_SNIPPET_MAX_CHARS', () => {
+    const long = 'x'.repeat(RETRIEVAL_SNIPPET_MAX_CHARS + 100);
+    const out = stripRetrievalText({
+      results: [{ query: { id: 'q' }, matches: [{ sourceId: 's', text: long, score: 1, reasons: [], metadata: {} }] }],
+    });
+    expect(out.results[0].matches[0].snippet.length).toBeLessThanOrEqual(RETRIEVAL_SNIPPET_MAX_CHARS + 1);
+    expect(out.results[0].matches[0].snippet.endsWith('…')).toBe(true);
+  });
+
+  test('passes through null retrieval without throwing', () => {
+    expect(stripRetrievalText(null)).toBeNull();
+    expect(stripRetrievalText({})).toEqual({ results: [] });
+  });
+});
+
 describe('composeOverviewMarkdown', () => {
   const { composeOverviewMarkdown } = require('../../court-analysis/reasoning/reportService');
 
-  test('composes narrative, findings, open questions, and next steps', () => {
+  test('composes narrative, open questions, and next steps — findings live only in the annex (M-03)', () => {
     const overview = composeOverviewMarkdown({
       narrative: 'Predmet je otvoren 2013.',
       findings: [
@@ -197,20 +284,23 @@ describe('composeOverviewMarkdown', () => {
     });
 
     expect(overview).toContain('Predmet je otvoren 2013.');
-    expect(overview).toContain('## Ključni nalazi');
-    // English model tokens are rendered as Croatian prose labels.
-    expect(overview).toContain('- Priznata tražbina od 100.000 EUR. _(pouzdanost: visoka)_');
-    // Empty-text findings are dropped: exactly one confidence marker remains.
-    expect(overview.split('_(pouzdanost')).toHaveLength(2);
+    // M-03 dedupe: findings render once, in the structured annex — never in the markdown.
+    expect(overview).not.toContain('Ključni nalazi');
+    expect(overview).not.toContain('Priznata tražbina od 100.000 EUR.');
     expect(overview).toContain('## Otvorena pitanja\n- Nije poznat status GFI izvješća.');
     expect(overview).toContain('## Sljedeći koraci\n- Pratiti rok za prijavu potražina.');
   });
 
-  test('unknown confidence tokens fall through untranslated', () => {
+  test('renders object-shaped open questions via their text field', () => {
     const overview = composeOverviewMarkdown({
-      findings: [{ text: 'Nalaz.', confidence: 'very-solid' }],
+      narrative: 'Narativ.',
+      openQuestions: [
+        { text: 'Pitanje iz usklađivanja.', source: 'reconciliation', kind: 'arithmetic' },
+        'Obično tekstualno pitanje.',
+      ],
     });
-    expect(overview).toContain('- Nalaz. _(pouzdanost: very-solid)_');
+    expect(overview).toContain('- Pitanje iz usklađivanja.');
+    expect(overview).toContain('- Obično tekstualno pitanje.');
   });
 
   test('returns only the narrative when no structured sections exist', () => {

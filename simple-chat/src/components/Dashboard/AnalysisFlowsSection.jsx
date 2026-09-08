@@ -12,6 +12,20 @@ const ASSET_TYPE_LABELS = {
   drugo: 'ostalo',
 };
 
+// J-01 — normalizeDirection (backend) emits a mix of Croatian tokens
+// ('potraživanje'/'obveza') and English ruling-outcome tokens
+// ('awarded'/'rejected'/'netted'); map all of them to Croatian display text
+// so the UI never shows raw English in an otherwise all-Croatian surface.
+const DIRECTION_LABELS = {
+  'potraživanje': 'potraživanje',
+  obveza: 'obveza',
+  awarded: 'dosuđeno',
+  rejected: 'odbijeno',
+  netted: 'prebijeno',
+};
+
+const directionLabel = (direction) => DIRECTION_LABELS[direction] || direction;
+
 function UngroundedMarker() {
   return (
     <span
@@ -34,11 +48,21 @@ function MoneyFlowList({ entries }) {
             key={entry?.id || `money-${index}`}
             className="rounded-lg border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-2 text-sm text-[var(--text)]"
           >
+            {entry?.direction ? (
+              <span className="mr-2 inline-block rounded border border-[var(--border)] px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">
+                {directionLabel(entry.direction)}
+              </span>
+            ) : null}
             <span className="font-medium">
-              {formatValue(entry?.amount, entry?.currency)}
+              {formatValue(entry?.amountEur ?? entry?.amount, entry?.amountEur != null ? 'EUR' : entry?.currency)}
             </span>
             {entry?.description ? <span> — {entry.description}</span> : null}
             {entry?.date ? <span className="text-[var(--text-muted)]"> ({String(entry.date)})</span> : null}
+            {(entry?.from || entry?.to) ? (
+              <span className="block text-xs text-[var(--text-muted)]">
+                {entry.from || '?'} → {entry.to || '?'}
+              </span>
+            ) : null}
             {entry?.fileName ? (
               <span className="block text-xs text-[var(--text-muted)]">Izvor: {entry.fileName}</span>
             ) : null}

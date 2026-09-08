@@ -32,6 +32,9 @@ describe('createGeminiClient role factory', () => {
         // low-temperature, and JSON-returning roles keep generous output
         // headroom so dense documents never truncate mid-JSON.
         expect(GEMINI_ROLE_CONFIG.analysis.maxOutputTokens).toBeGreaterThanOrEqual(8192);
+        // Synthesis must fit narrative + findings + conflicts for dense
+        // clusters (observed truncating 370 claims at 8192).
+        expect(GEMINI_ROLE_CONFIG.synthesis.maxOutputTokens).toBeGreaterThanOrEqual(16384);
         expect(GEMINI_ROLE_CONFIG['ocr-batch'].maxOutputTokens)
             .toBeGreaterThanOrEqual(GEMINI_ROLE_CONFIG.ocr.maxOutputTokens);
         expect(GEMINI_ROLE_CONFIG.synthesis.temperature).toBeLessThanOrEqual(0.2);
