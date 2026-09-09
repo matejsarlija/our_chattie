@@ -144,4 +144,128 @@ describe('reconcileMoneyFlows', () => {
         }));
         expect(result.openQuestions[0].text).toContain('7.53450');
     });
+
+    test('isSameDocument: same display name on different files is not the same document', () => {
+        const { isSameDocument } = require('../../court-analysis/reasoning/reconciliation');
+        expect(isSameDocument(
+            entry({ fileName: 'Podnesak.pdf', sourceId: '/tmp/a.pdf' }),
+            entry({ fileName: 'Podnesak.pdf', sourceId: '/tmp/b.pdf' })
+        )).toBe(false);
+        expect(isSameDocument(
+            entry({ fileName: 'izvjestaj.pdf', sourceId: '/tmp/a.pdf' }),
+            entry({ fileName: 'izvjestaj.pdf', sourceId: '/tmp/a.pdf' })
+        )).toBe(true);
+        // Legacy entries without a stable id keep the fileName-equality path.
+        expect(isSameDocument({ fileName: 'x.pdf' }, { fileName: 'x.pdf' })).toBe(true);
+        expect(isSameDocument({ fileName: 'x.pdf' }, { fileName: 'y.pdf' })).toBe(false);
+    });
+
+    test('total-vs-parts ignores same-named totals from unrelated files', () => {
+        const result = reconcileMoneyFlows({
+            entries: [
+                entry({ amount: 90000, description: 'Ukupno prijavljene tražbine', fileName: 'Podnesak.pdf', sourceId: '/tmp/a.pdf' }),
+                entry({ amount: 84500, description: 'Tražbina banke', fileName: 'Podnesak.pdf', sourceId: '/tmp/b.pdf' })
+            ]
+        });
+        expect(result.openQuestions).toHaveLength(0);
+    });
+});
+
+describe('reconcileFlows (unified engine)', () => {
+    const { reconcileFlows } = require('../../court-analysis/reasoning/reconciliation');
+    const { collectFlows } = require('../../court-analysis/reasoning/flow');
+
+    const flowAnalyses = [
+        {
+            id: 'a-1',
+            fileName: 'izvjestaj.pdf',
+            caseNumber: 'Stč-2150/2022',
+            amounts: [
+                { description: 'Ukupno prijavljene tražbine', amount: 90000, currency: 'EUR' },
+                { description: 'Tražbina banke', amount: 84500, currency: 'EUR' },
+            ],
+            propertyFlow: [
+                { description: 'Proizvodni strojevi pogona Rijeka', assetType: 'pokretnina', transferee: 'Kupac A d.o.o.', value: 25000, currency: 'EUR' },
+            ],
+        },
+        {
+            id: 'a-2',
+            fileName: 'rjesenje.pdf',
+            caseNumber: 'Stč-2150/2022',
+            amounts: [
+                { description: 'Polog za troškove stečajnog postupka', amount: 1200, currency: 'EUR' },
+            ],
+            propertyFlow: [
+                { description: 'Proizvodni strojevi pogona Rijeka', assetType: 'pokretnina', transferee: 'Kupac B d.o.o.', value: 18000, currency: 'EUR' },
+            ],
+        },
+    ];
+
+    test('divergent groups fire per kind with their own texts', () => {
+        const result = reconcileFlows(collectFlows(flowAnalyses), {});
+        // Only the property strojevi pair diverges (25,000 vs 18,000 +
+        // different buyers); no money group and no lifecycle chain here.
+        expect(result.conflicts).toHaveLength(1);
+        expect(result.conflicts[0]).toEqual(expect.objectContaining({
+            source: 'reconciliation',
+            kind: 'property',
+        }));
+    });
+
+    test('money totals still compare against money parts only (no cross-vocabulary double count)', () => {
+        const result = reconcileFlows(collectFlows(flowAnalyses), {});
+        const totalQuestions = result.openQuestions.filter((q) => q.text.includes('Navodni ukupni iznos'));
+        expect(totalQuestions).toHaveLength(1);
+        // 90,000 vs money parts only (84,500) — the 25,000 property value for
+        // the same sale must not inflate the sum.
+        expect(totalQuestions[0].text).toContain('84,500');
+        expect(totalQuestions[0].kind).toBe('arithmetic');
+    });
+
+    test('asset-value totals are caught against asset parts (new capability)', () => {
+        const result = reconcileFlows(collectFlows([
+            {
+                id: 'a-9',
+                fileName: 'popis.pdf',
+                caseNumber: 'Stč-2150/2022',
+                amounts: [],
+                propertyFlow: [
+                    { description: 'Ukupna vrijednost pokretne imovine društva', assetType: 'pokretnina', value: 50000, currency: 'EUR' },
+                    { description: 'Proizvodni strojevi pogona Rijeka', assetType: 'pokretnina', value: 25000, currency: 'EUR' },
+                ],
+            },
+        ]), {});
+        const totalQuestions = result.openQuestions.filter((q) => q.text.includes('Navodni ukupni iznos'));
+        expect(totalQuestions).toHaveLength(1);
+        expect(totalQuestions[0].kind).toBe('property');
+        expect(totalQuestions[0].text).toContain('50,000');
+        expect(totalQuestions[0].text).toContain('25,000');
+    });
+
+    test('dual-mismatch residue fires per origin kind over the whole array', () => {
+        const result = reconcileFlows(collectFlows([
+            {
+                id: 'a-9',
+                fileName: 'x.pdf',
+                caseNumber: 'Stč-2150/2022',
+                amounts: [
+                    { description: 'Sporni trošak postupka', amount: 248.86, currency: 'EUR', amountHrk: 1500 },
+                ],
+                propertyFlow: [
+                    {
+                        description: 'Proizvodni strojevi pogona Rijeka', assetType: 'pokretnina',
+                        value: 248.86, currency: 'EUR', amountHrk: 1500,
+                    },
+                ],
+            },
+        ]), {});
+        const residue = result.openQuestions.filter((q) => q.text.includes('7.53450'));
+        expect(residue).toHaveLength(2);
+        expect(residue.map((q) => q.kind).sort()).toEqual(['arithmetic', 'property']);
+    });
+
+    test('empty flows yield empty output without throwing', () => {
+        expect(reconcileFlows(null, {})).toEqual({ conflicts: [], openQuestions: [], valueChanges: [] });
+        expect(reconcileFlows({ entries: [] }, {})).toEqual({ conflicts: [], openQuestions: [], valueChanges: [] });
+    });
 });

@@ -155,7 +155,19 @@ class DownloadDocumentsTool extends Tool {
                 const safeName = (link.text || 'document').replace(/[^a-zA-Z0-9-_]/g, '_').slice(0, 40);
                 const baseFilename = `${Date.now()}_${safeName}`;
                 const { filePath, fromCache } = await downloadFile(link.url, baseFilename, link.text);
-                downloaded.push({ filePath, url: link.url, text: link.text, fromCache });
+                // Explicit provenance: carried through filesForAnalysis →
+                // individualAnalyses so attachAnalysesToEvidencePackage can
+                // resolve the source entry by id/index instead of fuzzy
+                // filename matching. Null when the caller passes bare
+                // {url, text} links (legacy path); url/text matching covers it.
+                downloaded.push({
+                    filePath,
+                    url: link.url,
+                    text: link.text,
+                    fromCache,
+                    sourceDocumentLinkId: link.id ?? link.documentLinkId ?? null,
+                    sourceEntryIndex: link.entryIndex ?? link.sourceEntryIndex ?? null,
+                });
                 if (fromCache) cacheHits++;
                 completed++;
                 const currentProgress = 50 + Math.round((completed / documentLinks.length) * 30);

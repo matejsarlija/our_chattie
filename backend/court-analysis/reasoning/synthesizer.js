@@ -6,6 +6,7 @@ const { extractJsonBlock } = require("../../helpers/jsonExtract");
 const agentLog = require("../../helpers/agentLog");
 const { SCHEMA_VERSION, validateReport } = require("./schema");
 const { validateClusterEvidencePackage } = require("./evidencePackage");
+const { buildTimeline, parseDate } = require("./timelineBuilder");
 const {
     isPoorDocumentCoverage,
     coverageOpenQuestion,
@@ -39,7 +40,7 @@ async function synthesizeReport(evidencePackage, options = {}) {
 
     // 1. Prepare Context
     const timelineText = timeline.map(e => `- ${e.date || 'Undated'}: ${e.description}`).join('\n');
-    const claimsText = claims.map(c => `- ${c.text} (Confidence: ${c.confidence})`).join('\n');
+    const claimsText = claims.map(formatClaimLine).join('\n');
     const partiesText = (meta.parties || []).join(', ');
     const caseNumber = meta.caseNumber || 'Unknown';
     const poorDocumentCoverage = isPoorDocumentCoverage(meta.coverage);
@@ -268,13 +269,68 @@ function buildPackageMeta(pkg) {
     };
 }
 
+/**
+ * Extracts a best-effort date for chronological claim ordering. Checks each
+ * evidence entry's metadata for a `date` or `decisionDate` field (the two
+ * field names used across claim families) and returns the first one found.
+ * @param {object} claim
+ * @returns {string|null}
+ */
+function extractClaimDate(claim) {
+    for (const evidence of claim?.evidence || []) {
+        const metadata = evidence?.metadata;
+        if (metadata?.date) return metadata.date;
+        if (metadata?.decisionDate) return metadata.decisionDate;
+    }
+    return null;
+}
+
+/**
+ * Renders one claim for the synthesis prompt. The date prefix matters: the
+ * claims arrive chronologically sorted, but without a visible date the model
+ * cannot reason about order — it would only see an unexplained sequence.
+ * @param {object} claim
+ * @returns {string}
+ */
+function formatClaimLine(claim) {
+    const date = extractClaimDate(claim);
+    return `- [${date || 'Undated'}] ${claim?.text || ''} (Confidence: ${claim?.confidence || 'medium'})`;
+}
+
+/**
+ * Sorts claims oldest-first by their best-effort date, undated claims last,
+ * stable otherwise. Mirrors `buildTimeline`'s ordering rules but works over
+ * claim shapes (evidence-array metadata) instead of timeline events.
+ * @param {Array<object>} claims
+ * @returns {Array<object>}
+ */
+function sortClaimsChronologically(claims) {
+    if (!Array.isArray(claims)) return [];
+
+    const decorated = claims.map((claim) => ({ claim, ts: parseDate(extractClaimDate(claim)) }));
+
+    decorated.sort((a, b) => {
+        if (a.ts !== null && b.ts !== null) return a.ts - b.ts;
+        if (a.ts === null && b.ts !== null) return 1;
+        if (a.ts !== null && b.ts === null) return -1;
+        return 0;
+    });
+
+    return decorated.map(({ claim }) => claim);
+}
+
 function createReasoningEvidenceFromPackage(pkg) {
     const validation = validateClusterEvidencePackage(pkg);
     if (!validation.valid) {
         throw new Error(validation.error);
     }
 
-    const timeline = (pkg.entries || []).map((entry, index) => ({
+    // Discovery/download order is deliberately recency-biased (newest CSV
+    // rows first, plus an oldest-tail sample) so a bounded scan-depth budget
+    // favors current case state. That ordering must not leak into the
+    // narrative: the model reads this list top-to-bottom as "TIMELINE OF
+    // EVENTS", so it needs true chronological (oldest-first) order.
+    const timeline = buildTimeline((pkg.entries || []).map((entry, index) => ({
         date: entry.date || null,
         description: `${entry.title || 'Objava'} (${entry.caseNumber || pkg.clusterId})`,
         evidence: [{
@@ -282,7 +338,7 @@ function createReasoningEvidenceFromPackage(pkg) {
             text: entry.title || entry.detailLink || 'Objava bez naslova',
             provenance: entry.acquisition || null
         }]
-    }));
+    })));
 
     const claims = (pkg.documentLinks || []).map((link, index) => ({
         id: `document-${index + 1}`,
@@ -382,6 +438,7 @@ function createReasoningEvidenceFromPackage(pkg) {
                 sourceType: 'analysis-property',
                 fileName: stage.fileName || null,
                 eventType: stage.eventType || null,
+                date: stage.date || null,
                 grounded: true
             }
         }))
@@ -389,13 +446,19 @@ function createReasoningEvidenceFromPackage(pkg) {
 
     return {
         timeline,
-        claims: [
+        // Same rationale as the timeline: the package's own entries/analyses
+        // arrive discovery-ordered (newest-first). Presenting the model's
+        // evidentiary claims oldest-first mirrors real chronological
+        // reasoning and keeps partial-data runs (bounded scan depth, missing
+        // documents) building an understanding forward in time instead of
+        // backward from whatever happened to be scraped first.
+        claims: sortClaimsChronologically([
             ...claims,
             ...analysisClaims,
             ...moneyFlowClaims,
             ...propertyFlowClaims,
             ...propertyValueChangeClaims
-        ],
+        ]),
         meta: buildPackageMeta(pkg)
     };
 }
@@ -444,15 +507,19 @@ function createEvidenceFromProcessedCases(processedCases, options = {}) {
                     id: `claim-${claims.length + 1}`,
                     text: res.summary,
                     confidence: 'medium',
-                    evidence: [{ sourceId: analysis.filePath || 'unknown', text: res.summary }]
+                    evidence: [{
+                        sourceId: analysis.filePath || 'unknown',
+                        text: res.summary,
+                        metadata: { date: res.decisionDate || null }
+                    }]
                 });
             }
         }
     });
 
     return {
-        timeline,
-        claims,
+        timeline: buildTimeline(timeline),
+        claims: sortClaimsChronologically(claims),
         meta: {
             clusterId: selectedProcessedCase.groupMetadata?.clusterId || primaryCaseNumber,
             caseNumber: primaryCaseNumber,
@@ -467,5 +534,7 @@ module.exports = {
     synthesizeReport,
     createEvidenceFromProcessedCases,
     createReasoningEvidenceFromPackage,
-    normalizeReasoningEvidence
+    normalizeReasoningEvidence,
+    extractClaimDate,
+    formatClaimLine
 };

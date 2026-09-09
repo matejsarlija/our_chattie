@@ -63,4 +63,17 @@ describe('downloadDocuments', () => {
         expect(perLink[0]).toEqual(expect.objectContaining({ completed: 1, total: 2 }));
         expect(perLink[1]).toEqual(expect.objectContaining({ completed: 2, total: 2 }));
     });
+
+    it('threads explicit document provenance through to downloaded files', async () => {
+        const tool = new DownloadDocumentsTool();
+        const files = await tool._call({
+            documentLinks: [{ url: testUrl, text: 'Dummy PDF', id: 'St-1/2024::entry-2::doc-1', entryIndex: 2 }],
+        });
+        expect(files).toHaveLength(1);
+        expect(files[0]).toEqual(expect.objectContaining({
+            url: testUrl,
+            sourceDocumentLinkId: 'St-1/2024::entry-2::doc-1',
+            sourceEntryIndex: 2,
+        }));
+    });
 });

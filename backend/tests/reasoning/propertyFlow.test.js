@@ -274,8 +274,80 @@ describe('reasoning reconcilePropertyFlows', () => {
         expect(linked.valueChanges).toHaveLength(1);
     });
 
-    test('analysis role cap leaves headroom for J-era schema on dense documents', () => {
-        const { GEMINI_ROLE_CONFIG } = require('../../helpers/geminiConfig');
+    test('property derived view keeps legacy vocabulary and filters out novac', () => {
+        const { collectFlows, derivePropertyFlowView } = require('../../court-analysis/reasoning/flow');
+        const view = derivePropertyFlowView(collectFlows([
+            {
+                id: 'a-1', fileName: 'doc.pdf', caseNumber: 'Stč-2150/2022',
+                entryDate: '2023-05-17',
+                amounts: [{ description: 'Polog', amount: 1200, currency: 'EUR' }],
+                propertyFlow: [
+                    {
+                        description: 'Tražbina vjerovnika prema dužniku iz podneska',
+                        assetType: 'tražbina', eventType: 'prijava',
+                        value: 5000, currency: 'EUR',
+                        isplatniRed: 'drugi viši isplatni red',
+                        claimRegistryNumber: '106',
+                        filingReference: 'St-2/2013-1196-1',
+                    },
+                ],
+            },
+        ]));
+        expect(view.count).toBe(1);
+        expect(view.hasPropertyFlow).toBe(true);
+        expect(view.entries[0]).toEqual(expect.objectContaining({
+            id: 'prop-1',
+            description: 'Tražbina vjerovnika prema dužniku iz podneska',
+            assetType: 'tražbina',
+            eventType: 'prijava',
+            value: 5000,
+            valueEur: 5000,
+            isplatniRed: 'drugi viši isplatni red',
+            claimRegistryNumber: '106',
+            filingReference: 'St-2/2013-1196-1',
+            date: '2023-05-17',
+        }));
+        // Unified-only vocabulary stays invisible to the legacy view.
+        expect(view.entries[0].direction).toBeUndefined();
+        expect(view.entries[0].payerName).toBeUndefined();
+    });
+
+    test('legacy prop-N supersedes round-trips through the unified ids', () => {
+        const flow = collectPropertyFlows([
+            makeAnalysis('a-1', 'prijava.pdf', [
+                {
+                    description: 'Tražbina vjerovnika prema dužniku Ducanor d.o.o.',
+                    assetType: 'tražbina', eventType: 'prijava',
+                    value: 84500, currency: 'EUR', date: '2022-06-15',
+                },
+            ]),
+            makeAnalysis('a-2', 'ustup.pdf', [
+                {
+                    description: 'Tražbina vjerovnika prema dužniku Ducanor d.o.o.',
+                    assetType: 'tražbina', eventType: 'ustup',
+                    value: 15000, currency: 'EUR', date: '2023-06-01', supersedes: 'prop-1',
+                },
+            ]),
+        ]);
+        expect(flow.entries[1].supersedes).toBe('prop-1');
+        const result = reconcilePropertyFlows(flow);
+        expect(result.valueChanges).toHaveLength(1);
+    });
+
+    test('value-change timeline orders mixed ISO and Croatian date formats chronologically', () => {
+        const { buildValueChangeTimeline } = require('../../court-analysis/reasoning/propertyFlow');
+        const timeline = buildValueChangeTimeline([
+            // Lexicographically "15.06.2022." > "2023-06-01" — string sorting
+            // would put the 2022 stage last and invert original/latest values.
+            { id: 'prop-2', description: 'Tražbina', value: 15000, currency: 'EUR', date: '2023-06-01', sourceId: 's-2', fileName: 'b.pdf' },
+            { id: 'prop-1', description: 'Tražbina', value: 84500, currency: 'EUR', date: '15.06.2022.', sourceId: 's-1', fileName: 'a.pdf' },
+        ], 'test');
+        expect(timeline.stages.map((s) => s.id)).toEqual(['prop-1', 'prop-2']);
+        expect(timeline.originalValue).toBe(84500);
+        expect(timeline.latestValue).toBe(15000);
+    });
+
+    test('analysis role cap leaves headroom for J-era schema on dense documents', () => {        const { GEMINI_ROLE_CONFIG } = require('../../helpers/geminiConfig');
         expect(GEMINI_ROLE_CONFIG.analysis.maxOutputTokens).toBeGreaterThanOrEqual(16384);
         // Dense synthetic document: 30 amounts with verbatim quotes + J
         // identity/direction fields + 10 property entries + citation refs.

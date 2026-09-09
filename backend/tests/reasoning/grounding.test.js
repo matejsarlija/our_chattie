@@ -70,4 +70,16 @@ describe('reasoning grounding containment check', () => {
         expect(() => applyGroundingToAnalysis(aiResult, SOURCE)).not.toThrow();
         expect(countGroundedClaims([{ amounts: aiResult.amounts, propertyFlow: [] }])).toEqual({ groundedClaims: 0, totalClaims: 1 });
     });
+
+    test('single paraphrased/OCR-mangled token still grounds, invented quotes do not', () => {
+        // One word swapped out of six → 5/6 token overlap → grounded.
+        expect(isQuoteGrounded(
+            'Polog za troškove stečajnog postupka izmišljeni',
+            SOURCE
+        )).toBe(true);
+        // Wholly invented quote shares too few tokens → ungrounded.
+        expect(isQuoteGrounded('Izmišljena katastarska čestica devet tisuća devetsto', SOURCE)).toBe(false);
+        // Short quotes never take the fuzzy path (too generic to verify).
+        expect(isQuoteGrounded('kod banke', 'Nepovezani tekst o nečem drugom.')).toBe(false);
+    });
 });

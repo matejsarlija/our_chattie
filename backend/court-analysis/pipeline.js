@@ -1562,6 +1562,40 @@ async function processScrapedCases(casesToProcess, progressCallback, options = {
             // 2b. Unzip
             stageAwareProgress?.({ step: 'extracting', message: `Raspakiram datoteke za predmet ${i + 1}...` });
             const filesForAnalysis = [];
+            // Explicit file→entry provenance: the raw cluster entries are the
+            // authority here (pre-evidencePackage, so no mapped link ids yet).
+            // Tag each file with its source entry index so the attach step can
+            // resolve entry dates by index instead of fuzzy filename matching.
+            const entryIndexByUrl = new Map();
+            const linkIdByUrl = new Map();
+            (cluster.entries || []).forEach((rawEntry, rawEntryIndex) => {
+                // Same deterministic id format evidencePackage.js's mapDocumentLink
+                // will later synthesize for this exact entry/link position, so a
+                // file tagged here resolves against the real pkg.documentLinks
+                // entry instead of relying on sourceEntryIndex alone. Raw scraped
+                // links never carry their own `.id` (that field is a downstream
+                // reasoning-layer construct), so it must be computed here, not read.
+                const rawCaseNumber = rawEntry?.caseNumber || rawEntry?.caseInfo?.caseNumber || 'unknown';
+                (rawEntry?.documentLinks || []).forEach((rawLink, rawLinkIndex) => {
+                    if (rawLink?.url && !entryIndexByUrl.has(rawLink.url)) {
+                        entryIndexByUrl.set(rawLink.url, rawEntryIndex);
+                    }
+                    const rawLinkId = rawLink?.id
+                        ?? rawLink?.documentLinkId
+                        ?? `${rawCaseNumber}::entry-${rawEntryIndex + 1}::doc-${rawLinkIndex + 1}`;
+                    if (rawLink?.url && !linkIdByUrl.has(rawLink.url)) {
+                        linkIdByUrl.set(rawLink.url, rawLinkId);
+                    }
+                });
+            });
+            const tagProvenance = (file) => ({
+                sourceEntryIndex: file?.sourceEntryIndex
+                    ?? file?.entryIndex
+                    ?? (entryIndexByUrl.has(file?.url) ? entryIndexByUrl.get(file.url) : null),
+                sourceDocumentLinkId: file?.sourceDocumentLinkId
+                    ?? file?.documentLinkId
+                    ?? (linkIdByUrl.has(file?.url) ? linkIdByUrl.get(file.url) : null),
+            });
             let extractedCount = 0;
             const emitExtractCounter = () => stageAwareProgress?.(buildStageCounterEvent({
                 stage: 'extracting',
@@ -1575,13 +1609,16 @@ async function processScrapedCases(casesToProcess, progressCallback, options = {
                     const extractionDir = path.dirname(file.filePath);
                     const extractionResult = await extractTool._call({ filePath: file.filePath, destination: extractionDir });
                     for (const extracted of (extractionResult.extractedFiles || [])) {
-                        filesForAnalysis.push({ filePath: extracted.filePath, text: extracted.entryName, url: file.url });
+                        // Zip-extracted files get a new working-copy path and an
+                        // in-archive display name, but keep the parent zip's
+                        // provenance (same originating court entry).
+                        filesForAnalysis.push({ filePath: extracted.filePath, text: extracted.entryName, url: file.url, ...tagProvenance(file) });
                         extractedFilePaths.push(extracted.filePath);
                         extractedCount++;
                         emitExtractCounter();
                     }
                 } else {
-                    filesForAnalysis.push(file);
+                    filesForAnalysis.push({ ...file, ...tagProvenance(file) });
                     extractedCount++;
                     emitExtractCounter();
                 }

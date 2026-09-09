@@ -18,8 +18,25 @@ function normalizeForGrounding(value) {
     return collapseWhitespace(normalizeText(value));
 }
 
+// Token-overlap fallback threshold. Exact containment above stays the fast
+// path; this only rescues quotes with a single paraphrased/OCR-mangled
+// token out of several — a wholly invented quote still fails (see tests).
+// MIN_TOKENS is 5, not 4: at 4 tokens a single mismatch is 3/4 = 0.75,
+// which fails the 0.8 threshold, so "tolerates one mismatched word" only
+// actually holds true starting at 5 tokens (4/5 = 0.8).
+const GROUNDING_TOKEN_OVERLAP_THRESHOLD = 0.8;
+const GROUNDING_FUZZY_MIN_TOKENS = 5;
+
+function groundingTokens(value) {
+    return normalizeForGrounding(value).split(/[^a-z0-9]+/).filter((token) => token.length >= 3);
+}
+
 /**
  * Deterministic containment check: does `quote` appear in `sourceText`?
+ * Exact normalized containment first; failing that, a token-overlap
+ * fallback (≥80% of the quote's ≥3-char tokens present in the source, quotes
+ * with ≥4 such tokens only) tolerates one paraphrased or OCR-mangled word
+ * without letting invented quotes through.
  * @param {string} quote - verbatim supporting quote from the model.
  * @param {string} sourceText - raw document text.
  * @returns {boolean} true when grounded, false otherwise (incl. missing quote).
@@ -33,7 +50,12 @@ function isQuoteGrounded(quote, sourceText) {
     if (normalizedQuote.length < 4) return false;
     const normalizedSource = normalizeForGrounding(sourceText);
     if (!normalizedSource) return false;
-    return normalizedSource.includes(normalizedQuote);
+    if (normalizedSource.includes(normalizedQuote)) return true;
+    const quoteTokens = groundingTokens(quote);
+    if (quoteTokens.length < GROUNDING_FUZZY_MIN_TOKENS) return false;
+    const sourceTokenSet = new Set(normalizedSource.split(/[^a-z0-9]+/));
+    const hits = quoteTokens.filter((token) => sourceTokenSet.has(token)).length;
+    return hits / quoteTokens.length >= GROUNDING_TOKEN_OVERLAP_THRESHOLD;
 }
 
 /**
