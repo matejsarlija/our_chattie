@@ -1,13 +1,21 @@
 const { reconcileMoneyFlows } = require('../../court-analysis/reasoning/reconciliation');
 
-const entry = (overrides = {}) => ({
-    amount: 1000,
-    currency: 'EUR',
-    description: 'Polog za troškove postupka',
-    fileName: 'dokument-1.pdf',
-    sourceId: 'src-1',
-    ...overrides
-});
+// sourceId is required (no shared default): entries that are supposed to
+// represent different files must carry different ids, otherwise multi-entry
+// tests silently exercise isSameDocument's same-id fallback path instead of
+// the realistic different-file path their names claim to cover.
+const entry = (overrides = {}) => {
+    if (!overrides.sourceId) {
+        throw new Error('entry() requires an explicit sourceId per entry — shared defaults mask same-document vs cross-document behavior.');
+    }
+    return {
+        amount: 1000,
+        currency: 'EUR',
+        description: 'Polog za troškove postupka',
+        fileName: 'dokument-1.pdf',
+        ...overrides
+    };
+};
 
 describe('reconcileMoneyFlows', () => {
     test('flags divergent amounts for the same purpose across documents', () => {
@@ -39,8 +47,8 @@ describe('reconcileMoneyFlows', () => {
     test('does not flag matching duplicate descriptions', () => {
         const result = reconcileMoneyFlows({
             entries: [
-                entry({ amount: 1200 }),
-                entry({ amount: 1200.005, description: 'polog za troskove postupka', fileName: 'b.pdf' })
+                entry({ amount: 1200, sourceId: 's-a' }),
+                entry({ amount: 1200.005, description: 'polog za troskove postupka', fileName: 'b.pdf', sourceId: 's-b' })
             ]
         });
         expect(result.conflicts).toHaveLength(0);
@@ -49,8 +57,8 @@ describe('reconcileMoneyFlows', () => {
     test('ignores generic one-token descriptions that would collide across documents', () => {
         const result = reconcileMoneyFlows({
             entries: [
-                entry({ amount: 100, description: 'Iznos', fileName: 'a.pdf' }),
-                entry({ amount: 99999, description: 'iznos razlicit', fileName: 'b.pdf' })
+                entry({ amount: 100, description: 'Iznos', fileName: 'a.pdf', sourceId: 's-a' }),
+                entry({ amount: 99999, description: 'iznos razlicit', fileName: 'b.pdf', sourceId: 's-b' })
             ]
         });
         // 'iznos' alone is too short to group; 'razlicit' differs anyway.
@@ -60,8 +68,8 @@ describe('reconcileMoneyFlows', () => {
     test('total-vs-parts mismatch becomes a tagged openQuestion, not a conflict', () => {
         const result = reconcileMoneyFlows({
             entries: [
-                entry({ amount: 90000, description: 'Ukupno prijavljene tražbine', fileName: 'izvjestaj.pdf' }),
-                entry({ amount: 84500, description: 'Tražbina banke', fileName: 'izvjestaj.pdf' })
+                entry({ amount: 90000, description: 'Ukupno prijavljene tražbine', fileName: 'izvjestaj.pdf', sourceId: 's-izvjestaj' }),
+                entry({ amount: 84500, description: 'Tražbina banke', fileName: 'izvjestaj.pdf', sourceId: 's-izvjestaj' })
             ]
         });
         expect(result.conflicts).toHaveLength(0);
@@ -77,9 +85,9 @@ describe('reconcileMoneyFlows', () => {
     test('matching total suppresses the question entirely', () => {
         const result = reconcileMoneyFlows({
             entries: [
-                entry({ amount: 1000, description: 'Ukupno za naknade' }),
-                entry({ amount: 600, description: 'Naknada vjerovniku A' }),
-                entry({ amount: 400, description: 'Naknada upravitelju' })
+                entry({ amount: 1000, description: 'Ukupno za naknade', sourceId: 's-doc' }),
+                entry({ amount: 600, description: 'Naknada vjerovniku A', sourceId: 's-doc' }),
+                entry({ amount: 400, description: 'Naknada upravitelju', sourceId: 's-doc' })
             ]
         });
         expect(result.conflicts).toHaveLength(0);
@@ -94,8 +102,8 @@ describe('reconcileMoneyFlows', () => {
         // Totals only ever summarize line items within their own document.
         const result = reconcileMoneyFlows({
             entries: [
-                entry({ amount: 90000, description: 'Ukupno prijavljene tražbine', fileName: 'izvjestaj.pdf' }),
-                entry({ amount: 1200000000, description: 'Namirenje vjerovnika', fileName: 'nepovezan-dokument.pdf' })
+                entry({ amount: 90000, description: 'Ukupno prijavljene tražbine', fileName: 'izvjestaj.pdf', sourceId: 's-izvjestaj' }),
+                entry({ amount: 1200000000, description: 'Namirenje vjerovnika', fileName: 'nepovezan-dokument.pdf', sourceId: 's-nepovezan' })
             ]
         });
         expect(result.openQuestions).toHaveLength(0);
