@@ -257,4 +257,4 @@ function reconcileMoneyFlows(moneyFlow) {
     return { conflicts: result.conflicts, openQuestions: result.openQuestions };
 }
 
-module.exports = { reconcileFlows, reconcileMoneyFlows, reconcilePropertyFlows, isSameDocument };
+module.exports = { reconcileFlows, reconcileMoneyFlows, reconcilePropertyFlows, isSameDocument, descriptionKey };

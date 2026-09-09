@@ -335,6 +335,7 @@ module.exports = {
     reconcileTrazbinaLifecycle,
     buildValueChangeTimeline,
     formatValue,
+    propertyGroupKey,
     normalizeAssetType,
     normalizeEventType,
     VALID_ASSET_TYPES: ['nekretnina', 'pokretnina', 'tražbina', 'drugo'],
