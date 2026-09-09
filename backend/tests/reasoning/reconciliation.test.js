@@ -135,6 +135,21 @@ describe('reconcileMoneyFlows', () => {
         expect(result.conflicts[0].finding).toContain('EUR');
     });
 
+    test('K-03: cross-currency totals compare on the EUR scale (HRK part joins the EUR sum)', () => {
+        // Total 1,000 EUR vs one HRK part worth 2,000 EUR in the same
+        // document: on the EUR scale the sum (2,000) mismatches the total →
+        // one question quoting the EUR-scale sum. A raw same-currency-only
+        // comparison would see no EUR parts and stay silent.
+        const result = reconcileMoneyFlows({
+            entries: [
+                entry({ amount: 1000, currency: 'EUR', amountEur: 1000, description: 'Ukupno za naknade', fileName: 'izvjestaj.pdf', sourceId: 's-doc' }),
+                entry({ amount: 15069, currency: 'HRK', amountEur: 2000, description: 'Naknada vjerovniku A', fileName: 'izvjestaj.pdf', sourceId: 's-doc' })
+            ]
+        });
+        expect(result.openQuestions).toHaveLength(1);
+        expect(result.openQuestions[0].text).toContain('2,000 EUR');
+    });
+
     test('K-04: dual-mismatch entries produce their own reconciliation question', () => {
         const result = reconcileMoneyFlows({
             entries: [
