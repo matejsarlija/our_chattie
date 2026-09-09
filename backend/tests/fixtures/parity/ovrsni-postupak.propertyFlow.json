@@ -1,0 +1,29 @@
+{
+  "count": 1,
+  "entries": [
+    {
+      "assetType": "pokretnina",
+      "caseNumber": "Ovr-455/2023",
+      "claimRegistryNumber": null,
+      "currency": "EUR",
+      "date": "2023-11-08",
+      "description": "Građevinske alatne mašine",
+      "fileName": "Zapisnik_o_prodaji_pokretnina.pdf",
+      "filingReference": null,
+      "grounded": false,
+      "id": "prop-1",
+      "identifier": null,
+      "isplatniRed": null,
+      "quote": "građevinske alatne mašine prodane su po cijeni od 2.100,00 EUR",
+      "sourceDocumentLinkId": null,
+      "sourceEntryIndex": null,
+      "sourceId": "/fixtures/eval/Zapisnik_o_prodaji_pokretnina.pdf",
+      "transferee": null,
+      "transferor": "Gradnja Plus d.o.o.",
+      "value": 2100,
+      "valueEur": 2100,
+      "valueEurSource": "as-is"
+    }
+  ],
+  "hasPropertyFlow": true
+}
