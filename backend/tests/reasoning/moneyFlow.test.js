@@ -80,4 +80,46 @@ describe('reasoning deriveMoneyFlowView (backward-compat mapping)', () => {
         ]));
         expect(view.entries[0].date).toBe('2023-05-17');
     });
+
+    test('entry key set is frozen (all conditional fields present)', () => {
+        const view = deriveMoneyFlowView(collectFlows([
+            {
+                id: 'a-1', fileName: 'x.pdf', caseNumber: 'St-1/2024',
+                amounts: [{
+                    description: 'Sporni trošak postupka', amount: 248.86, currency: 'EUR',
+                    amountHrk: 1500, direction: 'obveza',
+                    payerName: 'Dužnik d.o.o.', payerOib: '12345678901',
+                    recipientName: 'Vjerovnik d.o.o.', recipientOib: '10987654321',
+                    isplatniRed: 'drugi viši isplatni red',
+                    claimRegistryNumber: '106', filingReference: 'St-2/2013-1196-1',
+                    quote: 'Trošak iznosi 248,86 €.',
+                }],
+            },
+        ]));
+        expect(Object.keys(view.entries[0]).sort()).toEqual([
+            'amount', 'amountEur', 'amountEurSource', 'caseNumber', 'claimRegistryNumber',
+            'currency', 'currencyNote', 'date', 'description', 'direction', 'dualCurrency',
+            'fileName', 'filingReference', 'from', 'grounded', 'id', 'isplatniRed',
+            'payerName', 'payerOib', 'quote', 'recipientName', 'recipientOib',
+            'sourceDocumentLinkId', 'sourceEntryIndex', 'sourceId', 'to',
+        ]);
+    });
+
+    test('entry key set is frozen (all conditional fields absent)', () => {
+        const view = deriveMoneyFlowView(collectFlows([
+            {
+                id: 'a-1', fileName: 'x.pdf', caseNumber: 'St-1/2024',
+                amounts: [{ description: 'Polog', amount: 100, currency: 'EUR' }],
+            },
+        ]));
+        expect(Object.keys(view.entries[0]).sort()).toEqual([
+            'amount', 'amountEur', 'amountEurSource', 'caseNumber', 'claimRegistryNumber',
+            'currency', 'date', 'description', 'direction', 'fileName',
+            'filingReference', 'from', 'grounded', 'id', 'isplatniRed',
+            'payerName', 'payerOib', 'quote', 'recipientName', 'recipientOib',
+            'sourceDocumentLinkId', 'sourceEntryIndex', 'sourceId', 'to',
+        ]);
+        expect(view.entries[0].dualCurrency).toBeUndefined();
+        expect(view.entries[0].currencyNote).toBeUndefined();
+    });
 });

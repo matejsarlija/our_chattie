@@ -312,8 +312,57 @@ describe('reasoning reconcilePropertyFlows', () => {
         expect(view.entries[0].payerName).toBeUndefined();
     });
 
-    test('legacy prop-N supersedes round-trips through the unified ids', () => {
-        const flow = collectPropertyFlows([
+    test('entry key set is frozen (all conditional fields present)', () => {
+        const { collectFlows, derivePropertyFlowView } = require('../../court-analysis/reasoning/flow');
+        const view = derivePropertyFlowView(collectFlows([
+            {
+                id: 'a-1', fileName: 'x.pdf', caseNumber: 'Stč-2150/2022',
+                propertyFlow: [{
+                    description: 'Tražbina vjerovnika prema dužniku iz podneska',
+                    assetType: 'tražbina', eventType: 'ustup',
+                    transferor: 'Vjerovnik A d.o.o.', transferee: 'Kupac X d.o.o.',
+                    value: 248.86, currency: 'EUR', amountHrk: 1500,
+                    isplatniRed: 'drugi viši isplatni red',
+                    claimRegistryNumber: '106', filingReference: 'St-2/2013-1196-1',
+                    date: '2023-06-01', supersedes: 'neka ranija prijava',
+                    quote: 'Ustupljena tražbina.',
+                }],
+            },
+        ]));
+        expect(Object.keys(view.entries[0]).sort()).toEqual([
+            'assetType', 'caseNumber', 'claimRegistryNumber', 'currency', 'currencyNote',
+            'date', 'description', 'dualCurrency', 'eventType', 'fileName',
+            'filingReference', 'grounded', 'id', 'identifier', 'isplatniRed',
+            'quote', 'sourceDocumentLinkId', 'sourceEntryIndex', 'sourceId',
+            'supersedes', 'transferee', 'transferor', 'value', 'valueEur', 'valueEurSource',
+        ]);
+    });
+
+    test('entry key set is frozen (all conditional fields absent)', () => {
+        const { collectFlows, derivePropertyFlowView } = require('../../court-analysis/reasoning/flow');
+        const view = derivePropertyFlowView(collectFlows([
+            {
+                id: 'a-1', fileName: 'x.pdf', caseNumber: 'Stč-2150/2022',
+                propertyFlow: [{
+                    description: 'Nepoznata imovina bez dodatnih podataka',
+                    value: null, currency: null,
+                }],
+            },
+        ]));
+        // No assetType → 'drugo' (no eventType/supersedes), no parseable
+        // value → no valueEur keys, no dual figures.
+        expect(Object.keys(view.entries[0]).sort()).toEqual([
+            'assetType', 'caseNumber', 'claimRegistryNumber', 'currency',
+            'date', 'description', 'fileName', 'filingReference', 'grounded',
+            'id', 'identifier', 'isplatniRed', 'quote', 'sourceDocumentLinkId',
+            'sourceEntryIndex', 'sourceId', 'transferee', 'transferor', 'value',
+        ]);
+        expect(view.entries[0].eventType).toBeUndefined();
+        expect(view.entries[0].supersedes).toBeUndefined();
+        expect(view.entries[0].valueEur).toBeUndefined();
+    });
+
+    test('legacy prop-N supersedes round-trips through the unified ids', () => {        const flow = collectPropertyFlows([
             makeAnalysis('a-1', 'prijava.pdf', [
                 {
                     description: 'Tražbina vjerovnika prema dužniku Ducanor d.o.o.',
