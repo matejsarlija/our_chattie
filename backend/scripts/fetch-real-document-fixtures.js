@@ -13,7 +13,7 @@
  * when the files are absent, and local runs regenerate them from live data.
  *
  * Usage:
- *   node scripts/fetch-real-document-fixtures.js [--oib=...] [--limit=10]
+ *   node scripts/fetch-real-document-fixtures.js [--oib=...] [--limit=30]
  *   node scripts/fetch-real-document-fixtures.js --verify-only   # re-run
  *                                                                # extraction
  *                                                                # over an
@@ -33,7 +33,11 @@ const agentLog = require('../helpers/agentLog');
 process.env.PUPPETEER_HEADLESS = process.env.PUPPETEER_HEADLESS || '1';
 
 const DEFAULT_OIB = '66124057408';
-const DEFAULT_LIMIT = 10;
+const DEFAULT_LIMIT = 30;
+// Page budget for the discovery pass: ~10 court entries per search page, so
+// 10 pages cover the 30-entry default with headroom for rows without a
+// download link. Bounded — the script slices to `limit` regardless.
+const DISCOVERY_MAX_PAGES = 10;
 
 function parseArgs(argv) {
     const args = { oib: DEFAULT_OIB, limit: DEFAULT_LIMIT, verifyOnly: false, reportOut: null };
@@ -189,8 +193,11 @@ async function fetchFixtures({ oib, limit }) {
     await searcher.init();
     let results;
     try {
-        await searcher.performSearch(oib);
-        ({ results } = await searcher.parseSearchResultsPage());
+        // Paged discovery (up to DISCOVERY_MAX_PAGES): a single first page
+        // rarely holds `limit` downloadable entries, so walk forward until
+        // the quota is reachable — or the result set runs out, in which case
+        // whatever is present is what gets captured (slice below).
+        ({ results } = await searcher.performSearchAcrossPages(oib, DISCOVERY_MAX_PAGES));
     } finally {
         await searcher.close();
     }
@@ -199,14 +206,21 @@ async function fetchFixtures({ oib, limit }) {
         .filter((r) => r.documentDownloadLink)
         .slice(0, limit);
     if (selected.length === 0) {
-        throw new Error(`No entries with documentDownloadLink found on the first page for ${oib}.`);
+        throw new Error(`No entries with documentDownloadLink found in the first ${DISCOVERY_MAX_PAGES} pages for ${oib}.`);
     }
     agentLog.log(`[Fixtures] Selected ${selected.length} entr(y/ies) with document archives.`);
 
     const outDir = fixturesDirFor(oib);
     const zipsDir = path.join(outDir, 'zips');
     const entriesDir = path.join(outDir, 'entries');
-    fs.rmSync(outDir, { recursive: true, force: true });
+    // Surgical cleanup only: `extracted/` holds frozen pdfjs output the unit
+    // lane asserts on (kerumGolden) and any other curated sidecars must
+    // survive regeneration — never wipe the whole outDir (that once deleted
+    // the golden extracted/*.txt files a fresh fetch could not reproduce
+    // byte-identically).
+    fs.rmSync(zipsDir, { recursive: true, force: true });
+    fs.rmSync(entriesDir, { recursive: true, force: true });
+    fs.rmSync(path.join(outDir, 'manifest.json'), { force: true });
     fs.mkdirSync(zipsDir, { recursive: true });
     fs.mkdirSync(entriesDir, { recursive: true });
 
@@ -215,7 +229,7 @@ async function fetchFixtures({ oib, limit }) {
         source: 'https://e-oglasna.pravosudje.hr',
         fetchedAt: new Date().toISOString(),
         generator: 'backend/scripts/fetch-real-document-fixtures.js',
-        selection: `first ${limit} search-page entries carrying documentDownloadLink`,
+        selection: `up to ${limit} search-page entries carrying documentDownloadLink (first ${DISCOVERY_MAX_PAGES} pages)`,
         entries: [],
     };
 
