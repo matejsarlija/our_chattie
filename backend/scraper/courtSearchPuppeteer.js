@@ -87,18 +87,31 @@ class CourtSearchPuppeteer {
             // Enhanced request handling
             if (process.env.NODE_ENV !== 'production') {
                 await this.page.setRequestInterception(true);
+                // PUPPETEER_QUIET=1 (fixture scripts): silence per-request
+                // console chatter and abort third-party tracker/chat widgets
+                // (real network round trips + log noise; the results page
+                // works without them). Default off — production/dev behavior
+                // is byte-identical to before.
+                const quiet = process.env.PUPPETEER_QUIET === '1';
+                const TRACKER_HOSTS = [
+                    'googletagmanager.com',
+                    'google-analytics.com',
+                    'espis-virtualni-asistenti-agent.pravosudje.hr'
+                ];
                 this.page.on('request', (request) => {
                     // Block unnecessary resources to speed up loading
                     if (['image', 'stylesheet', 'font'].includes(request.resourceType())) {
                         request.abort();
+                    } else if (quiet && TRACKER_HOSTS.some((host) => request.url().includes(host))) {
+                        request.abort();
                     } else {
-                        console.log('Request:', request.url());
+                        if (!quiet) console.log('Request:', request.url());
                         request.continue();
                     }
                 });
 
                 this.page.on('requestfailed', (request) => {
-                    console.error('Request failed:', request.url(), request.failure()?.errorText);
+                    if (!quiet) console.error('Request failed:', request.url(), request.failure()?.errorText);
                 });
 
                 // Add response monitoring

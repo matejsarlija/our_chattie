@@ -31,6 +31,10 @@ const agentLog = require('../helpers/agentLog');
 
 // The scraper launches headful in local dev; scripts/CI hosts have no display.
 process.env.PUPPETEER_HEADLESS = process.env.PUPPETEER_HEADLESS || '1';
+// Quiet the scraper's per-request console chatter for fixture runs (a paged
+// discovery pass loads ~10 pages; asset/analytics request logs would drown
+// the fixture lines). Default-off in the scraper — production/dev unchanged.
+process.env.PUPPETEER_QUIET = process.env.PUPPETEER_QUIET || '1';
 
 const DEFAULT_OIB = '66124057408';
 const DEFAULT_LIMIT = 30;
@@ -98,10 +102,18 @@ async function extractAndProbe(manifest) {
     // Real production extraction path — no mocks. Imported lazily so
     // --verify-only does not pay module init twice.
     const { extractTextFromFile } = require('../court-analysis/agents/analysis-agent');
+    // Demote pdfjs-dist's per-glyph font warnings ("Warning: TT: ...") for
+    // the run: this pdfjs build exposes no verbosity setter, so filter at
+    // the console boundary instead. Real failures still surface per file
+    // via the `error` field on the extraction line below. Restored after.
+    const restoreConsole = demotePdfjsFontWarnings();
 
+    const totalFiles = manifest.entries.flatMap((entry) => entry.files).length;
+    let fileCounter = 0;
     let firstEmbeddedPdfEntry = null;
     for (const entry of manifest.entries) {
         for (const file of entry.files) {
+            fileCounter += 1;
             const startedAt = Date.now();
             const result = await extractTextFromFile(file.filePath);
             file.extraction = {
@@ -118,7 +130,8 @@ async function extractAndProbe(manifest) {
                                 : 'none',
             };
             agentLog.log(
-                `[Fixtures] ${entry.index}/${manifest.entries.length} ${file.entryName} -> ` +
+                `[Fixtures] file ${fileCounter}/${totalFiles} ` +
+                `(entry ${entry.index}/${manifest.entries.length}) ${file.entryName} -> ` +
                 `method=${file.extraction.method} pages=${file.extraction.pages} ` +
                 `chars=${file.extraction.chars} textLayer=${file.extraction.textLayer}` +
                 `${file.extraction.error ? ` error=${file.extraction.error}` : ''}`,
@@ -138,6 +151,38 @@ async function extractAndProbe(manifest) {
     } else {
         manifest.renderProbe = { probed: false, reason: 'no embedded-text PDF found to probe' };
     }
+    restoreConsole();
+}
+
+/**
+ * Collapses pdfjs-dist's repetitive per-glyph font warnings
+ * ("Warning: TT: undefined function: N") into one summary line. This pdfjs
+ * build gates them on an internal verbosity flag with no exported setter,
+ * so the only robust hook is the console boundary — scoped to this process
+ * and restored afterwards. Everything else passes through untouched.
+ * @returns {() => void} Restore function.
+ */
+function demotePdfjsFontWarnings() {
+    const methods = ['log', 'warn'];
+    const originals = methods.map((method) => console[method]);
+    let suppressed = 0;
+    const isFontWarning = (args) =>
+        typeof args[0] === 'string' && /^Warning: TT: /.test(args[0]);
+    methods.forEach((method, i) => {
+        console[method] = (...args) => {
+            if (isFontWarning(args)) {
+                suppressed += 1;
+                return;
+            }
+            originals[i](...args);
+        };
+    });
+    return () => {
+        methods.forEach((method, i) => { console[method] = originals[i]; });
+        if (suppressed > 0) {
+            agentLog.log(`[Fixtures] Suppressed ${suppressed} repetitive pdfjs font warning(s) ("Warning: TT: ...").`);
+        }
+    };
 }
 
 /**
@@ -192,23 +237,31 @@ async function fetchFixtures({ oib, limit }) {
     const searcher = new CourtSearchPuppeteer();
     await searcher.init();
     let results;
+    let searchMetadata = null;
+    const discoveryStartedAt = Date.now();
     try {
         // Paged discovery (up to DISCOVERY_MAX_PAGES): a single first page
         // rarely holds `limit` downloadable entries, so walk forward until
         // the quota is reachable — or the result set runs out, in which case
         // whatever is present is what gets captured (slice below).
-        ({ results } = await searcher.performSearchAcrossPages(oib, DISCOVERY_MAX_PAGES));
+        ({ results, searchMetadata } = await searcher.performSearchAcrossPages(oib, DISCOVERY_MAX_PAGES));
     } finally {
         await searcher.close();
     }
+    const discoveryMs = Date.now() - discoveryStartedAt;
 
-    const selected = (results || [])
-        .filter((r) => r.documentDownloadLink)
-        .slice(0, limit);
+    const rowsSeen = (results || []).length;
+    const withLink = (results || []).filter((r) => r.documentDownloadLink);
+    const selected = withLink.slice(0, limit);
     if (selected.length === 0) {
         throw new Error(`No entries with documentDownloadLink found in the first ${DISCOVERY_MAX_PAGES} pages for ${oib}.`);
     }
-    agentLog.log(`[Fixtures] Selected ${selected.length} entr(y/ies) with document archives.`);
+    agentLog.log(
+        `[Fixtures] Discovery: ${rowsSeen} row(s) over ` +
+        `${searchMetadata?.pagesScanned ?? '?'} page(s), ` +
+        `${rowsSeen - withLink.length} without a download link, ` +
+        `selected ${selected.length}.`
+    );
 
     const outDir = fixturesDirFor(oib);
     const zipsDir = path.join(outDir, 'zips');
@@ -230,8 +283,21 @@ async function fetchFixtures({ oib, limit }) {
         fetchedAt: new Date().toISOString(),
         generator: 'backend/scripts/fetch-real-document-fixtures.js',
         selection: `up to ${limit} search-page entries carrying documentDownloadLink (first ${DISCOVERY_MAX_PAGES} pages)`,
+        discovery: {
+            pagesWalked: searchMetadata?.pagesScanned ?? null,
+            tailPagesWalked: searchMetadata?.tailPagesScanned ?? 0,
+            rowsSeen,
+            rowsSkippedNoLink: rowsSeen - withLink.length,
+            selected: selected.length,
+            limit,
+            discoveryMs,
+        },
+        coverage: coverageSpan(selected),
+        timings: { discoveryMs, downloadMs: null, extractionMs: null },
         entries: [],
     };
+
+    const downloadStartedAt = Date.now();
 
     for (let i = 0; i < selected.length; i++) {
         const result = selected[i];
@@ -302,8 +368,55 @@ async function fetchFixtures({ oib, limit }) {
             `[Fixtures] Entry ${index}: "${result.title}" (${ext}) -> ${files.length} file(s).`,
         );
     }
+    manifest.timings.downloadMs = Date.now() - downloadStartedAt;
 
     return manifest;
+}
+
+/**
+ * Normalizes a raw e-Oglasna publish stamp (`23.06.2026. 08:36`) to a
+ * date-only day parsed as UTC midnight. The time suffix would otherwise
+ * defeat the Croatian parser and fall through to host-timezone `Date.parse`
+ * (the classic silent day-shift trap — same reason the pipeline normalizes
+ * to date-only ISO before any date logic). Returns `{ ts, raw }` with the
+ * normalized `dd.mm.yyyy.` display form, or null when no calendar date.
+ */
+function coverageDay(parseDate, rawDate) {
+    const match = String(rawDate || '').match(/(\d{1,2})\.(\d{1,2})\.(\d{2,4})/);
+    if (!match) return null;
+    const raw = `${match[1]}.${match[2]}.${match[3]}.`;
+    const ts = parseDate(raw);
+    return ts === null ? null : { ts, raw };
+}
+
+/**
+ * Coverage span of the captured entries: which cases and what date range.
+ * Dates are raw e-Oglasna wall-clock strings parsed with the production
+ * date parser; unparseable/missing dates are ignored (never fail the run).
+ */
+function coverageSpan(selected) {    let parseDate = null;
+    try {
+        ({ parseDate } = require('../court-analysis/reasoning/timelineBuilder'));
+    } catch {
+        parseDate = null;
+    }
+    const caseNumbers = [...new Set(selected.map((r) => r?.caseNumber).filter(Boolean))];
+    let oldest = null;
+    let newest = null;
+    if (parseDate) {
+        for (const result of selected) {
+            const day = coverageDay(parseDate, result?.date);
+            if (!day) continue;
+            if (!oldest || day.ts < oldest.ts) oldest = day;
+            if (!newest || day.ts > newest.ts) newest = day;
+        }
+    }
+    return {
+        entryCount: selected.length,
+        caseNumbers,
+        oldestDate: oldest?.raw ?? null,
+        newestDate: newest?.raw ?? null,
+    };
 }
 
 async function verifyOnly(oib) {
@@ -321,12 +434,21 @@ async function main() {
     const args = parseArgs(process.argv.slice(2));
 
     let manifest;
+    const extractionStartedAt = Date.now();
     if (args.verifyOnly) {
         manifest = await verifyOnly(args.oib);
     } else {
         manifest = await fetchFixtures(args);
         await extractAndProbe(manifest);
     }
+    manifest.timings = {
+        ...(manifest.timings || {}),
+        extractionMs: Date.now() - extractionStartedAt,
+    };
+    manifest.timings.totalMs =
+        (manifest.timings.discoveryMs || 0) +
+        (manifest.timings.downloadMs || 0) +
+        manifest.timings.extractionMs;
 
     const allFiles = manifest.entries.flatMap((entry) => entry.files);
     const summary = allFiles.reduce((counts, file) => {
@@ -335,22 +457,40 @@ async function main() {
         return counts;
     }, {});
 
+    const emptyTextLayerFiles = allFiles
+        .filter((file) => file.extraction?.textLayer === 'empty')
+        .map((file) => file.entryName);
+
     manifest.summary = {
         totalFiles: allFiles.length,
         byExtensionAndTextLayer: summary,
+        emptyTextLayerFiles,
         renderProbe: manifest.renderProbe || null,
     };
 
+    const coverage = manifest.coverage || { entryCount: manifest.entries.length, caseNumbers: [], oldestDate: null, newestDate: null };
+    const timings = manifest.timings || {};
     const outDir = fixturesDirFor(args.oib);
     const manifestPath = path.join(outDir, 'manifest.json');
     fs.mkdirSync(outDir, { recursive: true });
     fs.writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
 
+    agentLog.log(
+        `[Fixtures] Coverage: ${coverage.entryCount} entr(y/ies)` +
+        `${coverage.caseNumbers?.length ? `, cases: ${coverage.caseNumbers.join(', ')}` : ''}` +
+        `${coverage.oldestDate ? `, span: ${coverage.oldestDate} → ${coverage.newestDate}` : ''} ` +
+        `| empty-text files: ${emptyTextLayerFiles.length}/${allFiles.length} ` +
+        `| phases ms: discovery=${timings.discoveryMs ?? '?'} ` +
+        `download=${timings.downloadMs ?? '?'} extraction=${timings.extractionMs ?? '?'}`
+    );
     agentLog.log('[Fixtures] Summary:', JSON.stringify(summary));
     agentLog.log(`[Fixtures] Manifest written: ${manifestPath}`);
 
     const report = {
         manifestPath,
+        coverage,
+        discovery: manifest.discovery || null,
+        timings,
         summary: manifest.summary,
         renderProbe: manifest.renderProbe,
         entries: manifest.entries.map((entry) => ({
