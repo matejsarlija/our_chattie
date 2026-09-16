@@ -10,6 +10,7 @@ import AnalysisActivityLog from './AnalysisActivityLog';
 import AnalysisReportAnnex from './AnalysisReportAnnex';
 import AnalysisReasoningTelemetry from './AnalysisReasoningTelemetry';
 import AnalysisCoverageBanner from './AnalysisCoverageBanner';
+import AnalysisScopeCard from './AnalysisScopeCard';
 import AnalysisFlowsSection from './AnalysisFlowsSection';
 import AnalysisUsageSummary from './AnalysisUsageSummary';
 import SecondaryClustersSection from './SecondaryClustersSection';
@@ -122,6 +123,7 @@ export default function AnalysisRunDetailPage() {
   const resultMarkdown = useMemo(() => run?.result_text || '', [run?.result_text]);
   const usage = useMemo(() => run?.token_usage || parsedResult?.usage || null, [run?.token_usage, parsedResult?.usage]);
   const coverage = useMemo(() => getAnalysisCoverage(parsedResult, run), [parsedResult, run]);
+  const scope = useMemo(() => report?.meta?.scope || null, [report]);
   const flows = useMemo(() => {
     const pkg = parsedResult?.clusterEvidencePackage || null;
     return {
@@ -215,6 +217,8 @@ export default function AnalysisRunDetailPage() {
             <section className="mb-5">
               <RunProgressStepper stages={stages} isErrored={isErrored} />
             </section>
+
+            <AnalysisScopeCard scope={scope} />
 
             <AnalysisActivityLog activity={activity} isRunning={isRunning} headerCounter={headerCounter} counterKnown={counterKnown} />
 
