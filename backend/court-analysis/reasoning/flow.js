@@ -12,6 +12,7 @@
 // `moneyFlow.js`/`propertyFlow.js` keep serving today's paths untouched.
 
 const { convertToEur, dualMismatch } = require('./currencyConversion');
+const { normalizeText } = require('./indexer');
 
 // J-01 — signed/directional amounts: potraživanje (asset/claim) vs obveza
 // (liability), or an explicit ruling outcome (awarded/rejected/netted).
@@ -164,6 +165,33 @@ function normalizeEventType(value) {
     return VALID_EVENT_TYPES.includes(raw) ? raw : null;
 }
 
+// TL-2 — ledger role accessors. Strict enums with null fallback (never
+// guessed): a present-but-invalid role is dropped to null here; the
+// extraction-schema gap record (T1-3) is where its invalidity is kept.
+const VALID_AMOUNT_ROLES = ['total', 'line_item', 'principal', 'cost', 'paid', 'fee'];
+const VALID_LEGAL_EFFECTS = ['creates', 'modifies', 'supersedes', 'resolves', 'implements', 'unknown'];
+const VALID_RELATIONSHIP_BASES = ['explicit_identifier', 'explicit_text', 'inferred'];
+
+function normalizeAmountRole(value) {
+    const raw = String(value || '').trim().toLowerCase();
+    return VALID_AMOUNT_ROLES.includes(raw) ? raw : null;
+}
+
+function normalizeLegalEffect(value) {
+    const raw = String(value || '').trim().toLowerCase();
+    return VALID_LEGAL_EFFECTS.includes(raw) ? raw : null;
+}
+
+function normalizeRelationshipBasis(value) {
+    const raw = String(value || '').trim().toLowerCase();
+    return VALID_RELATIONSHIP_BASES.includes(raw) ? raw : null;
+}
+
+function normalizeReferences(value) {
+    if (!Array.isArray(value)) return [];
+    return value.map((item) => String(item || '').trim()).filter(Boolean);
+}
+
 // K-02/K-04 — consolidated EUR + source-stated dual preference, shared by
 // both families (money's amountEur block and property's buildValueEur were
 // the same computation; this is now the only copy). Always returns explicit
@@ -268,6 +296,19 @@ function normalizeFlowItem(raw, index, analysis, options = {}) {
             : null,
         // tražbina-lifecycle only; null otherwise.
         eventType,
+        // TL-2 — ledger roles carried end to end (reconciliation matches on
+        // them; derived views keep their legacy key sets and stay blind).
+        // `amountRole` is meaningful on the amounts path; other families keep
+        // the raw value when present so future matchers can use it.
+        amountRole: normalizeAmountRole(raw.amountRole ?? raw.amount_role),
+        legalEffect: normalizeLegalEffect(raw.legalEffect ?? raw.legal_effect),
+        references: normalizeReferences(raw.references),
+        relationshipBasis: normalizeRelationshipBasis(raw.relationshipBasis ?? raw.relationship_basis),
+        // TL-1 — stable document identity for byte-level dedupe. Entries
+        // without a hash never merge (identity unprovable).
+        contentHash: typeof analysis?.contentHash === 'string' && analysis.contentHash
+            ? analysis.contentHash
+            : null,
         ...(supersedes ? { supersedes } : {}),
         // J-03/J-04 — stečaj registry identity, verbatim in both families.
         isplatniRed: cleanText(raw.isplatniRed ?? raw.isplatni_red ?? raw.paymentRank),
@@ -282,6 +323,11 @@ function normalizeFlowItem(raw, index, analysis, options = {}) {
         caseNumber: analysis?.caseNumber || null,
         sourceEntryIndex: analysis?.sourceEntryIndex ?? null,
         sourceDocumentLinkId: analysis?.sourceDocumentLinkId ?? null,
+        // Ledger rows can represent a byte-identical attachment referenced by
+        // several filings. Preserve that complete provenance through the
+        // unified flow rather than reducing it to the first analysis record.
+        filings: Array.isArray(raw.filings) ? raw.filings.map((filing) => ({ ...filing })) : null,
+        sources: Array.isArray(raw.sources) ? [...raw.sources] : null,
         // Non-canonical money aliases (migration release only): money's exact
         // historical expressions, so deriveMoneyFlowView maps back
         // byte-identically. Invisible to the property view.
@@ -294,6 +340,88 @@ function normalizeFlowItem(raw, index, analysis, options = {}) {
     };
 }
 
+// TL-1/TL-2 — byte-identical attachment merge. Entries whose document bytes
+// hash equally AND whose normalized fact content matches collapse to one
+// entry with merged `sources`/`filings` (every filing that attached the
+// document is retained). Entries without a content hash never merge —
+// without bytes, identity cannot be proven. Ids and property ordinals are
+// reassigned after the merge so downstream `flow-N`/`prop-N` references stay
+// consistent; callers must run `rewriteLegacySupersedes` after this.
+function mergeIdenticalEntries(entries) {
+    const list = Array.isArray(entries) ? entries : [];
+    const filingOf = (entry) => ({
+        sourceId: entry.sourceId || null,
+        fileName: entry.fileName || null,
+        sourceEntryIndex: entry.sourceEntryIndex ?? null,
+        sourceDocumentLinkId: entry.sourceDocumentLinkId ?? null
+    });
+    const filingsOf = (entry) => Array.isArray(entry?.filings) && entry.filings.length > 0
+        ? entry.filings.map((filing) => ({ ...filing }))
+        : [filingOf(entry)];
+    const sourcesOf = (entry) => {
+        const sources = Array.isArray(entry?.sources) ? entry.sources.filter(Boolean) : [];
+        for (const filing of filingsOf(entry)) {
+            if (filing.sourceId && !sources.includes(filing.sourceId)) sources.push(filing.sourceId);
+        }
+        return sources;
+    };
+    const keyOf = (entry) => [
+        entry?.contentHash || '',
+        entry?.assetType || '',
+        normalizeText(entry?.description || ''),
+        String(entry?.value ?? ''),
+        entry?.currency || '',
+        normalizeText(entry?.claimRegistryNumber || ''),
+        normalizeText(entry?.filingReference || ''),
+        normalizeText(entry?.identifier || ''),
+        normalizeText(entry?.transferor || ''),
+        normalizeText(entry?.transferee || ''),
+        entry?.eventType || '',
+        entry?.amountRole || '',
+        entry?.isplatniRed || ''
+    ].join('::');
+    const byKey = new Map();
+    const merged = [];
+    for (const entry of list) {
+        if (!entry?.contentHash) {
+            entry.sources = sourcesOf(entry);
+            entry.filings = filingsOf(entry);
+            merged.push(entry);
+            continue;
+        }
+        const key = keyOf(entry);
+        if (!byKey.has(key)) {
+            const kept = {
+                ...entry,
+                sources: sourcesOf(entry),
+                filings: filingsOf(entry)
+            };
+            byKey.set(key, kept);
+            merged.push(kept);
+            continue;
+        }
+        const kept = byKey.get(key);
+        for (const source of sourcesOf(entry)) {
+            if (!kept.sources.includes(source)) kept.sources.push(source);
+        }
+        for (const filing of filingsOf(entry)) {
+            if (!kept.filings.some((f) =>
+                f.sourceId === filing.sourceId && f.sourceEntryIndex === filing.sourceEntryIndex && f.sourceDocumentLinkId === filing.sourceDocumentLinkId
+            )) kept.filings.push(filing);
+        }
+    }
+    let propertyOrdinal = 0;
+    merged.forEach((entry, index) => {
+        entry.id = `flow-${index + 1}`;
+        if (entry.assetType !== 'novac') {
+            propertyOrdinal += 1;
+            entry.__propertyOrdinal = propertyOrdinal;
+        } else {
+            delete entry.__propertyOrdinal;
+        }
+    });
+    return merged;
+}
 // Legacy `prop-N` supersedes references name the old per-family id sequence.
 // The unified sequence renumbers everything to `flow-N`, so exact `prop-N`
 // references are rewritten to the corresponding unified id at collect time
@@ -343,6 +471,12 @@ function collectFlows(analyses) {
             }
         }
     }
+    // TL-1/TL-2 — collapse byte-identical attachment duplicates (merged
+    // sources/filings, renumbered ids) before legacy supersedes rewriting,
+    // which resolves against final ids.
+    const mergedEntries = mergeIdenticalEntries(entries);
+    entries.length = 0;
+    entries.push(...mergedEntries);
     rewriteLegacySupersedes(entries);
 
     const currencyTotals = {};

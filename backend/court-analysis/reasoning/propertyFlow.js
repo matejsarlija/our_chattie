@@ -68,12 +68,25 @@ function formatValue(value, currency) {
 }
 
 function resolveSupersedesTarget(ref, entriesById, entries) {
-    if (!ref) return null;
+    return resolveSupersedesTargetWithBasis(ref, entriesById, entries).target;
+}
+
+/**
+ * TR-3 — same resolution tiers as `resolveSupersedesTarget`, but reporting
+ * WHICH tier matched. `id | registry | filing | citation` are identifier- or
+ * explicit-reference-backed links; `description` is the fuzzy containment
+ * fallback. Timelines built only on non-description edges keep the
+ * `supersedes` linkage; any description-fallback edge marks the timeline
+ * `supersedes-inferred` (an inference candidate, never legal truth).
+ */
+function resolveSupersedesTargetWithBasis(ref, entriesById, entries) {
+    const none = { target: null, basis: null };
+    if (!ref) return none;
     const trimmed = String(ref).trim();
-    if (!trimmed) return null;
+    if (!trimmed) return none;
     // 1. Stable per-run id match (prop-N).
-    if (entriesById.has(trimmed)) return entriesById.get(trimmed);
-    if (entriesById.has(trimmed.toLowerCase())) return entriesById.get(trimmed.toLowerCase());
+    if (entriesById.has(trimmed)) return { target: entriesById.get(trimmed), basis: 'id' };
+    if (entriesById.has(trimmed.toLowerCase())) return { target: entriesById.get(trimmed.toLowerCase()), basis: 'id' };
     // L-01 — ID-first: real registry/filing identifiers (J-04) beat fuzzy
     // text. An explicit supersedes citing "106" or "St-2/2013-1196-1"
     // resolves by exact identifier equality before any prose guessing.
@@ -84,7 +97,7 @@ function resolveSupersedesTarget(ref, entriesById, entries) {
             && entry.claimRegistryNumber.trim()
             && (entry.claimRegistryNumber.trim() === trimmed
                 || entry.claimRegistryNumber.trim().toLowerCase() === lowered)) {
-            return entry;
+            return { target: entry, basis: 'registry' };
         }
     }
     for (const entry of list) {
@@ -92,7 +105,7 @@ function resolveSupersedesTarget(ref, entriesById, entries) {
             && entry.filingReference.trim()
             && (entry.filingReference.trim() === trimmed
                 || entry.filingReference.trim().toLowerCase() === lowered)) {
-            return entry;
+            return { target: entry, basis: 'filing' };
         }
     }
     // 4. Normalized-description containment fallback: the model cites the
@@ -100,15 +113,57 @@ function resolveSupersedesTarget(ref, entriesById, entries) {
     // but cannot know our generated ids — a reference containing (or contained
     // in) another entry's description resolves to that entry.
     const normalizedRef = normalizeText(trimmed);
-    if (!normalizedRef) return null;
+    if (!normalizedRef) return none;
     for (const entry of list) {
         const normalizedDesc = normalizeText(entry?.description || '');
         if (!normalizedDesc) continue;
         if (normalizedDesc.includes(normalizedRef) || normalizedRef.includes(normalizedDesc)) {
-            return entry;
+            return { target: entry, basis: 'description' };
         }
     }
-    return null;
+    return none;
+}
+
+/**
+ * TR-3 — lifecycle identity floor. A description group is the SAME receivable
+ * only on identifier evidence: a shared claim-registry number, filing
+ * reference, party (transferor/transferee, any slot), payment rank, or date.
+ * Groups with none of these are "possibly related," never contradictory —
+ * unlinked competing descriptions without identifiers must not become
+ * conflicts.
+ */
+function sharesLifecycleIdentifiers(groupEntries) {
+    const seen = { registry: new Set(), filing: new Set(), party: new Set(), rank: new Set(), date: new Set() };
+    const norm = (value) => normalizeText(String(value || '')).trim();
+    for (const entry of groupEntries) {
+        const reg = typeof entry?.claimRegistryNumber === 'string' ? entry.claimRegistryNumber.trim() : '';
+        if (reg) {
+            if (seen.registry.has(reg)) return true;
+            seen.registry.add(reg);
+        }
+        const filing = typeof entry?.filingReference === 'string' ? entry.filingReference.trim() : '';
+        if (filing) {
+            if (seen.filing.has(filing.toLowerCase())) return true;
+            seen.filing.add(filing.toLowerCase());
+        }
+        for (const party of [entry?.transferor, entry?.transferee]) {
+            const name = norm(party);
+            if (!name) continue;
+            if (seen.party.has(name)) return true;
+            seen.party.add(name);
+        }
+        const rank = norm(entry?.isplatniRed);
+        if (rank) {
+            if (seen.rank.has(rank)) return true;
+            seen.rank.add(rank);
+        }
+        const date = norm(entry?.date);
+        if (date) {
+            if (seen.date.has(date)) return true;
+            seen.date.add(date);
+        }
+    }
+    return false;
 }
 
 /**
@@ -248,14 +303,14 @@ function reconcileTrazbinaLifecycle(trazbinaEntries, allEntries, context = {}, v
         if (groupEntries.length === 1) continue; // standalone, no comparison possible
         // Resolve chains within the group.
         const linked = new Set(); // entry ids participating in a resolved chain
-        const chainEdges = []; // {from, to}
+        const chainEdges = []; // {from, to, basis}
         for (const entry of groupEntries) {
             if (!entry.supersedes) continue;
-            const target = resolveSupersedesTarget(entry.supersedes, entriesById, groupEntries);
+            const { target, basis } = resolveSupersedesTargetWithBasis(entry.supersedes, entriesById, groupEntries);
             if (target && groupEntries.includes(target)) {
                 linked.add(entry.id);
                 linked.add(target.id);
-                chainEdges.push({ from: target, to: entry });
+                chainEdges.push({ from: target, to: entry, basis });
             }
             // Unresolvable supersedes → standalone treatment (graceful, no error).
         }
@@ -265,25 +320,38 @@ function reconcileTrazbinaLifecycle(trazbinaEntries, allEntries, context = {}, v
                 if (!citationPairs.has(citationKey(groupEntries[i], groupEntries[j]))) continue;
                 linked.add(groupEntries[i].id);
                 linked.add(groupEntries[j].id);
-                chainEdges.push({ from: groupEntries[i], to: groupEntries[j] });
+                chainEdges.push({ from: groupEntries[i], to: groupEntries[j], basis: 'citation' });
             }
         }
 
         if (linked.size === groupEntries.length && chainEdges.length > 0) {
-            // Fully chained: surface as a value-change timeline finding.
-            valueChanges.push(buildValueChangeTimeline(groupEntries, 'supersedes', effectiveValue));
+            // Fully chained: surface as a value-change timeline finding. Any
+            // description-fallback edge marks the timeline inferred (TR-3).
+            const inferred = chainEdges.some((edge) => edge.basis === 'description');
+            valueChanges.push(buildValueChangeTimeline(
+                groupEntries,
+                inferred ? 'supersedes-inferred' : 'supersedes',
+                effectiveValue
+            ));
         } else {
-            // Not fully chained: competing claims. Flag genuine conflict only
-            // when transferees genuinely differ (same receivable, different
-            // assignees, no resolving chain).
+            // Not fully chained: competing claims. A genuine conflict needs
+            // genuinely differing transferees AND shared identifiers (TR-3
+            // identity floor) — same description alone never contradicts.
             const transferees = [...new Set(groupEntries.map((e) => String(e.transferee || '').trim()).filter(Boolean))];
-            if (transferees.length > 1) {
+            if (transferees.length > 1 && sharesLifecycleIdentifiers(groupEntries)) {
                 conflicts.push({
                     finding: `Konkurentske tvrdnje o istoj tražbini: ${groupEntries[0].description} — stjecatelji ${transferees.join(' vs ')}.`,
                     reason: `Tražbina "${groupEntries[0].description}" prenesena je na različite stjecatelje bez lanca koji bi razriješio koja je tvrdnja mjerodavna.`,
                     sources: groupEntries.map((e) => e.sourceId).filter(Boolean),
                     source: 'reconciliation',
                     kind: 'lifecycle',
+                });
+            } else if (transferees.length > 1) {
+                openQuestions.push({
+                    text: `Moguće povezane tvrdnje o tražbini "${groupEntries[0].description}" — stjecatelji ${transferees.join(' vs ')} — bez zajedničkih identifikatora (broj iz registra, broj spisa, stranke, isplatni red, datum) nije moguće potvrditi radi li se o istom potraživanju.`,
+                    source: 'reconciliation',
+                    kind: 'lifecycle',
+                    relationship: 'possibly-related',
                 });
             } else {
                 openQuestions.push({
@@ -333,6 +401,9 @@ module.exports = {
     collectPropertyFlows,
     reconcilePropertyFlows,
     reconcileTrazbinaLifecycle,
+    resolveSupersedesTarget,
+    resolveSupersedesTargetWithBasis,
+    sharesLifecycleIdentifiers,
     buildValueChangeTimeline,
     formatValue,
     propertyGroupKey,

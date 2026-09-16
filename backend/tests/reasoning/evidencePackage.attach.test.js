@@ -102,8 +102,66 @@ describe('attachAnalysesToEvidencePackage — ground-truth chunk branch (Phase 0
         }], null);
 
         expect(pkg.reconciliation.conflicts).toHaveLength(0);
-        expect(pkg.reconciliation.openQuestions).toHaveLength(1);
+        // TR-1: the totals mismatch routes to extraction-validation warnings,
+        // never to the user-facing question list the synthesizer seeds.
+        expect(pkg.reconciliation.openQuestions).toHaveLength(0);
+        expect(pkg.reconciliation.validationWarnings).toHaveLength(1);
+        expect(pkg.reconciliation.validationWarnings[0]).toEqual(expect.objectContaining({
+            check: 'total-vs-parts',
+            kind: 'arithmetic',
+        }));
         expect(validateClusterEvidencePackage(pkg).valid).toBe(true);
+    });
+
+    test('uses ledger rows for flows without collapsing money and property facts', () => {
+        const pkg = attachAnalysesToEvidencePackage(basePackage(), [{
+            analysis: {
+                individualAnalyses: [{
+                    filePath: '/tmp/sale.pdf',
+                    text: 'sale.pdf',
+                    contentHash: 'source-bytes-hash',
+                    sourceEntryIndex: 4,
+                    sourceDocumentLinkId: 'St-1/2024::entry-5::doc-1',
+                    aiResult: {
+                        caseNumber: 'St-1/2024', summary: 'Prodaja.',
+                        amounts: [{ description: 'Kupoprodajna cijena', amount: 1000, currency: 'EUR' }],
+                        propertyFlow: [{ description: 'Kupoprodajna cijena', assetType: 'nekretnina', value: 1000, currency: 'EUR' }]
+                    }
+                }]
+            }
+        }], null);
+
+        expect(pkg.factLedger).toHaveLength(2);
+        expect(pkg.moneyFlow.entries).toHaveLength(1);
+        expect(pkg.propertyFlow.entries).toHaveLength(1);
+        expect(pkg.flows.entries[0].filings).toEqual(expect.arrayContaining([
+            expect.objectContaining({ sourceDocumentLinkId: 'St-1/2024::entry-5::doc-1' })
+        ]));
+    });
+});
+
+describe('attachAnalysesToEvidencePackage — TL-1 content-hash passthrough', () => {
+    test('analysis records carry the document hash when the tool provides one', () => {
+        const pkg = attachAnalysesToEvidencePackage(basePackage(), [{
+            analysis: {
+                individualAnalyses: [
+                    {
+                        filePath: '/tmp/a.pdf',
+                        text: 'a.pdf',
+                        contentHash: 'deadbeef',
+                        aiResult: { caseNumber: 'St-1/2024', summary: 'Sažetak.', amounts: [] }
+                    },
+                    {
+                        filePath: '/tmp/b.pdf',
+                        text: 'b.pdf',
+                        aiResult: { caseNumber: 'St-1/2024', summary: 'Bez hasha.', amounts: [] }
+                    }
+                ]
+            }
+        }], null);
+
+        expect(pkg.analyses[0].contentHash).toBe('deadbeef');
+        expect(pkg.analyses[1].contentHash).toBeUndefined();
     });
 });
 

@@ -11,6 +11,9 @@ const STAGE_LABELS = {
 const DAILY_LIMIT_MESSAGE = 'Dnevni limit AI analize je iscrpljen. Pokušajte ponovno sutra ili s manjim brojem predmeta.';
 const TRANSIENT_MESSAGE = 'AI servis je trenutno preopterećen (privremeno ograničenje učestalosti zahtjeva). Pokušajte ponovno za nekoliko minuta.';
 const TIMEOUT_MESSAGE = 'Zahtjev AI servisu je premašio dopušteno vrijeme čekanja i automatski je prekinut. Pokušajte ponovno.';
+const MALFORMED_JSON_MESSAGE = 'AI odgovor nije bio valjani JSON pa dokument čeka ponovnu obradu.';
+const TRUNCATION_MESSAGE = 'AI odgovor je prekinut zbog ograničenja veličine pa dokument čeka ponovnu obradu.';
+const SCHEMA_MISMATCH_MESSAGE = 'Struktura AI odgovora nije valjana pa dokument čeka ponovnu obradu.';
 
 function describeStage(stage) {
     return STAGE_LABELS[stage] || 'obrade zahtjeva';
@@ -92,6 +95,11 @@ function isTransientRateLimit(reason) {
 // logs keep the raw technical message; this translation layer exists so the
 // per-file reasons agree with the run-level policy instead of blaming OCR
 // for what is really a quota timeout.
+//
+// Ticket T1-2 codes: timeout | truncation | malformed-json | unreadable-file |
+// ocr-failed | daily-quota | rate-limit | unclassified. `schema-mismatch`
+// arrives with T1-3 validation. `unclassified` is terminal honesty: used only
+// when no class matches, always with the causal chain preserved.
 function classifyFileFailure(message) {
     const extracted = isExtracted(message)
         ? message
@@ -99,7 +107,7 @@ function classifyFileFailure(message) {
     const raw = extracted ? extracted.message : String(message || '');
 
     if (!raw.trim()) {
-        return { code: 'unknown', reason: 'Obrada datoteke nije uspjela.' };
+        return { code: 'unclassified', reason: 'Obrada datoteke nije uspjela.' };
     }
     if (isDailyQuotaExhaustion(extracted || raw)) {
         return { code: 'daily-quota', reason: DAILY_LIMIT_MESSAGE };
@@ -110,6 +118,15 @@ function classifyFileFailure(message) {
     if (/timed? ?out|deadline|abort/i.test(raw)) {
         return { code: 'timeout', reason: TIMEOUT_MESSAGE };
     }
+    if (/truncat|MAX_TOKENS|finish[_-]?reason.{0,24}(MAX_TOKENS|LENGTH)|response[_ -]?truncated|output[_ -]?truncated|prekinut zbog ograničenja/i.test(raw)) {
+        return { code: 'truncation', reason: TRUNCATION_MESSAGE };
+    }
+    if (/non-JSON response|Failed to parse.{0,40}JSON|Unexpected token|is not valid JSON|JSON\.parse|malformed JSON|nije valjani JSON/i.test(raw)) {
+        return { code: 'malformed-json', reason: MALFORMED_JSON_MESSAGE };
+    }
+    if (/schema mismatch|failed schema validation|struktura .* nije valjana/i.test(raw)) {
+        return { code: 'schema-mismatch', reason: SCHEMA_MISMATCH_MESSAGE };
+    }
     if (/OCR failed/i.test(raw)) {
         return { code: 'ocr-failed', reason: 'OCR čitanje dokumenta nije uspjelo.' };
     }
@@ -119,7 +136,51 @@ function classifyFileFailure(message) {
             reason: 'Datoteka nije mogla biti očitana (nečitljiva ili nepodržanog formata).',
         };
     }
-    return { code: 'unknown', reason: 'Obrada datoteke nije uspjela.' };
+    return { code: 'unclassified', reason: 'Obrada datoteke nije uspjela.' };
+}
+
+/**
+ * Walks an error's message + `.cause` chain into a bounded, de-duplicated
+ * list of causal messages. Survives string errors, Error objects, provider
+ * wrappers, and cyclic causes. This is the "causal error chain" the spec
+ * requires on every `unclassified` failure (ticket T1-2).
+ */
+function causalChainOf(error, maxDepth = 5) {
+    const chain = [];
+    const seen = new Set();
+    let current = error;
+    for (let depth = 0; depth < maxDepth && current !== null && current !== undefined; depth += 1) {
+        let message = null;
+        if (typeof current === 'string') {
+            message = current;
+            current = null;
+        } else if (current instanceof Error) {
+            message = current.message;
+            current = current.cause ?? null;
+        } else if (typeof current === 'object') {
+            const extracted = isExtracted(current) ? current : extractProviderError(current);
+            message = extracted.message || null;
+            current = current.cause ?? null;
+        } else {
+            current = null;
+        }
+        const text = String(message || '').trim();
+        if (text && !seen.has(text)) {
+            seen.add(text);
+            chain.push(text);
+        }
+    }
+    return chain;
+}
+
+/**
+ * Full per-file failure record: classifier code + display reason + causal
+ * chain. Both `failedFiles` producers (analysis-agent coverage,
+ * evidencePackage) must use this so no failure ships without its chain.
+ */
+function classifyFileFailureDetailed(error) {
+    const classified = classifyFileFailure(error);
+    return { ...classified, causalChain: causalChainOf(error) };
 }
 
 function friendlyAnalysisErrorMessage(error, { stage = null, hasPartial = false } = {}) {
@@ -165,8 +226,13 @@ module.exports = {
     isDailyQuotaExhaustion,
     isTransientRateLimit,
     classifyFileFailure,
+    classifyFileFailureDetailed,
+    causalChainOf,
     extractProviderError,
     DAILY_LIMIT_MESSAGE,
     TRANSIENT_MESSAGE,
-    TIMEOUT_MESSAGE
+    TIMEOUT_MESSAGE,
+    MALFORMED_JSON_MESSAGE,
+    TRUNCATION_MESSAGE,
+    SCHEMA_MISMATCH_MESSAGE
 };

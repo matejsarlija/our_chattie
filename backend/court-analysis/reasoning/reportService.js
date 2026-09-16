@@ -2,6 +2,7 @@ const { synthesizeReport } = require('./synthesizer');
 const { verifyReport } = require('./verifier');
 const { retrieveEvidence } = require('./retriever');
 const { annotateFindingsWithRetrieval } = require('./findingProvenance');
+const { buildScopeContract } = require('./scopeContract');
 const { rerankEvidence, isAmbiguous } = require('./reranker');
 const { shouldAttemptRerank, createLlmRerank, resolveRerankMode } = require('./rerankerClient');
 const { runFollowUpVerification } = require('./followUpVerification');
@@ -177,6 +178,31 @@ async function generateClusterReport(clusterEvidencePackage, options = {}) {
     // M-09 — each finding citation links back to the retrieval query
     // that surfaced it (raw retrieval: full match score/reasons).
     const annotatedFindings = annotateFindingsWithRetrieval(finalReport?.findings, retrieval);
+    // T1-1 — machine-readable conclusion contract: what this report's
+    // evidence can and cannot support. Pure function over the evidence
+    // package + rerank outcome; never throws (a missing contract must not
+    // fail a run — degrade to null and log).
+    let scope = null;
+    try {
+        scope = buildScopeContract({
+            coverage: clusterEvidencePackage?.coverage || null,
+            discovery: clusterEvidencePackage?.discovery || null,
+            analyses: clusterEvidencePackage?.analyses || [],
+            // Cluster-scoped docket entries for the current-status chronology
+            // gate; absent on legacy packages, which then degrade safely.
+            entries: clusterEvidencePackage?.entries || [],
+            rerankedRetrieval,
+            envBudgetCap: typeof process.env.ANALYSIS_SCRAPE_LIMIT === 'string'
+                && process.env.ANALYSIS_SCRAPE_LIMIT.trim() !== ''
+        });
+    } catch (err) {
+        agentLog.warn(`[ScopeContract] Contract build failed; persisting null (${err.message})`);
+    }
+    logger.info('reportService.scope', 'Conclusion contract built', {
+        runId,
+        analysisStatus: scope?.analysisStatus || null,
+        blocked: scope?.blocked || null,
+    });
     return {
         ...finalReport,
         findings: annotatedFindings,
@@ -186,7 +212,8 @@ async function generateClusterReport(clusterEvidencePackage, options = {}) {
         meta: {
             ...(finalReport?.meta || {}),
             retrieval: stripRetrievalText(retrieval),
-            rerank: rerankedRetrieval
+            rerank: rerankedRetrieval,
+            scope
         }
     };
 }

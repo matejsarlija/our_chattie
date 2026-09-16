@@ -39,8 +39,11 @@ describe('createGeminiClient role factory', () => {
             .toBeGreaterThanOrEqual(GEMINI_ROLE_CONFIG.ocr.maxOutputTokens);
         expect(GEMINI_ROLE_CONFIG.synthesis.temperature).toBeLessThanOrEqual(0.2);
         expect(GEMINI_ROLE_CONFIG.verify.temperature).toBeLessThanOrEqual(0.1);
+        // Repair is field-scoped: lite model, zero temperature, bounded output.
+        expect(GEMINI_ROLE_CONFIG.repair.model).toBe(GEMINI_ROLE_CONFIG.rerank.model);
+        expect(GEMINI_ROLE_CONFIG.repair.temperature).toBe(0);
         expect(Object.keys(GEMINI_ROLE_CONFIG).sort()).toEqual(
-            ['analysis', 'ocr', 'ocr-batch', 'planner', 'rerank', 'synthesis', 'verify', 'visualizer'],
+            ['analysis', 'ocr', 'ocr-batch', 'planner', 'repair', 'rerank', 'synthesis', 'verify', 'visualizer'],
         );
     });
 

@@ -57,6 +57,10 @@ const GEMINI_ROLE_CONFIG = {
     // candidates — a tiny, strictly-bounded output well within the lite
     // model's ability.
     rerank: { model: LITE_GEMINI_MODEL, temperature: 0.0, maxOutputTokens: 1024 },
+    // Targeted extraction-field repair (T1-3): re-extracts ONE malformed
+    // field (or one full salvage pass) against the original source excerpt.
+    // Field-scoped outputs stay small; temperature 0 for fidelity.
+    repair: { model: LITE_GEMINI_MODEL, temperature: 0.0, maxOutputTokens: 4096 },
     // Retrieval query planning: ≤6 short query objects as one JSON array —
     // small and strictly-bounded, same reasoning as rerank.
     planner: { model: LITE_GEMINI_MODEL, temperature: 0.1, maxOutputTokens: 512 },

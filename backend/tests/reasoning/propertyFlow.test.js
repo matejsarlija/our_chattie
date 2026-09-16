@@ -88,6 +88,122 @@ describe('reasoning reconcilePropertyFlows', () => {
         expect(result.valueChanges).toHaveLength(0);
     });
 
+    test('TR-3: identifier-less competing descriptions are possibly-related, never contradictory', () => {
+        const flow = collectPropertyFlows([
+            makeAnalysis('a-1', 'ustup-a.pdf', [
+                {
+                    description: 'Ustup tražbine',
+                    assetType: 'tražbina', eventType: 'ustup',
+                    transferor: 'Nepoznati prenijatelj A', transferee: 'Kupac Prvi d.o.o.',
+                    value: 15000, currency: 'EUR',
+                },
+            ]),
+            makeAnalysis('a-2', 'ustup-b.pdf', [
+                {
+                    description: 'Ustup tražbine',
+                    assetType: 'tražbina', eventType: 'ustup',
+                    transferor: 'Nepoznati prenijatelj B', transferee: 'Kupac Drugi d.o.o.',
+                    value: 15000, currency: 'EUR',
+                },
+            ]),
+        ]);
+        const result = reconcilePropertyFlows(flow);
+        expect(result.conflicts).toHaveLength(0);
+        expect(result.valueChanges).toHaveLength(0);
+        expect(result.openQuestions).toHaveLength(1);
+        expect(result.openQuestions[0]).toEqual(expect.objectContaining({
+            kind: 'lifecycle',
+            relationship: 'possibly-related',
+        }));
+        expect(result.openQuestions[0].text).toMatch(/Moguće povezane tvrdnje/);
+    });
+
+    test('TR-3: shared filing reference keeps the competing-claims conflict', () => {
+        const flow = collectPropertyFlows([
+            makeAnalysis('a-1', 'ustup-a.pdf', [
+                {
+                    description: 'Ustup tražbine',
+                    assetType: 'tražbina', eventType: 'ustup',
+                    transferor: 'Prenijatelj A', transferee: 'Kupac Prvi d.o.o.',
+                    filingReference: 'St-2/2013-1196-1',
+                    value: 15000, currency: 'EUR',
+                },
+            ]),
+            makeAnalysis('a-2', 'ustup-b.pdf', [
+                {
+                    description: 'Ustup tražbine',
+                    assetType: 'tražbina', eventType: 'ustup',
+                    transferor: 'Prenijatelj B', transferee: 'Kupac Drugi d.o.o.',
+                    filingReference: 'St-2/2013-1196-1',
+                    value: 15000, currency: 'EUR',
+                },
+            ]),
+        ]);
+        const result = reconcilePropertyFlows(flow);
+        expect(result.conflicts).toHaveLength(1);
+        expect(result.conflicts[0].finding).toMatch(/Konkurentske tvrdnje o istoj tražbini/);
+    });
+
+    test('TR-3: description-fallback-only chain links as supersedes-inferred', () => {
+        const flow = collectPropertyFlows([
+            makeAnalysis('a-1', 'prijava.pdf', [
+                {
+                    description: 'Tražbina vjerovnika prema dužniku Ducanor d.o.o.',
+                    assetType: 'tražbina', eventType: 'prijava',
+                    transferor: 'Vjerovnik A d.o.o.', value: 84500, currency: 'EUR', date: '2022-06-15',
+                },
+            ]),
+            makeAnalysis('a-2', 'ustup.pdf', [
+                {
+                    description: 'Tražbina vjerovnika prema dužniku Ducanor d.o.o.',
+                    assetType: 'tražbina', eventType: 'ustup',
+                    transferor: 'Vjerovnik A d.o.o.', transferee: 'Kupac Tražbina d.o.o.',
+                    value: 15000, currency: 'EUR', date: '2023-06-01',
+                    supersedes: 'Tražbina vjerovnika prema dužniku Ducanor d.o.o.',
+                },
+            ]),
+        ]);
+        const result = reconcilePropertyFlows(flow);
+        expect(result.conflicts).toHaveLength(0);
+        expect(result.valueChanges).toHaveLength(1);
+        expect(result.valueChanges[0].linkage).toBe('supersedes-inferred');
+    });
+
+    test('TR-3: supersedes resolution reports its basis tier', () => {
+        const {
+            resolveSupersedesTarget,
+            resolveSupersedesTargetWithBasis,
+            sharesLifecycleIdentifiers,
+        } = require('../../court-analysis/reasoning/propertyFlow');
+        const byId = new Map([['prop-1', { id: 'prop-1' }]]);
+        const pool = [
+            { id: 'prop-1', description: 'Prijava tražbine', claimRegistryNumber: '106' },
+            { id: 'prop-2', description: 'Ustup tražbine', filingReference: 'St-2/2013-1196-1' },
+        ];
+        // Legacy return shape is untouched.
+        expect(resolveSupersedesTarget('prop-1', byId, pool)).toEqual({ id: 'prop-1' });
+        expect(resolveSupersedesTargetWithBasis('prop-1', byId, pool)).toEqual({
+            target: { id: 'prop-1' }, basis: 'id',
+        });
+        expect(resolveSupersedesTargetWithBasis('106', byId, pool).basis).toBe('registry');
+        expect(resolveSupersedesTargetWithBasis('St-2/2013-1196-1', byId, pool).basis).toBe('filing');
+        expect(resolveSupersedesTargetWithBasis('Ustup tražbine', byId, pool).basis).toBe('description');
+        expect(resolveSupersedesTargetWithBasis('nepostojeće', byId, pool)).toEqual({ target: null, basis: null });
+
+        expect(sharesLifecycleIdentifiers([
+            { transferor: 'A d.o.o.', transferee: 'B d.o.o.' },
+            { transferor: 'C d.o.o.', transferee: 'D d.o.o.' },
+        ])).toBe(false);
+        expect(sharesLifecycleIdentifiers([
+            { transferor: 'A d.o.o.', transferee: 'B d.o.o.' },
+            { transferor: 'A d.o.o.', transferee: 'D d.o.o.' },
+        ])).toBe(true);
+        expect(sharesLifecycleIdentifiers([
+            { description: 'x', date: '2023-01-01' },
+            { description: 'y', date: '2023-01-01' },
+        ])).toBe(true);
+    });
+
     test('unresolvable supersedes reference degrades to standalone — never throws', () => {
         const flow = collectPropertyFlows([
             makeAnalysis('a-1', 'ustup.pdf', [

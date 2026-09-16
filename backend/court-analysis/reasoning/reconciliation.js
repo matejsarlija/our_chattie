@@ -42,6 +42,23 @@ function formatAmount(value) {
     return Number.isFinite(value) ? value.toLocaleString('en-US') : String(value);
 }
 
+// Arithmetic is compared on a EUR-normalized scale, but a conflict must show
+// the figures exactly as their source filings state them. Rendering a HRK
+// source value only as EUR hides the discrepancy a reviewer needs to assess.
+function formatSourceValue(entry) {
+    const raw = formatAmount(entry?.value);
+    const currency = entry?.currency || 'UNKNOWN';
+    const effective = effectiveFlowValue(entry);
+    const differsFromRaw = Number.isFinite(entry?.value)
+        && Number.isFinite(effective)
+        && Math.abs(entry.value - effective) > 0.01;
+
+    if (currency !== 'EUR' && differsFromRaw) {
+        return `${raw} ${currency} (≈ ${formatAmount(effective)} EUR)`;
+    }
+    return `${raw} ${currency}`;
+}
+
 /**
  * Same-document identity for the totals-vs-parts check. `sourceId` is the
  * stable per-run file identity (analysis.id = the downloaded filePath);
@@ -92,6 +109,110 @@ function flowGroupKey(entry) {
     return `${scale}::${entry?.assetType || 'drugo'}::${key}`;
 }
 
+// TD-3 — collapse structurally identical questions (same underlying pair,
+// different filings) into one entry with merged document provenance. The
+// dominant source is the totals-vs-parts loop, which emits one question per
+// document for the same (total, parts-sum) pair. The key strips document-name
+// segments so repeats across filings collapse; amounts are already canonical
+// (`formatAmount` en-US), so equal pairs key equally. Pure function: no
+// question is ever dropped, only folded with its provenance retained.
+const QUESTION_DOCUMENT_SEGMENT_RE = /\([^()]*?\.pdf[^()]*?\)/gi;
+
+function dedupeQuestionKey(question) {
+    const kind = (question && typeof question === 'object' && question.kind) || '';
+    const text = question && typeof question === 'object' && typeof question.text === 'string'
+        ? question.text
+        : String(question || '');
+    return `${kind}::${normalizeText(text.replace(QUESTION_DOCUMENT_SEGMENT_RE, '(dokument)'))}`;
+}
+
+function extractQuestionDocuments(question) {
+    const docs = [];
+    const text = question && typeof question === 'object' && typeof question.text === 'string'
+        ? question.text
+        : '';
+    const segment = /\(([^()]*?\.pdf)\)/gi;
+    let match;
+    while ((match = segment.exec(text)) !== null) {
+        const name = match[1].trim();
+        if (name && !docs.includes(name)) docs.push(name);
+    }
+    for (const known of (question && Array.isArray(question.documents) ? question.documents : [])) {
+        if (typeof known === 'string' && known && !docs.includes(known)) docs.push(known);
+    }
+    return docs;
+}
+
+function dedupeQuestions(openQuestions) {
+    const list = Array.isArray(openQuestions) ? openQuestions : [];
+    const byKey = new Map();
+    for (const question of list) {
+        if (!question) continue;
+        const key = dedupeQuestionKey(question);
+        const docs = extractQuestionDocuments(question);
+        if (!byKey.has(key)) {
+            const first = (question && typeof question === 'object') ? { ...question } : { text: String(question), source: 'reconciliation', kind: 'arithmetic' };
+            first.documents = docs;
+            first.occurrences = 1;
+            byKey.set(key, first);
+            continue;
+        }
+        const kept = byKey.get(key);
+        kept.occurrences += 1;
+        for (const doc of docs) {
+            if (!kept.documents.includes(doc)) kept.documents.push(doc);
+        }
+    }
+    return [...byKey.values()].map((entry) => {
+        if (entry.occurrences <= 1) {
+            const { occurrences, ...single } = entry;
+            return single;
+        }
+        return entry;
+    });
+}
+
+// TR-2 — same-source dual-statement collapse (spec §4.4.2). A dual-currency
+// figure stated twice in ONE filing (once HRK, once EUR) converts to two
+// EUR-scale entries that "diverge" by construction. When every entry shares a
+// single source AND the raw currencies mix HRK/EUR AND the effective values
+// have a ratio of ≈1 (conversion dust) or ≈7.53450 (the fixed rate), this is
+// one dual-stated figure — not a conflict. Anything else (single currency,
+// multiple sources, any other ratio) keeps the normal divergence path, so a
+// coincidentally 7.5× pair of genuine EUR figures still flags.
+const DUAL_RATE = 7.5345;
+const DUAL_REL_TOL = 0.002;
+
+function sameFigureRatio(values) {
+    const finite = (Array.isArray(values) ? values : []).filter((v) => Number.isFinite(v) && v > 0);
+    if (finite.length === 0) return false;
+    const lo = Math.min(...finite);
+    const hi = Math.max(...finite);
+    const ratio = hi / lo;
+    return [1, DUAL_RATE].some((target) => Math.abs(ratio - target) <= DUAL_REL_TOL * target);
+}
+
+function filingProvenanceId(entry) {
+    // `analysis.id` is usually a local path, but it is not filing provenance:
+    // generic court attachments (for example, Podnesak.pdf) can share that
+    // path across different filings. Only the document-link id survives that
+    // collision and identifies the source filing unambiguously.
+    const linkId = entry?.sourceDocumentLinkId;
+    return typeof linkId === 'string' && linkId.trim() ? linkId.trim() : null;
+}
+
+function isSameSourceDualStatement(groupEntries) {
+    if (!Array.isArray(groupEntries) || groupEntries.length < 2) return false;
+    // Be conservative: without filing-level provenance, keep the pair
+    // reviewable. Suppressing a genuine cross-filing discrepancy is worse
+    // than showing a routine dual-currency pair for review.
+    const sources = new Set(groupEntries.map(filingProvenanceId));
+    if (sources.size !== 1 || sources.has(null)) return false;
+    const rawCurrencies = new Set(groupEntries.map((entry) => entry?.currency || 'UNKNOWN'));
+    if (!rawCurrencies.has('HRK') || !rawCurrencies.has('EUR')) return false;
+    return sameFigureRatio(groupEntries.map(effectiveFlowValue));
+}
+
 // Shared divergent-group check, parameterized by kind so each family keeps
 // its historical rule + finding text: novac uses money's ratio rule and
 // arithmetic texts; other asset types use property's value-or-transferee
@@ -116,10 +237,12 @@ function flagDivergentGroups(entries, { novac }) {
         if (novac) {
             const min = Math.min(...values);
             const max = Math.max(...values);
+            // Same filing stating one figure in both currencies (§4.4.2).
+            if (isSameSourceDualStatement(groupEntries)) continue;
             const diverges = max > 0 && (max / min > DIVERGENCE_RATIO_THRESHOLD || Math.abs(max - min) > 0.01);
             if (!diverges) continue;
             conflicts.push({
-                finding: `Različiti iznosi za istu namjenu (${currency}): ${[...new Set(values.map(formatAmount))].join(' vs ')}.`,
+                finding: `Različiti iznosi za istu namjenu (usporedba u ${currency}): ${[...new Set(groupEntries.map(formatSourceValue))].join(' vs ')}.`,
                 reason: `Prijavljeni opis "${groupEntries[0].description}" nosi različite iznose u ${new Set(groupEntries.map((e) => e.fileName).filter(Boolean)).size} dokument(a).`,
                 sources: groupEntries.map((entry) => entry.sourceId).filter(Boolean),
                 source: 'reconciliation',
@@ -154,8 +277,14 @@ function flagDivergentGroups(entries, { novac }) {
 function reconcileFlows(flows, context = {}) {
     const conflicts = [];
     const openQuestions = [];
+    // TR-1 — extraction-validation warnings: same-document total-vs-parts
+    // mismatches are evidence-quality signals (partial extraction, missing
+    // rows), not user-facing case conflicts. They stay inspectable here with
+    // recovery pointers (which total, which parts, what is missing) for the
+    // targeted row-recovery pass, and never seed report.openQuestions.
+    const validationWarnings = [];
     const entries = Array.isArray(flows?.entries) ? flows.entries : [];
-    if (entries.length === 0) return { conflicts, openQuestions, valueChanges: [] };
+    if (entries.length === 0) return { conflicts, openQuestions, validationWarnings, valueChanges: [] };
 
     // --- 1. Divergent same-key groups (per kind, novac first: legacy order).
     conflicts.push(...flagDivergentGroups(entries, { novac: true }));
@@ -173,11 +302,19 @@ function reconcileFlows(flows, context = {}) {
     // Runs over the whole array (not just novac): a filing stating an
     // asset-value total against itemized assets is caught too.
     const TOTAL_MARKERS = ['ukupno', 'ukupna', 'svega', 'total'];
-    const totalEntries = entries.filter((entry) => {
+    // TL-2 — role-first totals: an explicit model-stated `amountRole`
+    // overrides keyword guessing entirely for that entry. Entries without a
+    // role keep the legacy keyword path, so pre-ledger extractions behave
+    // exactly as before.
+    const isRoleTotal = (entry) => entry?.amountRole === 'total';
+    const hasRole = (entry) => typeof entry?.amountRole === 'string' && entry.amountRole !== '';
+    const isKeywordTotal = (entry) => {
         const normalized = normalizeText(entry.description || '');
         return TOTAL_MARKERS.some((marker) => normalized.includes(marker));
-    });
-    const partEntries = entries.filter((entry) => !TOTAL_MARKERS.some((marker) => normalizeText(entry.description || '').includes(marker)));
+    };
+    const isTotal = (entry) => (hasRole(entry) ? isRoleTotal(entry) : isKeywordTotal(entry));
+    const totalEntries = entries.filter((entry) => isTotal(entry));
+    const partEntries = entries.filter((entry) => !isTotal(entry));
 
     for (const totalEntry of totalEntries) {
         // K-03: compare on the consolidated EUR scale when the total has one —
@@ -209,10 +346,24 @@ function reconcileFlows(flows, context = {}) {
         if (Math.abs(partsSum - totalValue) <= 0.01) continue;
 
         const shownCurrency = totalEur !== null ? 'EUR' : (totalEntry.currency || '');
-        openQuestions.push({
-            text: `Navodni ukupni iznos ${formatAmount(totalValue)} ${shownCurrency} (${totalEntry.fileName || 'nepoznat dokument'}) ne odgovara zbroju ostalih izdvojenih stavki iz istog dokumenta (${formatAmount(partsSum)} ${shownCurrency}). Je li ukupnost pokrivala i neprijavljene stavke?`,
+        validationWarnings.push({
+            text: `Navodni ukupni iznos ${formatAmount(totalValue)} ${shownCurrency} (${totalEntry.fileName || 'nepoznat dokument'}) ne odgovara zbroju ostalih izdvojenih stavki iz istog dokumenta (${formatAmount(partsSum)} ${shownCurrency}). Moguće su neprijavljene stavke ili nepotpuna ekstrakcija redaka.`,
             source: 'reconciliation',
-            kind: totalIsNovac ? 'arithmetic' : 'property'
+            kind: totalIsNovac ? 'arithmetic' : 'property',
+            check: 'total-vs-parts',
+            total: {
+                description: totalEntry.description || null,
+                value: totalValue,
+                currency: shownCurrency || null,
+                sourceId: totalEntry.sourceId || null,
+                fileName: totalEntry.fileName || null
+            },
+            parts: parts.map((part) => ({
+                description: part.description || null,
+                value: totalEur !== null ? part.valueEur : part.value,
+                sourceId: part.sourceId || null
+            })),
+            documents: [...new Set([totalEntry.fileName, ...parts.map((part) => part.fileName)].filter(Boolean))]
         });
     }
 
@@ -239,7 +390,7 @@ function reconcileFlows(flows, context = {}) {
         });
     }
 
-    return { conflicts, openQuestions, valueChanges: lifecycle.valueChanges };
+    return { conflicts, openQuestions: dedupeQuestions(openQuestions), validationWarnings: dedupeQuestions(validationWarnings), valueChanges: lifecycle.valueChanges };
 }
 
 /**
@@ -254,7 +405,7 @@ function reconcileMoneyFlows(moneyFlow) {
         .map(asNovacFlow)
         .filter(Boolean);
     const result = reconcileFlows({ entries }, {});
-    return { conflicts: result.conflicts, openQuestions: result.openQuestions };
+    return { conflicts: result.conflicts, openQuestions: result.openQuestions, validationWarnings: result.validationWarnings };
 }
 
-module.exports = { reconcileFlows, reconcileMoneyFlows, reconcilePropertyFlows, isSameDocument, descriptionKey };
+module.exports = { reconcileFlows, reconcileMoneyFlows, reconcilePropertyFlows, isSameDocument, descriptionKey, formatSourceValue, dedupeQuestions };

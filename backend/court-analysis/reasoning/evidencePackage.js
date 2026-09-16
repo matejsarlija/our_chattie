@@ -3,7 +3,8 @@ const { collectFlows, deriveMoneyFlowView, derivePropertyFlowView, propertyIdByF
 const { buildCitationGraph } = require('./citationGraph');
 const { reconcileFlows } = require('./reconciliation');
 const { countGroundedClaims } = require('./grounding');
-const { classifyFileFailure } = require('../../helpers/friendlyAnalysisError');
+const { classifyFileFailureDetailed } = require('../../helpers/friendlyAnalysisError');
+const { buildFactLedger, dedupeLedgerRows } = require('./factLedger');
 
 function normalizeAcquisition(entry) {
     const acquisition = entry?.acquisition || entry?.caseInfo?.acquisition || {};
@@ -192,6 +193,16 @@ function buildClusterEvidencePackage({ cluster, clusterSummary, discoverySummary
         discovery: {
             reasoningClusterId,
             recommendedPrimaryClusterId: discoverySummary?.recommendedPrimaryClusterId || null,
+            // Preserve the selected cluster's date range in the package.
+            // The complete discovery summary is intentionally not persisted
+            // here, so scope-contract consumers must not depend on its
+            // `clusters[]` array being present.
+            selectedCluster: clusterSummary ? {
+                clusterId: clusterSummary.clusterId || clusterId,
+                oldestEntryDate: clusterSummary.oldestEntryDate || null,
+                newestEntryDate: clusterSummary.newestEntryDate || null,
+                entryDateSpanDays: clusterSummary.entryDateSpanDays ?? null,
+            } : null,
             secondaryClusterIds: discoverySummary?.secondaryClusterIds || [],
             discoveryMode: discoverySummary?.discoveryMode || null,
             acquisitionModes: discoverySummary?.acquisitionModes || [],
@@ -302,6 +313,8 @@ function attachAnalysesToEvidencePackage(pkg, processedCases, clusterId = null) 
             entryDate: entryDate || null,
             sourceEntryIndex,
             sourceDocumentLinkId,
+            // TL-1 — stable document identity for ledger-level byte dedupe.
+            ...(typeof item.contentHash === 'string' && item.contentHash ? { contentHash: item.contentHash } : {}),
             summary: item.aiResult.summary || null,
             parties: Array.isArray(item.aiResult.parties) ? item.aiResult.parties : [],
             amounts: Array.isArray(item.aiResult.amounts) ? item.aiResult.amounts : [],
@@ -313,7 +326,46 @@ function attachAnalysesToEvidencePackage(pkg, processedCases, clusterId = null) 
         });
     }
 
-    const flows = collectFlows(analyses);
+    // TL-1/TL-2 — ledger rows are the canonical structured-fact input. Keep
+    // analyses for narrative/retrieval provenance, but flow/reconciliation
+    // must consume the deduped ledger so every surviving row keeps its filing
+    // identity instead of reverting to summary-shaped arrays.
+    const factLedger = dedupeLedgerRows(buildFactLedger(analyses));
+    const flowAnalyses = factLedger.map((row, index) => ({
+        id: row?.doc?.analysisId || `ledger-${index + 1}`,
+        fileName: row?.doc?.fileName || null,
+        caseNumber: row?.doc?.caseNumber || null,
+        sourceEntryIndex: row?.doc?.sourceEntryIndex ?? null,
+        sourceDocumentLinkId: row?.doc?.sourceDocumentLinkId ?? null,
+        contentHash: row?.doc?.contentHash || null,
+        entryDate: row?.date || row?.doc?.entryDate || null,
+        amounts: row?.kind === 'amount' ? [{
+            description: row.description, amount: row.value, amountEur: row.valueEur,
+            currency: row.currency, date: row.date, direction: row.direction,
+            amountRole: row.amountRole, eventType: row.eventType,
+            legalEffect: row.legalEffect, references: row.references,
+            relationshipBasis: row.relationshipBasis, payerName: row.parties?.payerName,
+            payerOib: row.parties?.payerOib, recipientName: row.parties?.recipientName,
+            recipientOib: row.parties?.recipientOib, isplatniRed: row.isplatniRed,
+            claimRegistryNumber: row.claimRegistryNumber, filingReference: row.filingReference,
+            quote: row.quote, grounded: row.grounded,
+            filings: row.filings,
+            sources: row.filings.map((filing) => filing.analysisId).filter(Boolean),
+        }] : [],
+        propertyFlow: row?.kind === 'property' ? [{
+            description: row.description, value: row.value, valueEur: row.valueEur,
+            currency: row.currency, date: row.date, assetType: row.assetType,
+            identifier: row.identifier, transferor: row.parties?.transferor,
+            transferee: row.parties?.transferee, eventType: row.eventType,
+            legalEffect: row.legalEffect, references: row.references,
+            relationshipBasis: row.relationshipBasis, isplatniRed: row.isplatniRed,
+            claimRegistryNumber: row.claimRegistryNumber, filingReference: row.filingReference,
+            supersedes: row.supersedes, quote: row.quote, grounded: row.grounded,
+            filings: row.filings,
+            sources: row.filings.map((filing) => filing.analysisId).filter(Boolean),
+        }] : [],
+    }));
+    const flows = collectFlows(flowAnalyses);
     // Backward-compatible derived views (flow-consolidation PR2): the
     // unified array is filtered + renamed back to today's exact shapes, so
     // synthesizer, frontend and persisted-run readers see zero change.
@@ -351,6 +403,9 @@ function attachAnalysesToEvidencePackage(pkg, processedCases, clusterId = null) 
     const reconciliation = {
         conflicts: [...(moneyReconciliation.conflicts || []), ...(propertyReconciliation.conflicts || [])],
         openQuestions: [...(moneyReconciliation.openQuestions || []), ...(propertyReconciliation.openQuestions || [])],
+        // TR-1: extraction-validation warnings travel with the reconciliation
+        // payload (persisted via meta) but never seed report.openQuestions.
+        validationWarnings: [...(flowReconciliation.validationWarnings || [])],
     };
 
     const total = individualAnalyses.length;
@@ -358,11 +413,12 @@ function attachAnalysesToEvidencePackage(pkg, processedCases, clusterId = null) 
     const failedFiles = individualAnalyses
         .filter((item) => !item?.aiResult)
         .map((item) => {
-            const classified = classifyFileFailure(item.error);
+            const classified = classifyFileFailureDetailed(item.error);
             return {
                 fileName: item.text || item.filePath || 'nepoznata datoteka',
                 code: classified.code,
                 reason: classified.reason,
+                causalChain: classified.causalChain,
             };
         });
 
@@ -379,6 +435,7 @@ function attachAnalysesToEvidencePackage(pkg, processedCases, clusterId = null) 
     return {
         ...pkg,
         analyses,
+        factLedger,
         chunks,
         coverage,
         flows,

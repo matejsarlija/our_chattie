@@ -23,16 +23,75 @@ const agentLog = require("../../helpers/agentLog");
 const logger = require("../../helpers/logger");
 
 const { GEMINI_MODEL, GEMINI_API_KEY, createGeminiClient, outputCapWarning } = require("../../helpers/geminiConfig");
-const { classifyFileFailure } = require("../../helpers/friendlyAnalysisError");
+const { classifyFileFailure, classifyFileFailureDetailed } = require("../../helpers/friendlyAnalysisError");
 const { buildStageCounterEvent } = require("../../helpers/analysisStage");
 const { extractJsonBlock } = require("../../helpers/jsonExtract");
 const { applyGroundingToAnalysis } = require("../reasoning/grounding");
+const {
+    validateExtraction,
+    parseFieldRepairResponse,
+    buildFieldRepairPrompt,
+    buildFullRepairPrompt,
+    REPAIRABLE_FIELDS,
+    EXTRACTION_SCHEMA_VERSION,
+} = require("../reasoning/extractionSchema");
 const ocrPageStore = require("../../helpers/ocrPageStore");
-// Two role-scoped clients: document JSON analysis and vision OCR differ in
-// temperature and output-token policy.
+// Role-scoped clients: document JSON analysis and vision OCR differ in
+// temperature and output-token policy; targeted field repair (T1-3) gets the
+// cheap, zero-temperature lite role with a field-scoped output cap.
 const gemini = createGeminiClient("analysis");
+const repairGemini = createGeminiClient("repair");
 const ocrGemini = createGeminiClient("ocr");
 const ocrBatchGemini = createGeminiClient("ocr-batch");
+
+/**
+ * Invokes the repair role once (T1-3). Bounded by construction: callers allow
+ * at most one repair call per malformed field plus one full-salvage call per
+ * document. Repairs run against the ORIGINAL source excerpt, never an
+ * earlier model summary.
+ */
+async function invokeRepairGemini(prompt, { file, progressCallback, usageTracker, onUsage }) {
+    const fileName = file?.text || path.basename(file?.filePath || "document");
+    progressCallback &&
+        progressCallback({
+            step: "analyze_repair",
+            message: `Popravljam ekstrakciju za ${fileName}...`,
+        });
+    const response = await withGeminiRetry(
+        () => withGeminiTimeout((signal) => trackGeminiInvoke(repairGemini, prompt, { signal, tracker: usageTracker, onUsage })),
+        {
+            onRetry: ({ attempt, delayMs }) => {
+                progressCallback &&
+                    progressCallback({
+                        step: "analyze_retry",
+                        message: `Retry ${attempt} for repair of ${fileName}. Waiting ${Math.round(delayMs / 1000)}s...`,
+                    });
+            },
+        },
+    );
+    return typeof response?.content === "string" ? response.content : "";
+}
+
+function repairGapFields(validated) {
+    const fields = new Set();
+    for (const gap of validated.gaps || []) {
+        const top = String(gap.field || '').split('.')[0];
+        if (REPAIRABLE_FIELDS.includes(top)) fields.add(top);
+    }
+    return [...fields];
+}
+
+function hasUsableExtraction(value) {
+    if (!value || typeof value !== 'object') return false;
+    return Boolean(
+        value.summary ||
+        value.caseNumber ||
+        value.decisionDate ||
+        (Array.isArray(value.amounts) && value.amounts.length > 0) ||
+        (Array.isArray(value.propertyFlow) && value.propertyFlow.length > 0) ||
+        (Array.isArray(value.citedFilingReferences) && value.citedFilingReferences.length > 0)
+    );
+}
 
 const pdfjsLib = require("pdfjs-dist/legacy/build/pdf.js");
 const { withGeminiRetry, withGeminiTimeout } = require("../../helpers/geminiRetry");
@@ -769,6 +828,7 @@ class AnalyzeDocumentsTool extends Tool {
             // documents — dropping their chunks there would re-create the
             // grounding gap for the clusters that need grounding most.
             let retrievalChunks = null;
+            let contentHash = null;
             try {
                 let extraction = await extractTextFromFile(file.filePath);
                 let text = extraction.text;
@@ -805,6 +865,19 @@ class AnalyzeDocumentsTool extends Tool {
                 // Final check: if still no text, return error, file failed analysis
                 if (!text || text.trim().length === 0) {
                     throw new Error(buildExtractionErrorMessage(extraction));
+                }
+
+                // TL-1 — byte-level identity for attachment dedupe. Extracted
+                // text is not a safe proxy: distinct scans may normalize to
+                // the same text. If the file cannot be re-read, leave the
+                // hash absent and decline to dedupe rather than guessing.
+                try {
+                    contentHash = crypto
+                        .createHash("sha256")
+                        .update(fs.readFileSync(file.filePath))
+                        .digest("hex");
+                } catch (hashErr) {
+                    agentLog.warn(`[Analyzer] Could not hash source bytes for ${file.text}: ${hashErr.message}`);
                 }
 
                 // Full text exists — capture the capped ground-truth chunk set
@@ -851,8 +924,8 @@ class AnalyzeDocumentsTool extends Tool {
 
                 From the court document text below, extract key information as a JSON object with the following keys: "caseNumber", "decisionDate", and "summary" (a medium-sized paragraph, nicely formatted, to be in Croatian please, as that is what our customers speak).
                 Do include any important figures (currency amounts) you find in the summary.
-                Also extract any financial amounts (payments, claims, costs, reservations) into an optional "amounts" array, each item being a JSON object with: "description" (what the money is for, in Croatian), "amount" (number), "currency" ("EUR" or "HRK"), "date" (if known), "direction" (one of "potraživanje" when the amount is a claim in the debtor's favor, "obveza" when it is a liability against the debtor, or "awarded" | "rejected" | "netted" when a ruling decides it), "payerName" and "payerOib" (who pays, OIB is 11 digits, if stated), "recipientName" and "recipientOib" (who receives, if stated), "amountEur" and "amountHrk" (when the source states BOTH currencies for one figure, copy each verbatim; otherwise omit), "isplatniRed" (payment-priority rank such as "drugi viši isplatni red", if stated), "claimRegistryNumber" (the "redni broj" from the claim register, if stated), "filingReference" (this document's "poslovni broj", if stated), and "quote" (a verbatim supporting quote copied exactly from the source text below that proves this amount; copy 1-2 sentences word-for-word, do not paraphrase). If the document contains no amounts, set "amounts" to an empty array.
-                Also extract any property/asset transactions (real estate sales, movable-asset sales, receivable assignments/cessions) into an optional "propertyFlow" array, each item being a JSON object with: "description" (what the asset is, in Croatian), "identifier" (cadastral parcel, registration number, or null when absent), "assetType" (one of "nekretnina" | "pokretnina" | "tražbina" | "drugo"), "transferor" (seller/assignor, if known), "transferee" (buyer/assignee, if known), "value" (number, if known), "currency" ("EUR" or "HRK", if known), "date" (if known), and "quote" (verbatim supporting quote as above). For assetType "tražbina" (receivable/claim, e.g. "Ugovor o ustupu tražbina") additionally include "eventType" (one of "prijava" | "ustup" | "namirenje" | "drugo" — the lifecycle stage), "isplatniRed" (payment-priority rank, if stated), "claimRegistryNumber" (the "redni broj", if stated), "filingReference" (the document's "poslovni broj", if stated) and, when this entry continues an earlier lifecycle stage of the SAME receivable described in the analysed documents, "supersedes" (a short textual reference to that earlier entry, e.g. its description, case number, filing date or original creditor as cited in the source text). If the document contains no property transactions, set "propertyFlow" to an empty array.
+                Also extract any financial amounts (payments, claims, costs, reservations) into an optional "amounts" array, with ONE item per table row — if the document contains an itemized table, register, or list (popis tražbina, diobeni popis, troškovnik, obračun), extract one item per row and never merge rows into a single summary amount. Each item being a JSON object with: "description" (what the money is for, in Croatian), "amount" (number), "currency" ("EUR" or "HRK"), "date" (if known), "direction" (one of "potraživanje" when the amount is a claim in the debtor's favor, "obveza" when it is a liability against the debtor, or "awarded" | "rejected" | "netted" when a ruling decides it), "amountRole" (one of "total" | "line_item" | "principal" | "cost" | "paid" | "fee" — the figure's function in the document: "total" for stated sums, "line_item" for table/register rows; omit when unclear), "eventType" (one of "prijava" | "ustup" | "namirenje" | "drugo", when the amount records a lifecycle event), "legalEffect" (one of "creates" | "modifies" | "supersedes" | "resolves" | "implements" | "unknown" — what this entry's document does to the claim or right; omit when unclear), "references" (array of registry or filing identifiers this entry explicitly cites besides its own filingReference; empty array when none), "relationshipBasis" (one of "explicit_identifier" | "explicit_text" | "inferred" — how a "supersedes" link is evidenced in the source text; omit when there is no supersedes link), "payerName" and "payerOib" (who pays, OIB is 11 digits, if stated), "recipientName" and "recipientOib" (who receives, if stated), "amountEur" and "amountHrk" (when the source states BOTH currencies for one figure, copy each verbatim; otherwise omit), "isplatniRed" (payment-priority rank such as "drugi viši isplatni red", if stated), "claimRegistryNumber" (the "redni broj" from the claim register, if stated), "filingReference" (this document's "poslovni broj", if stated), and "quote" (a verbatim supporting quote copied exactly from the source text below that proves this amount; copy 1-2 sentences word-for-word, do not paraphrase). If the document contains no amounts, set "amounts" to an empty array.
+                Also extract any property/asset transactions (real estate sales, movable-asset sales, receivable assignments/cessions) into an optional "propertyFlow" array, with ONE item per table row under the same row rule as amounts above, each item being a JSON object with: "description" (what the asset is, in Croatian), "identifier" (cadastral parcel, registration number, or null when absent), "assetType" (one of "nekretnina" | "pokretnina" | "tražbina" | "drugo"), "transferor" (seller/assignor, if known), "transferee" (buyer/assignee, if known), "value" (number, if known), "currency" ("EUR" or "HRK", if known), "date" (if known), "legalEffect" (one of "creates" | "modifies" | "supersedes" | "resolves" | "implements" | "unknown" — what this entry's document does to the asset or right; omit when unclear), "references" (array of registry or filing identifiers this entry explicitly cites besides its own filingReference; empty array when none), "relationshipBasis" (one of "explicit_identifier" | "explicit_text" | "inferred" — how a "supersedes" link is evidenced in the source text; omit when there is no supersedes link), and "quote" (verbatim supporting quote as above). For assetType "tražbina" (receivable/claim, e.g. "Ugovor o ustupu tražbina") additionally include "eventType" (one of "prijava" | "ustup" | "namirenje" | "drugo" — the lifecycle stage), "isplatniRed" (payment-priority rank, if stated), "claimRegistryNumber" (the "redni broj", if stated), "filingReference" (the document's "poslovni broj", if stated) and, when this entry continues an earlier lifecycle stage of the SAME receivable described in the analysed documents, "supersedes" (a short textual reference to that earlier entry, e.g. its description, case number, filing date or original creditor as cited in the source text). If the document contains no property transactions, set "propertyFlow" to an empty array.
                 Also extract "citedFilingReferences": an array of "poslovni broj" values this document explicitly references (e.g. filings it appeals against or decides upon); empty array when none are cited.
                 Provide ONLY the json object and nothing else. Text:\n\n${analysisInput.analysisText}`;
 
@@ -872,40 +945,74 @@ class AnalyzeDocumentsTool extends Tool {
                 // Recovery-parse the paid-for completion instead of failing
                 // the file on fence markers or chatter around the JSON.
                 const aiResultPartial = extractJsonBlock(response.content);
+                const repairCtx = { file, progressCallback, usageTracker, onUsage };
 
-                if (
-                    !aiResultPartial ||
-                    typeof aiResultPartial !== "object" ||
-                    Array.isArray(aiResultPartial)
-                ) {
+                // T1-3 — schema-constrained extraction: validate first, then
+                // repair ONLY what is malformed. Valid fields are always
+                // preserved; a repair may return absent (source does not state
+                // the field) but never invents a missing fact.
+                let validated = validateExtraction(aiResultPartial);
+                const rootWasUnparseable = !validated.value;
+                if (rootWasUnparseable || !hasUsableExtraction(validated.value)) {
+                    // Entirely unparseable main completion: one full-salvage
+                    // repair attempt against the source excerpt. Failure keeps
+                    // the original malformed-json classification below.
                     agentLog.warn(outputCapWarning("analysis"));
-                    throw new Error(
-                        `AI returned non-JSON response: "${String(response?.content || "").slice(0, 100)}..."`,
-                    );
+                    try {
+                        const repairContent = await invokeRepairGemini(
+                            buildFullRepairPrompt({ sourceText: analysisInput.analysisText }),
+                            repairCtx
+                        );
+                        const salvaged = validateExtraction(extractJsonBlock(repairContent));
+                        if (salvaged.value) validated = salvaged;
+                    } catch (repairErr) {
+                        agentLog.warn(`[Analyzer] Full repair failed for ${file.text}: ${repairErr.message}`);
+                    }
+                    if (!validated.value || !hasUsableExtraction(validated.value)) {
+                        if (!rootWasUnparseable) {
+                            throw new Error(
+                                `Extraction schema mismatch in ${file.text || file.filePath}; no usable content salvaged.`
+                            );
+                        }
+                        throw new Error(
+                            `AI returned non-JSON response: "${String(response?.content || "").slice(0, 100)}..."`,
+                        );
+                    }
+                } else if (!validated.valid) {
+                    for (const field of repairGapFields(validated)) {
+                        try {
+                            const repairContent = await invokeRepairGemini(
+                                buildFieldRepairPrompt({ field, sourceText: analysisInput.analysisText }),
+                                repairCtx
+                            );
+                            const repair = parseFieldRepairResponse(repairContent, field);
+                            if (repair.ok) {
+                                validated = validateExtraction({
+                                    ...validated.value,
+                                    [field]: repair.absent ? [] : repair.value
+                                });
+                            } else {
+                                agentLog.warn(`[Analyzer] Field repair rejected for ${file.text} field ${field}: ${repair.reason}`);
+                            }
+                        } catch (repairErr) {
+                            agentLog.warn(`[Analyzer] Field repair failed for ${file.text} field ${field}: ${repairErr.message}`);
+                        }
+                    }
+                    if (!hasUsableExtraction(validated.value)) {
+                        const remaining = repairGapFields(validated);
+                        throw new Error(
+                            `Extraction schema mismatch for field(s) ${(remaining.length > 0 ? remaining : ['document']).join(', ')} in ${file.text || file.filePath}; no usable content salvaged.`
+                        );
+                    }
                 }
 
                 const aiResult = {
-                    ...aiResultPartial,
+                    ...validated.value,
                     // Inject the reliably scraped parties into the final result object.
                     parties: caseInfo.participants || [],
+                    // Claimed-but-unavailable remainder: inspectable, never silent.
+                    ...(validated.gaps.length > 0 ? { _extractionGaps: validated.gaps } : {}),
                 };
-                // Property flow is additive: a missing/malformed array from the
-                // model degrades to [] (same empty-array fallback as amounts).
-                if (!Array.isArray(aiResult.propertyFlow)) {
-                    aiResult.propertyFlow = [];
-                }
-                if (!Array.isArray(aiResult.amounts)) {
-                    aiResult.amounts = [];
-                }
-                // J-05 — citation graph seed: filings this document explicitly
-                // references. Same additive semantics: missing/malformed → [].
-                if (!Array.isArray(aiResult.citedFilingReferences)) {
-                    aiResult.citedFilingReferences = [];
-                } else {
-                    aiResult.citedFilingReferences = aiResult.citedFilingReferences
-                        .map((ref) => String(ref || '').trim())
-                        .filter(Boolean);
-                }
                 // Per-document grounding check (deterministic containment,
                 // never an LLM judge): verify each quote against the FULL
                 // extracted source text and mark grounded true/false. A miss
@@ -937,6 +1044,7 @@ class AnalyzeDocumentsTool extends Tool {
                 return {
                     ...file,
                     aiResult,
+                    contentHash,
                     ...(retrievalChunks ? { retrievalChunks } : {}),
                 };
             } catch (err) {
@@ -957,6 +1065,7 @@ class AnalyzeDocumentsTool extends Tool {
                     ...file,
                     aiResult: null,
                     error: err.message,
+                    ...(contentHash ? { contentHash } : {}),
                     ...(retrievalChunks ? { retrievalChunks } : {}),
                 };
             }
@@ -1085,11 +1194,12 @@ function buildAnalysisCoverage(individualAnalyses) {
         groundedClaims,
         totalClaims,
         failedFiles: failed.map((item) => {
-            const classified = classifyFileFailure(item?.error);
+            const classified = classifyFileFailureDetailed(item?.error);
             return {
                 fileName: item?.text || item?.filePath || "nepoznata datoteka",
                 code: classified.code,
                 reason: classified.reason,
+                causalChain: classified.causalChain,
             };
         }),
     };

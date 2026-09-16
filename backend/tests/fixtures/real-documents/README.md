@@ -11,7 +11,7 @@ when they are missing — commit neither the documents nor `manifest.json`.
 ## Usage (from `backend/`)
 
 ```bash
-npm run fixtures:fetch    # search, download ~10 entries, unzip, extract, probe, write manifest
+npm run fixtures:fetch    # search, download up to 30 entries, unzip, extract, probe, write manifest
 npm run fixtures:verify   # re-run extraction over an existing manifest (also used by tests)
 ```
 

@@ -1,10 +1,29 @@
 {
   "conflicts": [],
-  "openQuestions": [
+  "openQuestions": [],
+  "validationWarnings": [
     {
-      "kind": "arithmetic",
+      "text": "Navodni ukupni iznos 84,500 EUR (Rjesenje_o_prodaji_imovine.pdf) ne odgovara zbroju ostalih izdvojenih stavki iz istog dokumenta (25,000 EUR). Moguće su neprijavljene stavke ili nepotpuna ekstrakcija redaka.",
       "source": "reconciliation",
-      "text": "Navodni ukupni iznos 84,500 EUR (Rjesenje_o_prodaji_imovine.pdf) ne odgovara zbroju ostalih izdvojenih stavki iz istog dokumenta (25,000 EUR). Je li ukupnost pokrivala i neprijavljene stavke?"
+      "kind": "arithmetic",
+      "check": "total-vs-parts",
+      "total": {
+        "description": "Ukupno prijavljene tražbine",
+        "value": 84500,
+        "currency": "EUR",
+        "sourceId": "/fixtures/eval/Rjesenje_o_prodaji_imovine.pdf",
+        "fileName": "Rjesenje_o_prodaji_imovine.pdf"
+      },
+      "parts": [
+        {
+          "description": "Prodaja proizvodnih strojeva",
+          "value": 25000,
+          "sourceId": "/fixtures/eval/Rjesenje_o_prodaji_imovine.pdf"
+        }
+      ],
+      "documents": [
+        "Rjesenje_o_prodaji_imovine.pdf"
+      ]
     }
   ]
 }

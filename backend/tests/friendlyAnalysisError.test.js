@@ -129,9 +129,14 @@ describe('friendlyAnalysisErrorMessage', () => {
 describe('classifyFileFailure', () => {
   const {
     classifyFileFailure,
+    classifyFileFailureDetailed,
+    causalChainOf,
     DAILY_LIMIT_MESSAGE,
     TRANSIENT_MESSAGE,
     TIMEOUT_MESSAGE,
+    MALFORMED_JSON_MESSAGE,
+    TRUNCATION_MESSAGE,
+    SCHEMA_MISMATCH_MESSAGE,
   } = require('../helpers/friendlyAnalysisError');
 
   test('daily-quota wording maps to the daily-limit reason', () => {
@@ -166,9 +171,53 @@ describe('classifyFileFailure', () => {
   });
 
   test('unknown and empty inputs fall back gracefully', () => {
-    expect(classifyFileFailure('').code).toBe('unknown');
-    expect(classifyFileFailure(null).code).toBe('unknown');
-    expect(classifyFileFailure('Something entirely unexpected happened').code).toBe('unknown');
+    expect(classifyFileFailure('').code).toBe('unclassified');
+    expect(classifyFileFailure(null).code).toBe('unclassified');
+    expect(classifyFileFailure('Something entirely unexpected happened').code).toBe('unclassified');
+  });
+
+  test('malformed model JSON classifies as malformed-json (T1-2)', () => {
+    expect(classifyFileFailure('AI returned non-JSON response: "```json..."').code).toBe('malformed-json');
+    expect(classifyFileFailure('AI returned non-JSON response: "```json..."'))
+      .toEqual({ code: 'malformed-json', reason: MALFORMED_JSON_MESSAGE });
+    expect(classifyFileFailure('Failed to parse extraction JSON: Unexpected token < in JSON').code)
+      .toBe('malformed-json');
+  });
+
+  test('truncated completions classify as truncation (T1-2)', () => {
+    expect(classifyFileFailure('Response truncated: finishReason MAX_TOKENS').code).toBe('truncation');
+    expect(classifyFileFailure('Response truncated: finishReason MAX_TOKENS'))
+      .toEqual({ code: 'truncation', reason: TRUNCATION_MESSAGE });
+  });
+
+  test('unrepairable schema violations classify as schema-mismatch (T1-3)', () => {
+    expect(classifyFileFailure('Extraction schema mismatch for field(s) amounts in x.pdf; no usable content salvaged.').code)
+      .toBe('schema-mismatch');
+    expect(classifyFileFailure('Extraction schema mismatch for field(s) amounts in x.pdf; no usable content salvaged.'))
+      .toEqual({ code: 'schema-mismatch', reason: SCHEMA_MISMATCH_MESSAGE });
+  });
+
+  test('causalChainOf walks string, Error, and cause chains without cycles', () => {
+    expect(causalChainOf('boom')).toEqual(['boom']);
+    expect(causalChainOf(null)).toEqual([]);
+    const inner = new Error('socket hang up');
+    const outer = new Error('Gemini request failed');
+    outer.cause = inner;
+    expect(causalChainOf(outer)).toEqual(['Gemini request failed', 'socket hang up']);
+    const cyclic = new Error('loop');
+    cyclic.cause = cyclic;
+    expect(causalChainOf(cyclic)).toEqual(['loop']);
+  });
+
+  test('classifyFileFailureDetailed always ships the causal chain (T1-2)', () => {
+    expect(classifyFileFailureDetailed('AI returned non-JSON response: "x"')).toEqual({
+      code: 'malformed-json',
+      reason: MALFORMED_JSON_MESSAGE,
+      causalChain: ['AI returned non-JSON response: "x"'],
+    });
+    const unclassified = classifyFileFailureDetailed('Something entirely unexpected happened');
+    expect(unclassified.code).toBe('unclassified');
+    expect(unclassified.causalChain).toEqual(['Something entirely unexpected happened']);
   });
 
   test('classification order: explicit daily beats rate-limit beats timeout', () => {
