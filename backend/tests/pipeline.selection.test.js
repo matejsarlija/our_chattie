@@ -160,9 +160,11 @@ describe('processScrapedCases Selection Policy', () => {
     });
 
     test('parses trailing-dot Croatian dates for recency ranking', async () => {
+        // Equal document counts so the shared selector's document-coverage tier
+        // cannot decide: the trailing-dot dates must parse for recency to pick
+        // the newer case under both the selector and scoring rules.
         const casesToProcess = [
-            { caseInfo: { caseNumber: 'C_OLDER', title: 'Older A', date: '13.01.2025.' }, documentLinks: [{ url: 'u-older-1' }] },
-            { caseInfo: { caseNumber: 'C_OLDER', title: 'Older B', date: '13.01.2025.' }, documentLinks: [{ url: 'u-older-2' }] },
+            { caseInfo: { caseNumber: 'C_OLDER', title: 'Older', date: '13.01.2025.' }, documentLinks: [{ url: 'u-older-1' }] },
             { caseInfo: { caseNumber: 'C_NEWER', title: 'Newer', date: '14.01.2025.' }, documentLinks: [{ url: 'u-newer-1' }] },
         ];
 

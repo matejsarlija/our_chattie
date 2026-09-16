@@ -489,7 +489,8 @@ describe('CourtSearchPuppeteer discovery metadata', () => {
 
         expect(results).toHaveLength(5);
         expect(searchMetadata.pagesScanned).toBe(5);
-        expect(searchMetadata.tailSampling).toEqual({ enabled: false });
+        // T0-3: disabled tail still discloses that no tail rule applied.
+        expect(searchMetadata.tailSampling).toEqual({ enabled: false, tailRule: null });
         expect(scraper.navigateToSearchResultsPage).toHaveBeenCalledTimes(4);
     });
 

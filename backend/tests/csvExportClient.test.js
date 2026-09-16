@@ -4,7 +4,8 @@ const {
     CsvExportClient,
     CsvExportError,
     computeCourtEntryCap,
-    applyBounding
+    applyBounding,
+    applyPrimaryBalancedSelection
 } = require('../scraper/csvExportClient');
 
 const FIXTURES_DIR = path.join(__dirname, 'fixtures', 'csv-export');
@@ -117,6 +118,78 @@ describe('applyBounding', () => {
     });
 });
 
+describe('applyPrimaryBalancedSelection', () => {
+    function selectedEntries(count, caseNumber, { startDay = 1 } = {}) {
+        return Array.from({ length: count }, (_, i) => ({
+            caseNumber,
+            caseInfo: {
+                caseNumber,
+                date: `2026-01-${String(startDay + (i % 27)).padStart(2, '0')}`,
+                documentDownloadLink: `https://example.invalid/${caseNumber}/${i}`
+            },
+            documentLinks: [{ url: `https://example.invalid/${caseNumber}/${i}` }],
+            acquisition: { mode: 'csv-export', currentPage: 1 }
+        }));
+    }
+
+    test('splits the budget into forward newest + tail oldest of the selected key', () => {
+        const entries = [
+            ...selectedEntries(50, 'ST-2/2013'),
+            ...selectedEntries(20, 'ST-9/2019')
+        ];
+        const result = applyPrimaryBalancedSelection(entries, 40, { type: 'oib', value: '66124057408' });
+
+        expect(result.selection.selectedCaseKey).toBe('ST-2/2013');
+        expect(result.entries).toHaveLength(40);
+        expect(result.capped).toBe(true);
+        expect(result.entries.every((entry) => entry.caseNumber === 'ST-2/2013')).toBe(true);
+        expect(result.entries.slice(0, 30).every((entry) => entry.acquisition.sampling === 'forward')).toBe(true);
+        expect(result.entries.slice(30).every((entry) => entry.acquisition.sampling === 'tail')).toBe(true);
+        // Disjoint: no entry object serves both windows.
+        const identities = result.entries.map((entry) => entry.caseInfo.documentDownloadLink);
+        expect(new Set(identities).size).toBe(40);
+    });
+
+    test('tight env-style caps shrink the tail first, then the forward window', () => {
+        const entries = [
+            ...selectedEntries(50, 'ST-2/2013'),
+            ...selectedEntries(20, 'ST-9/2019')
+        ];
+        const small = applyPrimaryBalancedSelection(entries, 35, null);
+        expect(small.entries).toHaveLength(35);
+        expect(small.entries.filter((e) => e.acquisition.sampling === 'tail')).toHaveLength(5);
+
+        const tiny = applyPrimaryBalancedSelection(entries, 7, null);
+        expect(tiny.entries).toHaveLength(7);
+        expect(tiny.entries.every((e) => e.acquisition.sampling === 'forward')).toBe(true);
+    });
+
+    test('at-or-under-budget selected cases pass through unchanged with no markers', () => {
+        const entries = [
+            ...selectedEntries(10, 'ST-2/2013'),
+            ...selectedEntries(5, 'ST-9/2019')
+        ];
+        const result = applyPrimaryBalancedSelection(entries, 40, null);
+
+        expect(result.capped).toBe(false);
+        expect(result.entries).toHaveLength(10);
+        expect(result.entries.every((entry) => entry.acquisition.sampling === undefined)).toBe(true);
+        expect(result.selection.unboundedEntryCount).toBe(15);
+        expect(result.selection.primaryEntryCount).toBe(10);
+    });
+
+    test('unkeyed entries are counted and left untaken', () => {
+        const entries = [
+            ...selectedEntries(45, 'ST-2/2013'),
+            { caseInfo: { caseNumber: 'N/A', documentDownloadLink: 'https://example.invalid/x' }, documentLinks: [] }
+        ];
+        const result = applyPrimaryBalancedSelection(entries, 40, null);
+
+        expect(result.selection.unkeyedEntries).toBe(1);
+        expect(result.entries.every((entry) => entry.caseNumber === 'ST-2/2013')).toBe(true);
+    });
+});
+
 describe('CsvExportClient', () => {
     test('builds the export URL with desc sort', () => {
         const client = makeClient('oib-66124057408.csv');
@@ -153,6 +226,53 @@ describe('CsvExportClient', () => {
         const result = await client.searchAndGetLatestCasesWithDocuments('66124057408', null, null, true);
         expect(result.casesToProcess).toHaveLength(40);
         expect(result.casesToProcess[30].acquisition.sampling).toBe('tail');
+    });
+
+    test('balanced tail belongs to the selected primary case, not global side-cases (T0-1)', async () => {
+        const client = makeClient('oib-66124057408.csv');
+        const result = await client.searchAndGetLatestCasesWithDocuments(
+            '66124057408', 40, 3, true, '66124057408', { type: 'oib', value: '66124057408' }
+        );
+        const keys = result.casesToProcess.map((entry) => entry.caseInfo.caseNumber);
+
+        // Forward 30 + tail 10, all ST-2/2013: the 2016–2018 side-cases that the
+        // old global tail returned are present in the metadata but untaken.
+        expect(result.casesToProcess).toHaveLength(40);
+        expect(new Set(keys)).toEqual(new Set(['ST-2/2013']));
+        expect(result.casesToProcess.slice(0, 30).every((entry) => entry.acquisition.sampling === 'forward')).toBe(true);
+        expect(result.casesToProcess.slice(30).every((entry) => entry.acquisition.sampling === 'tail')).toBe(true);
+        expect(result.discoveryMetadata.selection).toEqual(expect.objectContaining({
+            selectedCaseKey: 'ST-2/2013',
+            rule: 'primary-case-balanced'
+        }));
+        expect(result.discoveryMetadata.selection.candidates.map((c) => c.key)).toContain('ST-357/2013');
+    });
+
+    test('case_number query selects that case even when it is the smaller group (T0-1)', async () => {
+        const client = makeClient('oib-66124057408.csv');
+        const result = await client.searchAndGetLatestCasesWithDocuments(
+            'ST-357/2013', null, null, true, null, { type: 'case_number', value: 'ST-357/2013' }
+        );
+
+        // ST-357/2013 fits the budget: passes through untaken-secondaries style,
+        // with the selection naming the queried key.
+        expect(result.discoveryMetadata.selection).toEqual(expect.objectContaining({
+            selectedCaseKey: 'ST-357/2013',
+            method: 'case-number-query'
+        }));
+        expect(result.casesToProcess.length).toBeGreaterThan(0);
+        expect(result.casesToProcess.every((entry) => entry.caseInfo.caseNumber === 'ST-357/2013')).toBe(true);
+    });
+
+    test('standard path keeps the global window but still discloses the selection (T0-1)', async () => {
+        const client = makeClient('oib-66124057408.csv');
+        const result = await client.searchAndGetLatestCasesWithDocuments('66124057408', null, null, false);
+
+        expect(result.casesToProcess).toHaveLength(30);
+        expect(result.discoveryMetadata.selection).toEqual(expect.objectContaining({
+            selectedCaseKey: 'ST-2/2013',
+            rule: 'global'
+        }));
     });
 
     test('a finite limit bounds the forward window', async () => {

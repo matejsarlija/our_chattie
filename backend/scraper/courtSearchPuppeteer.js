@@ -317,13 +317,13 @@ class CourtSearchPuppeteer {
         const pagesScanned = Number.isFinite(searchMetadata?.pagesScanned) ? searchMetadata.pagesScanned : 0;
 
         if (!enabled || totalPages === null) {
-            return { results: [], windows: [], summary: { enabled: false } };
+            return { results: [], windows: [], summary: { enabled: false, tailRule: null } };
         }
         if (totalPages <= pagesScanned) {
             return {
                 results: [],
                 windows: [],
-                summary: { enabled: true, reason: 'window-fully-scanned', entriesKept: 0, pages: 0 }
+                summary: { enabled: true, reason: 'window-fully-scanned', entriesKept: 0, pages: 0, tailRule: 'global-oldest' }
             };
         }
 
@@ -365,6 +365,11 @@ class CourtSearchPuppeteer {
             windows,
             summary: {
                 enabled: true,
+                // Tail rule disclosure (T0-3): the page-walk tail is always the
+                // globally oldest entries of the search window — unlike the CSV
+                // balanced path, which tails the selected primary case. Runs
+                // disclose which rule applied via this summary.
+                tailRule: 'global-oldest',
                 entriesCollected: accumulated.length,
                 entriesKept: kept.length,
                 // Downstream doc-link filtering can drop kept entries, so report

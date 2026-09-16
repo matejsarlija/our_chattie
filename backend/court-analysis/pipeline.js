@@ -13,6 +13,8 @@ const {
     MAX_CASE_LIMIT,
 } = require('../helpers/courtAnalysisRequest');
 const { groupEntriesByCase } = require('./utils/grouping');
+const { parseCaseDateToTimestamp } = require('./utils/caseDate');
+const { selectPrimaryCase } = require('./utils/primaryCaseSelector');
 const { buildStageCounterEvent } = require('../helpers/analysisStage');
 const { normalizeCaseNumber } = require('./utils/caseNumber');
 const { resolveScanDepthEntries, COURT_ENTRIES_PER_PAGE } = require('./utils/scanDepth');
@@ -161,34 +163,6 @@ function resolveScanDepth(scanDepth) {
     };
 }
 
-function parseCaseDateToTimestamp(rawDate) {
-    if (!rawDate || typeof rawDate !== 'string') return null;
-    const value = rawDate.trim();
-    if (!value || value.toUpperCase() === 'N/A') return null;
-
-    const croatianDateMatch = value.match(/^(\d{1,2})[.\-/](\d{1,2})[.\-/](\d{2,4})\.?$/);
-    if (croatianDateMatch) {
-        const day = Number.parseInt(croatianDateMatch[1], 10);
-        const month = Number.parseInt(croatianDateMatch[2], 10);
-        const yearRaw = Number.parseInt(croatianDateMatch[3], 10);
-        const year = yearRaw < 100 ? 2000 + yearRaw : yearRaw;
-        const ts = Date.UTC(year, month - 1, day);
-        const parsed = new Date(ts);
-
-        if (
-            parsed.getUTCFullYear() === year &&
-            parsed.getUTCMonth() === month - 1 &&
-            parsed.getUTCDate() === day
-        ) {
-            return ts;
-        }
-        return null;
-    }
-
-    const fallbackTs = Date.parse(value);
-    return Number.isNaN(fallbackTs) ? null : fallbackTs;
-}
-
 function collectClusterParticipantSignals(cluster) {
     const participantNames = new Set();
     const oibs = new Set();
@@ -231,6 +205,7 @@ function collectClusterAcquisitionSignals(cluster) {
         acquisitionModes.add(acquisition.mode);
         const key = JSON.stringify({
             mode: acquisition.mode,
+            sampling: acquisition.sampling ?? null,
             currentPage: acquisition.currentPage ?? null,
             sourceCaseNumber: entry?.caseNumber || entry?.caseInfo?.caseNumber || null,
             pass: acquisition.pass ?? null,
@@ -242,6 +217,7 @@ function collectClusterAcquisitionSignals(cluster) {
             seen.add(key);
             acquisitionProvenance.push({
                 mode: acquisition.mode,
+                sampling: acquisition.sampling ?? null,
                 currentPage: acquisition.currentPage ?? null,
                 sourceCaseNumber: entry?.caseNumber || entry?.caseInfo?.caseNumber || null,
                 pass: acquisition.pass ?? null,
@@ -711,6 +687,11 @@ function buildDiscoverySummary(clusterSummaries, selectedClusters, query, discov
         hasNextPage: normalizedDiscoveryMetadata.hasNextPage ?? null,
         rawEntryCount: normalizedDiscoveryMetadata.rawParsedEntryCount ?? totalEntries,
         capturedDistinctCaseCount: clusters.length,
+        // Shared primary-case selection (T0-1): which key bounded acquisition
+        // served, which candidate cases were considered (with entry/document
+        // counts), and which rule ran. This is how a single-cluster
+        // discoverySummary still knows the full multi-case discovery picture.
+        selection: normalizedDiscoveryMetadata.selection ?? null,
         clusters: annotatedClusters,
         dominantClusterRatio: primaryClusterSummary
             ? Number((primaryClusterSummary.entryCount / Math.max(1, totalEntries)).toFixed(2))
@@ -1069,6 +1050,69 @@ async function executeClusterExpansionSearches(automator, discoveryResult, optio
     };
 }
 
+/**
+ * Resolves the reasoning primary (T0-1 convergence) without regressing
+ * identity-aware scoring. Tiers:
+ *   1. explicit `case_number` query match resolving to a known cluster — the
+ *      user named the case; honoring it is always safe;
+ *   2. discovery-provided selection key (the shared selector already ran over
+ *      this input set on the CSV path) resolving to a known cluster;
+ *   3. otherwise the coverage-aware scoring order stands untouched.
+ *
+ * Deliberate split from acquisition bounding: tie-breaks 2–4 of the shared
+ * selector (document coverage, recency, lexical) are budget heuristics for
+ * choosing WHAT to acquire. They must not overrule the scoring policy's
+ * identity-confidence multipliers when deciding what a multi-cluster input
+ * reasons over — that would flip primaries like the JADRAN-matching cluster
+ * in the under-covered-expansion fixtures. The CSV balanced path is unaffected
+ * (single-key input converges trivially).
+ */
+function resolveReasoningPrimary(allClusters, scoredClusters, resolution = {}) {
+    const { query = null, providedSelection = null, caseLimit = null } = resolution;
+    const list = Array.isArray(scoredClusters) ? scoredClusters : [];
+    const clusterIdOf = (cluster) => cluster?.clusterId || cluster?.caseNumber || null;
+    const known = (key) => (Array.isArray(allClusters) ? allClusters : []).some((cluster) => clusterIdOf(cluster) === key);
+
+    const promote = (key, method) => {
+        const atIndex = list.findIndex((cluster) => clusterIdOf(cluster) === key);
+        if (atIndex > 0) {
+            const [picked] = list.splice(atIndex, 1);
+            list.unshift(picked);
+        } else if (atIndex < 0) {
+            const full = (Array.isArray(allClusters) ? allClusters : []).find((cluster) => clusterIdOf(cluster) === key);
+            if (full) {
+                // Selected key cut by caseLimit: reinstate it as the reasoning
+                // target, dropping the lowest-ranked selected cluster.
+                list.unshift(full);
+                if (typeof caseLimit === 'number' && list.length > caseLimit) {
+                    list.length = Math.max(1, caseLimit);
+                }
+            }
+        }
+        return { clusters: list, primarySelection: { selectedCaseKey: key, method, source: 'shared-selector' } };
+    };
+
+    const queriedKey = query?.type === 'case_number' ? normalizeCaseNumber(query?.value) : null;
+    if (queriedKey && known(queriedKey)) {
+        return promote(queriedKey, 'case-number-query');
+    }
+
+    const providedKey = providedSelection?.selectedCaseKey || null;
+    if (providedKey && known(providedKey)) {
+        return promote(providedKey, providedSelection.method || 'discovery-selection');
+    }
+
+    const [head] = list;
+    return {
+        clusters: list,
+        primarySelection: {
+            selectedCaseKey: head ? clusterIdOf(head) : null,
+            method: 'coverage-scoring',
+            source: 'scoring-fallback'
+        }
+    };
+}
+
 function buildDiscoveryResult(casesToProcess, options = {}, progressCallback) {
     // The initial discovery pass (expansion eligibility check) reuses this
     // function; suppress its progress events there so the timeline does not
@@ -1082,9 +1126,37 @@ function buildDiscoveryResult(casesToProcess, options = {}, progressCallback) {
     emitProgress?.({ step: 'grouping', progress: 15, message: 'Grupiram pronađene objave po predmetima...' });
 
     const entriesForGrouping = casesToProcess.map(normalizeEntryForGrouping);
+    // Shared primary-case selection (T0-1): the CSV path already ran the same
+    // selector over this input set for bounded acquisition. The local
+    // computation below is a tripwire for client/pipeline skew; reasoning
+    // follows the tiered resolver (explicit case_number query, then the
+    // discovery-provided key, else coverage scoring) so acquisition-bounding
+    // heuristics can never overrule identity-aware scoring.
+    const localSelection = selectPrimaryCase(entriesForGrouping, options.query || null);
+    const providedSelection = options.discoveryMetadata?.selection || null;
+    const discoveryProvidedKey = providedSelection?.selectedCaseKey || null;
+    if (discoveryProvidedKey
+        && localSelection.selectedCaseKey
+        && discoveryProvidedKey !== localSelection.selectedCaseKey) {
+        logger.warn('pipeline.buildDiscoveryResult', 'Discovery-provided primary key disagrees with local selection; discovery key still drives reasoning.', {
+            runId: options?.runId || null,
+            discoveryProvidedKey,
+            localKey: localSelection.selectedCaseKey,
+            method: localSelection.method
+        });
+    }
+    const resolution = {
+        query: options.query || null,
+        providedSelection,
+        caseLimit: options.caseLimit ?? null
+    };
     const initialAllClusters = groupEntriesByCase(entriesForGrouping);
     const initialClusterSummaries = buildClusterSummaries(initialAllClusters, options.query);
-    const initialClusters = selectClustersForProcessing(initialAllClusters, initialClusterSummaries, options.caseLimit);
+    const initialClusters = resolveReasoningPrimary(
+        initialAllClusters,
+        selectClustersForProcessing(initialAllClusters, initialClusterSummaries, options.caseLimit),
+        resolution
+    ).clusters;
     const initialDiscoverySummary = buildDiscoverySummary(
         initialClusterSummaries,
         initialClusters,
@@ -1094,13 +1166,21 @@ function buildDiscoveryResult(casesToProcess, options = {}, progressCallback) {
     const expansionResult = applyConfiguredClusterExpansion(entriesForGrouping, initialDiscoverySummary, options);
     const allClusters = groupEntriesByCase(expansionResult.entriesForGrouping);
     const clusterSummaries = buildClusterSummaries(allClusters, options.query);
-    const clusters = selectClustersForProcessing(allClusters, clusterSummaries, options.caseLimit);
+    const { clusters, primarySelection } = resolveReasoningPrimary(
+        allClusters,
+        selectClustersForProcessing(allClusters, clusterSummaries, options.caseLimit),
+        resolution
+    );
     const discoverySummary = buildDiscoverySummary(
         clusterSummaries,
         clusters,
         options.query,
         options.discoveryMetadata
     );
+    discoverySummary.primarySelection = {
+        ...primarySelection,
+        discoveryProvidedKey
+    };
 
     if (expansionResult.expansion) {
         discoverySummary.expansion = expansionResult.expansion;
@@ -1278,7 +1358,8 @@ async function runCourtAnalysis(searchTerm, caseLimitOrOptions, progressCallback
             resolved.scrapeLimit,
             resolved.maxPagesScanned,
             resolved.tailSample,
-            resolved.query?.type === 'oib' ? resolved.query.value : null
+            resolved.query?.type === 'oib' ? resolved.query.value : null,
+            resolved.query || null
         );
         const { casesToProcess, discoveryMetadata } = normalizeScraperResult(scrapeResult);
 
@@ -1380,7 +1461,8 @@ async function runCourtAnalysisWithExistingAutomator(searchTerm, caseLimitOrOpti
             resolved.scrapeLimit,
             resolved.maxPagesScanned,
             resolved.tailSample,
-            resolved.query?.type === 'oib' ? resolved.query.value : null
+            resolved.query?.type === 'oib' ? resolved.query.value : null,
+            resolved.query || null
         );
         const { casesToProcess, discoveryMetadata } = normalizeScraperResult(scrapeResult);
 

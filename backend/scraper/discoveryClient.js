@@ -79,12 +79,12 @@ class AutoDiscoveryClient {
         }
     }
 
-    searchAndGetLatestCasesWithDocuments(searchTerm, limit, maxPages, tailSample, debtorOib) {
-        return this._run('searchAndGetLatestCasesWithDocuments', [searchTerm, limit, maxPages, tailSample, debtorOib]);
+    searchAndGetLatestCasesWithDocuments(searchTerm, limit, maxPages, tailSample, debtorOib, query = null) {
+        return this._run('searchAndGetLatestCasesWithDocuments', [searchTerm, limit, maxPages, tailSample, debtorOib, query]);
     }
 
-    searchAndGetLatestCases(searchTerm, limit, maxPages, tailSample, debtorOib) {
-        return this._run('searchAndGetLatestCases', [searchTerm, limit, maxPages, tailSample, debtorOib]);
+    searchAndGetLatestCases(searchTerm, limit, maxPages, tailSample, debtorOib, query = null) {
+        return this._run('searchAndGetLatestCases', [searchTerm, limit, maxPages, tailSample, debtorOib, query]);
     }
 
     // Cluster-expansion follow-ups delegate to the Puppeteer client when the

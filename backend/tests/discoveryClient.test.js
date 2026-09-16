@@ -112,7 +112,9 @@ describe('AutoDiscoveryClient', () => {
         const client = new AutoDiscoveryClient({ csv: { fetcher: async () => { throw new Error('getaddrinfo ENOTFOUND'); } } });
         await client.searchAndGetLatestCasesWithDocuments('66124057408', 40, 3, true, '66124057408');
 
-        expect(mockPuppeteerSearch).toHaveBeenCalledWith('66124057408', 40, 3, true, '66124057408');
+        // T0-1: the resolved pipeline query travels as the trailing argument
+        // (null when the caller did not provide one).
+        expect(mockPuppeteerSearch).toHaveBeenCalledWith('66124057408', 40, 3, true, '66124057408', null);
     });
 
     test('does not expose cluster-expansion when CSV succeeded (no puppeteer)', async () => {

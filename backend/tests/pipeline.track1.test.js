@@ -152,6 +152,7 @@ describe('Track 1: evidence enrichment (1c)', () => {
         fileName: 'doc3.pdf',
         code: 'timeout',
         reason: TIMEOUT_MESSAGE,
+        causalChain: ['Gemini request timed out after 30000ms'],
       }],
       // Grounding dimension: no quotes in these legacy-shaped analyses, so
       // zero of zero claims verify (additive signal, never a failure).
