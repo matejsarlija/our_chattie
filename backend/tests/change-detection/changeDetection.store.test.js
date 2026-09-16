@@ -2,12 +2,12 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
-const { createChangeDetectionStore } = require('../change-detection/store');
-const { buildSnapshot } = require('../change-detection/snapshot');
-const { diffSnapshots } = require('../change-detection/diff');
-const { parseCsvExport } = require('../scraper/csvExportParser');
+const { createChangeDetectionStore } = require('../../change-detection/store');
+const { buildSnapshot } = require('../../change-detection/snapshot');
+const { diffSnapshots } = require('../../change-detection/diff');
+const { parseCsvExport } = require('../../scraper/csvExportParser');
 
-const FIXTURES_DIR = path.join(__dirname, 'fixtures', 'change-detection');
+const FIXTURES_DIR = path.join(__dirname, '..', 'fixtures', 'change-detection');
 const QUERY = { type: 'oib', value: '66124057408' };
 const META = { sourceUrl: 'https://e-oglasna.pravosudje.hr/objave/izvoz/csv', capturedAt: '2026-08-25T10:00:00.000Z' };
 

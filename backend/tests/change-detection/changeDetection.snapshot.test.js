@@ -1,9 +1,9 @@
 const fs = require('fs');
 const path = require('path');
-const { parseCsvExport } = require('../scraper/csvExportParser');
-const { buildSnapshot, queryIdFor, snapshotIdFor, normalizeQueryValue } = require('../change-detection/snapshot');
+const { parseCsvExport } = require('../../scraper/csvExportParser');
+const { buildSnapshot, queryIdFor, snapshotIdFor, normalizeQueryValue } = require('../../change-detection/snapshot');
 
-const FIXTURES_DIR = path.join(__dirname, 'fixtures', 'change-detection');
+const FIXTURES_DIR = path.join(__dirname, '..', 'fixtures', 'change-detection');
 
 function rowsFrom(name) {
     const parsed = parseCsvExport(fs.readFileSync(path.join(FIXTURES_DIR, name), 'utf8'));

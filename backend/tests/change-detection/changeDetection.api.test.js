@@ -4,14 +4,14 @@ const path = require('path');
 const request = require('supertest');
 const express = require('express');
 
-const { createChangeDetectionRouter } = require('../change-detection/api');
-const { createChangeDetectionStore } = require('../change-detection/store');
-const { buildSnapshot } = require('../change-detection/snapshot');
-const { diffSnapshots } = require('../change-detection/diff');
-const { CsvExportError } = require('../scraper/csvExportClient');
-const { parseCsvExport } = require('../scraper/csvExportParser');
+const { createChangeDetectionRouter } = require('../../change-detection/api');
+const { createChangeDetectionStore } = require('../../change-detection/store');
+const { buildSnapshot } = require('../../change-detection/snapshot');
+const { diffSnapshots } = require('../../change-detection/diff');
+const { CsvExportError } = require('../../scraper/csvExportClient');
+const { parseCsvExport } = require('../../scraper/csvExportParser');
 
-const FIXTURES_DIR = path.join(__dirname, 'fixtures', 'change-detection');
+const FIXTURES_DIR = path.join(__dirname, '..', 'fixtures', 'change-detection');
 
 function snapshotFromFixture(name, query, capturedAt) {
     const parsed = parseCsvExport(fs.readFileSync(path.join(FIXTURES_DIR, name), 'utf8'));

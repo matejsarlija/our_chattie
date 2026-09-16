@@ -2,11 +2,11 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
-const { createChangeCheckService } = require('../change-detection/service');
-const { createChangeDetectionStore } = require('../change-detection/store');
-const { CsvExportClient, CsvExportError } = require('../scraper/csvExportClient');
+const { createChangeCheckService } = require('../../change-detection/service');
+const { createChangeDetectionStore } = require('../../change-detection/store');
+const { CsvExportClient, CsvExportError } = require('../../scraper/csvExportClient');
 
-const FIXTURES_DIR = path.join(__dirname, 'fixtures', 'change-detection');
+const FIXTURES_DIR = path.join(__dirname, '..', 'fixtures', 'change-detection');
 const EXPORT_URL = 'https://e-oglasna.pravosudje.hr/objave/izvoz/csv?text=66124057408&sort=datePublished%2Cdesc';
 
 function makeService(fixtureName, overrides = {}) {

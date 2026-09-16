@@ -1,4 +1,4 @@
-const { runCheckChanges, parseArgs } = require('../scripts/check-changes');
+const { runCheckChanges, parseArgs } = require('../../scripts/check-changes');
 
 function makeService(resultOverrides = {}) {
     const calls = [];
