@@ -349,6 +349,7 @@ function reconcileTrazbinaLifecycle(trazbinaEntries, allEntries, context = {}, v
             } else if (transferees.length > 1) {
                 openQuestions.push({
                     text: `Moguće povezane tvrdnje o tražbini "${groupEntries[0].description}" — stjecatelji ${transferees.join(' vs ')} — bez zajedničkih identifikatora (broj iz registra, broj spisa, stranke, isplatni red, datum) nije moguće potvrditi radi li se o istom potraživanju.`,
+                    sources: groupEntries.map((e) => e.sourceId).filter(Boolean),
                     source: 'reconciliation',
                     kind: 'lifecycle',
                     relationship: 'possibly-related',

@@ -75,6 +75,20 @@ describe('reasoningSettings resolvers', () => {
         const s = require('../helpers/reasoningSettings');
         expect(s.resolveReasoningRerankMode()).toBe('auto');
     });
+
+    test('TX advisory switches are env-only and default on', () => {
+        const s = require('../helpers/reasoningSettings');
+        expect(s.resolveReasoningClaimJudge()).toBe('on');
+        expect(s.resolveReasoningSignificance()).toBe('on');
+    });
+
+    test('TX advisory switches turn off via env', () => {
+        process.env.REASONING_CLAIM_JUDGE = 'off';
+        process.env.REASONING_SIGNIFICANCE = 'off';
+        const s = require('../helpers/reasoningSettings');
+        expect(s.resolveReasoningClaimJudge()).toBe('off');
+        expect(s.resolveReasoningSignificance()).toBe('off');
+    });
 });
 
 describe('localStore settings validation for reasoning switches', () => {

@@ -42,8 +42,13 @@ describe('createGeminiClient role factory', () => {
         // Repair is field-scoped: lite model, zero temperature, bounded output.
         expect(GEMINI_ROLE_CONFIG.repair.model).toBe(GEMINI_ROLE_CONFIG.rerank.model);
         expect(GEMINI_ROLE_CONFIG.repair.temperature).toBe(0);
+        // TX advisory roles are lite and bounded like the other JSON roles.
+        for (const role of ['claimJudge', 'significance']) {
+            expect(GEMINI_ROLE_CONFIG[role].model).toBe(GEMINI_ROLE_CONFIG.rerank.model);
+            expect(GEMINI_ROLE_CONFIG[role].temperature).toBe(0);
+        }
         expect(Object.keys(GEMINI_ROLE_CONFIG).sort()).toEqual(
-            ['analysis', 'ocr', 'ocr-batch', 'planner', 'repair', 'rerank', 'synthesis', 'verify', 'visualizer'],
+            ['analysis', 'claimJudge', 'ocr', 'ocr-batch', 'planner', 'repair', 'rerank', 'significance', 'synthesis', 'verify', 'visualizer'],
         );
     });
 

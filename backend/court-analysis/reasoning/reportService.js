@@ -3,6 +3,8 @@ const { verifyReport } = require('./verifier');
 const { retrieveEvidence } = require('./retriever');
 const { annotateFindingsWithRetrieval } = require('./findingProvenance');
 const { buildScopeContract } = require('./scopeContract');
+const { selectClaimJudgePairs, runClaimJudge, applyClaimVerdicts, createClaimJudge } = require('./claimJudge');
+const { buildSignificanceShortlist, runSignificance, applySignificance } = require('./significance');
 const { rerankEvidence, isAmbiguous } = require('./reranker');
 const { shouldAttemptRerank, createLlmRerank, resolveRerankMode } = require('./rerankerClient');
 const { runFollowUpVerification } = require('./followUpVerification');
@@ -11,7 +13,7 @@ const { buildSynthesisInput } = require('./synthesisInputBuilder');
 const { createGeminiClient } = require('../../helpers/geminiConfig');
 const { withGeminiRetry, withGeminiTimeout } = require('../../helpers/geminiRetry');
 const { trackGeminiInvoke } = require('../../helpers/geminiUsage');
-const { resolveReasoningPlanner, resolveReasoningFollowUp } = require('../../helpers/reasoningSettings');
+const { resolveReasoningPlanner, resolveReasoningFollowUp, resolveReasoningClaimJudge, resolveReasoningSignificance } = require('../../helpers/reasoningSettings');
 const agentLog = require('../../helpers/agentLog');
 const logger = require('../../helpers/logger');
 
@@ -110,6 +112,52 @@ async function generateClusterReport(clusterEvidencePackage, options = {}) {
         reason: rerankedRetrieval?.metrics?.rerankReason || null,
         results: Array.isArray(rerankedRetrieval?.results) ? rerankedRetrieval.results.length : 0,
     });
+
+    // TX-1 same-claim judge + TX-2 significance ranking: bounded advisory
+    // lite passes over the deterministic reconciliation output, BEFORE
+    // synthesis input is built so verdicts/ranks seed the report through the
+    // same item references. Both degrade to unannotated output on any
+    // failure; neither ever removes or merges items.
+    try {
+        const reconciliation = clusterEvidencePackage?.reconciliation || null;
+        if (reconciliation && resolveReasoningClaimJudge() === 'on') {
+            const pairs = selectClaimJudgePairs(reconciliation, clusterEvidencePackage?.flows, {});
+            if (pairs.length > 0) {
+                const verdicts = await runClaimJudge(pairs, {
+                    judgeLlm: createClaimJudge({ tracker: options.tracker, onUsage: options.onUsage }),
+                    tracker: options.tracker,
+                    onUsage: options.onUsage
+                });
+                const { claimLinks } = applyClaimVerdicts(reconciliation, pairs, verdicts);
+                reconciliation.claimLinks = claimLinks;
+                logger.info('reportService.claimJudge', 'Same-claim verdicts recorded', {
+                    runId,
+                    pairs: pairs.length,
+                    links: claimLinks.length
+                });
+            }
+        }
+        if (reconciliation && resolveReasoningSignificance() === 'on') {
+            const shortlist = buildSignificanceShortlist(reconciliation);
+            if (shortlist.length > 0) {
+                const ranking = await runSignificance(shortlist, {
+                    tracker: options.tracker,
+                    onUsage: options.onUsage
+                });
+                if (ranking) {
+                    const { applied } = applySignificance(reconciliation, shortlist, ranking);
+                    reconciliation.significanceRanking = ranking;
+                    logger.info('reportService.significance', 'Significance ranking applied', {
+                        runId,
+                        shortlist: shortlist.length,
+                        applied
+                    });
+                }
+            }
+        }
+    } catch (err) {
+        agentLog.warn(`[AdvisoryPasses] Claim-judge/significance failed; report continues unannotated (${err.message})`);
+    }
 
     const reasoningEvidence = buildSynthesisInput(clusterEvidencePackage, retrieval, rerankedRetrieval);
     logger.info('reportService.synthesize', 'Synthesis input built', {

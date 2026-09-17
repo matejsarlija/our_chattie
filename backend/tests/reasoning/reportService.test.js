@@ -291,6 +291,87 @@ describe('composeOverviewMarkdown', () => {
     expect(overview).toContain('## Sljedeći koraci\n- Pratiti rok za prijavu potražina.');
   });
 
+  test('TX advisory passes annotate reconciliation with bounded model calls', async () => {
+        mockNormalizeReasoningEvidence.mockImplementation((evidencePackage) => ({
+            timeline: [],
+            claims: [],
+            meta: { clusterId: evidencePackage.clusterId, reconciliation: evidencePackage.reconciliation }
+        }));
+        mockInvoke.mockImplementation((prompt) => {
+            const text = String(prompt || '');
+            if (text.includes('SAME-CLAIM JUDGE')) {
+                return { content: JSON.stringify({ verdict: 'different', confidence: 'medium', reasons: 'Različiti dužnici.' }) };
+            }
+            if (text.includes('SIGNIFICANCE RANK')) {
+                return { content: JSON.stringify([{ index: 0, rank: 1, significance: 'high', reason: 'Utječe na diobu.' }]) };
+            }
+            return undefined;
+        });
+        mockSynthesizeReport.mockResolvedValue({
+            schemaVersion: '1.0.0',
+            narrative: 'Sažetak',
+            findings: [],
+            claims: [],
+            openQuestions: [],
+            nextSteps: [],
+            conflicts: [],
+            meta: { clusterId: 'ST-100/2023' }
+        });
+        mockVerifyReport.mockImplementation(async (report) => report);
+
+        const evidencePackage = {
+            packageType: 'ClusterEvidencePackage',
+            clusterId: 'ST-100/2023',
+            primaryCaseNumber: 'ST-100/2023',
+            query: { type: 'oib', value: '66124057408' },
+            documentLinks: [],
+            coverage: { analyzed: 2, failed: 0, total: 2 },
+            discovery: { reasoningClusterId: 'ST-100/2023' },
+            analyses: [],
+            flows: {
+                entries: [
+                    { sourceId: 's-a', fileName: 'a.pdf', description: 'Ustup tražbine Alfa', value: 100, currency: 'EUR' },
+                    { sourceId: 's-b', fileName: 'b.pdf', description: 'Ustup tražbine Beta', value: 200, currency: 'EUR' }
+                ]
+            },
+            reconciliation: {
+                conflicts: [{ finding: 'Razlika 100 vs 200 EUR.', sources: ['s-a', 's-b'], source: 'reconciliation', kind: 'arithmetic' }],
+                openQuestions: [{
+                    text: 'Moguće povezane tvrdnje.',
+                    sources: ['s-a', 's-b'],
+                    source: 'reconciliation',
+                    kind: 'lifecycle',
+                    relationship: 'possibly-related'
+                }],
+                validationWarnings: []
+            }
+        };
+
+        const result = await generateClusterReport(evidencePackage, {});
+        expect(result.schemaVersion).toBe('1.0.0');
+        const judgeCalls = mockInvoke.mock.calls.filter(([prompt]) => String(prompt || '').includes('SAME-CLAIM JUDGE'));
+        const rankCalls = mockInvoke.mock.calls.filter(([prompt]) => String(prompt || '').includes('SIGNIFICANCE RANK'));
+
+        // Bounded: both gated pairs (the possibly-related question and the
+        // identifier-less conflict) judged once each, plus one ranking call.
+        // Annotations land on the package reconciliation items in place —
+        // the same references production meta seeds the report from.
+        expect(judgeCalls).toHaveLength(2);
+        expect(rankCalls).toHaveLength(1);
+        expect(evidencePackage.reconciliation.claimLinks).toEqual([
+            expect.objectContaining({ itemKind: 'openQuestion', verdict: 'different' }),
+            expect.objectContaining({ itemKind: 'conflict', verdict: 'different' })
+        ]);
+        expect(evidencePackage.reconciliation.openQuestions[0].claimJudge).toEqual(expect.objectContaining({
+            verdict: 'different'
+        }));
+        expect(evidencePackage.reconciliation.conflicts[0].heuristicRank).toEqual(expect.objectContaining({
+            rank: 1,
+            significance: 'high'
+        }));
+        expect(evidencePackage.reconciliation.significanceRanking).toHaveLength(1);
+    });
+
   test('renders object-shaped open questions via their text field', () => {
     const overview = composeOverviewMarkdown({
       narrative: 'Narativ.',

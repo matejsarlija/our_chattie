@@ -71,6 +71,22 @@ function resolveReasoningFollowUp() {
     return resolveOnOff('reasoningFollowUp', 'REASONING_FOLLOWUP', 'followUp');
 }
 
+// TX-1/TX-2 advisory passes (claim judge, significance ranking) are env-only
+// switches: no dashboard persistence, no localStore contract — absence means
+// "on". They spend bounded lite calls and degrade to unannotated output.
+function resolveTxSwitch(envKey) {
+    const raw = String(process.env[envKey] || '').trim().toLowerCase();
+    return raw === 'off' ? 'off' : 'on';
+}
+
+function resolveReasoningClaimJudge() {
+    return resolveTxSwitch('REASONING_CLAIM_JUDGE');
+}
+
+function resolveReasoningSignificance() {
+    return resolveTxSwitch('REASONING_SIGNIFICANCE');
+}
+
 module.exports = {
     DEFAULT_REASONING_SETTINGS,
     REASONING_RERANK_MODES,
@@ -78,4 +94,6 @@ module.exports = {
     resolveReasoningRerankMode,
     resolveReasoningPlanner,
     resolveReasoningFollowUp,
+    resolveReasoningClaimJudge,
+    resolveReasoningSignificance,
 };

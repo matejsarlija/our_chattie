@@ -61,6 +61,12 @@ const GEMINI_ROLE_CONFIG = {
     // field (or one full salvage pass) against the original source excerpt.
     // Field-scoped outputs stay small; temperature 0 for fidelity.
     repair: { model: LITE_GEMINI_MODEL, temperature: 0.0, maxOutputTokens: 4096 },
+    // TX-1 same-claim judge: one verdict object per identifier-less pair —
+    // tiny, strictly-bounded output.
+    claimJudge: { model: LITE_GEMINI_MODEL, temperature: 0.0, maxOutputTokens: 1024 },
+    // TX-2 significance ranking: one ranked array over a bounded shortlist
+    // with short reasons — small and strictly-bounded, same reasoning.
+    significance: { model: LITE_GEMINI_MODEL, temperature: 0.0, maxOutputTokens: 4096 },
     // Retrieval query planning: ≤6 short query objects as one JSON array —
     // small and strictly-bounded, same reasoning as rerank.
     planner: { model: LITE_GEMINI_MODEL, temperature: 0.1, maxOutputTokens: 512 },
