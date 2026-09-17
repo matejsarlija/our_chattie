@@ -103,62 +103,6 @@ function applyBounding(entries, limit, maxPages, tailSample = false) {
 }
 
 /**
- * Balanced bounded acquisition over the SHARED primary-case selection
- * (spec §3 / ticket T0-1): up to `SCAN_DEPTH_STANDARD_ENTRIES` newest plus up
- * to `SCAN_DEPTH_TAIL_ENTRIES` oldest entries OF THE SELECTED CASE, disjoint,
- * within `cap`. Inputs are newest-first. Entries that cannot form a case key
- * are counted in the selection metadata and left untaken — they can never be
- * a tail. At or under budget the selected case passes through unchanged with
- * no sampling markers (same passthrough contract as `applyBounding`).
- */
-function applyPrimaryBalancedSelection(entries, cap, query = null) {
-    const courtEntries = Array.isArray(entries) ? entries : [];
-    const selection = selectPrimaryCase(courtEntries, query);
-    const key = selection.selectedCaseKey;
-    const primaryEntries = key
-        ? courtEntries.filter((entry) => entryCaseKey(entry) === key)
-        : [];
-
-    const bounded = {
-        selection: {
-            selectedCaseKey: key,
-            method: selection.method,
-            rule: 'primary-case-balanced',
-            candidates: selection.candidates,
-            unkeyedEntries: selection.unkeyedEntries,
-            unboundedEntryCount: courtEntries.length,
-            primaryEntryCount: primaryEntries.length
-        },
-        entries: primaryEntries,
-        capped: false
-    };
-
-    if (!key || primaryEntries.length <= cap) {
-        return bounded;
-    }
-
-    const forwardCount = Math.min(SCAN_DEPTH_STANDARD_ENTRIES, cap);
-    const tailCount = Math.min(SCAN_DEPTH_TAIL_ENTRIES, Math.max(0, cap - forwardCount));
-    const forwardEntries = primaryEntries.slice(0, forwardCount).map((entry) => ({
-        ...entry,
-        acquisition: { ...(entry.acquisition || {}), sampling: 'forward' }
-    }));
-    // Over budget, `primaryEntries.length > cap >= forwardCount + tailCount`,
-    // so the trailing tail window cannot overlap the forward window.
-    const tailStart = Math.max(forwardCount, primaryEntries.length - tailCount);
-    const tailEntries = primaryEntries.slice(tailStart).map((entry) => ({
-        ...entry,
-        acquisition: { ...(entry.acquisition || {}), sampling: 'tail' }
-    }));
-
-    return {
-        selection: bounded.selection,
-        entries: [...forwardEntries, ...tailEntries],
-        capped: true
-    };
-}
-
-/**
  * For OIB queries only, narrows the export to court entries whose CSV-provided
  * debtor OIB matches the queried debtor OIB. This intentionally runs before the
  * document-link and court-entry-count steps.
@@ -273,11 +217,31 @@ class CsvExportClient {
         const withDocuments = identityMatching.filter((entry) => entry.caseInfo.documentDownloadLink);
 
         if (tailSample) {
+            // Balanced depth discovers the whole selected case as an
+            // untagged pool (capped at the defensive 400-entry ceiling); the
+            // stratified allocator in the pipeline bounds ANALYSIS scope
+            // after grouping (spec §6, TS-2). A zero budget short-circuits to
+            // empty, preserving the historical no-results error path.
             const cap = computeCourtEntryCap(limit, maxPages, tailSample);
-            const balanced = applyPrimaryBalancedSelection(withDocuments, cap, effectiveQuery);
+            const selection = selectPrimaryCase(withDocuments, effectiveQuery);
+            const key = selection.selectedCaseKey;
+            const pool = cap <= 0 || !key
+                ? []
+                : withDocuments
+                    .filter((entry) => entryCaseKey(entry) === key)
+                    .slice(0, SCAN_DEPTH_MAX_ENTRIES);
             return {
-                casesToProcess: balanced.entries,
-                discoveryMetadata: this.buildDiscoveryMetadata(fetchInfo, balanced.entries.length, balanced.selection)
+                casesToProcess: pool,
+                discoveryMetadata: this.buildDiscoveryMetadata(fetchInfo, pool.length, {
+                    selectedCaseKey: key,
+                    method: selection.method,
+                    rule: 'primary-case-pool',
+                    analysisBudget: cap,
+                    candidates: selection.candidates,
+                    unkeyedEntries: selection.unkeyedEntries,
+                    unboundedEntryCount: withDocuments.length,
+                    primaryEntryCount: pool.length
+                })
             };
         }
 
@@ -289,6 +253,7 @@ class CsvExportClient {
                 selectedCaseKey: selection.selectedCaseKey,
                 method: selection.method,
                 rule: 'global',
+                analysisBudget: computeCourtEntryCap(limit, maxPages, tailSample),
                 candidates: selection.candidates,
                 unkeyedEntries: selection.unkeyedEntries,
                 unboundedEntryCount: withDocuments.length,
@@ -314,7 +279,6 @@ module.exports = {
     CsvExportError,
     computeCourtEntryCap,
     applyBounding,
-    applyPrimaryBalancedSelection,
     COURT_ENTRIES_PER_PAGE,
     SCAN_DEPTH_TAIL_ENTRIES,
     defaultFetcher

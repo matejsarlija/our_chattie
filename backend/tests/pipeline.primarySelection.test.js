@@ -149,6 +149,62 @@ describe('buildDiscoveryResult shared primary selection (T0-1)', () => {
     });
 });
 
+describe('stratified reasoning input (TS-2)', () => {
+    function poolEntry(index, date, title) {
+        return {
+            caseInfo: { caseNumber: 'ST-2/2013', title, date, participants: [] },
+            documentLinks: [{ url: `https://x/${index}`, text: `${title}.pdf` }],
+            acquisition: { mode: 'csv-export', currentPage: 1 }
+        };
+    }
+
+    test('analysisBudget bounds the reasoning input after grouping; the summary keeps pool counts', () => {
+        const pool = [
+            ...Array.from({ length: 30 }, (_, i) => poolEntry(i, `2025-${String((i % 12) + 1).padStart(2, '0')}-15`, `Podnesak ${i}`)),
+            ...Array.from({ length: 10 }, (_, i) => poolEntry(30 + i, `2020-${String((i % 12) + 1).padStart(2, '0')}-15`, `Rješenje ${i}`)),
+            poolEntry(40, '2026-06-23', 'Diobeni popis')
+        ];
+        const result = buildDiscoveryResult(pool, {
+            caseLimit: 5,
+            query: { type: 'oib', value: '66124057408' },
+            discoveryMetadata: {
+                discoveryMode: 'csv-export',
+                rawParsedEntryCount: pool.length,
+                selection: { selectedCaseKey: 'ST-2/2013', method: 'document-coverage', rule: 'primary-case-pool', analysisBudget: 12 }
+            }
+        });
+
+        // Reasoning input is bounded; discovery reporting is not.
+        expect(result.clusters).toHaveLength(1);
+        expect(result.clusters[0].entries).toHaveLength(12);
+        expect(result.primaryClusterId).toBe('ST-2/2013');
+        const summary = result.discoverySummary;
+        expect(summary.rawEntryCount).toBe(pool.length);
+        expect(summary.clusters[0].entryCount).toBe(pool.length);
+        expect(summary.coverageLedger).toEqual(expect.objectContaining({
+            budget: 12,
+            available: pool.length,
+            selected: 12
+        }));
+        // The vital distribution statement survives the bound.
+        expect(result.clusters[0].entries.map((e) => e.caseInfo.title)).toContain('Diobeni popis');
+        // Strata are tagged for provenance consumers.
+        expect(result.clusters[0].entries.every((e) => typeof e.acquisition.stratum === 'string')).toBe(true);
+    });
+
+    test('no budget means no stratification (legacy paths pass through)', () => {
+        const pool = Array.from({ length: 10 }, (_, i) => poolEntry(i, `2025-0${(i % 9) + 1}-15`, `Podnesak ${i}`));
+        const result = buildDiscoveryResult(pool, {
+            caseLimit: 5,
+            query: null,
+            discoveryMetadata: { discoveryMode: 'search-window' }
+        });
+
+        expect(result.clusters[0].entries).toHaveLength(10);
+        expect(result.discoverySummary.coverageLedger).toBeNull();
+    });
+});
+
 describe('acquisition sampling propagation (T0-2)', () => {
     test('forward/tail markers survive grouping into cluster provenance', () => {
         const entries = [

@@ -15,6 +15,7 @@ const {
 const { groupEntriesByCase } = require('./utils/grouping');
 const { parseCaseDateToTimestamp } = require('./utils/caseDate');
 const { selectPrimaryCase } = require('./utils/primaryCaseSelector');
+const { stratifyClusterEntries } = require('./utils/stratify');
 const { buildStageCounterEvent } = require('../helpers/analysisStage');
 const { normalizeCaseNumber } = require('./utils/caseNumber');
 const { resolveScanDepthEntries, COURT_ENTRIES_PER_PAGE } = require('./utils/scanDepth');
@@ -1171,6 +1172,24 @@ function buildDiscoveryResult(casesToProcess, options = {}, progressCallback) {
         selectClustersForProcessing(allClusters, clusterSummaries, options.caseLimit),
         resolution
     );
+    // TS-2 — stratified analysis scope: when discovery served a candidate
+    // pool with an explicit analysis budget (balanced CSV path), the primary
+    // cluster's entries are allocated AFTER grouping. Discovery-level counts
+    // (summaries, spans) keep describing the pool; only the reasoning input
+    // is bounded. Paths without a budget (puppeteer, mocks, legacy metadata)
+    // pass through untouched.
+    const analysisBudget = options.discoveryMetadata?.selection?.analysisBudget;
+    let coverageLedger = null;
+    if (Number.isFinite(analysisBudget)) {
+        const primaryIndex = clusters.findIndex(
+            (cluster) => (cluster?.clusterId || cluster?.caseNumber) === primarySelection.selectedCaseKey
+        );
+        if (primaryIndex >= 0) {
+            const stratified = stratifyClusterEntries(clusters[primaryIndex].entries, { budget: analysisBudget });
+            clusters[primaryIndex] = { ...clusters[primaryIndex], entries: stratified.entries };
+            coverageLedger = stratified.ledger;
+        }
+    }
     const discoverySummary = buildDiscoverySummary(
         clusterSummaries,
         clusters,
@@ -1181,6 +1200,7 @@ function buildDiscoveryResult(casesToProcess, options = {}, progressCallback) {
         ...primarySelection,
         discoveryProvidedKey
     };
+    discoverySummary.coverageLedger = coverageLedger;
 
     if (expansionResult.expansion) {
         discoverySummary.expansion = expansionResult.expansion;
