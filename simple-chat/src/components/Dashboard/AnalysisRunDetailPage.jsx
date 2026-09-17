@@ -8,6 +8,8 @@ import RunProgressStepper from './RunProgressStepper';
 import RunEventTimeline from './RunEventTimeline';
 import AnalysisActivityLog from './AnalysisActivityLog';
 import AnalysisReportAnnex from './AnalysisReportAnnex';
+import AnalysisRiskList from './AnalysisRiskList';
+import LatestProceduralStep from './LatestProceduralStep';
 import AnalysisReasoningTelemetry from './AnalysisReasoningTelemetry';
 import AnalysisCoverageBanner from './AnalysisCoverageBanner';
 import AnalysisScopeCard from './AnalysisScopeCard';
@@ -220,36 +222,31 @@ export default function AnalysisRunDetailPage() {
 
             <AnalysisScopeCard scope={scope} />
 
-            <AnalysisActivityLog activity={activity} isRunning={isRunning} headerCounter={headerCounter} counterKnown={counterKnown} />
-
-            <AnalysisUsageSummary usage={usage} isRunning={isRunning} />
-
             <AnalysisCoverageBanner coverage={coverage} />
 
+            {/* TU-1 lawyer-first order: boundaries → amounts/holders → risks →
+                latest step → evidence → narrative → discovery context → run
+                plumbing. "What changed" has no diff source yet and is
+                deliberately absent (see the TU-1 design doc). */}
             <AnalysisFlowsSection
               moneyFlow={flows.moneyFlow}
               propertyFlow={flows.propertyFlow}
               valueChanges={flows.valueChanges}
             />
 
-            <SecondaryClustersSection clusters={secondaryClusters} />
+            <AnalysisRiskList
+              conflicts={conflicts}
+              openQuestions={openQuestions}
+              hasStructuredReport={Boolean(report)}
+            />
 
-            <section className="mb-5">
-              <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4">
-                <div className="mb-3 flex items-center justify-between gap-3">
-                  <h3 className="text-sm font-semibold text-[var(--text)]">Događaji</h3>
-                  {timeline.length > 2 && (
-                    <button
-                      onClick={() => setShowFullTimeline((prev) => !prev)}
-                      className="rounded-lg border border-[var(--border)] px-3 py-1.5 text-xs font-medium text-[var(--text)] hover:bg-[var(--surface-muted)]"
-                    >
-                      {showFullTimeline ? 'Prikaži zadnje događaje' : 'Prikaži sve događaje'}
-                    </button>
-                  )}
-                </div>
-                <RunEventTimeline timeline={timelineToRender} isRunning={isRunning} loading={eventsLoading} embedded />
-              </div>
-            </section>
+            <LatestProceduralStep timeline={reportTimeline} />
+
+            <AnalysisReportAnnex
+              findings={findings}
+              timeline={reportTimeline}
+              hasStructuredReport={Boolean(report)}
+            />
 
             <section className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-5">
               <div className="mb-3 flex items-center justify-between gap-3">
@@ -301,13 +298,7 @@ export default function AnalysisRunDetailPage() {
               )}
             </section>
 
-            <AnalysisReportAnnex
-              findings={findings}
-              timeline={reportTimeline}
-              conflicts={conflicts}
-              openQuestions={openQuestions}
-              hasStructuredReport={Boolean(report)}
-            />
+            <SecondaryClustersSection clusters={secondaryClusters} />
 
             {metadataEntries.length > 0 && (
               <section className="mt-5 rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4">
@@ -354,7 +345,28 @@ export default function AnalysisRunDetailPage() {
               </section>
             )}
 
-            <AnalysisReasoningTelemetry report={report} />
+            <AnalysisReasoningTelemetry report={report} collapsible />
+
+            <AnalysisActivityLog activity={activity} isRunning={isRunning} headerCounter={headerCounter} counterKnown={counterKnown} />
+
+            <AnalysisUsageSummary usage={usage} isRunning={isRunning} />
+
+            <section className="mb-5">
+              <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4">
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <h3 className="text-sm font-semibold text-[var(--text)]">Događaji</h3>
+                  {timeline.length > 2 && (
+                    <button
+                      onClick={() => setShowFullTimeline((prev) => !prev)}
+                      className="rounded-lg border border-[var(--border)] px-3 py-1.5 text-xs font-medium text-[var(--text)] hover:bg-[var(--surface-muted)]"
+                    >
+                      {showFullTimeline ? 'Prikaži zadnje događaje' : 'Prikaži sve događaje'}
+                    </button>
+                  )}
+                </div>
+                <RunEventTimeline timeline={timelineToRender} isRunning={isRunning} loading={eventsLoading} embedded />
+              </div>
+            </section>
           </>
         )}
       </main>

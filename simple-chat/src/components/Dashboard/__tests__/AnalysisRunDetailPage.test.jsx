@@ -186,6 +186,61 @@ describe('AnalysisRunDetailPage metadata modules', () => {
     expect(screen.getByText('Objava 14/2026 - Stecaj duznika')).toBeInTheDocument();
   });
 
+  test('TU-1: lawyer-first section order on a complete run', () => {
+    useAnalysisRunDetail.mockReturnValue({
+      run: {
+        id: 'run-1',
+        status: 'done',
+        oib: '66124057408',
+        result_text: 'Narativ.',
+        result_json: {
+          processedCases: [],
+          clusterEvidencePackage: {
+            moneyFlow: { entries: [{ id: 'money-1', description: 'Tražbina.', amount: 100, currency: 'EUR' }] },
+          },
+          report: {
+            schemaVersion: '1.0.0',
+            narrative: 'Narativ.',
+            findings: [{ text: 'Nalaz.', confidence: 'high', citations: [] }],
+            timeline: [
+              { date: '2025-01-01', description: 'Stari korak.' },
+              { date: '2026-06-23', description: 'Najnoviji korak.' },
+            ],
+            conflicts: [{ finding: 'Sukob.', kind: 'arithmetic', source: 'reconciliation' }],
+            openQuestions: [{ text: 'Pitanje.', kind: 'lifecycle', source: 'reconciliation' }],
+            meta: { scope: { analysisStatus: 'partial', supported: [], blocked: [], blockingEvidence: [], degraded: [], corpus: {} } },
+          },
+        },
+      },
+      events: [],
+      loading: false,
+      eventsLoading: false,
+      error: '',
+      isRunning: false,
+      connectionMode: 'idle',
+      lastUpdatedAt: '2026-02-27T12:00:00.000Z',
+      refresh: jest.fn(),
+    });
+
+    const { container } = render(<AnalysisRunDetailPage />);
+    const text = container.textContent;
+    const order = [
+      'Što dokazi u ovoj analizi mogu potvrditi',
+      'Tijek novca',
+      'Rizici i otvorena pitanja',
+      'Najnoviji postupovni korak',
+      'Prilozi analize',
+      'Rezultat analize',
+      'Telemetrija zaključivanja',
+    ].map((heading) => ({ heading, index: text.indexOf(heading) }));
+    for (const { heading, index } of order) {
+      expect(index).toBeGreaterThanOrEqual(0);
+    }
+    const indexes = order.map((entry) => entry.index);
+    expect([...indexes].sort((a, b) => a - b)).toEqual(indexes);
+    expect(screen.getByText('2026-06-23 — Najnoviji korak.')).toBeInTheDocument();
+  });
+
   test('renders Predmet label for case-number query runs', () => {
     useAnalysisRunDetail.mockReturnValue({
       run: {
@@ -330,7 +385,8 @@ describe('AnalysisRunDetailPage metadata modules', () => {
     expect(screen.getByText('Vremenska crta')).toBeInTheDocument();
     expect(screen.getByText('Otvoren postupak.')).toBeInTheDocument();
     expect(screen.getByText('2026-01-10')).toBeInTheDocument();
-    expect(screen.getByText('Konflikti')).toBeInTheDocument();
+    // TU-1: conflicts live in the merged severity-ranked risk list now.
+    expect(screen.getByText('Rizici i otvorena pitanja')).toBeInTheDocument();
     expect(screen.getByText('Nesklad u navodu o datumu dospijeca.')).toBeInTheDocument();
   });
 
@@ -362,7 +418,8 @@ describe('AnalysisRunDetailPage metadata modules', () => {
 
     render(<AnalysisRunDetailPage />);
 
-    expect(screen.getByText('Otvorena pitanja')).toBeInTheDocument();
+    // TU-1: open questions render inside the merged risk list.
+    expect(screen.getByText('Rizici i otvorena pitanja')).toBeInTheDocument();
     expect(screen.getByText('Nedostaje datum dospijeća glavnog potraživanja.')).toBeInTheDocument();
   });
 
@@ -633,7 +690,7 @@ describe('AnalysisRunDetailPage metadata modules', () => {
     expect(screen.getByText('Dva različita datuma u dokumentima.')).toBeInTheDocument();
   });
 
-  test('M-05: conflicts and open questions group by provenance class', () => {
+  test('TU-1: conflicts and open questions merge into one severity-ranked risk list', () => {
     useAnalysisRunDetail.mockReturnValue({
       run: {
         id: 'run-1',
@@ -669,9 +726,12 @@ describe('AnalysisRunDetailPage metadata modules', () => {
 
     render(<AnalysisRunDetailPage />);
 
-    expect(screen.getByText('Utvrđeno kodom — aritmetička nepodudaranja')).toBeInTheDocument();
-    expect(screen.getByText('Životni ciklus tražbina — nerazriješena pitanja')).toBeInTheDocument();
-    expect(screen.getAllByText('Modelska opažanja i provjera').length).toBeGreaterThanOrEqual(1);
+    // One merged surface with per-item kind tags instead of provenance groups.
+    expect(screen.getByText('Rizici i otvorena pitanja')).toBeInTheDocument();
+    expect(screen.queryByText('Utvrđeno kodom — aritmetička nepodudaranja')).not.toBeInTheDocument();
+    expect(screen.queryByText('Životni ciklus tražbina — nerazriješena pitanja')).not.toBeInTheDocument();
+    expect(screen.getByText('Aritmetika')).toBeInTheDocument();
+    expect(screen.getByText('Životni ciklus')).toBeInTheDocument();
     expect(screen.getByText(/Različiti iznosi za istu namjenu/)).toBeInTheDocument();
     expect(screen.getByText(/Tražbina se pojavljuje bez lanca/)).toBeInTheDocument();
   });

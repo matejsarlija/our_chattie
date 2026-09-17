@@ -72,7 +72,7 @@ function MatchDetail({ match }) {
  * per-sourceType). M-08: each query row expands to its persisted top-K
  * matches (score, reasons, snippet, source file — see M-06 provenance).
  */
-export default function AnalysisReasoningTelemetry({ report }) {
+export default function AnalysisReasoningTelemetry({ report, collapsible = false }) {
   const retrieval = report?.meta?.retrieval || null;
   const rerank = report?.meta?.rerank || null;
   const [filter, setFilter] = useState(null);
@@ -154,9 +154,15 @@ export default function AnalysisReasoningTelemetry({ report }) {
   const rerankReason = rerank?.metrics?.rerankReason || null;
   const visibleRows = filteredRows.slice(0, 8);
 
+  // TU-1 — the telemetry table is evidence plumbing, not case substance:
+  // collapsible mode hides it behind a native disclosure on the detail page
+  // while keeping every control intact.
+  const Wrapper = collapsible ? 'details' : 'section';
+  const Heading = collapsible ? 'summary' : 'h2';
+
   return (
-    <section className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-5" data-testid="reasoning-telemetry">
-      <h2 className="mb-3 text-sm font-semibold text-[var(--text)]">Telemetrija zaključivanja</h2>
+    <Wrapper className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-5" data-testid="reasoning-telemetry">
+      <Heading className={`mb-3 text-sm font-semibold text-[var(--text)]${collapsible ? ' cursor-pointer' : ''}`}>Telemetrija zaključivanja</Heading>
 
       <div className="mb-3 flex flex-wrap items-center gap-2">
         <StatChip label="upita" value={queries.length} />
@@ -282,6 +288,6 @@ export default function AnalysisReasoningTelemetry({ report }) {
           ))}
         </ul>
       ) : null}
-    </section>
+    </Wrapper>
   );
 }
