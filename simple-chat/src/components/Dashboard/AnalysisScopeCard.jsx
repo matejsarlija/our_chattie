@@ -32,6 +32,7 @@ export default function AnalysisScopeCard({ scope }) {
   if (!scope) return null;
   const status = STATUS[scope.analysisStatus] || STATUS.discovery_only;
   const corpus = scope.corpus || {};
+  const coverageLedger = corpus.coverageLedger || null;
   const blockers = Array.isArray(scope.blockingEvidence) ? scope.blockingEvidence : [];
   const degraded = Array.isArray(scope.degraded) ? scope.degraded : [];
 
@@ -51,6 +52,19 @@ export default function AnalysisScopeCard({ scope }) {
         <div><dt className="text-xs text-[var(--text-muted)]">Odabrani predmet</dt><dd className="mt-0.5 font-medium text-[var(--text)]">{corpus.selectedCase || '—'}</dd></div>
         <div><dt className="text-xs text-[var(--text-muted)]">Vremenski raspon</dt><dd className="mt-0.5 font-medium text-[var(--text)]">{formatRange(corpus.dateRange)}</dd></div>
       </dl>
+
+      {coverageLedger && (
+        <div className="mt-4 border-t border-[var(--border)] pt-3 text-sm">
+          <p className="text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">Uzorak analize</p>
+          <p className="mt-1 text-[var(--text)]">
+            {coverageLedger.selected ?? 0} / {coverageLedger.available ?? 0} unosa odabrano stratificirano
+            {coverageLedger.insufficient ? ' · vitalni dokumenti izvan proračuna' : ''}
+          </p>
+          {Array.isArray(coverageLedger.gaps) && coverageLedger.gaps.length > 0 && (
+            <p className="mt-1 text-xs text-[var(--text-muted)]">Praznine uzorka: {coverageLedger.gaps.join('; ')}</p>
+          )}
+        </div>
+      )}
 
       <div className="mt-4 grid gap-4 border-t border-[var(--border)] pt-3 md:grid-cols-2">
         <div>

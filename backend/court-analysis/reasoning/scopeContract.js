@@ -92,6 +92,9 @@ function buildScopeContract(input = {}) {
     const totalResults = discovery.totalResults ?? null;
     const reasoningClusterId = discovery.reasoningClusterId || discovery.recommendedPrimaryClusterId || null;
     const cluster = reasoningClusterId ? reasoningClusterSummary(discovery, reasoningClusterId) : null;
+    const coverageLedger = discovery.coverageLedger && typeof discovery.coverageLedger === 'object'
+        ? discovery.coverageLedger
+        : null;
 
     const supported = [];
     const blocked = [];
@@ -113,7 +116,7 @@ function buildScopeContract(input = {}) {
             blocked,
             blockingEvidence,
             degraded,
-            corpus: corpusSnapshot({ analyzed, failed, total, rawEntryCount, totalResults, reasoningClusterId, cluster })
+            corpus: corpusSnapshot({ analyzed, failed, total, rawEntryCount, totalResults, reasoningClusterId, cluster, coverageLedger })
         };
     }
 
@@ -170,7 +173,7 @@ function buildScopeContract(input = {}) {
         blocked: [...new Set(blocked)],
         blockingEvidence,
         degraded,
-        corpus: corpusSnapshot({ analyzed, failed, total, rawEntryCount, totalResults, reasoningClusterId, cluster })
+        corpus: corpusSnapshot({ analyzed, failed, total, rawEntryCount, totalResults, reasoningClusterId, cluster, coverageLedger })
     };
 }
 
@@ -279,7 +282,7 @@ function evaluateCurrentProceduralStatus({ entries, analyses }, block, supported
     supported.push('current_procedural_status');
 }
 
-function corpusSnapshot({ analyzed, failed, total, rawEntryCount, totalResults, reasoningClusterId, cluster }) {
+function corpusSnapshot({ analyzed, failed, total, rawEntryCount, totalResults, reasoningClusterId, cluster, coverageLedger }) {
     return {
         analyzed,
         failed,
@@ -289,7 +292,8 @@ function corpusSnapshot({ analyzed, failed, total, rawEntryCount, totalResults, 
         selectedCase: reasoningClusterId,
         dateRange: cluster
             ? { oldestEntryDate: cluster.oldestEntryDate || null, newestEntryDate: cluster.newestEntryDate || null, spanDays: cluster.entryDateSpanDays ?? null }
-            : null
+            : null,
+        coverageLedger: coverageLedger || null
     };
 }
 

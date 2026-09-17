@@ -131,6 +131,19 @@ describe('buildScopeContract (T1-1 backend)', () => {
         });
     });
 
+    test('carries the persisted stratification ledger into the scope contract', () => {
+        const contract = buildScopeContract({
+            coverage: { analyzed: 1, failed: 0, total: 1, totalClaims: 1 },
+            discovery: {
+                reasoningClusterId: 'ST-5/2024', rawEntryCount: 40, totalResults: 40,
+                coverageLedger: { budget: 40, available: 80, selected: 40, gaps: ['2018: 0/3 selected'] }
+            },
+            analyses: [{ fileName: 'Diobeni popis.pdf' }]
+        });
+
+        expect(contract.corpus.coverageLedger).toEqual(expect.objectContaining({ available: 80, selected: 40 }));
+    });
+
     test('zero analyzed documents is discovery_only with everything blocked', () => {
         const contract = buildScopeContract({
             coverage: { analyzed: 0, failed: 0, total: 0, failedFiles: [], totalClaims: 0 },

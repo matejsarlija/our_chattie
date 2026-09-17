@@ -212,7 +212,10 @@ function buildClusterEvidencePackage({ cluster, clusterSummary, discoverySummary
             pagesScanned: discoverySummary?.pagesScanned ?? null,
             rawEntryCount: discoverySummary?.rawEntryCount ?? null,
             capturedDistinctCaseCount: discoverySummary?.capturedDistinctCaseCount ?? null,
-            coverageConfidence: discoverySummary?.coverageConfidence || null
+            coverageConfidence: discoverySummary?.coverageConfidence || null,
+            // TS-2: the selected-cluster sampling ledger is part of the
+            // report's evidence boundary, not discovery-only telemetry.
+            coverageLedger: discoverySummary?.coverageLedger || null
         },
         selection: {
             selectedForReasoning: true,

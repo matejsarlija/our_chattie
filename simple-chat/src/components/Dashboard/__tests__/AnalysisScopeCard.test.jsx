@@ -9,7 +9,10 @@ describe('AnalysisScopeCard', () => {
       blocked: ['full_case_outcome'],
       blockingEvidence: [{ category: 'full_case_outcome', reason: 'partial-corpus' }],
       degraded: [{ condition: 'rerank-fallback', reason: 'lexical retrieval served the run' }],
-      corpus: { analyzed: 57, total: 63, capturedEntries: 40, totalResults: 381, selectedCase: 'ST-2/2013', dateRange: { oldestEntryDate: '2025-07-17', newestEntryDate: '2026-06-23' } },
+      corpus: {
+        analyzed: 57, total: 63, capturedEntries: 40, totalResults: 381, selectedCase: 'ST-2/2013', dateRange: { oldestEntryDate: '2025-07-17', newestEntryDate: '2026-06-23' },
+        coverageLedger: { selected: 40, available: 343, gaps: ['2019: 0/2 selected'] }
+      },
     }} />);
 
     expect(screen.getByRole('heading', { name: 'Što dokazi u ovoj analizi mogu potvrditi' })).toBeInTheDocument();
@@ -18,6 +21,8 @@ describe('AnalysisScopeCard', () => {
     expect(screen.getByText('2025-07-17 — 2026-06-23')).toBeInTheDocument();
     expect(screen.getByText(/Cjelovit ishod predmeta: Nije obuhvaćen cijeli pronađeni korpus/)).toBeInTheDocument();
     expect(screen.getByText(/lexical retrieval served the run/)).toBeInTheDocument();
+    expect(screen.getByText(/40 \/ 343 unosa odabrano stratificirano/)).toBeInTheDocument();
+    expect(screen.getByText(/Praznine uzorka: 2019: 0\/2 selected/)).toBeInTheDocument();
   });
 
   test('does not render for reports created before the scope contract', () => {

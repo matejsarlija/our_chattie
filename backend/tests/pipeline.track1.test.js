@@ -118,6 +118,17 @@ function buildDiscoverySummary() {
 }
 
 describe('Track 1: evidence enrichment (1c)', () => {
+  test('preserves the stratification ledger for the report scope contract', () => {
+    const discoverySummary = {
+      ...buildDiscoverySummary(),
+      coverageLedger: { budget: 40, available: 80, selected: 40, gaps: ['2018: 0/3 selected'] },
+    };
+
+    const pkg = buildClusterEvidencePackage({ cluster: buildBaseCluster(), clusterSummary: {}, discoverySummary, query: null });
+
+    expect(pkg.discovery.coverageLedger).toEqual(discoverySummary.coverageLedger);
+  });
+
   test('attachAnalysesToEvidencePackage attaches successful analyses and computes coverage', () => {
     const pkg = buildClusterEvidencePackage({ cluster: buildBaseCluster(), clusterSummary: {}, discoverySummary: buildDiscoverySummary(), query: null });
     const processedCases = [
