@@ -1,20 +1,19 @@
 require("dotenv").config();
-const { ChatGoogleGenerativeAI } = require("@langchain/google-genai");
 const { withGeminiRetry, withGeminiTimeout } = require("../../helpers/geminiRetry");
-const { GEMINI_MODEL, GEMINI_API_KEY } = require("../../helpers/geminiConfig");
+const { trackGeminiInvoke } = require("../../helpers/geminiUsage");
+const { createGeminiClient, outputCapWarning } = require("../../helpers/geminiConfig");
+const { extractJsonBlock } = require("../../helpers/jsonExtract");
+const agentLog = require("../../helpers/agentLog");
 const { SCHEMA_VERSION, validateReport } = require("./schema");
 const { validateClusterEvidencePackage } = require("./evidencePackage");
+const { buildTimeline, parseDate } = require("./timelineBuilder");
 const {
     isPoorDocumentCoverage,
     coverageOpenQuestion,
     applyCoverageConfidenceGuard
 } = require("./coverageGuard");
 
-const gemini = new ChatGoogleGenerativeAI({
-    model: GEMINI_MODEL,
-    apiKey: GEMINI_API_KEY,
-    temperature: 0.2 // Low temp for factual reporting
-});
+const gemini = createGeminiClient("synthesis");
 
 /**
  * Synthesizes a structured report from the reasoning evidence package.
@@ -22,9 +21,12 @@ const gemini = new ChatGoogleGenerativeAI({
  * @param {Array} evidencePackage.timeline
  * @param {Array} evidencePackage.claims
  * @param {object} evidencePackage.meta
+ * @param {object} [options]
+ * @param {object} [options.tracker] Cumulative usage tracker from geminiUsage.
+ * @param {(snapshot: object) => void} [options.onUsage] Fired after each Gemini call.
  * @returns {Promise<object>} The structured report.
  */
-async function synthesizeReport(evidencePackage) {
+async function synthesizeReport(evidencePackage, options = {}) {
     if (!evidencePackage) {
         return createEmptyReport("Nema dovoljno dokaza za generiranje izvješća.");
     }
@@ -38,7 +40,7 @@ async function synthesizeReport(evidencePackage) {
 
     // 1. Prepare Context
     const timelineText = timeline.map(e => `- ${e.date || 'Undated'}: ${e.description}`).join('\n');
-    const claimsText = claims.map(c => `- ${c.text} (Confidence: ${c.confidence})`).join('\n');
+    const claimsText = claims.map(formatClaimLine).join('\n');
     const partiesText = (meta.parties || []).join(', ');
     const caseNumber = meta.caseNumber || 'Unknown';
     const poorDocumentCoverage = isPoorDocumentCoverage(meta.coverage);
@@ -80,14 +82,12 @@ async function synthesizeReport(evidencePackage) {
     `;
 
     try {
-        const response = await withGeminiRetry(() => withGeminiTimeout((signal) => gemini.invoke(prompt, { signal })));
-        const cleanJson = response.content.replace(/```json\n?|```/g, "").trim();
-        
-        let parsed;
-        try {
-            parsed = JSON.parse(cleanJson);
-        } catch (e) {
-            console.error("Failed to parse synthesizer JSON:", cleanJson);
+        const response = await withGeminiRetry(() => withGeminiTimeout((signal) => trackGeminiInvoke(gemini, prompt, { signal, tracker: options.tracker, onUsage: options.onUsage })));
+        const parsed = extractJsonBlock(response.content);
+
+        if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+            agentLog.warn(outputCapWarning("synthesis"));
+            agentLog.error("Failed to parse synthesizer JSON:", response.content);
             throw new Error("Synthesizer returned invalid JSON.");
         }
 
@@ -103,12 +103,18 @@ async function synthesizeReport(evidencePackage) {
             openQuestions.push(coverageOpenQuestion(meta.coverage));
         }
 
+        // Deterministic reconciliation conflicts (money-flow arithmetic)
+        // seed the report here; verification appends model-found conflicts on
+        // top. pkg.reconciliation flows through meta — see evidencePackage.
+        const seededConflicts = [...(meta.reconciliation?.conflicts || [])];
+        const seededOpenQuestions = [...(meta.reconciliation?.openQuestions || [])];
+
         const finalReport = {
             schemaVersion: SCHEMA_VERSION,
             narrative: parsed.narrative,
-            openQuestions,
+            openQuestions: [...seededOpenQuestions, ...openQuestions],
             nextSteps: parsed.nextSteps || [],
-            conflicts: [],
+            conflicts: seededConflicts,
             claims,
             findings: findings.length > 0 ? findings : applyCoverageConfidenceGuard(claims.map((claim, index) => ({
                 id: `finding-${index + 1}`,
@@ -131,7 +137,7 @@ async function synthesizeReport(evidencePackage) {
         return finalReport;
 
     } catch (error) {
-        console.error("Synthesizer failed:", error);
+        agentLog.error("Synthesizer failed:", error);
         throw error;
     }
 }
@@ -240,12 +246,19 @@ function buildPackageMeta(pkg) {
         expansion: pkg.expansion || null,
         acquisition: pkg.acquisition || null,
         coverage: pkg.coverage || null,
+        reconciliation: pkg.reconciliation || null,
+        propertyReconciliation: pkg.propertyReconciliation || null,
         analysesCount: Array.isArray(pkg.analyses) ? pkg.analyses.length : 0,
         moneyFlow: pkg.moneyFlow || {
             count: 0,
             entries: [],
             currencyTotals: {},
             hasMoneyFlow: false
+        },
+        propertyFlow: pkg.propertyFlow || {
+            count: 0,
+            entries: [],
+            hasPropertyFlow: false
         },
         documentLinks: (pkg.documentLinks || []).map((link) => ({
             id: link.id,
@@ -256,13 +269,68 @@ function buildPackageMeta(pkg) {
     };
 }
 
+/**
+ * Extracts a best-effort date for chronological claim ordering. Checks each
+ * evidence entry's metadata for a `date` or `decisionDate` field (the two
+ * field names used across claim families) and returns the first one found.
+ * @param {object} claim
+ * @returns {string|null}
+ */
+function extractClaimDate(claim) {
+    for (const evidence of claim?.evidence || []) {
+        const metadata = evidence?.metadata;
+        if (metadata?.date) return metadata.date;
+        if (metadata?.decisionDate) return metadata.decisionDate;
+    }
+    return null;
+}
+
+/**
+ * Renders one claim for the synthesis prompt. The date prefix matters: the
+ * claims arrive chronologically sorted, but without a visible date the model
+ * cannot reason about order — it would only see an unexplained sequence.
+ * @param {object} claim
+ * @returns {string}
+ */
+function formatClaimLine(claim) {
+    const date = extractClaimDate(claim);
+    return `- [${date || 'Undated'}] ${claim?.text || ''} (Confidence: ${claim?.confidence || 'medium'})`;
+}
+
+/**
+ * Sorts claims oldest-first by their best-effort date, undated claims last,
+ * stable otherwise. Mirrors `buildTimeline`'s ordering rules but works over
+ * claim shapes (evidence-array metadata) instead of timeline events.
+ * @param {Array<object>} claims
+ * @returns {Array<object>}
+ */
+function sortClaimsChronologically(claims) {
+    if (!Array.isArray(claims)) return [];
+
+    const decorated = claims.map((claim) => ({ claim, ts: parseDate(extractClaimDate(claim)) }));
+
+    decorated.sort((a, b) => {
+        if (a.ts !== null && b.ts !== null) return a.ts - b.ts;
+        if (a.ts === null && b.ts !== null) return 1;
+        if (a.ts !== null && b.ts === null) return -1;
+        return 0;
+    });
+
+    return decorated.map(({ claim }) => claim);
+}
+
 function createReasoningEvidenceFromPackage(pkg) {
     const validation = validateClusterEvidencePackage(pkg);
     if (!validation.valid) {
         throw new Error(validation.error);
     }
 
-    const timeline = (pkg.entries || []).map((entry, index) => ({
+    // Discovery/download order is deliberately recency-biased (newest CSV
+    // rows first, plus an oldest-tail sample) so a bounded scan-depth budget
+    // favors current case state. That ordering must not leak into the
+    // narrative: the model reads this list top-to-bottom as "TIMELINE OF
+    // EVENTS", so it needs true chronological (oldest-first) order.
+    const timeline = buildTimeline((pkg.entries || []).map((entry, index) => ({
         date: entry.date || null,
         description: `${entry.title || 'Objava'} (${entry.caseNumber || pkg.clusterId})`,
         evidence: [{
@@ -270,7 +338,7 @@ function createReasoningEvidenceFromPackage(pkg) {
             text: entry.title || entry.detailLink || 'Objava bez naslova',
             provenance: entry.acquisition || null
         }]
-    }));
+    })));
 
     const claims = (pkg.documentLinks || []).map((link, index) => ({
         id: `document-${index + 1}`,
@@ -312,7 +380,7 @@ function createReasoningEvidenceFromPackage(pkg) {
             : String(entry.amount ?? '');
         return {
             id: `money-flow-${index + 1}`,
-            text: `Financijski iznos ${displayAmount} ${entry.currency || ''} ${entry.description ? `(${entry.description})` : ''}${entry.date ? ` — ${entry.date}` : ''}${entry.fileName ? ` iz dokumenta "${entry.fileName}"` : ''}.`,
+            text: `Financijski iznos ${displayAmount} ${entry.currency || ''} ${entry.description ? `(${entry.description})` : ''}${entry.date ? ` — ${entry.date}` : ''}${entry.fileName ? ` iz dokumenta "${entry.fileName}"` : ''}${entry.grounded === false ? ' [nepotvrđeno u izvornom tekstu]' : ''}.`,
             confidence: 'medium',
             evidence: [{
                 sourceId: entry.sourceId || `${pkg.clusterId}:money-flow-${index + 1}`,
@@ -323,19 +391,74 @@ function createReasoningEvidenceFromPackage(pkg) {
                     caseNumber: entry.caseNumber || null,
                     date: entry.date || null,
                     from: entry.from || null,
-                    to: entry.to || null
+                    to: entry.to || null,
+                    grounded: entry.grounded === true
                 }
             }]
         };
     });
 
+    // Structured property-flow entries become first-class claims the same way,
+    // with tražbina lifecycle chains rendered as directional value-change text.
+    const propertyFlowClaims = (pkg.propertyFlow?.entries || []).map((entry, index) => {
+        const displayValue = Number.isFinite(entry.value)
+            ? entry.value.toLocaleString('en-US')
+            : (entry.value ?? '');
+        return {
+            id: `property-flow-${index + 1}`,
+            text: `Imovina (${entry.assetType || 'drugo'}) ${displayValue} ${entry.currency || ''} ${entry.description ? `(${entry.description})` : ''}${entry.transferor || entry.transferee ? ` — ${entry.transferor || '?'} → ${entry.transferee || '?'}` : ''}${entry.eventType ? ` [${entry.eventType}]` : ''}${entry.date ? ` — ${entry.date}` : ''}${entry.fileName ? ` iz dokumenta "${entry.fileName}"` : ''}${entry.grounded === false ? ' [nepotvrđeno u izvornom tekstu]' : ''}.`,
+            confidence: 'medium',
+            evidence: [{
+                sourceId: entry.sourceId || `${pkg.clusterId}:property-flow-${index + 1}`,
+                text: `${entry.value ?? ''} ${entry.currency || ''} ${entry.description || ''}`.trim(),
+                metadata: {
+                    sourceType: 'analysis-property',
+                    fileName: entry.fileName || null,
+                    caseNumber: entry.caseNumber || null,
+                    date: entry.date || null,
+                    assetType: entry.assetType || null,
+                    eventType: entry.eventType || null,
+                    grounded: entry.grounded === true
+                }
+            }]
+        };
+    });
+
+    // Tražbina value-change timelines surface as findings-grade claims so the
+    // discount signal (filed at face value, later sold at a discount) is never
+    // lost between reconciliation and synthesis.
+    const propertyValueChangeClaims = ((pkg.propertyReconciliation?.valueChanges || [])).map((change, index) => ({
+        id: `property-value-change-${index + 1}`,
+        text: change.finding || `Vrijednosna promjena tražbine "${change.description}".`,
+        confidence: 'medium',
+        evidence: (change.stages || []).map((stage) => ({
+            sourceId: stage.sourceId || `${pkg.clusterId}:property-value-change-${index + 1}`,
+            text: `${stage.value ?? ''} ${change.currency || ''} ${change.description || ''}`.trim(),
+            metadata: {
+                sourceType: 'analysis-property',
+                fileName: stage.fileName || null,
+                eventType: stage.eventType || null,
+                date: stage.date || null,
+                grounded: true
+            }
+        }))
+    }));
+
     return {
         timeline,
-        claims: [
+        // Same rationale as the timeline: the package's own entries/analyses
+        // arrive discovery-ordered (newest-first). Presenting the model's
+        // evidentiary claims oldest-first mirrors real chronological
+        // reasoning and keeps partial-data runs (bounded scan depth, missing
+        // documents) building an understanding forward in time instead of
+        // backward from whatever happened to be scraped first.
+        claims: sortClaimsChronologically([
             ...claims,
             ...analysisClaims,
-            ...moneyFlowClaims
-        ],
+            ...moneyFlowClaims,
+            ...propertyFlowClaims,
+            ...propertyValueChangeClaims
+        ]),
         meta: buildPackageMeta(pkg)
     };
 }
@@ -384,15 +507,19 @@ function createEvidenceFromProcessedCases(processedCases, options = {}) {
                     id: `claim-${claims.length + 1}`,
                     text: res.summary,
                     confidence: 'medium',
-                    evidence: [{ sourceId: analysis.filePath || 'unknown', text: res.summary }]
+                    evidence: [{
+                        sourceId: analysis.filePath || 'unknown',
+                        text: res.summary,
+                        metadata: { date: res.decisionDate || null }
+                    }]
                 });
             }
         }
     });
 
     return {
-        timeline,
-        claims,
+        timeline: buildTimeline(timeline),
+        claims: sortClaimsChronologically(claims),
         meta: {
             clusterId: selectedProcessedCase.groupMetadata?.clusterId || primaryCaseNumber,
             caseNumber: primaryCaseNumber,
@@ -407,5 +534,7 @@ module.exports = {
     synthesizeReport,
     createEvidenceFromProcessedCases,
     createReasoningEvidenceFromPackage,
-    normalizeReasoningEvidence
+    normalizeReasoningEvidence,
+    extractClaimDate,
+    formatClaimLine
 };

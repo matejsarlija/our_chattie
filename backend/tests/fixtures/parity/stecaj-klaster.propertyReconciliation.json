@@ -1,0 +1,44 @@
+{
+  "conflicts": [],
+  "openQuestions": [],
+  "valueChanges": [
+    {
+      "currency": "EUR",
+      "delta": -69500,
+      "description": "Tražbina vjerovnika prema dužniku Ducanor d.o.o.",
+      "discountPct": -82.25,
+      "finding": "Tražbina \"Tražbina vjerovnika prema dužniku Ducanor d.o.o.\" u iznosu od 84,500 EUR ustupljena je za 15,000 EUR.",
+      "latestValue": 15000,
+      "linkage": "supersedes",
+      "originalValue": 84500,
+      "sources": [
+        "/fixtures/eval/Poziv_vjerovnicima_za_prijavu_trazbina.pdf",
+        "/fixtures/eval/Rjesenje_o_prodaji_imovine.pdf"
+      ],
+      "stages": [
+        {
+          "currency": "EUR",
+          "date": "2022-06-15",
+          "eventType": "prijava",
+          "fileName": "Poziv_vjerovnicima_za_prijavu_trazbina.pdf",
+          "id": "prop-1",
+          "sourceId": "/fixtures/eval/Poziv_vjerovnicima_za_prijavu_trazbina.pdf",
+          "transferee": null,
+          "transferor": "Vjerovnik A d.o.o.",
+          "value": 84500
+        },
+        {
+          "currency": "EUR",
+          "date": "2023-06-01",
+          "eventType": "ustup",
+          "fileName": "Rjesenje_o_prodaji_imovine.pdf",
+          "id": "prop-3",
+          "sourceId": "/fixtures/eval/Rjesenje_o_prodaji_imovine.pdf",
+          "transferee": "Kupac Tražbina d.o.o.",
+          "transferor": "Vjerovnik A d.o.o.",
+          "value": 15000
+        }
+      ]
+    }
+  ]
+}

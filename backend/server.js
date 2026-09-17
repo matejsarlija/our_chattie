@@ -34,7 +34,11 @@ const {
 } = require('./helpers/analysisStream');
 const rateLimiter = require('./court-analysis/utils/rateLimiter');
 const { runCourtAnalysis } = require('./court-analysis/pipeline');
+const { generateClusterReport, composeOverviewMarkdown } = require('./court-analysis/reasoning/reportService');
+const { createAnalysisReportRetryHandler } = require('./helpers/analysisReportRetry');
 const { createLocalStore } = require('./services/localStore');
+const { createChangeCheckService } = require('./change-detection/service');
+const { createChangeDetectionRouter } = require('./change-detection/api');
 
 // ========= WRAP THE ENTIRE SERVER LOGIC IN AN ASYNC FUNCTION =========
 async function startServer() {
@@ -49,10 +53,14 @@ async function startServer() {
   app.set('trust proxy', 1); // Trust the first proxy (e.g., React dev server or production LB)
   const port = Number(process.env.PORT) || 3001;
   const host = '0.0.0.0';
-  const courtAnalysisQueue = new PQueue({ concurrency: 1 }); // This should work now
+  const courtAnalysisQueue = new PQueue({ concurrency: 2 }); // Paid key: allow limited parallel analyses.
 
   // Local, single-tenant analysis persistence store.
   const analysisStore = createLocalStore();
+
+  // Change detection (Phase B): one shared service over the CSV export client
+  // and the JSON snapshot store; CLI and REST reuse the same instance shape.
+  const changeCheckService = createChangeCheckService();
 
   // Middleware
   app.use(helmet());
@@ -145,6 +153,28 @@ async function startServer() {
         const safeProgress = async (event) => {
           const normalizedEvent = normalizeAnalysisProgressEvent(event);
           progressCallback(normalizedEvent);
+
+          const isUsageUpdate = Boolean(
+            normalizedEvent.usage
+            && typeof normalizedEvent.usage === 'object'
+            && normalizedEvent.message == null
+            && normalizedEvent.data == null
+          );
+
+          if (isUsageUpdate) {
+            // Token-usage snapshots update the run record only — they must not
+            // create timeline events or advance the stepper.
+            try {
+              await analysisStore.updateAnalysisRunUsage({
+                analysisId: runId,
+                usage: normalizedEvent.usage,
+              });
+            } catch (err) {
+              console.error('[Analysis Runs] Failed to persist token usage:', err.message);
+            }
+            return;
+          }
+
           try {
             await analysisStore.appendAnalysisEvent({
               analysisId: runId,
@@ -153,7 +183,7 @@ async function startServer() {
               metadata: {
                 progress: normalizedEvent.progress || null,
                 hasData: Boolean(normalizedEvent.data),
-                ...(normalizedEvent.metadata?.originalStep ? { originalStep: normalizedEvent.metadata.originalStep } : {}),
+                ...(normalizedEvent.metadata || {}),
               },
             });
           } catch (err) {
@@ -177,6 +207,8 @@ async function startServer() {
             caseLimit: parsedRequest.options.caseLimit,
             query: parsedRequest.query,
             clusterExpansion: parsedRequest.options.clusterExpansion,
+            scanDepth: parsedRequest.options.scanDepth,
+            runId,
           },
           safeProgress
         );
@@ -321,6 +353,16 @@ async function startServer() {
   });
   app.get('/api/analysis/runs/:id/stream', analysisReadIpLimiter, analysisRunStreamHandler);
 
+  app.post(
+    '/api/analysis/runs/:id/report',
+    analysisWriteIpLimiter,
+    createAnalysisReportRetryHandler({
+      store: analysisStore,
+      regenerate: (evidencePackage, opts) => generateClusterReport(evidencePackage, opts),
+      composeNarrative: (report) => composeOverviewMarkdown(report),
+    }),
+  );
+
   app.get('/health', (req, res) => {
     res.status(200).json({ status: 'ok' });
   });
@@ -333,6 +375,13 @@ async function startServer() {
       res.status(500).json({ error: 'Failed to load settings.' });
     }
   });
+
+  // Change detection (Phase B2): run a check / inspect history.
+  app.use('/api/change-detection', createChangeDetectionRouter({
+    service: changeCheckService,
+    writeLimiter: analysisWriteIpLimiter,
+    readLimiter: analysisReadIpLimiter
+  }));
 
   app.put('/api/settings', analysisWriteIpLimiter, async (req, res) => {
     try {

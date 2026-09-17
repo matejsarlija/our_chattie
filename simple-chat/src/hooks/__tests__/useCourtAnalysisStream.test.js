@@ -1,6 +1,6 @@
 import React, { useEffect } from 'react';
 import { render, waitFor } from '@testing-library/react';
-import { useCourtAnalysisStream } from '../useCourtAnalysisStream';
+import { buildCourtAnalysisPayload, useCourtAnalysisStream } from '../useCourtAnalysisStream';
 
 jest.mock('../../lib/env', () => ({
   env: {
@@ -170,6 +170,34 @@ describe('useCourtAnalysisStream request builder', () => {
     const payload = JSON.parse(call[1].body);
 
     expect(payload.query).toEqual({ type: 'case_number', value: 'Abcdef-123/2023' });
+  });
+
+  test('threads scanDepth option into the request payload', async () => {
+    function Harness() {
+      const api = useCourtAnalysisStream();
+
+      useEffect(() => {
+        api.streamCourtAnalysis('12345678901', { onComplete: () => {}, onError: () => {} }, { scanDepth: 'full' });
+      }, [api]);
+
+      return null;
+    }
+
+    render(<Harness />);
+
+    await waitFor(() => {
+      expect(global.fetch).toHaveBeenCalled();
+    });
+
+    const call = global.fetch.mock.calls[0];
+    const payload = JSON.parse(call[1].body);
+
+    expect(payload.options).toEqual({ scanDepth: 'full' });
+  });
+
+  test('buildCourtAnalysisPayload defaults to balanced scanDepth', () => {
+    expect(buildCourtAnalysisPayload('12345678901').options).toEqual({ scanDepth: 'balanced' });
+    expect(buildCourtAnalysisPayload('12345678901', { scanDepth: 'standard' }).options).toEqual({ scanDepth: 'standard' });
   });
 
   test('forwards progress events from SSE stream', async () => {

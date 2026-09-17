@@ -1,0 +1,27 @@
+{
+  "count": 1,
+  "entries": [
+    {
+      "assetType": "nekretnina",
+      "caseNumber": "P-1187/2021",
+      "claimRegistryNumber": null,
+      "currency": null,
+      "date": "2023-09-12",
+      "description": "Vinograd na graničnom pojasu",
+      "fileName": "Presuda_djelomicno_usvajanje_tuzbe.pdf",
+      "filingReference": null,
+      "grounded": false,
+      "id": "prop-1",
+      "identifier": "k.o. Požega",
+      "isplatniRed": null,
+      "quote": "oštetio korijenje vinove loze na graničnom pojasu",
+      "sourceDocumentLinkId": null,
+      "sourceEntryIndex": null,
+      "sourceId": "/fixtures/eval/Presuda_djelomicno_usvajanje_tuzbe.pdf",
+      "transferee": null,
+      "transferor": null,
+      "value": null
+    }
+  ],
+  "hasPropertyFlow": true
+}

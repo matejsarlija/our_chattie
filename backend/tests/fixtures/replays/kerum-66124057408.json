@@ -1,0 +1,69 @@
+{
+  "id": "kerum-66124057408",
+  "source": "2026-09-13 production analysis run 2084d894-5c7d-46f5-87f6-02989267e1d8",
+  "purpose": "Deterministic regression replay of report-quality failures observed in the Kerum corpus. This fixture intentionally stores extracted facts and metadata, never court PDFs or model credentials.",
+  "coverage": {
+    "analyzed": 57,
+    "failed": 6,
+    "total": 63,
+    "coverageRatio": 0.9,
+    "complete": false,
+    "failedFiles": [
+      "Diobeni popis.pdf",
+      "Završni račun.pdf",
+      "Prijedlog stečajnog upravitelja.pdf",
+      "Prilog St-2_2013-1155-1 - Ugovor o ustupu tražbina.pdf",
+      "Prilog St-2_2013-1155-2 - Ugovor o ustupu tražbina (Cesija).pdf"
+    ]
+  },
+  "retrieval": {
+    "rerankStatus": "fallback",
+    "rerankReason": "invalid-model-output"
+  },
+  "analyses": [
+    {
+      "id": "kerum-1175-1",
+      "fileName": "Prilog St-2_2013-1175-1 - Kerum doo u stečaju Iznosi tražbina i troškova postupka.pdf",
+      "caseNumber": "ST-2/2013",
+      "amounts": [
+        {
+          "description": "Iznos prijavljenih tražbina razlučnih vjerovnika (osiguranih vjerovnika)",
+          "amount": 355134652.87,
+          "currency": "HRK",
+          "direction": "obveza",
+          "quote": "Iznos prijavljenih tražbina razlučnih vjerovnika (osiguranih vjerovnika) | 355.134.652,87",
+          "grounded": true
+        }
+      ],
+      "propertyFlow": []
+    },
+    {
+      "id": "kerum-1175-2",
+      "fileName": "Prilog St-2_2013-1175-2 - Iznosi tražbina i troškova postupka na dan 13.10.2025. u 15_27 sati.pdf",
+      "caseNumber": "ST-2/2013",
+      "amounts": [
+        {
+          "description": "Iznos prijavljenih tražbina razlučnih vjerovnika (osiguranih vjerovnika)",
+          "amount": 355134652,
+          "currency": "EUR",
+          "direction": "obveza",
+          "quote": "Iznos prijavljenih tražbina razlučnih vjerovnika (osiguranih vjerovnika) 355.134.652,00 EUR",
+          "grounded": true
+        }
+      ],
+      "propertyFlow": []
+    }
+  ],
+  "expectations": {
+    "incompleteCoverage": true,
+    "criticalFailedFiles": [
+      "Diobeni popis.pdf",
+      "Završni račun.pdf",
+      "Prijedlog stečajnog upravitelja.pdf"
+    ],
+    "conflict": {
+      "kind": "arithmetic",
+      "mustPreserveRawCurrencySides": true
+    }
+  }
+}

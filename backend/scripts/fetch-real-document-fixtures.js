@@ -1,0 +1,521 @@
+#!/usr/bin/env node
+/**
+ * Fetch real e-Oglasna document fixtures for local verification and tests.
+ *
+ * Searches e-Oglasna for an OIB (default: 66124057408 — the same OIB used by
+ * the other live lanes), downloads the document archives (ZIP) of the first
+ * search-page entries that carry a download link, unzips them, runs the REAL
+ * production extraction path over every extracted file, probes the OCR render
+ * path once, and writes a manifest.json describing everything it observed.
+ *
+ * Everything under the fixture directory — binaries AND manifest.json — is
+ * gitignored on purpose: CI self-skips the matching real-fixture test lane
+ * when the files are absent, and local runs regenerate them from live data.
+ *
+ * Usage:
+ *   node scripts/fetch-real-document-fixtures.js [--oib=...] [--limit=30]
+ *   node scripts/fetch-real-document-fixtures.js --verify-only   # re-run
+ *                                                                # extraction
+ *                                                                # over an
+ *                                                                # existing
+ *                                                                # manifest
+ */
+require('dotenv').config();
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const crypto = require('crypto');
+const axios = require('axios');
+const AdmZip = require('adm-zip');
+const agentLog = require('../helpers/agentLog');
+
+// The scraper launches headful in local dev; scripts/CI hosts have no display.
+process.env.PUPPETEER_HEADLESS = process.env.PUPPETEER_HEADLESS || '1';
+// Quiet the scraper's per-request console chatter for fixture runs (a paged
+// discovery pass loads ~10 pages; asset/analytics request logs would drown
+// the fixture lines). Default-off in the scraper — production/dev unchanged.
+process.env.PUPPETEER_QUIET = process.env.PUPPETEER_QUIET || '1';
+
+const DEFAULT_OIB = '66124057408';
+const DEFAULT_LIMIT = 30;
+// Page budget for the discovery pass: ~10 court entries per search page, so
+// 10 pages cover the 30-entry default with headroom for rows without a
+// download link. Bounded — the script slices to `limit` regardless.
+const DISCOVERY_MAX_PAGES = 10;
+
+function parseArgs(argv) {
+    const args = { oib: DEFAULT_OIB, limit: DEFAULT_LIMIT, verifyOnly: false, reportOut: null };
+    for (const raw of argv) {
+        if (raw.startsWith('--oib=')) args.oib = raw.slice('--oib='.length).trim();
+        else if (raw.startsWith('--limit=')) args.limit = Number.parseInt(raw.slice('--limit='.length), 10) || DEFAULT_LIMIT;
+        else if (raw === '--verify-only') args.verifyOnly = true;
+        else if (raw.startsWith('--report-out=')) args.reportOut = raw.slice('--report-out='.length).trim();
+    }
+    return args;
+}
+
+function fixturesDirFor(oib) {
+    return path.resolve(__dirname, '../tests/fixtures/real-documents', oib);
+}
+
+function slugify(text, fallback = 'entry') {
+    const slug = String(text || '')
+        .normalize('NFKD')
+        .replace(/[^\w\s-]/g, '')
+        .trim()
+        .replace(/[\s_]+/g, '-')
+        .slice(0, 48);
+    return slug || fallback;
+}
+
+function sha256File(filePath) {
+    return new Promise((resolve, reject) => {
+        const hash = crypto.createHash('sha256');
+        const stream = fs.createReadStream(filePath);
+        stream.on('data', (chunk) => hash.update(chunk));
+        stream.on('end', () => resolve(hash.digest('hex')));
+        stream.on('error', reject);
+    });
+}
+
+/**
+ * Safe zip extraction: entries are flattened under destinationDir using their
+ * basename only. Zip-slip paths and directory entries are skipped. Returns
+ * [{ entryName, filePath }] with original archive names preserved in
+ * entryName (matching ExtractArchiveTool's shape).
+ */
+function extractZipSafely(zipPath, destinationDir) {
+    const zip = new AdmZip(zipPath);
+    const extracted = [];
+    for (const entry of zip.getEntries()) {
+        if (entry.isDirectory) continue;
+        const base = path.basename(entry.entryName);
+        if (!base || base.startsWith('__MACOSX')) continue;
+        const targetPath = path.join(destinationDir, base);
+        fs.writeFileSync(targetPath, entry.getData());
+        extracted.push({ entryName: entry.entryName, filePath: targetPath });
+    }
+    return extracted;
+}
+
+async function extractAndProbe(manifest) {
+    // Real production extraction path — no mocks. Imported lazily so
+    // --verify-only does not pay module init twice.
+    const { extractTextFromFile } = require('../court-analysis/agents/analysis-agent');
+    // Demote pdfjs-dist's per-glyph font warnings ("Warning: TT: ...") for
+    // the run: this pdfjs build exposes no verbosity setter, so filter at
+    // the console boundary instead. Real failures still surface per file
+    // via the `error` field on the extraction line below. Restored after.
+    const restoreConsole = demotePdfjsFontWarnings();
+
+    const totalFiles = manifest.entries.flatMap((entry) => entry.files).length;
+    let fileCounter = 0;
+    let firstEmbeddedPdfEntry = null;
+    for (const entry of manifest.entries) {
+        for (const file of entry.files) {
+            fileCounter += 1;
+            const startedAt = Date.now();
+            const result = await extractTextFromFile(file.filePath);
+            file.extraction = {
+                method: result.method,
+                pages: result.pages,
+                chars: (result.text || '').length,
+                truncated: result.truncated,
+                error: result.error,
+                ms: Date.now() - startedAt,
+                textLayer:
+                    result.method === 'pdf-text' && (result.text || '').trim().length > 0 ? 'embedded'
+                        : result.method === 'pdf-text' ? 'empty'
+                            : result.error ? 'error'
+                                : 'none',
+            };
+            agentLog.log(
+                `[Fixtures] file ${fileCounter}/${totalFiles} ` +
+                `(entry ${entry.index}/${manifest.entries.length}) ${file.entryName} -> ` +
+                `method=${file.extraction.method} pages=${file.extraction.pages} ` +
+                `chars=${file.extraction.chars} textLayer=${file.extraction.textLayer}` +
+                `${file.extraction.error ? ` error=${file.extraction.error}` : ''}`,
+            );
+            if (
+                !firstEmbeddedPdfEntry &&
+                file.extraction.textLayer === 'embedded' &&
+                file.filePath.toLowerCase().endsWith('.pdf')
+            ) {
+                firstEmbeddedPdfEntry = { entry, file };
+            }
+        }
+    }
+
+    if (firstEmbeddedPdfEntry) {
+        manifest.renderProbe = await probeRenderPath(firstEmbeddedPdfEntry.file.filePath);
+    } else {
+        manifest.renderProbe = { probed: false, reason: 'no embedded-text PDF found to probe' };
+    }
+    restoreConsole();
+}
+
+/**
+ * Collapses pdfjs-dist's repetitive per-glyph font warnings
+ * ("Warning: TT: undefined function: N") into one summary line. This pdfjs
+ * build gates them on an internal verbosity flag with no exported setter,
+ * so the only robust hook is the console boundary — scoped to this process
+ * and restored afterwards. Everything else passes through untouched.
+ * @returns {() => void} Restore function.
+ */
+function demotePdfjsFontWarnings() {
+    const methods = ['log', 'warn'];
+    const originals = methods.map((method) => console[method]);
+    let suppressed = 0;
+    const isFontWarning = (args) =>
+        typeof args[0] === 'string' && /^Warning: TT: /.test(args[0]);
+    methods.forEach((method, i) => {
+        console[method] = (...args) => {
+            if (isFontWarning(args)) {
+                suppressed += 1;
+                return;
+            }
+            originals[i](...args);
+        };
+    });
+    return () => {
+        methods.forEach((method, i) => { console[method] = originals[i]; });
+        if (suppressed > 0) {
+            agentLog.log(`[Fixtures] Suppressed ${suppressed} repetitive pdfjs font warning(s) ("Warning: TT: ...").`);
+        }
+    };
+}
+
+/**
+ * Proves the local OCR *preprocessing* works without any Gemini call: pdf.js
+ * rasterizes page 1 into a node-canvas buffer and the pixels are not blank.
+ */
+async function probeRenderPath(pdfPath) {
+    try {
+        const pdfjsLib = require('pdfjs-dist/legacy/build/pdf.js');
+        pdfjsLib.GlobalWorkerOptions.workerSrc =
+            require.resolve('pdfjs-dist/legacy/build/pdf.worker.js');
+        const { createCanvas } = require('canvas');
+
+        const data = new Uint8Array(fs.readFileSync(pdfPath));
+        const doc = await pdfjsLib.getDocument({ data }).promise;
+        const page = await doc.getPage(1);
+        const viewport = page.getViewport({ scale: 1.0 });
+        const canvas = createCanvas(viewport.width, viewport.height);
+        const context = canvas.getContext('2d');
+        await page.render({ canvasContext: context, viewport }).promise;
+        const pngBuffer = canvas.toBuffer('image/png');
+
+        const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+        let nonBlank = 0;
+        let sampled = 0;
+        for (let i = 0; i < imageData.data.length; i += 4 * 97) {
+            sampled += 1;
+            const [r, g, b] = [imageData.data[i], imageData.data[i + 1], imageData.data[i + 2]];
+            if (!(r > 245 && g > 245 && b > 245)) nonBlank += 1;
+        }
+        await doc.destroy();
+
+        const ratio = sampled > 0 ? Number((nonBlank / sampled).toFixed(4)) : 0;
+        agentLog.log(
+            `[Fixtures] Render probe on ${path.basename(pdfPath)}: ` +
+            `pngBytes=${pngBuffer.length} nonBlankRatio=${ratio}`,
+        );
+        return {
+            probed: true,
+            ok: pngBuffer.length > 1024 && ratio > 0.001,
+            pngBytes: pngBuffer.length,
+            nonBlankRatio: ratio,
+        };
+    } catch (err) {
+        agentLog.error(`[Fixtures] Render probe failed for ${pdfPath}:`, err.message);
+        return { probed: true, ok: false, error: err.message };
+    }
+}
+
+async function fetchFixtures({ oib, limit }) {
+    const CourtSearchPuppeteer = require('../scraper/courtSearchPuppeteer');
+    const searcher = new CourtSearchPuppeteer();
+    await searcher.init();
+    let results;
+    let searchMetadata = null;
+    const discoveryStartedAt = Date.now();
+    try {
+        // Paged discovery (up to DISCOVERY_MAX_PAGES): a single first page
+        // rarely holds `limit` downloadable entries, so walk forward until
+        // the quota is reachable — or the result set runs out, in which case
+        // whatever is present is what gets captured (slice below).
+        ({ results, searchMetadata } = await searcher.performSearchAcrossPages(oib, DISCOVERY_MAX_PAGES));
+    } finally {
+        await searcher.close();
+    }
+    const discoveryMs = Date.now() - discoveryStartedAt;
+
+    const rowsSeen = (results || []).length;
+    const withLink = (results || []).filter((r) => r.documentDownloadLink);
+    const selected = withLink.slice(0, limit);
+    if (selected.length === 0) {
+        throw new Error(`No entries with documentDownloadLink found in the first ${DISCOVERY_MAX_PAGES} pages for ${oib}.`);
+    }
+    agentLog.log(
+        `[Fixtures] Discovery: ${rowsSeen} row(s) over ` +
+        `${searchMetadata?.pagesScanned ?? '?'} page(s), ` +
+        `${rowsSeen - withLink.length} without a download link, ` +
+        `selected ${selected.length}.`
+    );
+
+    const outDir = fixturesDirFor(oib);
+    const zipsDir = path.join(outDir, 'zips');
+    const entriesDir = path.join(outDir, 'entries');
+    // Surgical cleanup only: `extracted/` holds frozen pdfjs output the unit
+    // lane asserts on (kerumGolden) and any other curated sidecars must
+    // survive regeneration — never wipe the whole outDir (that once deleted
+    // the golden extracted/*.txt files a fresh fetch could not reproduce
+    // byte-identically).
+    fs.rmSync(zipsDir, { recursive: true, force: true });
+    fs.rmSync(entriesDir, { recursive: true, force: true });
+    fs.rmSync(path.join(outDir, 'manifest.json'), { force: true });
+    fs.mkdirSync(zipsDir, { recursive: true });
+    fs.mkdirSync(entriesDir, { recursive: true });
+
+    const manifest = {
+        query: { type: 'text', value: oib },
+        source: 'https://e-oglasna.pravosudje.hr',
+        fetchedAt: new Date().toISOString(),
+        generator: 'backend/scripts/fetch-real-document-fixtures.js',
+        selection: `up to ${limit} search-page entries carrying documentDownloadLink (first ${DISCOVERY_MAX_PAGES} pages)`,
+        discovery: {
+            pagesWalked: searchMetadata?.pagesScanned ?? null,
+            tailPagesWalked: searchMetadata?.tailPagesScanned ?? 0,
+            rowsSeen,
+            rowsSkippedNoLink: rowsSeen - withLink.length,
+            selected: selected.length,
+            limit,
+            discoveryMs,
+        },
+        coverage: coverageSpan(selected),
+        timings: { discoveryMs, downloadMs: null, extractionMs: null },
+        entries: [],
+    };
+
+    const downloadStartedAt = Date.now();
+
+    for (let i = 0; i < selected.length; i++) {
+        const result = selected[i];
+        const index = i + 1;
+        const slug = `${index}-${slugify(result.caseNumber || result.title)}`;
+
+        agentLog.log(`[Fixtures] Downloading ${index}/${selected.length}: ${result.documentDownloadLink}`);
+        // Same extension-resolution order as DownloadDocumentsTool:
+        // Content-Disposition filename -> Content-Type -> '.bin'.
+        const response = await axios({
+            url: result.documentDownloadLink,
+            method: 'GET',
+            responseType: 'stream',
+            timeout: 120000,
+        });
+        const disposition = response.headers['content-disposition'] || '';
+        const dispositionMatch = disposition.match(/filename\*?=(?:UTF-8'')?"?([^";]+)"?/);
+        const serverName = dispositionMatch ? decodeURIComponent(dispositionMatch[1]) : null;
+        const mimeExt = require('mime-types').extension(response.headers['content-type']);
+        const ext = path.extname(serverName || '') ||
+            (mimeExt && mimeExt !== 'bin' ? `.${mimeExt}` : '.bin');
+        const downloadPath = path.join(zipsDir, `${slug}${ext}`);
+        await new Promise((resolve, reject) => {
+            const writer = fs.createWriteStream(downloadPath);
+            response.data.pipe(writer);
+            writer.on('finish', resolve);
+            writer.on('error', reject);
+            response.data.on('error', reject);
+        });
+
+        let extractedFiles;
+        if (ext.toLowerCase() === '.zip') {
+            const entryDir = path.join(entriesDir, slug);
+            fs.mkdirSync(entryDir, { recursive: true });
+            extractedFiles = extractZipSafely(downloadPath, entryDir);
+        } else {
+            // Row-level /preuzimanje links often serve the document itself.
+            extractedFiles = [{
+                entryName: serverName || path.basename(downloadPath),
+                filePath: downloadPath,
+            }];
+        }
+
+        const files = [];
+        for (const extracted of extractedFiles) {
+            files.push({
+                entryName: extracted.entryName,
+                filePath: extracted.filePath,
+                bytes: fs.statSync(extracted.filePath).size,
+                sha256: await sha256File(extracted.filePath),
+            });
+        }
+
+        manifest.entries.push({
+            index,
+            title: result.title,
+            caseNumber: result.caseNumber,
+            court: result.court,
+            date: result.date,
+            detailLink: result.detailLink,
+            documentDownloadLink: result.documentDownloadLink,
+            archivePath: downloadPath,
+            archiveType: ext.toLowerCase() === '.zip' ? 'zip' : 'single-file',
+            archiveSha256: await sha256File(downloadPath),
+            files,
+        });
+        agentLog.log(
+            `[Fixtures] Entry ${index}: "${result.title}" (${ext}) -> ${files.length} file(s).`,
+        );
+    }
+    manifest.timings.downloadMs = Date.now() - downloadStartedAt;
+
+    return manifest;
+}
+
+/**
+ * Normalizes a raw e-Oglasna publish stamp (`23.06.2026. 08:36`) to a
+ * date-only day parsed as UTC midnight. The time suffix would otherwise
+ * defeat the Croatian parser and fall through to host-timezone `Date.parse`
+ * (the classic silent day-shift trap — same reason the pipeline normalizes
+ * to date-only ISO before any date logic). Returns `{ ts, raw }` with the
+ * normalized `dd.mm.yyyy.` display form, or null when no calendar date.
+ */
+function coverageDay(parseDate, rawDate) {
+    const match = String(rawDate || '').match(/(\d{1,2})\.(\d{1,2})\.(\d{2,4})/);
+    if (!match) return null;
+    const raw = `${match[1]}.${match[2]}.${match[3]}.`;
+    const ts = parseDate(raw);
+    return ts === null ? null : { ts, raw };
+}
+
+/**
+ * Coverage span of the captured entries: which cases and what date range.
+ * Dates are raw e-Oglasna wall-clock strings parsed with the production
+ * date parser; unparseable/missing dates are ignored (never fail the run).
+ */
+function coverageSpan(selected) {    let parseDate = null;
+    try {
+        ({ parseDate } = require('../court-analysis/reasoning/timelineBuilder'));
+    } catch {
+        parseDate = null;
+    }
+    const caseNumbers = [...new Set(selected.map((r) => r?.caseNumber).filter(Boolean))];
+    let oldest = null;
+    let newest = null;
+    if (parseDate) {
+        for (const result of selected) {
+            const day = coverageDay(parseDate, result?.date);
+            if (!day) continue;
+            if (!oldest || day.ts < oldest.ts) oldest = day;
+            if (!newest || day.ts > newest.ts) newest = day;
+        }
+    }
+    return {
+        entryCount: selected.length,
+        caseNumbers,
+        oldestDate: oldest?.raw ?? null,
+        newestDate: newest?.raw ?? null,
+    };
+}
+
+async function verifyOnly(oib) {
+    const outDir = fixturesDirFor(oib);
+    const manifestPath = path.join(outDir, 'manifest.json');
+    if (!fs.existsSync(manifestPath)) {
+        throw new Error(`No manifest at ${manifestPath}. Run without --verify-only first.`);
+    }
+    const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+    await extractAndProbe(manifest);
+    return manifest;
+}
+
+async function main() {
+    const args = parseArgs(process.argv.slice(2));
+
+    let manifest;
+    const extractionStartedAt = Date.now();
+    if (args.verifyOnly) {
+        manifest = await verifyOnly(args.oib);
+    } else {
+        manifest = await fetchFixtures(args);
+        await extractAndProbe(manifest);
+    }
+    manifest.timings = {
+        ...(manifest.timings || {}),
+        extractionMs: Date.now() - extractionStartedAt,
+    };
+    manifest.timings.totalMs =
+        (manifest.timings.discoveryMs || 0) +
+        (manifest.timings.downloadMs || 0) +
+        manifest.timings.extractionMs;
+
+    const allFiles = manifest.entries.flatMap((entry) => entry.files);
+    const summary = allFiles.reduce((counts, file) => {
+        const key = `${(file.filePath.toLowerCase().split('.').pop() || '?')}|${file.extraction?.textLayer || 'missing'}`;
+        counts[key] = (counts[key] || 0) + 1;
+        return counts;
+    }, {});
+
+    const emptyTextLayerFiles = allFiles
+        .filter((file) => file.extraction?.textLayer === 'empty')
+        .map((file) => file.entryName);
+
+    manifest.summary = {
+        totalFiles: allFiles.length,
+        byExtensionAndTextLayer: summary,
+        emptyTextLayerFiles,
+        renderProbe: manifest.renderProbe || null,
+    };
+
+    const coverage = manifest.coverage || { entryCount: manifest.entries.length, caseNumbers: [], oldestDate: null, newestDate: null };
+    const timings = manifest.timings || {};
+    const outDir = fixturesDirFor(args.oib);
+    const manifestPath = path.join(outDir, 'manifest.json');
+    fs.mkdirSync(outDir, { recursive: true });
+    fs.writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+
+    agentLog.log(
+        `[Fixtures] Coverage: ${coverage.entryCount} entr(y/ies)` +
+        `${coverage.caseNumbers?.length ? `, cases: ${coverage.caseNumbers.join(', ')}` : ''}` +
+        `${coverage.oldestDate ? `, span: ${coverage.oldestDate} → ${coverage.newestDate}` : ''} ` +
+        `| empty-text files: ${emptyTextLayerFiles.length}/${allFiles.length} ` +
+        `| phases ms: discovery=${timings.discoveryMs ?? '?'} ` +
+        `download=${timings.downloadMs ?? '?'} extraction=${timings.extractionMs ?? '?'}`
+    );
+    agentLog.log('[Fixtures] Summary:', JSON.stringify(summary));
+    agentLog.log(`[Fixtures] Manifest written: ${manifestPath}`);
+
+    const report = {
+        manifestPath,
+        coverage,
+        discovery: manifest.discovery || null,
+        timings,
+        summary: manifest.summary,
+        renderProbe: manifest.renderProbe,
+        entries: manifest.entries.map((entry) => ({
+            title: entry.title,
+            caseNumber: entry.caseNumber,
+            files: entry.files.map((file) => ({
+                entryName: file.entryName,
+                bytes: file.bytes,
+                extraction: file.extraction,
+            })),
+        })),
+    };
+
+    if (args.reportOut) {
+        fs.writeFileSync(args.reportOut, `${JSON.stringify(report, null, 2)}\n`);
+        agentLog.log(`[Fixtures] Report written: ${args.reportOut}`);
+    } else {
+        console.log('\n=== FIXTURE REPORT (JSON) ===');
+        console.log(JSON.stringify(report, null, 2));
+    }
+
+    process.exit(allFiles.length > 0 && (!manifest.renderProbe || manifest.renderProbe.ok !== false) ? 0 : 1);
+}
+
+main().catch((err) => {
+    agentLog.error('[Fixtures] Failed:', err.message);
+    process.exit(1);
+});

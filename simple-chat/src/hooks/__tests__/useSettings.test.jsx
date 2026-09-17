@@ -28,31 +28,32 @@ describe('useSettings', () => {
   });
 
   test('loads persisted settings on mount', async () => {
-    getSettings.mockResolvedValue({ settings: { geminiPlan: 'paid' } });
+    getSettings.mockResolvedValue({ settings: { reasoningRerankMode: 'force' } });
     const snapshots = [];
 
     render(<Harness onValue={(v) => snapshots.push(v)} />);
 
     await waitFor(() => {
       expect(getSettings).toHaveBeenCalledTimes(1);
-      expect(snapshots[snapshots.length - 1].geminiPlan).toBe('paid');
+      expect(snapshots[snapshots.length - 1].reasoningRerankMode).toBe('force');
     });
   });
 
-  test('defaults to the free plan when the backend returns no settings', async () => {
+  test('defaults reasoning switches when the backend returns no settings', async () => {
     getSettings.mockResolvedValue({});
     const snapshots = [];
 
     render(<Harness onValue={(v) => snapshots.push(v)} />);
 
     await waitFor(() => {
-      expect(snapshots[snapshots.length - 1].geminiPlan).toBe('free');
+      expect(snapshots[snapshots.length - 1].reasoningRerankMode).toBe('auto');
+      expect(snapshots[snapshots.length - 1].reasoningPlanner).toBe('on');
     });
   });
 
-  test('saves the plan and reflects the server response', async () => {
-    getSettings.mockResolvedValue({ settings: { geminiPlan: 'free' } });
-    updateSettings.mockResolvedValue({ settings: { geminiPlan: 'paid' } });
+  test('saves a reasoning switch and reflects the server response', async () => {
+    getSettings.mockResolvedValue({ settings: { reasoningPlanner: 'on' } });
+    updateSettings.mockResolvedValue({ settings: { reasoningPlanner: 'off' } });
     const snapshots = [];
 
     render(<Harness onValue={(v) => snapshots.push(v)} />);
@@ -65,14 +66,14 @@ describe('useSettings', () => {
 
     let saved;
     await act(async () => {
-      saved = await latest.saveGeminiPlan('paid');
+      saved = await latest.saveReasoningSettings({ reasoningPlanner: 'off' });
     });
 
-    expect(updateSettings).toHaveBeenCalledWith({ geminiPlan: 'paid' });
-    expect(saved).toEqual({ geminiPlan: 'paid' });
+    expect(updateSettings).toHaveBeenCalledWith({ reasoningPlanner: 'off' });
+    expect(saved).toEqual({ reasoningPlanner: 'off' });
 
     await waitFor(() => {
-      expect(snapshots[snapshots.length - 1].geminiPlan).toBe('paid');
+      expect(snapshots[snapshots.length - 1].reasoningPlanner).toBe('off');
     });
   });
 });

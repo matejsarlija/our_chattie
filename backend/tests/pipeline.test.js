@@ -22,6 +22,15 @@ jest.mock('../scraper/courtSearchPuppeteer', () => {
     }));
 });
 
+jest.mock('../scraper/discoveryClient', () => ({
+    createDiscoveryClient: jest.fn(() => ({
+        init: mockInit,
+        close: mockClose,
+        searchAndGetLatestCases: mockSearchAndGetLatestCases,
+        searchAndGetLatestCasesWithDocuments: mockSearchAndGetLatestCasesWithDocuments,
+    })),
+}));
+
 jest.mock('../court-analysis/agents/download-agent', () => ({
     DownloadDocumentsTool: jest.fn().mockImplementation(() => ({
         _call: mockDownloadCall,
@@ -32,7 +41,6 @@ jest.mock('../court-analysis/agents/analysis-agent', () => ({
     AnalyzeDocumentsTool: jest.fn().mockImplementation(() => ({
         _call: mockAnalyzeCall,
     })),
-    generateComparativeAnalysis: jest.fn().mockResolvedValue('Comparative Analysis'),
 }));
 
 jest.mock('../court-analysis/agents/visualizer-agent', () => ({
@@ -48,6 +56,14 @@ jest.mock('../court-analysis/reasoning/synthesizer', () => ({
 
 jest.mock('../court-analysis/reasoning/verifier', () => ({
     verifyReport: mockVerifyReport,
+}));
+
+// Optional reasoning LLM passes (rerank/planner/follow-up) construct Gemini
+// clients lazily; stub the SDK so the deterministic path runs without network.
+jest.mock('@langchain/google-genai', () => ({
+    ChatGoogleGenerativeAI: jest.fn().mockImplementation(() => ({
+        invoke: jest.fn().mockResolvedValue({ content: '[]' }),
+    })),
 }));
 
 jest.mock('../court-registry/enricher', () => ({
@@ -120,7 +136,7 @@ describe('runCourtAnalysis pipeline (deterministic)', () => {
         const progress = jest.fn();
         const result = await runCourtAnalysis('66124057408', { caseLimit: 3, enableVisualizer: false }, progress);
 
-        expect(mockSearchAndGetLatestCasesWithDocuments).toHaveBeenCalledWith('66124057408', null);
+        expect(mockSearchAndGetLatestCasesWithDocuments).toHaveBeenCalledWith('66124057408', 40, 3, true, null, null);
         expect(result.discoverySummary.capturedDistinctCaseCount).toBe(4);
         expect(result.discoverySummary.recommendedPrimaryClusterId).toBe('C1');
         expect(result.discoverySummary.secondaryClusterIds).toEqual(['C2', 'C3', 'C4']);
@@ -149,6 +165,7 @@ describe('runCourtAnalysis pipeline (deterministic)', () => {
             jest.fn()
         );
 
+        expect(mockSearchAndGetLatestCasesWithDocuments).toHaveBeenCalledWith(query.value, 40, 3, true, query.value, query);
         expect(result.discoverySummary.query).toEqual(query);
         expect(result.clusterEvidencePackage.query).toEqual(query);
         expect(result.clusterEvidencePackage.clusterId).toBe(result.discoverySummary.reasoningClusterId);
@@ -157,6 +174,8 @@ describe('runCourtAnalysis pipeline (deterministic)', () => {
                 clusterId: result.clusterEvidencePackage.clusterId,
                 retrieval: expect.any(Object),
             }),
+        }), expect.objectContaining({
+            tracker: expect.any(Object),
         }));
         expect(result.report).toEqual(expect.objectContaining({
             schemaVersion: '1.0.0',
@@ -186,7 +205,7 @@ describe('runCourtAnalysis pipeline (deterministic)', () => {
 
         const result = await runCourtDiscovery('66124057408', { caseLimit: 2 }, jest.fn());
 
-        expect(mockSearchAndGetLatestCases).toHaveBeenCalledWith('66124057408', null, null);
+        expect(mockSearchAndGetLatestCases).toHaveBeenCalledWith('66124057408', null, 3, true, null);
         expect(result.discoverySummary.totalResults).toBe(12);
         expect(result.discoverySummary.totalPages).toBe(3);
         expect(result.discoverySummary.rawEntryCount).toBe(4);
@@ -195,6 +214,15 @@ describe('runCourtAnalysis pipeline (deterministic)', () => {
         expect(mockDownloadCall).not.toHaveBeenCalled();
         expect(mockAnalyzeCall).not.toHaveBeenCalled();
         expect(mockVisualizerCall).not.toHaveBeenCalled();
+    });
+
+    test('runCourtDiscovery threads the OIB query value as the debtor identity hint', async () => {
+        const query = { type: 'oib', value: '66124057408' };
+
+        const result = await runCourtDiscovery(query.value, { caseLimit: 2, query }, jest.fn());
+
+        expect(mockSearchAndGetLatestCases).toHaveBeenCalledWith(query.value, null, 3, true, query.value);
+        expect(result.discoverySummary.query).toEqual(query);
     });
 
     test('runCourtDiscovery bases discovery on the full search window even when entries lack download links', async () => {

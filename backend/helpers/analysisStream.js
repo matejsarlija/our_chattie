@@ -25,6 +25,7 @@ function didRunChange(previous, current) {
     || previous.completed_at !== current.completed_at
     || previous.result_text !== current.result_text
     || previous.error !== current.error
+    || JSON.stringify(previous.token_usage ?? null) !== JSON.stringify(current.token_usage ?? null)
   );
 }
 

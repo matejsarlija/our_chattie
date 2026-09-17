@@ -1,9 +1,10 @@
 // pipeline.js
 
-const CourtSearchPuppeteer = require('../scraper/courtSearchPuppeteer');
+const { createDiscoveryClient } = require('../scraper/discoveryClient');
 const { DownloadDocumentsTool } = require('./agents/download-agent');
+const { ExtractArchiveTool } = require('./agents/extract-tool');
 // We will modify AnalyzeDocumentsTool, so we need to import it
-const { AnalyzeDocumentsTool, generateComparativeAnalysis } = require('./agents/analysis-agent');
+const { AnalyzeDocumentsTool } = require('./agents/analysis-agent');
 const { VisualizerTool } = require('./agents/visualizer-agent');
 const { enrichParticipants } = require('../court-registry/enricher');
 const {
@@ -12,13 +13,19 @@ const {
     MAX_CASE_LIMIT,
 } = require('../helpers/courtAnalysisRequest');
 const { groupEntriesByCase } = require('./utils/grouping');
+const { parseCaseDateToTimestamp } = require('./utils/caseDate');
+const { selectPrimaryCase } = require('./utils/primaryCaseSelector');
+const { stratifyClusterEntries } = require('./utils/stratify');
+const { buildStageCounterEvent } = require('../helpers/analysisStage');
 const { normalizeCaseNumber } = require('./utils/caseNumber');
+const { resolveScanDepthEntries, COURT_ENTRIES_PER_PAGE } = require('./utils/scanDepth');
 const { buildClusterEvidencePackage, attachAnalysesToEvidencePackage } = require('./reasoning/evidencePackage');
-const { generateClusterReport } = require('./reasoning/reportService');
+const { generateClusterReport, composeOverviewMarkdown } = require('./reasoning/reportService');
+const { createUsageTracker } = require('../helpers/geminiUsage');
 const fs = require('fs');
 const path = require('path');
-const AdmZip = require('adm-zip');
 const logger = require('../helpers/logger');
+const agentLog = require('../helpers/agentLog');
 
 /**
  * Error carrying whatever partial results were accumulated before a pipeline stage
@@ -42,13 +49,51 @@ function buildEmptyPartialResult() {
         primaryCluster: null,
         secondaryClusters: [],
         clusterEvidencePackage: null,
-        report: null
+        report: null,
+        reportError: null,
+        usage: null
     };
 }
 
-// Placeholder/error strings produced by generateComparativeAnalysis when the
-// underlying AI call failed. These carry no analyzable substance, so the
-// visualizer must not run against them (it would only emit an empty stub).
+// Reuses the per-case coverage objects the analysis tool already computed —
+// never recomputed here, so the summary can never disagree with them.
+function sumDocumentCoverage(processedCases) {
+    return (processedCases || []).reduce(
+        (totals, processedCase) => ({
+            analyzed: totals.analyzed + (processedCase?.analysis?.coverage?.analyzed ?? 0),
+            failed: totals.failed + (processedCase?.analysis?.coverage?.failed ?? 0),
+        }),
+        { analyzed: 0, failed: 0 }
+    );
+}
+
+// Degraded-but-useful overview for when generateClusterReport fails (dense-
+// cluster JSON truncation, model hiccups, etc.). The per-document analyses
+// already cost real Gemini calls and are real, verified content — losing them
+// just because the cross-document synthesis pass failed would throw away the
+// expensive part to protect the cheap part. Mirrors composeOverviewMarkdown's
+// shape (plain markdown sections) without inventing cross-document findings.
+function composeFallbackOverviewMarkdown(allProcessedCases) {
+    const lines = [];
+    for (const processedCase of allProcessedCases || []) {
+        const individualAnalyses = Array.isArray(processedCase?.analysis?.individualAnalyses)
+            ? processedCase.analysis.individualAnalyses
+            : [];
+        for (const item of individualAnalyses) {
+            const summary = String(item?.aiResult?.summary || '').trim();
+            if (summary) lines.push(`- ${summary}`);
+        }
+    }
+    if (lines.length === 0) return '';
+    return (
+        `## Sa\u017eeci pojedina\u010dnih dokumenata\n${lines.join('\n')}\n\n` +
+        '_Napomena: cjeloviti stru\u010dni izvje\u0161taj trenutno nije dostupan, ali su pojedina\u010dne analize dokumenata prikazane iznad._'
+    );
+}
+
+// Placeholder strings emitted by the reasoning layer when synthesis has no
+// usable evidence (createEmptyReport). They carry no analyzable substance, so
+// the visualizer must not run against them (it would only emit an empty stub).
 const USELESS_ANALYSIS_TEXT_RE = /gre[šs]ka pri generiranju|nema dostupnih podataka za generiranje analize|analiza dokumenata nije uspje[šs]no izvr[šs]ena|nema dovoljno dokaza/i;
 
 function isUsableAnalysisText(text) {
@@ -64,10 +109,9 @@ function clampCaseLimit(rawLimit) {
     return numeric;
 }
 
-// Track 3b — full document history. Default: capture the entire scanned search
-// window so the selected primary cluster's merged documentLinks are all
-// downloaded/analyzed, not just the top `caseLimit×3` entries. An explicit
-// positive ANALYSIS_SCRAPE_LIMIT re-imposes a capture cap for quota conservation.
+// ANALYSIS_SCRAPE_LIMIT is a composed safety valve, not an override that
+// ignores the scan-depth selection. Given an explicit positive limit, the
+// smaller of that value and the current scan-depth entry cap wins.
 function resolveAnalysisScrapeLimit() {
     const raw = Number.parseInt(process.env.ANALYSIS_SCRAPE_LIMIT, 10);
     if (Number.isFinite(raw) && raw >= 1) return Math.floor(raw);
@@ -98,47 +142,39 @@ const DISCOVERY_HEURISTICS_DEFAULTS = {
     dominantClusterRatioThreshold: 0.65
 };
 
-function computeRawScrapeLimit(caseLimit) {
+function computeRawScrapeLimit(maxEntries) {
     const envLimit = resolveAnalysisScrapeLimit();
-    if (envLimit !== null) return envLimit;
-    // Full document history: capture the whole scanned window for the primary
-    // cluster (no caseLimit-derived truncation).
-    return null;
+    if (envLimit !== null) return Math.min(envLimit, maxEntries);
+    return maxEntries;
 }
 
-function parseCaseDateToTimestamp(rawDate) {
-    if (!rawDate || typeof rawDate !== 'string') return null;
-    const value = rawDate.trim();
-    if (!value || value.toUpperCase() === 'N/A') return null;
-
-    const croatianDateMatch = value.match(/^(\d{1,2})[.\-/](\d{1,2})[.\-/](\d{2,4})\.?$/);
-    if (croatianDateMatch) {
-        const day = Number.parseInt(croatianDateMatch[1], 10);
-        const month = Number.parseInt(croatianDateMatch[2], 10);
-        const yearRaw = Number.parseInt(croatianDateMatch[3], 10);
-        const year = yearRaw < 100 ? 2000 + yearRaw : yearRaw;
-        const ts = Date.UTC(year, month - 1, day);
-        const parsed = new Date(ts);
-
-        if (
-            parsed.getUTCFullYear() === year &&
-            parsed.getUTCMonth() === month - 1 &&
-            parsed.getUTCDate() === day
-        ) {
-            return ts;
-        }
-        return null;
-    }
-
-    const fallbackTs = Date.parse(value);
-    return Number.isNaN(fallbackTs) ? null : fallbackTs;
+// Resolves the scan-depth dial into court-entry counts, then derives the
+// page-based fields still required by the Puppeteer fallback. One court entry
+// is one e-Oglasna announcement row; a court case or cluster can span many
+// court entries.
+function resolveScanDepth(scanDepth) {
+    const depth = resolveScanDepthEntries(scanDepth);
+    return {
+        scanDepth: depth.scanDepth,
+        maxPagesScanned: depth.scanDepth === 'full'
+            ? Infinity
+            : Math.ceil(depth.forwardEntries / COURT_ENTRIES_PER_PAGE),
+        tailSample: depth.tailEntries > 0,
+        maxEntries: depth.maxEntries
+    };
 }
 
 function collectClusterParticipantSignals(cluster) {
     const participantNames = new Set();
     const oibs = new Set();
+    const debtorOibs = new Set();
 
     for (const entry of cluster.entries || []) {
+        const debtorOib = entry?.caseInfo?.debtorOib;
+        if (typeof debtorOib === 'string' && debtorOib.trim() && debtorOib.trim() !== 'N/A') {
+            debtorOibs.add(debtorOib.trim());
+        }
+
         for (const participant of entry?.caseInfo?.participants || []) {
             if (participant?.name) {
                 participantNames.add(participant.name.trim());
@@ -153,7 +189,8 @@ function collectClusterParticipantSignals(cluster) {
 
     return {
         participantNames: Array.from(participantNames),
-        oibs: Array.from(oibs)
+        oibs: Array.from(oibs),
+        debtorOibs: Array.from(debtorOibs)
     };
 }
 
@@ -169,6 +206,7 @@ function collectClusterAcquisitionSignals(cluster) {
         acquisitionModes.add(acquisition.mode);
         const key = JSON.stringify({
             mode: acquisition.mode,
+            sampling: acquisition.sampling ?? null,
             currentPage: acquisition.currentPage ?? null,
             sourceCaseNumber: entry?.caseNumber || entry?.caseInfo?.caseNumber || null,
             pass: acquisition.pass ?? null,
@@ -180,6 +218,7 @@ function collectClusterAcquisitionSignals(cluster) {
             seen.add(key);
             acquisitionProvenance.push({
                 mode: acquisition.mode,
+                sampling: acquisition.sampling ?? null,
                 currentPage: acquisition.currentPage ?? null,
                 sourceCaseNumber: entry?.caseNumber || entry?.caseInfo?.caseNumber || null,
                 pass: acquisition.pass ?? null,
@@ -213,34 +252,40 @@ function collectClusterAcquisitionModeCounts(cluster) {
 }
 
 function determineIdentityConsistency(cluster, query) {
-    const { participantNames, oibs } = collectClusterParticipantSignals(cluster);
+    const { participantNames, oibs, debtorOibs } = collectClusterParticipantSignals(cluster);
+
+    // Authoritative entity OIB when the discovery source exposes a dedicated
+    // debtor OIB column (CSV export); otherwise fall back to participant OIBs.
+    // This prevents non-debtor participants (creditors, other parties) from
+    // polluting the entity-identity signal for an OIB/entity query.
+    const identityOibs = debtorOibs.length > 0 ? debtorOibs : oibs;
 
     if (query?.type === 'oib' && query?.value) {
-        if (oibs.length === 1 && oibs[0] === query.value) {
+        if (identityOibs.length === 1 && identityOibs[0] === query.value) {
             return { identityConsistency: 'consistent', identityNotes: [] };
         }
 
-        if (oibs.length === 0) {
+        if (identityOibs.length === 0) {
             return {
                 identityConsistency: 'unresolved',
-                identityNotes: [`Queried OIB ${query.value} is not visible in captured participant metadata.`]
+                identityNotes: [`Queried OIB ${query.value} is not visible in captured entity metadata.`]
             };
         }
 
         return {
             identityConsistency: 'ambiguous',
-            identityNotes: [`Captured participant OIBs (${oibs.join(', ')}) do not cleanly match queried OIB ${query.value}.`]
+            identityNotes: [`Captured entity OIBs (${identityOibs.join(', ')}) do not cleanly match queried OIB ${query.value}.`]
         };
     }
 
-    if (oibs.length > 1) {
+    if (identityOibs.length > 1) {
         return {
             identityConsistency: 'ambiguous',
-            identityNotes: [`Multiple participant OIBs detected in cluster: ${oibs.join(', ')}.`]
+            identityNotes: [`Multiple entity OIBs detected in cluster: ${identityOibs.join(', ')}.`]
         };
     }
 
-    if (oibs.length === 1) {
+    if (identityOibs.length === 1) {
         return {
             identityConsistency: 'consistent',
             identityNotes: query?.type === 'text'
@@ -643,6 +688,11 @@ function buildDiscoverySummary(clusterSummaries, selectedClusters, query, discov
         hasNextPage: normalizedDiscoveryMetadata.hasNextPage ?? null,
         rawEntryCount: normalizedDiscoveryMetadata.rawParsedEntryCount ?? totalEntries,
         capturedDistinctCaseCount: clusters.length,
+        // Shared primary-case selection (T0-1): which key bounded acquisition
+        // served, which candidate cases were considered (with entry/document
+        // counts), and which rule ran. This is how a single-cluster
+        // discoverySummary still knows the full multi-case discovery picture.
+        selection: normalizedDiscoveryMetadata.selection ?? null,
         clusters: annotatedClusters,
         dominantClusterRatio: primaryClusterSummary
             ? Number((primaryClusterSummary.entryCount / Math.max(1, totalEntries)).toFixed(2))
@@ -1001,17 +1051,113 @@ async function executeClusterExpansionSearches(automator, discoveryResult, optio
     };
 }
 
+/**
+ * Resolves the reasoning primary (T0-1 convergence) without regressing
+ * identity-aware scoring. Tiers:
+ *   1. explicit `case_number` query match resolving to a known cluster — the
+ *      user named the case; honoring it is always safe;
+ *   2. discovery-provided selection key (the shared selector already ran over
+ *      this input set on the CSV path) resolving to a known cluster;
+ *   3. otherwise the coverage-aware scoring order stands untouched.
+ *
+ * Deliberate split from acquisition bounding: tie-breaks 2–4 of the shared
+ * selector (document coverage, recency, lexical) are budget heuristics for
+ * choosing WHAT to acquire. They must not overrule the scoring policy's
+ * identity-confidence multipliers when deciding what a multi-cluster input
+ * reasons over — that would flip primaries like the JADRAN-matching cluster
+ * in the under-covered-expansion fixtures. The CSV balanced path is unaffected
+ * (single-key input converges trivially).
+ */
+function resolveReasoningPrimary(allClusters, scoredClusters, resolution = {}) {
+    const { query = null, providedSelection = null, caseLimit = null } = resolution;
+    const list = Array.isArray(scoredClusters) ? scoredClusters : [];
+    const clusterIdOf = (cluster) => cluster?.clusterId || cluster?.caseNumber || null;
+    const known = (key) => (Array.isArray(allClusters) ? allClusters : []).some((cluster) => clusterIdOf(cluster) === key);
+
+    const promote = (key, method) => {
+        const atIndex = list.findIndex((cluster) => clusterIdOf(cluster) === key);
+        if (atIndex > 0) {
+            const [picked] = list.splice(atIndex, 1);
+            list.unshift(picked);
+        } else if (atIndex < 0) {
+            const full = (Array.isArray(allClusters) ? allClusters : []).find((cluster) => clusterIdOf(cluster) === key);
+            if (full) {
+                // Selected key cut by caseLimit: reinstate it as the reasoning
+                // target, dropping the lowest-ranked selected cluster.
+                list.unshift(full);
+                if (typeof caseLimit === 'number' && list.length > caseLimit) {
+                    list.length = Math.max(1, caseLimit);
+                }
+            }
+        }
+        return { clusters: list, primarySelection: { selectedCaseKey: key, method, source: 'shared-selector' } };
+    };
+
+    const queriedKey = query?.type === 'case_number' ? normalizeCaseNumber(query?.value) : null;
+    if (queriedKey && known(queriedKey)) {
+        return promote(queriedKey, 'case-number-query');
+    }
+
+    const providedKey = providedSelection?.selectedCaseKey || null;
+    if (providedKey && known(providedKey)) {
+        return promote(providedKey, providedSelection.method || 'discovery-selection');
+    }
+
+    const [head] = list;
+    return {
+        clusters: list,
+        primarySelection: {
+            selectedCaseKey: head ? clusterIdOf(head) : null,
+            method: 'coverage-scoring',
+            source: 'scoring-fallback'
+        }
+    };
+}
+
 function buildDiscoveryResult(casesToProcess, options = {}, progressCallback) {
+    // The initial discovery pass (expansion eligibility check) reuses this
+    // function; suppress its progress events there so the timeline does not
+    // receive duplicate grouping entries.
+    const emitProgress = options.emitProgress === false ? null : progressCallback;
+
     if (!casesToProcess || casesToProcess.length === 0) {
         throw new Error('Nije pronađen nijedan predmet za traženi pojam.');
     }
 
-    progressCallback?.({ step: 'grouping', progress: 15, message: 'Grupiram pronađene objave po predmetima...' });
+    emitProgress?.({ step: 'grouping', progress: 15, message: 'Grupiram pronađene objave po predmetima...' });
 
     const entriesForGrouping = casesToProcess.map(normalizeEntryForGrouping);
+    // Shared primary-case selection (T0-1): the CSV path already ran the same
+    // selector over this input set for bounded acquisition. The local
+    // computation below is a tripwire for client/pipeline skew; reasoning
+    // follows the tiered resolver (explicit case_number query, then the
+    // discovery-provided key, else coverage scoring) so acquisition-bounding
+    // heuristics can never overrule identity-aware scoring.
+    const localSelection = selectPrimaryCase(entriesForGrouping, options.query || null);
+    const providedSelection = options.discoveryMetadata?.selection || null;
+    const discoveryProvidedKey = providedSelection?.selectedCaseKey || null;
+    if (discoveryProvidedKey
+        && localSelection.selectedCaseKey
+        && discoveryProvidedKey !== localSelection.selectedCaseKey) {
+        logger.warn('pipeline.buildDiscoveryResult', 'Discovery-provided primary key disagrees with local selection; discovery key still drives reasoning.', {
+            runId: options?.runId || null,
+            discoveryProvidedKey,
+            localKey: localSelection.selectedCaseKey,
+            method: localSelection.method
+        });
+    }
+    const resolution = {
+        query: options.query || null,
+        providedSelection,
+        caseLimit: options.caseLimit ?? null
+    };
     const initialAllClusters = groupEntriesByCase(entriesForGrouping);
     const initialClusterSummaries = buildClusterSummaries(initialAllClusters, options.query);
-    const initialClusters = selectClustersForProcessing(initialAllClusters, initialClusterSummaries, options.caseLimit);
+    const initialClusters = resolveReasoningPrimary(
+        initialAllClusters,
+        selectClustersForProcessing(initialAllClusters, initialClusterSummaries, options.caseLimit),
+        resolution
+    ).clusters;
     const initialDiscoverySummary = buildDiscoverySummary(
         initialClusterSummaries,
         initialClusters,
@@ -1021,13 +1167,40 @@ function buildDiscoveryResult(casesToProcess, options = {}, progressCallback) {
     const expansionResult = applyConfiguredClusterExpansion(entriesForGrouping, initialDiscoverySummary, options);
     const allClusters = groupEntriesByCase(expansionResult.entriesForGrouping);
     const clusterSummaries = buildClusterSummaries(allClusters, options.query);
-    const clusters = selectClustersForProcessing(allClusters, clusterSummaries, options.caseLimit);
+    const { clusters, primarySelection } = resolveReasoningPrimary(
+        allClusters,
+        selectClustersForProcessing(allClusters, clusterSummaries, options.caseLimit),
+        resolution
+    );
+    // TS-2 — stratified analysis scope: when discovery served a candidate
+    // pool with an explicit analysis budget (balanced CSV path), the primary
+    // cluster's entries are allocated AFTER grouping. Discovery-level counts
+    // (summaries, spans) keep describing the pool; only the reasoning input
+    // is bounded. Paths without a budget (puppeteer, mocks, legacy metadata)
+    // pass through untouched.
+    const analysisBudget = options.discoveryMetadata?.selection?.analysisBudget;
+    let coverageLedger = null;
+    if (Number.isFinite(analysisBudget)) {
+        const primaryIndex = clusters.findIndex(
+            (cluster) => (cluster?.clusterId || cluster?.caseNumber) === primarySelection.selectedCaseKey
+        );
+        if (primaryIndex >= 0) {
+            const stratified = stratifyClusterEntries(clusters[primaryIndex].entries, { budget: analysisBudget });
+            clusters[primaryIndex] = { ...clusters[primaryIndex], entries: stratified.entries };
+            coverageLedger = stratified.ledger;
+        }
+    }
     const discoverySummary = buildDiscoverySummary(
         clusterSummaries,
         clusters,
         options.query,
         options.discoveryMetadata
     );
+    discoverySummary.primarySelection = {
+        ...primarySelection,
+        discoveryProvidedKey
+    };
+    discoverySummary.coverageLedger = coverageLedger;
 
     if (expansionResult.expansion) {
         discoverySummary.expansion = expansionResult.expansion;
@@ -1046,6 +1219,7 @@ function buildDiscoveryResult(casesToProcess, options = {}, progressCallback) {
     const primaryClusterId = discoverySummary.recommendedPrimaryClusterId;
 
     logger.info('pipeline.buildDiscoveryResult', 'Discovery completed', {
+        runId: options?.runId || null,
         clusters,
         allClusters: allClusters.length,
         primaryClusterId: primaryClusterId || null,
@@ -1053,11 +1227,25 @@ function buildDiscoveryResult(casesToProcess, options = {}, progressCallback) {
         expansionApplied: Boolean(expansionResult.expansion),
     });
 
-    progressCallback?.({
+    emitProgress?.({
         step: 'grouping',
         progress: 20,
         message: `Pronađeno ${clusters.length} jedinstvenih predmeta (odabrano od ${allClusters.length} grupa iz ${casesToProcess.length} objava) za analizu.`
     });
+
+    const primaryClusterSummary = discoverySummary.clusters.find((cluster) => cluster.clusterId === primaryClusterId) || null;
+    if (primaryClusterSummary) {
+        const IDENTITY_LABELS_HR = {
+            consistent: 'konzistentan',
+            unresolved: 'nepotvrđen',
+            ambiguous: 'dvosmislen',
+        };
+        emitProgress?.({
+            step: 'grouping',
+            progress: 22,
+            message: `Glavni predmet: ${primaryClusterSummary.primaryCaseNumber} — ${primaryClusterSummary.entryCount} objava, raspon ${primaryClusterSummary.entryDateSpanDays} dana, identitet: ${IDENTITY_LABELS_HR[primaryClusterSummary.identityConsistency] || primaryClusterSummary.identityConsistency}.`
+        });
+    }
 
     return {
         allClusters,
@@ -1071,44 +1259,54 @@ function buildDiscoveryResult(casesToProcess, options = {}, progressCallback) {
 
 function resolveAnalysisArgs(caseLimitOrOptions, maybeProgressCallback) {
     if (typeof caseLimitOrOptions === 'function') {
+        const depth = resolveScanDepth('balanced');
         return {
             caseLimit: DEFAULT_CASE_LIMIT,
-            scrapeLimit: computeRawScrapeLimit(DEFAULT_CASE_LIMIT),
+            scrapeLimit: computeRawScrapeLimit(depth.maxEntries),
             enableVisualizer: true,
+            runId: null,
+            ...depth,
             progressCallback: caseLimitOrOptions,
         };
     }
 
     if (typeof caseLimitOrOptions === 'number' || typeof caseLimitOrOptions === 'string') {
         const caseLimit = clampCaseLimit(caseLimitOrOptions);
+        const depth = resolveScanDepth('balanced');
         return {
             caseLimit,
-            scrapeLimit: computeRawScrapeLimit(caseLimit),
+            scrapeLimit: computeRawScrapeLimit(depth.maxEntries),
             enableVisualizer: true,
+            runId: null,
+            ...depth,
             progressCallback: maybeProgressCallback,
         };
     }
 
     if (caseLimitOrOptions && typeof caseLimitOrOptions === 'object') {
         const caseLimit = clampCaseLimit(caseLimitOrOptions.caseLimit);
+        const depth = resolveScanDepth(caseLimitOrOptions.scanDepth);
         return {
             caseLimit,
-            scrapeLimit: computeRawScrapeLimit(caseLimit),
+            scrapeLimit: computeRawScrapeLimit(depth.maxEntries),
             enableVisualizer: caseLimitOrOptions.enableVisualizer !== false,
             query: caseLimitOrOptions.query || null,
             clusterExpansion: caseLimitOrOptions.clusterExpansion || null,
-            maxPagesScanned: Number.isFinite(caseLimitOrOptions.maxPagesScanned)
-                ? Math.max(1, caseLimitOrOptions.maxPagesScanned)
-                : null,
+            discoverySource: caseLimitOrOptions.discoverySource || null,
+            runId: caseLimitOrOptions.runId || null,
+            ...depth,
             progressCallback: maybeProgressCallback,
         };
     }
 
+    const depth = resolveScanDepth('balanced');
     return {
         caseLimit: DEFAULT_CASE_LIMIT,
-        scrapeLimit: computeRawScrapeLimit(DEFAULT_CASE_LIMIT),
+        scrapeLimit: computeRawScrapeLimit(depth.maxEntries),
         enableVisualizer: true,
         query: null,
+        runId: null,
+        ...depth,
         progressCallback: maybeProgressCallback,
     };
 }
@@ -1130,7 +1328,8 @@ async function resolveAutoExpansion(automator, casesToProcess, resolved, progres
         caseLimit: resolved.caseLimit,
         query: resolved.query || null,
         clusterExpansion: null,
-        discoveryMetadata: resolved.discoveryMetadata || null
+        discoveryMetadata: resolved.discoveryMetadata || null,
+        emitProgress: false
     }, progressCallback);
 
     const expansionResult = await executeClusterExpansionSearches(automator, initialDiscovery, {
@@ -1160,26 +1359,41 @@ async function resolveAutoExpansion(automator, casesToProcess, resolved, progres
 async function runCourtAnalysis(searchTerm, caseLimitOrOptions, progressCallback) {
     const resolved = resolveAnalysisArgs(caseLimitOrOptions, progressCallback);
     const callback = resolved.progressCallback;
-    const automator = new CourtSearchPuppeteer();
+    const automator = createDiscoveryClient({ discoverySource: resolved.discoverySource });
     const allProcessedCases = [];
     let allFilesToCleanup = [];
 
     try {
         // 1. Scrape for the N latest cases
         logger.info('pipeline.runCourtAnalysis', 'Starting court analysis', {
+            runId: resolved.runId || null,
             queryType: resolved.query?.type || null,
             caseLimit: resolved.caseLimit,
             scrapeLimit: resolved.scrapeLimit,
         });
         callback?.({ step: 'discovering', progress: 10, message: 'Pretražujem sudske zapise za nedavne objave...' });
         await automator.init();
-        const scrapeResult = await automator.searchAndGetLatestCasesWithDocuments(searchTerm, resolved.scrapeLimit);
+        const scrapeResult = await automator.searchAndGetLatestCasesWithDocuments(
+            searchTerm,
+            resolved.scrapeLimit,
+            resolved.maxPagesScanned,
+            resolved.tailSample,
+            resolved.query?.type === 'oib' ? resolved.query.value : null,
+            resolved.query || null
+        );
         const { casesToProcess, discoveryMetadata } = normalizeScraperResult(scrapeResult);
-        
+
+        callback?.({
+            step: 'discovering',
+            progress: 12,
+            message: `Pronađeno ${casesToProcess.length} objava na ${discoveryMetadata?.pagesScanned ?? '?'} stranica${discoveryMetadata?.hasNextPage ? ' (postoji više stranica)' : ''}.`
+        });
+
         if (!casesToProcess || casesToProcess.length === 0) {
             throw new Error('Nije pronađen nijedan predmet s dostupnim dokumentima za traženi pojam.');
         }
         logger.info('pipeline.runCourtAnalysis', 'Scrape completed', {
+            runId: resolved.runId || null,
             cases: casesToProcess.length,
             discoveryMode: discoveryMetadata?.discoveryMode || null,
         });
@@ -1198,11 +1412,12 @@ async function runCourtAnalysis(searchTerm, caseLimitOrOptions, progressCallback
             query: expandedResolved.query || { value: searchTerm },
             clusterExpansion: expandedResolved.clusterExpansion,
             discoveryMetadata,
+            runId: expandedResolved.runId || null,
         });
         return result;
 
     } catch (error) {
-        logger.error('pipeline.runCourtAnalysis', 'Court analysis failed', { error: error.message });
+        logger.error('pipeline.runCourtAnalysis', 'Court analysis failed', { runId: resolved.runId || null, error: error.message });
         callback?.({ step: 'error', progress: 100, message: error.message });
         throw error;
     } finally {
@@ -1215,12 +1430,18 @@ async function runCourtAnalysis(searchTerm, caseLimitOrOptions, progressCallback
 async function runCourtDiscovery(searchTerm, caseLimitOrOptions, progressCallback) {
     const resolved = resolveAnalysisArgs(caseLimitOrOptions, progressCallback);
     const callback = resolved.progressCallback;
-    const automator = new CourtSearchPuppeteer();
+    const automator = createDiscoveryClient({ discoverySource: resolved.discoverySource });
 
     try {
         callback?.({ step: 'discovering', progress: 10, message: 'Pretražujem sudske zapise za nedavne objave...' });
         await automator.init();
-        const scrapeResult = await automator.searchAndGetLatestCases(searchTerm, null, resolved.maxPagesScanned);
+        const scrapeResult = await automator.searchAndGetLatestCases(
+            searchTerm,
+            null,
+            resolved.maxPagesScanned,
+            resolved.tailSample,
+            resolved.query?.type === 'oib' ? resolved.query.value : null
+        );
         const { casesToProcess, discoveryMetadata } = normalizeScraperResult(scrapeResult);
 
         const expandedResolved = await resolveAutoExpansion(automator, casesToProcess, {
@@ -1255,7 +1476,14 @@ async function runCourtAnalysisWithExistingAutomator(searchTerm, caseLimitOrOpti
     try {
         // 1. Use the existing automator to scrape (no init/close needed)
         callback?.({ step: 'discovering', progress: 10, message: 'Pretražujem sudske zapise za nedavne objave...' });
-        const scrapeResult = await existingAutomator.searchAndGetLatestCasesWithDocuments(searchTerm, resolved.scrapeLimit, resolved.maxPagesScanned);
+        const scrapeResult = await existingAutomator.searchAndGetLatestCasesWithDocuments(
+            searchTerm,
+            resolved.scrapeLimit,
+            resolved.maxPagesScanned,
+            resolved.tailSample,
+            resolved.query?.type === 'oib' ? resolved.query.value : null,
+            resolved.query || null
+        );
         const { casesToProcess, discoveryMetadata } = normalizeScraperResult(scrapeResult);
 
         if (!casesToProcess || casesToProcess.length === 0) {
@@ -1274,6 +1502,7 @@ async function runCourtAnalysisWithExistingAutomator(searchTerm, caseLimitOrOpti
             query: expandedResolved.query || { value: searchTerm },
             clusterExpansion: expandedResolved.clusterExpansion,
             discoveryMetadata,
+            runId: expandedResolved.runId || null,
         });
         return result;
 
@@ -1298,13 +1527,26 @@ async function processScrapedCases(casesToProcess, progressCallback, options = {
         enableVisualizer: true,
         ...options,
     };
+    // Run correlation: server.js mints a run id per analysis request and
+    // threads it here via options (same plumbing shape as usageTracker).
+    // Every logger.* call in this function carries it in meta so concurrent
+    // runs can be isolated with a single grep. Null outside HTTP requests.
+    const runId = resolvedOptions.runId || null;
+    const runStartedAt = Date.now();
     const allProcessedCases = [];
     let allFilesToCleanup = [];
     let lastStage = null;
 
+    const usageTracker = createUsageTracker();
     const stageAwareProgress = (event) => {
         if (event?.step) lastStage = event.step;
         progressCallback?.(event);
+    };
+    const emitUsage = (snapshot) => {
+        stageAwareProgress({
+            step: lastStage || 'reasoning',
+            usage: snapshot,
+        });
     };
 
     let partialResult = buildEmptyPartialResult();
@@ -1332,6 +1574,12 @@ async function processScrapedCases(casesToProcess, progressCallback, options = {
             primaryCluster,
             secondaryClusters
         };
+        stageAwareProgress(buildStageCounterEvent({
+            stage: 'discovering',
+            done: 0,
+            total: discoverySummary.rawEntryCount ?? null,
+            unit: 'objava',
+        }));
         const reasoningClusters = primaryClusterId
             ? clusters.filter((cluster) => (cluster.clusterId || cluster.caseNumber) === primaryClusterId)
             : clusters.slice(0, 1);
@@ -1351,6 +1599,7 @@ async function processScrapedCases(casesToProcess, progressCallback, options = {
         const totalCases = reasoningClusters.length;
 
         logger.info('pipeline.processScrapedCases', 'Discovery grouped', {
+            runId,
             clusters: clusters.length,
             reasoningClusters: totalCases,
             primaryClusterId: primaryClusterId || null,
@@ -1359,6 +1608,7 @@ async function processScrapedCases(casesToProcess, progressCallback, options = {
         });
 
         const downloadTool = new DownloadDocumentsTool();
+        const extractTool = new ExtractArchiveTool();
         const analyzeTool = new AnalyzeDocumentsTool();
 
         // Reason only over the selected primary cluster. Other clusters remain discovery outputs.
@@ -1385,41 +1635,120 @@ async function processScrapedCases(casesToProcess, progressCallback, options = {
                 try {
                     caseInfo.participants = await enrichParticipants(caseInfo.participants);
                 } catch (err) {
-                    console.error('Enrichment failed gracefully:', err.message);
+                    agentLog.error('Enrichment failed gracefully:', err.message);
                 }
             }
             // -----------------------
 
             // 2a. Download
             stageAwareProgress?.({ step: 'downloading', message: `Preuzimam arhivu za predmet ${i + 1} (${documentLinks.length} linkova)...` });
-            downloadedFiles = await downloadTool._call({ documentLinks, progressCallback: null });
+            let downloadFailed = 0;
+            downloadedFiles = await downloadTool._call({
+                documentLinks,
+                progressCallback: (event) => {
+                    stageAwareProgress?.(event);
+                    if (event && Number.isFinite(event.completed) && Number.isFinite(event.total)) {
+                        if (event.failed === true) downloadFailed++;
+                        stageAwareProgress?.(buildStageCounterEvent({
+                            stage: 'downloading',
+                            done: event.completed,
+                            failed: downloadFailed,
+                            total: event.total,
+                            unit: 'datoteka',
+                        }));
+                    }
+                },
+            });
+            stageAwareProgress?.({ step: 'downloading', message: `Preuzeto ${downloadedFiles.length}/${documentLinks.length} datoteka za predmet ${i + 1}.` });
 
             // 2b. Unzip
             stageAwareProgress?.({ step: 'extracting', message: `Raspakiram datoteke za predmet ${i + 1}...` });
             const filesForAnalysis = [];
+            // Explicit file→entry provenance: the raw cluster entries are the
+            // authority here (pre-evidencePackage, so no mapped link ids yet).
+            // Tag each file with its source entry index so the attach step can
+            // resolve entry dates by index instead of fuzzy filename matching.
+            const entryIndexByUrl = new Map();
+            const linkIdByUrl = new Map();
+            (cluster.entries || []).forEach((rawEntry, rawEntryIndex) => {
+                // Same deterministic id format evidencePackage.js's mapDocumentLink
+                // will later synthesize for this exact entry/link position, so a
+                // file tagged here resolves against the real pkg.documentLinks
+                // entry instead of relying on sourceEntryIndex alone. Raw scraped
+                // links never carry their own `.id` (that field is a downstream
+                // reasoning-layer construct), so it must be computed here, not read.
+                const rawCaseNumber = rawEntry?.caseNumber || rawEntry?.caseInfo?.caseNumber || 'unknown';
+                (rawEntry?.documentLinks || []).forEach((rawLink, rawLinkIndex) => {
+                    if (rawLink?.url && !entryIndexByUrl.has(rawLink.url)) {
+                        entryIndexByUrl.set(rawLink.url, rawEntryIndex);
+                    }
+                    const rawLinkId = rawLink?.id
+                        ?? rawLink?.documentLinkId
+                        ?? `${rawCaseNumber}::entry-${rawEntryIndex + 1}::doc-${rawLinkIndex + 1}`;
+                    if (rawLink?.url && !linkIdByUrl.has(rawLink.url)) {
+                        linkIdByUrl.set(rawLink.url, rawLinkId);
+                    }
+                });
+            });
+            const tagProvenance = (file) => ({
+                sourceEntryIndex: file?.sourceEntryIndex
+                    ?? file?.entryIndex
+                    ?? (entryIndexByUrl.has(file?.url) ? entryIndexByUrl.get(file.url) : null),
+                sourceDocumentLinkId: file?.sourceDocumentLinkId
+                    ?? file?.documentLinkId
+                    ?? (linkIdByUrl.has(file?.url) ? linkIdByUrl.get(file.url) : null),
+            });
+            let extractedCount = 0;
+            const emitExtractCounter = () => stageAwareProgress?.(buildStageCounterEvent({
+                stage: 'extracting',
+                done: extractedCount,
+                total: null,
+                unit: 'datoteka',
+            }));
             for (const file of downloadedFiles) {
                 extractedFilePaths.push(file.filePath);
                 if (path.extname(file.filePath).toLowerCase() === '.zip') {
-                    const zip = new AdmZip(file.filePath);
-                    const zipEntries = zip.getEntries();
                     const extractionDir = path.dirname(file.filePath);
-                    zipEntries.forEach((zipEntry) => {
-                        if (!zipEntry.isDirectory) {
-                            const extractedFilePath = path.join(extractionDir, zipEntry.entryName);
-                            zip.extractEntryTo(zipEntry.entryName, extractionDir, false, true);
-                            filesForAnalysis.push({ filePath: extractedFilePath, text: zipEntry.entryName, url: file.url });
-                            extractedFilePaths.push(extractedFilePath);
-                        }
-                    });
+                    const extractionResult = await extractTool._call({ filePath: file.filePath, destination: extractionDir });
+                    for (const extracted of (extractionResult.extractedFiles || [])) {
+                        // Zip-extracted files get a new working-copy path and an
+                        // in-archive display name, but keep the parent zip's
+                        // provenance (same originating court entry).
+                        filesForAnalysis.push({ filePath: extracted.filePath, text: extracted.entryName, url: file.url, ...tagProvenance(file) });
+                        extractedFilePaths.push(extracted.filePath);
+                        extractedCount++;
+                        emitExtractCounter();
+                    }
                 } else {
-                    filesForAnalysis.push(file);
+                    filesForAnalysis.push({ ...file, ...tagProvenance(file) });
+                    extractedCount++;
+                    emitExtractCounter();
                 }
             }
             
             allFilesToCleanup.push(...extractedFilePaths);
 
+            const fileTypeCounts = filesForAnalysis.reduce((counts, file) => {
+                const ext = (path.extname(file.filePath || '').toLowerCase().replace('.', '')) || 'ostalo';
+                counts[ext] = (counts[ext] || 0) + 1;
+                return counts;
+            }, {});
+            const typeBreakdown = Object.entries(fileTypeCounts)
+                .map(([ext, count]) => `${ext.toUpperCase()}: ${count}`)
+                .join(', ');
+            stageAwareProgress?.({
+                step: 'extracting',
+                message: `Za analizu pripremljeno ${filesForAnalysis.length} datoteka${typeBreakdown ? ` (${typeBreakdown})` : ''}.`
+            });
+            stageAwareProgress?.(buildStageCounterEvent({
+                stage: 'extracting',
+                done: filesForAnalysis.length,
+                total: filesForAnalysis.length,
+                unit: 'datoteka',
+            }));
+
             if (filesForAnalysis.length === 0) {
-                 console.warn(`No files to analyze for case ${caseInfo.title}. Skipping analysis.`);
+                 agentLog.warn(`No files to analyze for case ${caseInfo.title}. Skipping analysis.`);
                  allProcessedCases.push({
                     caseResult: caseInfo,
                     analysis: { individualAnalyses: [], finalSummary: "Nema dokumenata za analizu." },
@@ -1449,8 +1778,14 @@ async function processScrapedCases(casesToProcess, progressCallback, options = {
 
             // 2c. Analyze THIS case's documents
             stageAwareProgress?.({ step: 'reasoning', message: `Analiziram ${filesForAnalysis.length} datoteka za predmet ${i + 1}...` });
-            const analysis = await analyzeTool._call({ files: filesForAnalysis, caseInfo: caseInfo, progressCallback: null });
+            const analysis = await analyzeTool._call({ files: filesForAnalysis, caseInfo: caseInfo, progressCallback: stageAwareProgress, usageTracker, onUsage: emitUsage, runId });
+            const analysisCoverage = analysis?.coverage || {};
+            stageAwareProgress?.({
+                step: 'reasoning',
+                message: `AI analiza predmeta ${i + 1} dovršena: ${analysisCoverage.analyzed ?? 0} uspješno, ${analysisCoverage.failed ?? 0} neuspjelo od ${analysisCoverage.total ?? filesForAnalysis.length} datoteka.`
+            });
             logger.info('pipeline.processScrapedCases', 'Case analyzed', {
+                runId,
                 caseIndex: i + 1,
                 totalCases,
                 filesAnalyzed: filesForAnalysis.length,
@@ -1499,17 +1834,45 @@ async function processScrapedCases(casesToProcess, progressCallback, options = {
         );
         partialResult.clusterEvidencePackage = enrichedEvidencePackage;
 
-        stageAwareProgress?.({ step: 'reasoning', progress: 85, message: 'Generiram usporednu analizu i zaključak...' });
-        let comparativeAnalysis = await generateComparativeAnalysis(allProcessedCases, { clusterEvidencePackage });
-        partialResult.comparativeAnalysis = comparativeAnalysis;
-        const report = await generateClusterReport(enrichedEvidencePackage, {
-            onStage: (event) => stageAwareProgress?.(event)
-        });
+        stageAwareProgress?.({ step: 'reasoning', progress: 85, message: 'Generiram stručni izvještaj i zaključak...' });
+        // Report generation gets its OWN try/catch, deliberately separate from the
+        // outer one: a failure here (JSON truncation on a dense cluster, a schema
+        // validation miss, a transient model error) must not discard the already-
+        // succeeded, real-money per-document analyses in allProcessedCases. Every
+        // other pipeline stage either can't fail this way or already degrades
+        // gracefully (rerank/planner fall back to templates); this was the one
+        // hard stop, and it sat downstream of the most expensive work in the run.
+        let report = null;
+        let reportError = null;
+        try {
+            report = await generateClusterReport(enrichedEvidencePackage, {
+                onStage: (event) => stageAwareProgress?.(event),
+                tracker: usageTracker,
+                onUsage: emitUsage,
+                runId
+            });
+        } catch (err) {
+            reportError = err.message;
+            agentLog.error('Report generation failed; returning partial per-document results without a synthesized report:', err.message);
+            logger.error('pipeline.processScrapedCases', 'Report generation failed', { runId, error: reportError });
+        }
         partialResult.report = report;
+        partialResult.reportError = reportError;
+
+        // One LLM narrative per run: the human-facing overview is composed
+        // deterministically from the synthesized report instead of asking the
+        // model for a second, overlapping summary. Falls back to a plain
+        // per-document summary list when synthesis failed above.
+        let comparativeAnalysis = report
+            ? composeOverviewMarkdown(report)
+            : composeFallbackOverviewMarkdown(allProcessedCases);
+        partialResult.comparativeAnalysis = comparativeAnalysis;
         logger.info('pipeline.processScrapedCases', 'Reasoning report generated', {
+            runId,
             processedCases: allProcessedCases.length,
             reportFindings: Array.isArray(report?.findings) ? report.findings.length : 0,
             verificationStatus: report?.verification?.status || null,
+            reportError,
         });
 
         // --- VISUALIZATION STEP ---
@@ -1518,21 +1881,52 @@ async function processScrapedCases(casesToProcess, progressCallback, options = {
             try {
                 const visualizerTool = new VisualizerTool();
                 const diagramCode = await visualizerTool._call(comparativeAnalysis, {
-                    moneyFlow: enrichedEvidencePackage?.moneyFlow || null
+                    moneyFlow: enrichedEvidencePackage?.moneyFlow || null,
+                    propertyFlow: enrichedEvidencePackage?.propertyFlow || null,
+                    tracker: usageTracker,
+                    onUsage: emitUsage
                 });
                 if (diagramCode && diagramCode !== "Error generating diagram.") {
                     comparativeAnalysis += `\n\n${diagramCode}`;
                 }
             } catch (err) {
-                console.error('Visualization failed gracefully:', err.message);
+                agentLog.error('Visualization failed gracefully:', err.message);
             }
         }
         // -------------------------
 
         stageAwareProgress?.({ step: 'complete', progress: 100, message: 'Analiza je završena!' });
         logger.info('pipeline.processScrapedCases', 'Analysis complete', {
+            runId,
             processedCases: allProcessedCases.length,
             hasReport: Boolean(report),
+            reportError,
+        });
+
+        // Structured end-of-run summary: ONE greppable line per run carrying
+        // only counts/totals that genuinely exist at this point (never full
+        // arrays). Extension point: any future run-level aggregate gets one
+        // more bounded field here — this is the single place to add it.
+        const summaryCoverage = sumDocumentCoverage(allProcessedCases);
+        logger.info('pipeline.processScrapedCases', 'Run summary', {
+            runId,
+            status: 'complete',
+            query: {
+                type: resolvedOptions.query?.type || null,
+                value: resolvedOptions.query?.value || null,
+            },
+            discoveryMode: discoverySummary?.discoveryMode || null,
+            scanDepth: resolvedOptions.scanDepth || null,
+            processedCases: allProcessedCases.length,
+            documentsAnalyzed: summaryCoverage.analyzed,
+            documentsFailed: summaryCoverage.failed,
+            groundedClaims: enrichedEvidencePackage?.coverage?.groundedClaims ?? null,
+            totalClaims: enrichedEvidencePackage?.coverage?.totalClaims ?? null,
+            propertyFlowEntries: enrichedEvidencePackage?.propertyFlow?.count ?? 0,
+            propertyConflicts: enrichedEvidencePackage?.propertyReconciliation?.conflicts?.length ?? 0,
+            usage: usageTracker.snapshot(),
+            durationMs: Date.now() - runStartedAt,
+            reportError,
         });
 
         return {
@@ -1542,13 +1936,39 @@ async function processScrapedCases(casesToProcess, progressCallback, options = {
             primaryCluster,
             secondaryClusters,
             clusterEvidencePackage: enrichedEvidencePackage,
-            report
+            report,
+            reportError,
+            usage: usageTracker.snapshot()
         };
 
     } catch (error) {
         // Re-throw wrapped with whatever partial results were accumulated before the
         // failing stage, so the API layer can persist discovery data + a transparent
         // error instead of discarding everything.
+        partialResult.usage = usageTracker.snapshot();
+        // Failure-side twin of the success summary above: same bounded shape,
+        // partial counts where the run got that far, nulls where it didn't.
+        const failureCoverage = sumDocumentCoverage(allProcessedCases);
+        logger.error('pipeline.processScrapedCases', 'Run summary', {
+            runId,
+            status: 'failed',
+            query: {
+                type: resolvedOptions.query?.type || null,
+                value: resolvedOptions.query?.value || null,
+            },
+            discoveryMode: partialResult.discoverySummary?.discoveryMode || null,
+            scanDepth: resolvedOptions.scanDepth || null,
+            processedCases: allProcessedCases.length,
+            documentsAnalyzed: failureCoverage.analyzed,
+            documentsFailed: failureCoverage.failed,
+            groundedClaims: partialResult.clusterEvidencePackage?.coverage?.groundedClaims ?? null,
+            totalClaims: partialResult.clusterEvidencePackage?.coverage?.totalClaims ?? null,
+            propertyFlowEntries: partialResult.clusterEvidencePackage?.propertyFlow?.count ?? 0,
+            propertyConflicts: partialResult.clusterEvidencePackage?.propertyReconciliation?.conflicts?.length ?? 0,
+            usage: usageTracker.snapshot(),
+            durationMs: Date.now() - runStartedAt,
+            error: error.message,
+        });
         throw new PartialAnalysisError(error.message, partialResult, { stage: lastStage });
     } finally {
         // The cleanup function needs to be available in the scope of this file.
@@ -1564,7 +1984,7 @@ async function cleanupFiles(filePaths) {
                 await fs.promises.unlink(filePath);
             }
         } catch (err) {
-            console.warn(`Failed to delete temporary file ${filePath}: ${err.message}`);
+            agentLog.warn(`Failed to delete temporary file ${filePath}: ${err.message}`);
         }
     }
 }
@@ -1573,6 +1993,8 @@ module.exports = {
     runCourtAnalysis,
     runCourtDiscovery,
     runCourtAnalysisWithExistingAutomator,
+    resolveScanDepth,
+    computeRawScrapeLimit,
     processScrapedCases,
     buildDiscoveryResult,
     PartialAnalysisError,

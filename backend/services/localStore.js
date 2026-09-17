@@ -2,7 +2,11 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 
-const { DEFAULT_GEMINI_PLAN, GEMINI_PLANS } = require('../helpers/geminiPlan');
+const {
+  DEFAULT_REASONING_SETTINGS,
+  REASONING_RERANK_MODES,
+  REASONING_ON_OFF,
+} = require('../helpers/reasoningSettings');
 
 const DEFAULT_DATA_DIR = path.join(__dirname, '..', 'data', 'analysis');
 
@@ -70,7 +74,15 @@ function createLocalStore(options = {}) {
   function readSettings() {
     const settings = readJson(settingsFile, {});
     return {
-      geminiPlan: GEMINI_PLANS.includes(settings.geminiPlan) ? settings.geminiPlan : DEFAULT_GEMINI_PLAN,
+      reasoningRerankMode: REASONING_RERANK_MODES.includes(settings.reasoningRerankMode)
+        ? settings.reasoningRerankMode
+        : DEFAULT_REASONING_SETTINGS.rerankMode,
+      reasoningPlanner: REASONING_ON_OFF.includes(settings.reasoningPlanner)
+        ? settings.reasoningPlanner
+        : DEFAULT_REASONING_SETTINGS.planner,
+      reasoningFollowUp: REASONING_ON_OFF.includes(settings.reasoningFollowUp)
+        ? settings.reasoningFollowUp
+        : DEFAULT_REASONING_SETTINGS.followUp,
     };
   }
 
@@ -96,6 +108,7 @@ function createLocalStore(options = {}) {
         query_value: queryValue || null,
         status,
         result_format: 'markdown',
+        token_usage: null,
         created_at: nowIso(),
         updated_at: nowIso(),
       };
@@ -131,6 +144,32 @@ function createLocalStore(options = {}) {
       writeEventsMap(eventsMap);
 
       return events[events.length - 1];
+    });
+  }
+
+  async function updateAnalysisRunUsage({ analysisId, usage }) {
+    return enqueue(() => {
+      const runs = readRuns();
+      const run = findRun(runs, analysisId);
+      run.token_usage = usage ?? null;
+      run.updated_at = nowIso();
+      writeRuns(runs);
+      return run;
+    });
+  }
+
+  async function updateAnalysisRunReport({ analysisId, resultText, resultJson = null }) {
+    return enqueue(() => {
+      const runs = readRuns();
+      const run = findRun(runs, analysisId);
+      if (typeof resultText === 'string') run.result_text = resultText;
+      if (resultJson !== null && resultJson !== undefined) {
+        const stored = (run.result_json && typeof run.result_json === 'object') ? run.result_json : {};
+        run.result_json = { ...stored, ...resultJson };
+      }
+      run.updated_at = nowIso();
+      writeRuns(runs);
+      return run;
     });
   }
 
@@ -200,13 +239,23 @@ function createLocalStore(options = {}) {
   async function updateSettings(patch) {
     return enqueue(() => {
       const next = readSettings();
-      if (patch && typeof patch === 'object' && patch.geminiPlan !== undefined) {
-        if (!GEMINI_PLANS.includes(patch.geminiPlan)) {
-          const err = new Error('Invalid geminiPlan. Expected "free" or "paid".');
+      if (patch && typeof patch === 'object' && patch.reasoningRerankMode !== undefined) {
+        if (!REASONING_RERANK_MODES.includes(patch.reasoningRerankMode)) {
+          const err = new Error('Invalid reasoningRerankMode. Expected "auto", "force" or "off".');
           err.statusCode = 400;
           throw err;
         }
-        next.geminiPlan = patch.geminiPlan;
+        next.reasoningRerankMode = patch.reasoningRerankMode;
+      }
+      for (const key of ['reasoningPlanner', 'reasoningFollowUp']) {
+        if (patch && typeof patch === 'object' && patch[key] !== undefined) {
+          if (!REASONING_ON_OFF.includes(patch[key])) {
+            const err = new Error(`Invalid ${key}. Expected "on" or "off".`);
+            err.statusCode = 400;
+            throw err;
+          }
+          next[key] = patch[key];
+        }
       }
       writeSettings(next);
       return next;
@@ -226,8 +275,10 @@ function createLocalStore(options = {}) {
     dataDir,
     createAnalysisRun,
     appendAnalysisEvent,
+    updateAnalysisRunReport,
     completeAnalysisRun,
     failAnalysisRun,
+    updateAnalysisRunUsage,
     listAnalysisRuns,
     getAnalysisRun,
     getAnalysisEvents,

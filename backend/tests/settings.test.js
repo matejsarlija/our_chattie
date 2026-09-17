@@ -40,35 +40,35 @@ describe('settings store + API', () => {
     fs.rmSync(dataDir, { recursive: true, force: true });
   });
 
-  test('defaults to the free plan', () => {
-    expect(store.getSettings()).toEqual({ geminiPlan: 'free' });
+  test('defaults the reasoning switches', () => {
+    expect(store.getSettings()).toEqual({ reasoningRerankMode: 'auto', reasoningPlanner: 'on', reasoningFollowUp: 'on' });
   });
 
-  test('persists an updated plan', async () => {
-    await store.updateSettings({ geminiPlan: 'paid' });
-    expect(store.getSettings()).toEqual({ geminiPlan: 'paid' });
+  test('persists an updated reasoning switch', async () => {
+    await store.updateSettings({ reasoningRerankMode: 'force' });
+    expect(store.getSettings()).toEqual({ reasoningRerankMode: 'force', reasoningPlanner: 'on', reasoningFollowUp: 'on' });
   });
 
-  test('rejects an invalid plan value', async () => {
-    await expect(store.updateSettings({ geminiPlan: 'premium' })).rejects.toThrow('Invalid geminiPlan');
+  test('rejects an invalid reasoning switch value', async () => {
+    await expect(store.updateSettings({ reasoningRerankMode: 'premium' })).rejects.toThrow('Invalid reasoningRerankMode');
   });
 
   test('GET returns the current settings', async () => {
     const res = await request(app).get('/api/settings');
     expect(res.status).toBe(200);
-    expect(res.body.settings).toEqual({ geminiPlan: 'free' });
+    expect(res.body.settings).toEqual({ reasoningRerankMode: 'auto', reasoningPlanner: 'on', reasoningFollowUp: 'on' });
   });
 
-  test('PUT updates the plan and persists it', async () => {
-    const res = await request(app).put('/api/settings').send({ geminiPlan: 'paid' });
+  test('PUT updates a reasoning switch and persists it', async () => {
+    const res = await request(app).put('/api/settings').send({ reasoningPlanner: 'off' });
     expect(res.status).toBe(200);
-    expect(res.body.settings).toEqual({ geminiPlan: 'paid' });
-    expect(store.getSettings()).toEqual({ geminiPlan: 'paid' });
+    expect(res.body.settings).toEqual({ reasoningRerankMode: 'auto', reasoningPlanner: 'off', reasoningFollowUp: 'on' });
+    expect(store.getSettings()).toEqual({ reasoningRerankMode: 'auto', reasoningPlanner: 'off', reasoningFollowUp: 'on' });
   });
 
-  test('PUT rejects an invalid plan with 400', async () => {
-    const res = await request(app).put('/api/settings').send({ geminiPlan: 'gold' });
+  test('PUT rejects an invalid reasoning switch with 400', async () => {
+    const res = await request(app).put('/api/settings').send({ reasoningRerankMode: 'gold' });
     expect(res.status).toBe(400);
-    expect(res.body.error).toContain('Invalid geminiPlan');
+    expect(res.body.error).toContain('Invalid reasoningRerankMode');
   });
 });

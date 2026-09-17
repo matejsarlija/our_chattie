@@ -15,7 +15,9 @@ const classifyQueryType = (value) => {
     return 'text';
 };
 
-export const buildCourtAnalysisPayload = (input) => {
+export const buildCourtAnalysisPayload = (input, options = {}) => {
+    const scanDepth = options.scanDepth || 'balanced';
+
     if (input && typeof input === 'object' && !Array.isArray(input)) {
         const typedType = String(input.type || '').trim();
         const typedValue = String(input.value || '').trim();
@@ -26,6 +28,7 @@ export const buildCourtAnalysisPayload = (input) => {
                     value: typedValue,
                 },
                 searchTerm: typedValue,
+                options: { scanDepth },
             };
         }
     }
@@ -37,6 +40,7 @@ export const buildCourtAnalysisPayload = (input) => {
             value: searchTerm,
         },
         searchTerm,
+        options: { scanDepth },
     };
 };
 
@@ -45,9 +49,9 @@ export const useCourtAnalysisStream = () => {
     const [progress, setProgress] = useState(0);
     const controllerRef = useRef(null);
 
-    const streamCourtAnalysis = async (queryInput, callbacks = {}) => {
+    const streamCourtAnalysis = async (queryInput, callbacks = {}, options = {}) => {
         const COURT_ANALYSIS_URL = env.courtAnalysisUrl;
-        const payload = buildCourtAnalysisPayload(queryInput);
+        const payload = buildCourtAnalysisPayload(queryInput, options);
 
         setIsLoading(true);
         setProgress(0);

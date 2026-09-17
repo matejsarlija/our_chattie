@@ -1,6 +1,4 @@
-const { withGeminiTimeout, GEMINI_REQUEST_TIMEOUT_MS, shouldRetry } = require('../helpers/geminiRetry');
-
-jest.mock('../helpers/geminiPlan', () => ({ resolveGeminiPlan: () => 'free' }));
+const { withGeminiTimeout, GEMINI_REQUEST_TIMEOUT_MS, shouldRetry, parseRetryAfterMs } = require('../helpers/geminiRetry');
 
 describe('withGeminiTimeout', () => {
   test('defaults to a positive, env-overridable timeout', () => {
@@ -64,42 +62,96 @@ describe('withGeminiTimeout', () => {
   });
 });
 
-describe('shouldRetry (plan-aware two-class 429 policy)', () => {
-  test('retries server-side transient status codes on any plan', () => {
+describe('shouldRetry (two-class 429 policy, paid key)', () => {
+  test('retries server-side transient status codes', () => {
     expect(shouldRetry({ status: 503 })).toBe(true);
     expect(shouldRetry({ status: 500 })).toBe(true);
   });
 
-  test('does not retry rate-limit status codes on the free tier, retries on paid', () => {
-    expect(shouldRetry({ status: 429 })).toBe(false);
-    expect(shouldRetry({ status: 429 }, { plan: 'paid' })).toBe(true);
+  test('retries rate-limit status codes', () => {
+    expect(shouldRetry({ status: 429 })).toBe(true);
   });
 
-  test('does not retry rate-limit messages on the free tier, retries on paid', () => {
-    expect(shouldRetry(new Error('rate limit exceeded'))).toBe(false);
-    expect(shouldRetry(new Error('429 Too Many Requests'))).toBe(false);
-    expect(shouldRetry(new Error('rate limit exceeded'), { plan: 'paid' })).toBe(true);
+  test('retries rate-limit messages', () => {
+    expect(shouldRetry(new Error('rate limit exceeded'))).toBe(true);
+    expect(shouldRetry(new Error('429 Too Many Requests'))).toBe(true);
   });
 
-  test('retries "overloaded" server-side messages on any plan', () => {
+  test('retries "overloaded" server-side messages', () => {
     expect(shouldRetry(new Error('AI overloaded'))).toBe(true);
   });
 
-  test('never retries daily-quota exhaustion on either plan', () => {
+  test('never retries daily-quota exhaustion', () => {
     expect(shouldRetry(new Error('Resource has been exhausted (quota)'))).toBe(false);
     expect(shouldRetry({ status: 429, message: 'Quota exceeded for quota metric requests_per_day' })).toBe(false);
-    expect(shouldRetry({ status: 429, message: 'Quota exceeded for quota metric requests_per_day' }, { plan: 'paid' })).toBe(false);
   });
 
-  test('treats timeout AbortErrors as terminal on free and retryable on paid', () => {
+  test('retries timeout AbortErrors by default and honours retryTimeouts:false', () => {
     const timeoutError = new Error('Gemini request timed out after 30000ms');
     timeoutError.name = 'AbortError';
-    expect(shouldRetry(timeoutError)).toBe(false);
-    expect(shouldRetry(timeoutError, { plan: 'paid' })).toBe(true);
-    expect(shouldRetry(timeoutError, { plan: 'paid', retryTimeouts: false })).toBe(false);
+    expect(shouldRetry(timeoutError)).toBe(true);
+    expect(shouldRetry(timeoutError, { retryTimeouts: false })).toBe(false);
   });
 
   test('does not retry arbitrary errors', () => {
     expect(shouldRetry(new Error('boom'))).toBe(false);
+  });
+});
+
+describe('parseRetryAfterMs (structured google.rpc.RetryInfo)', () => {
+  test('extracts retryDelayMs from a real Google RetryInfo error shape', () => {
+    const error = {
+      status: 429,
+      message: '[429 Too Many Requests] Resource has been exhausted (e.g. check quota).',
+      response: {
+        status: 429,
+        data: {
+          error: {
+            code: 429,
+            message: 'Resource has been exhausted (e.g. check quota).',
+            details: [
+              {
+                '@type': 'type.googleapis.com/google.rpc.QuotaFailure',
+                violations: [{ quotaMetric: 'generate_content_tokens_per_minute', quotaId: 'GenerateContentTPMPerProjectPerModel' }]
+              },
+              {
+                '@type': 'type.googleapis.com/google.rpc.RetryInfo',
+                retryDelay: '38s'
+              }
+            ]
+          }
+        }
+      }
+    };
+
+    expect(parseRetryAfterMs(error)).toBe(15000); // capped at MAX_DELAY_MS (15000ms)
+  });
+
+  test('uses the uncapped RetryInfo delay when below MAX_DELAY_MS', () => {
+    const error = {
+      status: 429,
+      message: '[429 Too Many Requests] Resource has been exhausted.',
+      response: {
+        status: 429,
+        data: {
+          error: {
+            code: 429,
+            message: 'Resource has been exhausted.',
+            details: [
+              {
+                '@type': 'type.googleapis.com/google.rpc.RetryInfo',
+                retryDelay: '3s'
+              }
+            ]
+          }
+        }
+      }
+    };
+
+    expect(parseRetryAfterMs(error)).toBe(3000);
+  });
+
+  test('falls back to null when no retry-after header or RetryInfo is present', () => {
+    expect(parseRetryAfterMs(new Error('boom'))).toBeNull();
   });
 });

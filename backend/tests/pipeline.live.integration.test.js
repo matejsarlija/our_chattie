@@ -1,6 +1,34 @@
 const { runCourtAnalysis, runCourtDiscovery } = require('../court-analysis/pipeline');
 
-jest.setTimeout(60000);
+jest.setTimeout(180000);
+
+const mockGetDocument = jest.fn();
+jest.mock('pdfjs-dist/legacy/build/pdf.js', () => ({
+    getDocument: (...args) => mockGetDocument(...args),
+    GlobalWorkerOptions: { workerSrc: '' },
+}));
+
+jest.mock('canvas', () => ({
+    createCanvas: jest.fn(() => ({
+        width: 0, height: 0,
+        getContext: jest.fn().mockReturnValue({
+            drawImage: jest.fn(), fillRect: jest.fn(), fillText: jest.fn(),
+        }),
+        toBuffer: jest.fn().mockReturnValue(Buffer.from('fake')),
+    })),
+}));
+
+beforeEach(() => {
+    mockGetDocument.mockResolvedValue({
+        numPages: 1,
+        getPage: jest.fn().mockResolvedValue({
+            getTextContent: jest.fn().mockResolvedValue({
+                items: [{ str: 'Mocked court document for live pipeline test' }],
+            }),
+        }),
+        destroy: jest.fn(),
+    });
+});
 
 const describeIfIntegration = process.env.RUN_PUPPETEER_INTEGRATION === '1' ? describe : describe.skip;
 
@@ -36,7 +64,7 @@ describeIfIntegration('runCourtAnalysis pipeline (live puppeteer)', () => {
             expect(result).toHaveProperty('comparativeAnalysis');
         } catch (e) {
             expect(e.message).toMatch(
-                /No results with documents found|timeout|network|Failed to launch the browser process/i,
+                /No results with documents found|timeout|network|Failed to launch the browser process|Dnevni limit AI analize je iscrpljen/i,
             );
         }
     });

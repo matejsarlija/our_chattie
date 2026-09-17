@@ -24,6 +24,14 @@ jest.mock('../scraper/courtSearchPuppeteer', () => {
   }));
 });
 
+jest.mock('../scraper/discoveryClient', () => ({
+  createDiscoveryClient: jest.fn(() => ({
+    init: mockInit,
+    close: mockClose,
+    searchAndGetLatestCasesWithDocuments: mockSearchAndGetLatestCasesWithDocuments,
+  })),
+}));
+
 jest.mock('../court-analysis/agents/download-agent', () => ({
   DownloadDocumentsTool: jest.fn().mockImplementation(() => ({
     _call: mockDownloadCall,
@@ -34,7 +42,6 @@ jest.mock('../court-analysis/agents/analysis-agent', () => ({
   AnalyzeDocumentsTool: jest.fn().mockImplementation(() => ({
     _call: mockAnalyzeCall,
   })),
-  generateComparativeAnalysis: jest.fn().mockResolvedValue('Comparative Analysis'),
 }));
 
 jest.mock('../court-analysis/agents/visualizer-agent', () => ({
@@ -50,6 +57,14 @@ jest.mock('../court-analysis/reasoning/synthesizer', () => ({
 
 jest.mock('../court-analysis/reasoning/verifier', () => ({
   verifyReport: mockVerifyReport,
+}));
+
+// Optional reasoning LLM passes (rerank/planner/follow-up) construct Gemini
+// clients lazily; stub the SDK so the deterministic path runs without network.
+jest.mock('@langchain/google-genai', () => ({
+  ChatGoogleGenerativeAI: jest.fn().mockImplementation(() => ({
+    invoke: jest.fn().mockResolvedValue({ content: '[]' }),
+  })),
 }));
 
 jest.mock('../court-registry/enricher', () => ({
@@ -71,6 +86,7 @@ jest.mock('fs', () => ({
 const { runCourtAnalysis, isUsableAnalysisText } = require('../court-analysis/pipeline');
 const { buildClusterEvidencePackage, attachAnalysesToEvidencePackage } = require('../court-analysis/reasoning/evidencePackage');
 const { collectSources } = require('../court-analysis/reasoning/indexer');
+const { TIMEOUT_MESSAGE } = require('../helpers/friendlyAnalysisError');
 const realSynthesizer = jest.requireActual('../court-analysis/reasoning/synthesizer');
 
 function buildBaseCluster() {
@@ -102,6 +118,17 @@ function buildDiscoverySummary() {
 }
 
 describe('Track 1: evidence enrichment (1c)', () => {
+  test('preserves the stratification ledger for the report scope contract', () => {
+    const discoverySummary = {
+      ...buildDiscoverySummary(),
+      coverageLedger: { budget: 40, available: 80, selected: 40, gaps: ['2018: 0/3 selected'] },
+    };
+
+    const pkg = buildClusterEvidencePackage({ cluster: buildBaseCluster(), clusterSummary: {}, discoverySummary, query: null });
+
+    expect(pkg.discovery.coverageLedger).toEqual(discoverySummary.coverageLedger);
+  });
+
   test('attachAnalysesToEvidencePackage attaches successful analyses and computes coverage', () => {
     const pkg = buildClusterEvidencePackage({ cluster: buildBaseCluster(), clusterSummary: {}, discoverySummary: buildDiscoverySummary(), query: null });
     const processedCases = [
@@ -129,7 +156,19 @@ describe('Track 1: evidence enrichment (1c)', () => {
       total: 3,
       coverageRatio: 0.67,
       complete: false,
-      failedFiles: [{ fileName: 'doc3.pdf', reason: 'Gemini request timed out after 30000ms' }],
+      // Per-file reasons are classified for users: a Gemini timeout is a
+      // transient timeout, so the banner says so instead of echoing the raw
+      // SDK message.
+      failedFiles: [{
+        fileName: 'doc3.pdf',
+        code: 'timeout',
+        reason: TIMEOUT_MESSAGE,
+        causalChain: ['Gemini request timed out after 30000ms'],
+      }],
+      // Grounding dimension: no quotes in these legacy-shaped analyses, so
+      // zero of zero claims verify (additive signal, never a failure).
+      groundedClaims: 0,
+      totalClaims: 0,
     });
   });
 
@@ -176,6 +215,8 @@ describe('Track 1: evidence enrichment (1c)', () => {
       coverageRatio: 0,
       complete: false,
       failedFiles: [],
+      groundedClaims: 0,
+      totalClaims: 0,
     });
   });
 
@@ -309,14 +350,11 @@ describe('Track 1: visualizer guards (1e)', () => {
     mockDownloadCall.mockResolvedValue([{ filePath: '/tmp/track1.pdf', url: 'u1' }]);
     mockAnalyzeCall.mockResolvedValue({ individualAnalyses: [], finalSummary: 'Analysis' });
 
-    // Simulate the real-world failure where generateComparativeAnalysis emits a placeholder.
-    require('../court-analysis/agents/analysis-agent').generateComparativeAnalysis.mockResolvedValue(
-      'Greška pri generiranju završnog sažetka.'
-    );
-
+    // Simulate the real-world failure where synthesis has no evidence and the
+    // report carries only the empty-report placeholder narrative.
     mockSynthesizeReport.mockResolvedValue({
       schemaVersion: '1.0.0',
-      narrative: 'Report',
+      narrative: 'Nema dovoljno dokaza za generiranje izvješća.',
       claims: [],
       findings: [],
       openQuestions: [],

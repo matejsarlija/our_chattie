@@ -4,8 +4,6 @@ const {
   STAGE_LABELS,
 } = require('../helpers/friendlyAnalysisError');
 
-jest.mock('../helpers/geminiPlan', () => ({ resolveGeminiPlan: () => 'free' }));
-
 describe('friendlyAnalysisErrorMessage', () => {
   test('defaults to a neutral stage message and keeps the raw reason when no pattern matches', () => {
     const message = friendlyAnalysisErrorMessage(new Error('boom'));
@@ -27,9 +25,10 @@ describe('friendlyAnalysisErrorMessage', () => {
     expect(message).toContain('Nije pronađen nijedan predmet s dostupnim dokumentima');
   });
 
-  test('detects quota exhaustion (daily limit)', () => {
+  test('treats bare exhaustion without a daily signal as transient, not daily', () => {
     const message = friendlyAnalysisErrorMessage(new Error('Resource has been exhausted (quota)'));
-    expect(message).toContain('Dnevni limit AI analize je iscrpljen');
+    expect(message).toContain('preopterećen (privremeno ograničenje učestalosti zahtjeva)');
+    expect(message).not.toContain('Dnevni limit AI analize je iscrpljen');
   });
 
   test('detects per-day quota exhaustion as daily limit', () => {
@@ -37,35 +36,75 @@ describe('friendlyAnalysisErrorMessage', () => {
     expect(message).toContain('Dnevni limit AI analize je iscrpljen');
   });
 
-  test('presents a transient rate-limit burst as the daily limit on the free tier', () => {
-    const message = friendlyAnalysisErrorMessage(new Error('429 rate limit exceeded, retry later'));
+  test('detects daily quota from structured provider fields', () => {
+    const error = new Error('Request failed');
+    error.status = 429;
+    error.response = {
+      status: 429,
+      data: {
+        error: {
+          code: 429,
+          message: 'Quota exceeded',
+          details: [{
+            '@type': 'type.googleapis.com/google.rpc.QuotaFailure',
+            violations: [{ quotaMetric: 'generativelanguage.googleapis.com/generate_content_per_day' }],
+          }],
+        },
+      },
+    };
+    const message = friendlyAnalysisErrorMessage(error);
     expect(message).toContain('Dnevni limit AI analize je iscrpljen');
   });
 
-  test('presents a transient rate-limit burst as a retryable overload on a paid key', () => {
-    const message = friendlyAnalysisErrorMessage(new Error('429 rate limit exceeded, retry later'), { plan: 'paid' });
+  test('treats structured per-minute exhaustion as transient', () => {
+    const error = new Error('Resource has been exhausted');
+    error.status = 429;
+    error.response = {
+      status: 429,
+      data: {
+        error: {
+          code: 8,
+          message: 'Resource has been exhausted',
+          details: [{
+            '@type': 'type.googleapis.com/google.rpc.QuotaFailure',
+            violations: [{ quotaMetric: 'generativelanguage.googleapis.com/generate_content_tokens_per_minute' }],
+          }, {
+            '@type': 'type.googleapis.com/google.rpc.RetryInfo',
+            retryDelay: '38s',
+          }],
+        },
+      },
+    };
+    const message = friendlyAnalysisErrorMessage(error);
     expect(message).toContain('preopterećen (privremeno ograničenje učestalosti zahtjeva)');
     expect(message).not.toContain('Dnevni limit AI analize je iscrpljen');
   });
 
-  test('treats a bare 429 as a transient burst on a paid key, not daily quota', () => {
-    const message = friendlyAnalysisErrorMessage(new Error('429 Too Many Requests'), { plan: 'paid' });
+  test('presents a transient rate-limit burst as a retryable overload', () => {
+    const message = friendlyAnalysisErrorMessage(new Error('429 rate limit exceeded, retry later'));
+    expect(message).toContain('preopterećen (privremeno ograničenje učestalosti zahtjeva)');
+    expect(message).not.toContain('Dnevni limit AI analize je iscrpljen');
+  });
+
+  test('treats a bare 429 as a transient burst, not daily quota', () => {
+    const message = friendlyAnalysisErrorMessage(new Error('429 Too Many Requests'));
     expect(message).toContain('preopterećen');
     expect(message).not.toContain('Dnevni limit');
   });
 
-  test('does not claim the daily limit for a timeout on a paid key', () => {
-    const message = friendlyAnalysisErrorMessage(new Error('DeadlineExceeded: timed out'), { plan: 'paid' });
+  test('does not claim the daily limit for a timeout', () => {
+    const message = friendlyAnalysisErrorMessage(new Error('DeadlineExceeded: timed out'));
     expect(message).toContain('premašio dopušteno vrijeme čekanja');
     expect(message).not.toContain('Dnevni limit AI analize je iscrpljen');
   });
 
-  test('presents the Gemini fail-fast timeout as the daily limit on the free tier', () => {
+  test('presents the Gemini fail-fast timeout as a transient timeout', () => {
     const message = friendlyAnalysisErrorMessage({
       name: 'AbortError',
       message: 'Gemini request timed out after 30000ms',
     });
-    expect(message).toContain('Dnevni limit AI analize je iscrpljen');
+    expect(message).toContain('premašio dopušteno vrijeme čekanja');
+    expect(message).not.toContain('Dnevni limit AI analize je iscrpljen');
   });
 
   test('appends the partial-results notice when hasPartial is true', () => {
@@ -84,5 +123,109 @@ describe('friendlyAnalysisErrorMessage', () => {
     }));
     expect(describeStage('downloading')).toBe(STAGE_LABELS.downloading);
     expect(describeStage('nope')).toContain('obrade zahtjeva');
+  });
+});
+
+describe('classifyFileFailure', () => {
+  const {
+    classifyFileFailure,
+    classifyFileFailureDetailed,
+    causalChainOf,
+    DAILY_LIMIT_MESSAGE,
+    TRANSIENT_MESSAGE,
+    TIMEOUT_MESSAGE,
+    MALFORMED_JSON_MESSAGE,
+    TRUNCATION_MESSAGE,
+    SCHEMA_MISMATCH_MESSAGE,
+  } = require('../helpers/friendlyAnalysisError');
+
+  test('daily-quota wording maps to the daily-limit reason', () => {
+    expect(classifyFileFailure('429 Quota exceeded for quota metric requests_per_day'))
+      .toEqual({ code: 'daily-quota', reason: DAILY_LIMIT_MESSAGE });
+  });
+
+  test('bare exhaustion without a daily signal maps to transient', () => {
+    expect(classifyFileFailure('429 Resource has been exhausted'))
+      .toEqual({ code: 'rate-limit', reason: TRANSIENT_MESSAGE });
+  });
+
+  test('timeouts map to the transient timeout reason', () => {
+    expect(classifyFileFailure('Gemini request timed out after 30000ms'))
+      .toEqual({ code: 'timeout', reason: TIMEOUT_MESSAGE });
+  });
+
+  test('rate-limit messages map to the transient overload reason', () => {
+    expect(classifyFileFailure('429 Too Many Requests').reason)
+      .toBe(TRANSIENT_MESSAGE);
+  });
+
+  test('structural failures stay technical and honest in Croatian', () => {
+    expect(classifyFileFailure(
+      'Could not extract text from file: the PDF could not be parsed (it may be corrupt or unreadable).',
+    )).toEqual({
+      code: 'unreadable-file',
+      reason: 'Datoteka nije mogla biti očitana (nečitljiva ili nepodržanog formata).',
+    });
+    expect(classifyFileFailure('Could not extract text from file: OCR failed while reading the scanned document.').code)
+      .toBe('ocr-failed');
+  });
+
+  test('unknown and empty inputs fall back gracefully', () => {
+    expect(classifyFileFailure('').code).toBe('unclassified');
+    expect(classifyFileFailure(null).code).toBe('unclassified');
+    expect(classifyFileFailure('Something entirely unexpected happened').code).toBe('unclassified');
+  });
+
+  test('malformed model JSON classifies as malformed-json (T1-2)', () => {
+    expect(classifyFileFailure('AI returned non-JSON response: "```json..."').code).toBe('malformed-json');
+    expect(classifyFileFailure('AI returned non-JSON response: "```json..."'))
+      .toEqual({ code: 'malformed-json', reason: MALFORMED_JSON_MESSAGE });
+    expect(classifyFileFailure('Failed to parse extraction JSON: Unexpected token < in JSON').code)
+      .toBe('malformed-json');
+  });
+
+  test('truncated completions classify as truncation (T1-2)', () => {
+    expect(classifyFileFailure('Response truncated: finishReason MAX_TOKENS').code).toBe('truncation');
+    expect(classifyFileFailure('Response truncated: finishReason MAX_TOKENS'))
+      .toEqual({ code: 'truncation', reason: TRUNCATION_MESSAGE });
+  });
+
+  test('unrepairable schema violations classify as schema-mismatch (T1-3)', () => {
+    expect(classifyFileFailure('Extraction schema mismatch for field(s) amounts in x.pdf; no usable content salvaged.').code)
+      .toBe('schema-mismatch');
+    expect(classifyFileFailure('Extraction schema mismatch for field(s) amounts in x.pdf; no usable content salvaged.'))
+      .toEqual({ code: 'schema-mismatch', reason: SCHEMA_MISMATCH_MESSAGE });
+  });
+
+  test('causalChainOf walks string, Error, and cause chains without cycles', () => {
+    expect(causalChainOf('boom')).toEqual(['boom']);
+    expect(causalChainOf(null)).toEqual([]);
+    const inner = new Error('socket hang up');
+    const outer = new Error('Gemini request failed');
+    outer.cause = inner;
+    expect(causalChainOf(outer)).toEqual(['Gemini request failed', 'socket hang up']);
+    const cyclic = new Error('loop');
+    cyclic.cause = cyclic;
+    expect(causalChainOf(cyclic)).toEqual(['loop']);
+  });
+
+  test('classifyFileFailureDetailed always ships the causal chain (T1-2)', () => {
+    expect(classifyFileFailureDetailed('AI returned non-JSON response: "x"')).toEqual({
+      code: 'malformed-json',
+      reason: MALFORMED_JSON_MESSAGE,
+      causalChain: ['AI returned non-JSON response: "x"'],
+    });
+    const unclassified = classifyFileFailureDetailed('Something entirely unexpected happened');
+    expect(unclassified.code).toBe('unclassified');
+    expect(unclassified.causalChain).toEqual(['Something entirely unexpected happened']);
+  });
+
+  test('classification order: explicit daily beats rate-limit beats timeout', () => {
+    // A message matching multiple patterns must classify as the most
+    // specific cause — but bare exhaustion is transient, never daily.
+    expect(classifyFileFailure('Request failed: resource has been exhausted, request timed out').code)
+      .toBe('rate-limit');
+    expect(classifyFileFailure('quota exceeded for requests_per_day, request timed out').code)
+      .toBe('daily-quota');
   });
 });

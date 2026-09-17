@@ -172,10 +172,43 @@ describe('single-cluster paginated fixture (live-verified KERUM shape)', () => {
             discoveryMetadata: fixture.discoveryMetadata
         };
 
-        const expanded = await resolveAutoExpansion(automator, fixture.casesToProcess, resolved, jest.fn());
+        const progressCallback = jest.fn();
+        const expanded = await resolveAutoExpansion(automator, fixture.casesToProcess, resolved, progressCallback);
 
         expect(expanded).toBe(resolved);
         expect(expanded.clusterExpansion).toBeNull();
         expect(automator.searchCaseNumberFollowUp).not.toHaveBeenCalled();
+        // The internal eligibility-check discovery pass must be silent — it
+        // used to emit duplicate grouping events into the run timeline.
+        expect(progressCallback).not.toHaveBeenCalled();
+    });
+
+    test('discovery progress: emitProgress:false is silent; final pass emits grouping + primary-cluster summary', () => {
+        const fixture = require(SINGLE_CLUSTER_FIXTURE);
+
+        const silentEvents = [];
+        buildDiscoveryResult(fixture.casesToProcess, {
+            caseLimit: 5,
+            query: fixture.query,
+            discoveryMetadata: fixture.discoveryMetadata,
+            emitProgress: false
+        }, (event) => silentEvents.push(event));
+        expect(silentEvents).toEqual([]);
+
+        const events = [];
+        buildDiscoveryResult(fixture.casesToProcess, {
+            caseLimit: 5,
+            query: fixture.query,
+            discoveryMetadata: fixture.discoveryMetadata
+        }, (event) => events.push(event));
+
+        const groupingEvents = events.filter((event) => event.step === 'grouping');
+        expect(groupingEvents.length).toBeGreaterThanOrEqual(2);
+        expect(groupingEvents[0].message).toContain('Grupiram');
+
+        const primaryMessage = events.map((event) => event.message).find((message) => String(message).includes('Glavni predmet'));
+        expect(primaryMessage).toContain('ST-2/2013');
+        expect(primaryMessage).toContain('50 objava');
+        expect(primaryMessage).toContain('konzistentan');
     });
 });

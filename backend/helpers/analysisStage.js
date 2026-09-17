@@ -50,8 +50,24 @@ function normalizeAnalysisProgressEvent(event) {
   };
 }
 
+function buildStageCounterEvent({ stage, done, failed = 0, total, unit }) {
+  return {
+    step: stage,
+    kind: 'stage-counter',
+    metadata: {
+      kind: 'stage-counter',
+      stage,
+      done,
+      failed,
+      total,
+      unit,
+    },
+  };
+}
+
 module.exports = {
   CANONICAL_STAGES,
   LEGACY_TO_CANONICAL,
   normalizeAnalysisProgressEvent,
+  buildStageCounterEvent,
 };

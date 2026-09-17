@@ -117,4 +117,26 @@ describe('parseCourtAnalysisRequest', () => {
     });
     expect(parsed.options.clusterExpansion).toBeNull();
   });
+
+  test('defaults scanDepth to balanced when absent', () => {
+    const parsed = parseCourtAnalysisRequest({ searchTerm: '66124057408' });
+    expect(parsed.options.scanDepth).toBe('balanced');
+  });
+
+  test('accepts explicit scanDepth values', () => {
+    expect(parseCourtAnalysisRequest({ searchTerm: 'x', options: { scanDepth: 'standard' } }).options.scanDepth).toBe('standard');
+    expect(parseCourtAnalysisRequest({ searchTerm: 'x', options: { scanDepth: 'balanced' } }).options.scanDepth).toBe('balanced');
+    expect(parseCourtAnalysisRequest({ searchTerm: 'x', options: { scanDepth: 'full' } }).options.scanDepth).toBe('full');
+    expect(parseCourtAnalysisRequest({ searchTerm: 'x', options: { scanDepth: 'FULL' } }).options.scanDepth).toBe('full');
+  });
+
+  test('rejects invalid options.scanDepth with 400', () => {
+    try {
+      parseCourtAnalysisRequest({ searchTerm: '66124057408', options: { scanDepth: 'deep' } });
+      throw new Error('Expected parseCourtAnalysisRequest to throw');
+    } catch (err) {
+      expect(err.statusCode).toBe(400);
+      expect(err.message).toMatch(/scanDepth/);
+    }
+  });
 });

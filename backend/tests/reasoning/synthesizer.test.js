@@ -272,8 +272,99 @@ describe('Synthesizer', () => {
         expect(evidence.claims.some((claim) => claim.text.includes('ST-123/2026'))).toBe(false);
     });
 
-    test('synthesizes reports directly from ClusterEvidencePackage and keeps package metadata in report.meta', async () => {
-        mockInvoke.mockResolvedValue({
+    test('orders the timeline chronologically even when discovery entries arrive newest-first', () => {
+        const packageInput = {
+            packageType: 'ClusterEvidencePackage',
+            schemaVersion: 1,
+            reasoningScope: 'single-cluster',
+            selectedClusterIds: ['ST-700/2024'],
+            clusterId: 'ST-700/2024',
+            primaryCaseNumber: 'ST-700/2024',
+            query: { type: 'text', value: 'JADRAN' },
+            identity: { consistency: 'consistent', notes: [], participantNames: [], participantOibs: [] },
+            discovery: { reasoningClusterId: 'ST-700/2024' },
+            selection: { score: 0.5 },
+            expansion: {},
+            acquisition: { modes: [] },
+            // Discovery/CSV order is newest-first (sort=datePublished,desc).
+            entries: [
+                { caseNumber: 'ST-700/2024', title: 'Treće rješenje', date: '10.02.2025.', participants: [] },
+                { caseNumber: 'ST-700/2024', title: 'Drugo rješenje', date: '05.06.2024.', participants: [] },
+                { caseNumber: 'ST-700/2024', title: 'Prvo rješenje', date: '01.01.2023.', participants: [] }
+            ],
+            documentLinks: []
+        };
+
+        const evidence = createReasoningEvidenceFromPackage(packageInput);
+
+        expect(evidence.timeline.map((event) => event.description)).toEqual([
+            expect.stringContaining('Prvo rješenje'),
+            expect.stringContaining('Drugo rješenje'),
+            expect.stringContaining('Treće rješenje')
+        ]);
+    });
+
+    test('orders claims chronologically across claim families, undated claims last', () => {
+        const packageInput = {
+            packageType: 'ClusterEvidencePackage',
+            schemaVersion: 1,
+            reasoningScope: 'single-cluster',
+            selectedClusterIds: ['ST-700/2024'],
+            clusterId: 'ST-700/2024',
+            primaryCaseNumber: 'ST-700/2024',
+            query: { type: 'text', value: 'JADRAN' },
+            identity: { consistency: 'consistent', notes: [], participantNames: [], participantOibs: [] },
+            discovery: { reasoningClusterId: 'ST-700/2024' },
+            selection: { score: 0.5 },
+            expansion: {},
+            acquisition: { modes: [] },
+            // Analyses/flow entries are also produced in discovery order
+            // (newest-first); claim ordering must not inherit that.
+            entries: [],
+            documentLinks: [
+                { id: 'doc-1', url: 'https://example.test/doc-1', text: 'Undated structural doc link' }
+            ],
+            analyses: [
+                { id: 'analysis-newest', fileName: 'newest.pdf', summary: 'Najnovija analiza', decisionDate: '2025-02-10' },
+                { id: 'analysis-oldest', fileName: 'oldest.pdf', summary: 'Najstarija analiza', decisionDate: '2023-01-01' }
+            ],
+            moneyFlow: {
+                entries: [
+                    { sourceId: 'money-newest', amount: 500, currency: 'EUR', description: 'Novija tražbina', date: '2024-06-01' },
+                    { sourceId: 'money-oldest', amount: 100, currency: 'EUR', description: 'Starija tražbina', date: '2022-03-15' }
+                ]
+            }
+        };
+
+        const evidence = createReasoningEvidenceFromPackage(packageInput);
+
+        // Assert relative chronological order via claim text rather than
+        // exact ids, since claim ids are family-scoped indices, not global.
+        const dateByText = {
+            'Starija tražbina': '2022-03-15',
+            'Novija tražbina': '2024-06-01',
+            'Najstarija analiza': '2023-01-01',
+            'Najnovija analiza': '2025-02-10'
+        };
+        const orderedDatedTexts = evidence.claims
+            .map((claim) => Object.keys(dateByText).find((key) => claim.text.includes(key)))
+            .filter(Boolean);
+
+        expect(orderedDatedTexts).toEqual([
+            'Starija tražbina',
+            'Najstarija analiza',
+            'Novija tražbina',
+            'Najnovija analiza'
+        ]);
+
+        // The undated structural document-link claim has no date and must
+        // sort after every dated claim.
+        const undatedIndex = evidence.claims.findIndex((claim) => claim.text.includes('Undated structural doc link'));
+        const lastDatedIndex = evidence.claims.findIndex((claim) => claim.text.includes('Najnovija analiza'));
+        expect(undatedIndex).toBeGreaterThan(lastDatedIndex);
+    });
+
+    test('synthesizes reports directly from ClusterEvidencePackage and keeps package metadata in report.meta', async () => {        mockInvoke.mockResolvedValue({
             content: `{
                 "narrative": "Predmet ST-700/2024 obrađen je iz odabranog paketa dokaza.",
                 "findings": [
@@ -329,5 +420,34 @@ describe('Synthesizer', () => {
         expect(report.timeline[0].description).toContain('ST-700/2024');
         expect(report.timeline[0].citations).toHaveLength(1);
         expect(report.timeline[0].citations[0].source).toBe('ST-700/2024:entry-1');
+    });
+
+    test('claim lines in the synthesis prompt carry their dates', async () => {
+        const { formatClaimLine } = require('../../court-analysis/reasoning/synthesizer');
+        expect(formatClaimLine({
+            text: 'Isplata.',
+            confidence: 'high',
+            evidence: [{ metadata: { date: '2023-05-17' } }],
+        })).toBe('- [2023-05-17] Isplata. (Confidence: high)');
+        expect(formatClaimLine({
+            text: 'Bez datuma.',
+            confidence: 'medium',
+            evidence: [{ metadata: { sourceType: 'document-link' } }],
+        })).toBe('- [Undated] Bez datuma. (Confidence: medium)');
+
+        mockInvoke.mockResolvedValue({
+            content: JSON.stringify({ narrative: 'N.', findings: [], openQuestions: [], nextSteps: [] }),
+        });
+        await synthesizeReport({
+            timeline: [],
+            claims: [{
+                id: 'c1',
+                text: 'Isplata.',
+                confidence: 'high',
+                evidence: [{ sourceId: 'd1', text: 'q', metadata: { date: '2023-05-17' } }],
+            }],
+            meta: { caseNumber: 'ST-700/2024', parties: [] },
+        });
+        expect(mockInvoke.mock.calls[0][0]).toContain('[2023-05-17]');
     });
 });

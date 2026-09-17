@@ -1,15 +1,12 @@
 // backend/court-analysis/agents/visualizer-agent.js
 require("dotenv").config();
 const { Tool } = require("@langchain/core/tools");
-const { ChatGoogleGenerativeAI } = require("@langchain/google-genai");
 const { withGeminiRetry, withGeminiTimeout } = require("../../helpers/geminiRetry");
-const { GEMINI_MODEL, GEMINI_API_KEY } = require("../../helpers/geminiConfig");
+const { trackGeminiInvoke } = require("../../helpers/geminiUsage");
+const { createGeminiClient } = require("../../helpers/geminiConfig");
+const agentLog = require("../../helpers/agentLog");
 
-const gemini = new ChatGoogleGenerativeAI({
-    model: GEMINI_MODEL, // Consistent with analysis agent
-    apiKey: GEMINI_API_KEY,
-    temperature: 0.1, // Low temperature for strict syntax adherence
-});
+const gemini = createGeminiClient("visualizer");
 
 /**
  * VisualizerTool: Transforms legal analysis text into a strictly valid Mermaid flowchart.
@@ -22,14 +19,14 @@ class VisualizerTool extends Tool {
     }
 
     async _call(analysisText, options = {}) {
-        console.log("[VisualizerTool] Generating diagram for analysis text...");
+        agentLog.log("[VisualizerTool] Generating diagram for analysis text...");
 
         // Guard: an empty/error placeholder carries no analyzable substance and
         // must not be sent to the model (it would only emit an empty stub).
         const usableText = String(analysisText || "").trim();
         const USELESS_RE = /gre[šs]ka pri generiranju|nema dostupnih podataka za generiranje analize|analiza dokumenata nije uspje[šs]no izvr[šs]ena|nema dovoljno dokaza/i;
         if (!usableText || USELESS_RE.test(usableText)) {
-            console.warn("[VisualizerTool] Skipping diagram generation: input text is empty or a failure placeholder.");
+            agentLog.warn("[VisualizerTool] Skipping diagram generation: input text is empty or a failure placeholder.");
             return "Error generating diagram.";
         }
 
@@ -45,17 +42,36 @@ class VisualizerTool extends Tool {
             ).join('\n')}`
             : '';
 
+        // Property flow: parallel structured surface feeding the "Tijek imovine"
+        // subgraph. Tražbina entries linked via supersedes render as a
+        // directional chain (original holder → assignee), not disconnected nodes.
+        const propertyFlow = Array.isArray(options.propertyFlow?.entries)
+            ? options.propertyFlow.entries
+            : [];
+        const propertyFlowBlock = propertyFlow.length > 0
+            ? `\n\nSTRUCTURED PROPERTY-FLOW DATA (use only as asset source material for the "Tijek imovine" subgraph; render "tražbina" supersedes links as a directional chain original-holder → assignee):\n${propertyFlow.map((entry) =>
+                `- ${entry.value ?? '?'} ${entry.currency || '?'} [${entry.assetType || 'drugo'}]${entry.eventType ? ` {${entry.eventType}}` : ''} — ${entry.description || 'bez opisa'}${entry.transferor || entry.transferee ? ` (${entry.transferor || '?'} → ${entry.transferee || '?'})` : ''}${entry.date ? ` (${entry.date})` : ''}${entry.supersedes ? ` [supersedes: ${entry.supersedes}]` : ''}${entry.fileName ? ` [source: ${entry.fileName}]` : ''}`
+            ).join('\n')}`
+            : '';
+
+        const subgraphInstructions = propertyFlow.length > 0
+            ? `2. Organize the diagram into exactly three subgraphs:
+           - subgraph "Tijek novca" (Visualizing all financial movements, payments, and reservations).
+           - subgraph "Tijek imovine" (Visualizing all property/asset transfers from the STRUCTURED PROPERTY-FLOW DATA, including tražbina cession chains).
+           - subgraph "Kronologija i napredak" (Visualizing the sequence of court events and future steps).`
+            : `2. Organize the diagram into exactly two subgraphs:
+           - subgraph "Tijek novca" (Visualizing all financial movements, payments, and reservations).
+           - subgraph "Kronologija i napredak" (Visualizing the sequence of court events and future steps).`;
+
         const prompt = `
         You are a specialized Data Visualization Agent. Your ONLY job is to transform the provided legal analysis text into a strictly valid Mermaid flowchart.
         
         INPUT TEXT:
-        ${usableText}${moneyFlowBlock}
+        ${usableText}${moneyFlowBlock}${propertyFlowBlock}
 
         INSTRUCTIONS:
         1. Produce ONLY a Mermaid code block using 'flowchart TD'.
-        2. Organize the diagram into exactly two subgraphs:
-           - subgraph "Tijek novca" (Visualizing all financial movements, payments, and reservations).
-           - subgraph "Kronologija i napredak" (Visualizing the sequence of court events and future steps).
+        ${subgraphInstructions}
         3. Use square brackets [ ] for all nodes.
         4. STRICT SYNTAX RULES:
            - ALWAYS wrap ALL node labels and edge text in double quotes. 
@@ -64,6 +80,7 @@ class VisualizerTool extends Tool {
            - NEVER use colons (:) for labels on arrows.
            - NEVER include comments or extra text outside the code block.
         5. If no financial data is present, omit the "Tijek novca" subgraph but still produce the timeline.
+        6. If no property data is present, omit the "Tijek imovine" subgraph entirely — never emit an empty or placeholder property subgraph.
 
         OUTPUT FORMAT:
         \`\`\`mermaid
@@ -73,11 +90,11 @@ class VisualizerTool extends Tool {
         `;
 
         try {
-            const response = await withGeminiRetry(() => withGeminiTimeout((signal) => gemini.invoke(prompt, { signal })));
-            console.log("[VisualizerTool] Raw Mermaid Output:\n", response.content);
+            const response = await withGeminiRetry(() => withGeminiTimeout((signal) => trackGeminiInvoke(gemini, prompt, { signal, tracker: options.tracker, onUsage: options.onUsage })));
+            agentLog.log("[VisualizerTool] Raw Mermaid Output:\n", response.content);
             return response.content;
         } catch (err) {
-            console.error("[VisualizerTool] Failed to generate diagram:", err.message);
+            agentLog.error("[VisualizerTool] Failed to generate diagram:", err.message);
             return "Error generating diagram.";
         }
     }

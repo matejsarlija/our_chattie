@@ -102,4 +102,155 @@ describe('useAnalysisEvents canonical stage parity', () => {
     expect(latest.timeline[1].stage).toBe('error');
     expect(latest.stages.map((stage) => stage.key)).toContain('complete');
   });
+
+  test('separates file/heartbeat activity from the stage timeline', () => {
+    let latest = null;
+
+    render(
+      <Harness
+        events={[
+          { id: 'e1', event_type: 'reasoning', message: 'Analiziram 3 datoteka...', created_at: '2026-08-21T10:00:00.000Z' },
+          {
+            id: 'a1',
+            event_type: 'analyzing',
+            message: 'Analiziran dokument 1/3: A.pdf',
+            created_at: '2026-08-21T10:00:05.000Z',
+            metadata: { kind: 'file', fileName: 'A.pdf', status: 'ok', done: 1, failed: 0, total: 3, durationMs: 4200 },
+          },
+          {
+            id: 'a2',
+            event_type: 'analyzing',
+            message: '',
+            created_at: '2026-08-21T10:00:35.000Z',
+            metadata: { kind: 'heartbeat', done: 1, failed: 0, total: 3, currentFile: 'B.pdf' },
+          },
+          { id: 'e2', event_type: 'complete', message: 'Analiza je završena!', created_at: '2026-08-21T10:01:00.000Z' },
+        ]}
+        onValue={(value) => {
+          latest = value;
+        }}
+      />,
+    );
+
+    // Activity events must not flood the timeline or advance the stepper.
+    expect(latest.timeline.map((event) => event.id)).toEqual(['e1', 'e2']);
+    expect(latest.current).toBe('complete');
+
+    expect(latest.activity.map((event) => event.id)).toEqual(['a1', 'a2']);
+    expect(latest.activity[0].kind).toBe('file');
+    expect(latest.activity[0].fileName).toBe('A.pdf');
+    expect(latest.activity[0].status).toBe('ok');
+    expect(latest.activity[0].total).toBe(3);
+    expect(latest.activity[1].kind).toBe('heartbeat');
+    expect(latest.activity[1].currentFile).toBe('B.pdf');
+  });
+
+  test('surfaces the backend-classified reason alongside the raw error on failed file events', () => {
+    let latest = null;
+
+    render(
+      <Harness
+        events={[
+          {
+            id: 'a1',
+            event_type: 'analyzing',
+            message: 'Neuspješna analiza 1/2: A.pdf',
+            created_at: '2026-08-21T10:00:05.000Z',
+            metadata: {
+              kind: 'file',
+              fileName: 'A.pdf',
+              status: 'failed',
+              done: 0,
+              failed: 1,
+              total: 2,
+              error: 'Gemini request timed out after 30000ms',
+              reason: 'Zahtjev AI servisu je premašio dopušteno vrijeme čekanja i automatski je prekinut. Pokušajte ponovno.',
+              reasonCode: 'timeout',
+            },
+          },
+        ]}
+        onValue={(value) => {
+          latest = value;
+        }}
+      />,
+    );
+
+    expect(latest.activity[0].reason).toBe('Zahtjev AI servisu je premašio dopušteno vrijeme čekanja i automatski je prekinut. Pokušajte ponovno.');
+    expect(latest.activity[0].error).toBe('Gemini request timed out after 30000ms');
+  });
+
+  test('derives the header counter from the newest stage-counter event', () => {
+    let latest = null;
+
+    render(
+      <Harness
+        events={[
+          { id: 'e1', event_type: 'discovering', message: 'start', created_at: '2026-08-21T10:00:00.000Z' },
+          {
+            id: 'c1',
+            event_type: 'discovering',
+            message: '',
+            created_at: '2026-08-21T10:00:01.000Z',
+            metadata: { kind: 'stage-counter', stage: 'discovering', done: 0, failed: 0, total: 41, unit: 'objava' },
+          },
+          {
+            id: 'c2',
+            event_type: 'downloading',
+            message: '',
+            created_at: '2026-08-21T10:00:09.000Z',
+            metadata: { kind: 'stage-counter', stage: 'downloading', done: 3, failed: 1, total: 7, unit: 'datoteka' },
+          },
+        ]}
+        onValue={(value) => {
+          latest = value;
+        }}
+      />,
+    );
+
+    expect(latest.headerCounter).toEqual({ done: 3, failed: 1, total: 7, unit: 'datoteka', stage: 'downloading' });
+    expect(latest.counterKnown).toBe(true);
+    // Counter events must not leak into the timeline or the console.
+    expect(latest.timeline.map((event) => event.id)).toEqual(['e1']);
+    expect(latest.activity).toEqual([]);
+  });
+
+  test('treats null totals as unknown and absent counters as legacy', () => {
+    let latest = null;
+
+    const unknown = [];
+    render(
+      <Harness
+        events={[
+          {
+            id: 'c1',
+            event_type: 'extracting',
+            message: '',
+            created_at: '2026-08-21T10:00:01.000Z',
+            metadata: { kind: 'stage-counter', stage: 'extracting', done: 2, failed: 0, total: null, unit: 'datoteka' },
+          },
+        ]}
+        onValue={(value) => {
+          unknown.push(value);
+        }}
+      />,
+    );
+    latest = unknown[unknown.length - 1];
+    expect(latest.headerCounter.total).toBeNull();
+    expect(latest.counterKnown).toBe(false);
+    expect(latest.timeline).toEqual([]);
+
+    let legacy = null;
+    render(
+      <Harness
+        events={[
+          { id: 'e1', event_type: 'starting', message: 'start', created_at: '2026-08-21T10:00:00.000Z' },
+        ]}
+        onValue={(value) => {
+          legacy = value;
+        }}
+      />,
+    );
+    expect(legacy.headerCounter).toBeNull();
+    expect(legacy.counterKnown).toBe(false);
+  });
 });

@@ -1,5 +1,10 @@
 const { deriveEntryDisplayId } = require('../utils/entryDisplayId');
-const { collectMoneyFlows } = require('./moneyFlow');
+const { collectFlows, deriveMoneyFlowView, derivePropertyFlowView, propertyIdByFlowId } = require('./flow');
+const { buildCitationGraph } = require('./citationGraph');
+const { reconcileFlows } = require('./reconciliation');
+const { countGroundedClaims } = require('./grounding');
+const { classifyFileFailureDetailed } = require('../../helpers/friendlyAnalysisError');
+const { buildFactLedger, dedupeLedgerRows } = require('./factLedger');
 
 function normalizeAcquisition(entry) {
     const acquisition = entry?.acquisition || entry?.caseInfo?.acquisition || {};
@@ -12,6 +17,102 @@ function normalizeAcquisition(entry) {
         strategy: acquisition.strategy || null,
         reason: acquisition.reason || null
     };
+}
+
+// Structural entry-date fallback for LLM-extracted dates. The analysis agent
+// asks Gemini for `decisionDate` / per-amount `date` from free text, which is
+// often null on procedural filings — while the originating court entry's
+// publish date (caseInfo.date/datePublished, never LLM-guessed) is already
+// captured per-entry by mapEntry.
+//
+// Resolution order: explicit provenance first (sourceDocumentLinkId /
+// sourceEntryIndex threaded through download → filesForAnalysis →
+// individualAnalyses by the pipeline — no guessing), then the legacy fuzzy
+// join on the pipeline's original keys (downloadedFiles/filesForAnalysis
+// carry the originating document link's `url` + `text`).
+function normalizeFileKey(value) {
+    if (value === null || value === undefined) return null;
+    const base = String(value).split(/[\\/]/).pop().trim().toLowerCase();
+    return base || null;
+}
+
+function buildEntryDateLookup(pkg) {
+    const urlToDate = new Map();
+    const nameToDate = new Map();
+    for (const entry of Array.isArray(pkg?.entries) ? pkg.entries : []) {
+        const date = entry?.date || null;
+        if (!date) continue;
+        for (const link of Array.isArray(entry?.documentLinks) ? entry.documentLinks : []) {
+            if (link?.url && !urlToDate.has(link.url)) {
+                urlToDate.set(link.url, date);
+            }
+            const key = normalizeFileKey(link?.text);
+            if (key && !nameToDate.has(key)) {
+                nameToDate.set(key, date);
+            }
+        }
+    }
+    return { urlToDate, nameToDate };
+}
+
+function resolveEntryDate(item, lookup) {
+    if (!item || !lookup) return null;
+    if (item.url && lookup.urlToDate.has(item.url)) {
+        return lookup.urlToDate.get(item.url);
+    }
+    // Exact filename match first (non-zip files keep link.text as item.text).
+    for (const candidate of [item.text, item.fileName]) {
+        const key = normalizeFileKey(candidate);
+        if (key && lookup.nameToDate.has(key)) {
+            return lookup.nameToDate.get(key);
+        }
+    }
+    // Temp working copies are `<timestamp>_<sanitized-link-text><ext>`, so
+    // the basename only ever suffix-matches — last-resort contains check.
+    const baseKey = normalizeFileKey(item.filePath);
+    if (baseKey) {
+        if (lookup.nameToDate.has(baseKey)) {
+            return lookup.nameToDate.get(baseKey);
+        }
+        for (const [name, date] of lookup.nameToDate) {
+            if (baseKey.endsWith(name) || baseKey.includes(name)) {
+                return date;
+            }
+        }
+    }
+    return null;
+}
+
+/**
+ * Resolves explicit file→entry provenance threaded by the pipeline, without
+ * any filename guessing. Returns `{ date, entryIndex, linkId }` with nulls
+ * where the item carries no usable provenance.
+ * @param {object} item - An individualAnalyses item.
+ * @param {object} pkg - The cluster evidence package.
+ * @returns {{date: string|null, entryIndex: number|null, linkId: string|null}}
+ */
+function resolveExplicitProvenance(item, pkg) {
+    const none = { date: null, entryIndex: null, linkId: null };
+    if (!item || !pkg) return none;
+    const entries = Array.isArray(pkg.entries) ? pkg.entries : [];
+    const links = Array.isArray(pkg.documentLinks) ? pkg.documentLinks : [];
+
+    const linkId = item.sourceDocumentLinkId ?? item.documentLinkId ?? null;
+    if (linkId) {
+        const link = links.find((candidate) => candidate?.id === linkId);
+        if (link) {
+            const entry = Number.isInteger(link.entryIndex)
+                ? (entries[link.entryIndex] ?? entries.find((e) => e?.index === link.entryIndex) ?? null)
+                : null;
+            return { date: entry?.date || null, entryIndex: link.entryIndex ?? null, linkId };
+        }
+    }
+
+    const entryIndex = item.sourceEntryIndex ?? item.entryIndex ?? null;
+    if (Number.isInteger(entryIndex) && entries[entryIndex]) {
+        return { date: entries[entryIndex]?.date || null, entryIndex, linkId: linkId || null };
+    }
+    return none;
 }
 
 function mapDocumentLink(link, entry, entryIndex, linkIndex) {
@@ -92,6 +193,16 @@ function buildClusterEvidencePackage({ cluster, clusterSummary, discoverySummary
         discovery: {
             reasoningClusterId,
             recommendedPrimaryClusterId: discoverySummary?.recommendedPrimaryClusterId || null,
+            // Preserve the selected cluster's date range in the package.
+            // The complete discovery summary is intentionally not persisted
+            // here, so scope-contract consumers must not depend on its
+            // `clusters[]` array being present.
+            selectedCluster: clusterSummary ? {
+                clusterId: clusterSummary.clusterId || clusterId,
+                oldestEntryDate: clusterSummary.oldestEntryDate || null,
+                newestEntryDate: clusterSummary.newestEntryDate || null,
+                entryDateSpanDays: clusterSummary.entryDateSpanDays ?? null,
+            } : null,
             secondaryClusterIds: discoverySummary?.secondaryClusterIds || [],
             discoveryMode: discoverySummary?.discoveryMode || null,
             acquisitionModes: discoverySummary?.acquisitionModes || [],
@@ -101,7 +212,10 @@ function buildClusterEvidencePackage({ cluster, clusterSummary, discoverySummary
             pagesScanned: discoverySummary?.pagesScanned ?? null,
             rawEntryCount: discoverySummary?.rawEntryCount ?? null,
             capturedDistinctCaseCount: discoverySummary?.capturedDistinctCaseCount ?? null,
-            coverageConfidence: discoverySummary?.coverageConfidence || null
+            coverageConfidence: discoverySummary?.coverageConfidence || null,
+            // TS-2: the selected-cluster sampling ledger is part of the
+            // report's evidence boundary, not discovery-only telemetry.
+            coverageLedger: discoverySummary?.coverageLedger || null
         },
         selection: {
             selectedForReasoning: true,
@@ -151,30 +265,165 @@ function attachAnalysesToEvidencePackage(pkg, processedCases, clusterId = null) 
         : [];
 
     const analyses = [];
+    // Ground-truth chunks (Phase 0.1): collected from BOTH successful analyses
+    // and analysis-failures-with-extracted-text. The chunk-only branch is the
+    // point of the exercise — quota-failed files keep contributing grounding.
+    const chunks = [];
+    const entryDateLookup = buildEntryDateLookup(pkg);
+    for (const item of individualAnalyses) {
+        const itemChunks = Array.isArray(item?.retrievalChunks) ? item.retrievalChunks : [];
+        if (itemChunks.length === 0) continue;
+        const itemFileName = item.text || item.filePath || 'nepoznata datoteka';
+        const itemProvenance = resolveExplicitProvenance(item, pkg);
+        for (const chunk of itemChunks) {
+            chunks.push({
+                id: chunk.id,
+                text: chunk.text,
+                metadata: {
+                    fileName: itemFileName,
+                    caseNumber: pkg.clusterId || null,
+                    startIndex: chunk.metadata?.startIndex ?? null,
+                    endIndex: chunk.metadata?.endIndex ?? null,
+                    sourceEntryIndex: itemProvenance.entryIndex,
+                    sourceDocumentLinkId: itemProvenance.linkId,
+                }
+            });
+        }
+    }
+
     for (const item of individualAnalyses) {
         if (!item?.aiResult) continue;
+        // Fallback-only: a real LLM-extracted decisionDate always wins; the
+        // structural entry publish date fills the gap so chronological claim
+        // sorting (synthesizer) sees a date on procedural filings too.
+        // Explicit pipeline provenance wins over fuzzy url/name matching.
+        const explicit = resolveExplicitProvenance(item, pkg);
+        const entryDate = explicit.date || resolveEntryDate(item, entryDateLookup);
+        const sourceEntryIndex = explicit.entryIndex
+            ?? item?.sourceEntryIndex
+            ?? item?.entryIndex
+            ?? null;
+        const sourceDocumentLinkId = explicit.linkId
+            ?? item?.sourceDocumentLinkId
+            ?? item?.documentLinkId
+            ?? null;
         analyses.push({
             id: item.filePath || item.text || `analysis-${analyses.length + 1}`,
             fileName: item.text || item.filePath || null,
             filePath: item.filePath || null,
             caseNumber: item.aiResult.caseNumber || pkg.clusterId || null,
-            decisionDate: item.aiResult.decisionDate || null,
+            decisionDate: item.aiResult.decisionDate || entryDate || null,
+            entryDate: entryDate || null,
+            sourceEntryIndex,
+            sourceDocumentLinkId,
+            // TL-1 — stable document identity for ledger-level byte dedupe.
+            ...(typeof item.contentHash === 'string' && item.contentHash ? { contentHash: item.contentHash } : {}),
             summary: item.aiResult.summary || null,
             parties: Array.isArray(item.aiResult.parties) ? item.aiResult.parties : [],
-            amounts: Array.isArray(item.aiResult.amounts) ? item.aiResult.amounts : []
+            amounts: Array.isArray(item.aiResult.amounts) ? item.aiResult.amounts : [],
+            propertyFlow: Array.isArray(item.aiResult.propertyFlow) ? item.aiResult.propertyFlow : [],
+            // J-05 — citation graph seed passthrough (Epic L builds the graph).
+            citedFilingReferences: Array.isArray(item.aiResult.citedFilingReferences)
+                ? item.aiResult.citedFilingReferences
+                : []
         });
     }
 
-    const moneyFlow = collectMoneyFlows(analyses);
+    // TL-1/TL-2 — ledger rows are the canonical structured-fact input. Keep
+    // analyses for narrative/retrieval provenance, but flow/reconciliation
+    // must consume the deduped ledger so every surviving row keeps its filing
+    // identity instead of reverting to summary-shaped arrays.
+    const factLedger = dedupeLedgerRows(buildFactLedger(analyses));
+    const flowAnalyses = factLedger.map((row, index) => ({
+        id: row?.doc?.analysisId || `ledger-${index + 1}`,
+        fileName: row?.doc?.fileName || null,
+        caseNumber: row?.doc?.caseNumber || null,
+        sourceEntryIndex: row?.doc?.sourceEntryIndex ?? null,
+        sourceDocumentLinkId: row?.doc?.sourceDocumentLinkId ?? null,
+        contentHash: row?.doc?.contentHash || null,
+        entryDate: row?.date || row?.doc?.entryDate || null,
+        amounts: row?.kind === 'amount' ? [{
+            description: row.description, amount: row.value, amountEur: row.valueEur,
+            currency: row.currency, date: row.date, direction: row.direction,
+            amountRole: row.amountRole, eventType: row.eventType,
+            legalEffect: row.legalEffect, references: row.references,
+            relationshipBasis: row.relationshipBasis, payerName: row.parties?.payerName,
+            payerOib: row.parties?.payerOib, recipientName: row.parties?.recipientName,
+            recipientOib: row.parties?.recipientOib, isplatniRed: row.isplatniRed,
+            claimRegistryNumber: row.claimRegistryNumber, filingReference: row.filingReference,
+            quote: row.quote, grounded: row.grounded,
+            filings: row.filings,
+            sources: row.filings.map((filing) => filing.analysisId).filter(Boolean),
+        }] : [],
+        propertyFlow: row?.kind === 'property' ? [{
+            description: row.description, value: row.value, valueEur: row.valueEur,
+            currency: row.currency, date: row.date, assetType: row.assetType,
+            identifier: row.identifier, transferor: row.parties?.transferor,
+            transferee: row.parties?.transferee, eventType: row.eventType,
+            legalEffect: row.legalEffect, references: row.references,
+            relationshipBasis: row.relationshipBasis, isplatniRed: row.isplatniRed,
+            claimRegistryNumber: row.claimRegistryNumber, filingReference: row.filingReference,
+            supersedes: row.supersedes, quote: row.quote, grounded: row.grounded,
+            filings: row.filings,
+            sources: row.filings.map((filing) => filing.analysisId).filter(Boolean),
+        }] : [],
+    }));
+    const flows = collectFlows(flowAnalyses);
+    // Backward-compatible derived views (flow-consolidation PR2): the
+    // unified array is filtered + renamed back to today's exact shapes, so
+    // synthesizer, frontend and persisted-run readers see zero change.
+    // `pkg.flows` is the new additive forward-looking surface.
+    const moneyFlow = deriveMoneyFlowView(flows);
+    const propertyFlow = derivePropertyFlowView(flows);
+    // Deterministic reconciliation (Phase 0.3) over the unified array
+    // (flow-consolidation PR3): one engine, then partitioned back into the
+    // legacy views by finding kind — the single ownership chain
+    // pkg.reconciliation → meta → report.conflicts is unchanged.
+    const flowReconciliation = reconcileFlows(flows, { analyses });
+    const moneyReconciliation = {
+        conflicts: flowReconciliation.conflicts.filter((c) => c.kind === 'arithmetic'),
+        openQuestions: flowReconciliation.openQuestions.filter((q) => q.kind === 'arithmetic'),
+    };
+    // L-02 needs the normalized analyses (citedFilingReferences) alongside
+    // the flow, so the citation-link signal resolves against real nodes.
+    // valueChanges stage ids map back to the legacy prop-N sequence
+    // (migration shim — the engine reasons in flow-N ids internally).
+    const propIdByFlowId = propertyIdByFlowId(flows);
+    const legacyValueChanges = flowReconciliation.valueChanges.map((timeline) => ({
+        ...timeline,
+        stages: (timeline.stages || []).map((stage) => ({
+            ...stage,
+            id: propIdByFlowId.get(stage.id) ?? stage.id,
+        })),
+    }));
+    const propertyReconciliation = {
+        conflicts: flowReconciliation.conflicts.filter((c) => c.kind === 'property' || c.kind === 'lifecycle'),
+        openQuestions: flowReconciliation.openQuestions.filter((q) => q.kind === 'property' || q.kind === 'lifecycle'),
+        valueChanges: legacyValueChanges,
+    };
+    // L-02 — filing citation graph attached for downstream consumers.
+    const citationGraph = buildCitationGraph(analyses);
+    const reconciliation = {
+        conflicts: [...(moneyReconciliation.conflicts || []), ...(propertyReconciliation.conflicts || [])],
+        openQuestions: [...(moneyReconciliation.openQuestions || []), ...(propertyReconciliation.openQuestions || [])],
+        // TR-1: extraction-validation warnings travel with the reconciliation
+        // payload (persisted via meta) but never seed report.openQuestions.
+        validationWarnings: [...(flowReconciliation.validationWarnings || [])],
+    };
 
     const total = individualAnalyses.length;
     const analyzed = analyses.length;
     const failedFiles = individualAnalyses
         .filter((item) => !item?.aiResult)
-        .map((item) => ({
-            fileName: item.text || item.filePath || 'nepoznata datoteka',
-            reason: item.error || 'nepoznata greška',
-        }));
+        .map((item) => {
+            const classified = classifyFileFailureDetailed(item.error);
+            return {
+                fileName: item.text || item.filePath || 'nepoznata datoteka',
+                code: classified.code,
+                reason: classified.reason,
+                causalChain: classified.causalChain,
+            };
+        });
 
     const coverage = {
         analyzed,
@@ -183,13 +432,21 @@ function attachAnalysesToEvidencePackage(pkg, processedCases, clusterId = null) 
         coverageRatio: total > 0 ? Number((analyzed / total).toFixed(2)) : 0,
         complete: total > 0 && analyzed === total,
         failedFiles,
+        ...countGroundedClaims(analyses),
     };
 
     return {
         ...pkg,
         analyses,
+        factLedger,
+        chunks,
         coverage,
-        moneyFlow
+        flows,
+        moneyFlow,
+        propertyFlow,
+        propertyReconciliation,
+        citationGraph,
+        reconciliation
     };
 }
 

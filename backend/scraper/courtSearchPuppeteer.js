@@ -1,6 +1,10 @@
 // courtSearchPuppeteer.js
 require('dotenv').config();
 const { normalizeCaseNumber } = require('../court-analysis/utils/caseNumber');
+const {
+    COURT_ENTRIES_PER_PAGE,
+    SCAN_DEPTH_MAX_ENTRIES
+} = require('../court-analysis/utils/scanDepth');
 let puppeteer;
 
 if (process.env.NODE_ENV === 'production' || process.env.BROWSERLESS_TOKEN) {
@@ -19,6 +23,26 @@ function resolveMaxPagesScanned() {
     return Number.isFinite(raw) && raw >= 1 ? raw : 5;
 }
 
+// Hard page budget for `full` depth, derived from the shared 400-court-entry
+// ceiling and the confirmed 10-court-entries-per-page density. Bounding the
+// page walk is a genuine safety cap: a mis-parsed hasNextPage or a huge
+// text-query result set must not crawl unbounded pages while holding the
+// concurrency-1 analysis queue.
+function resolveFullScanMaxPages() {
+    const raw = Number.parseInt(process.env.FULL_SCAN_MAX_PAGES, 10);
+    if (Number.isFinite(raw) && raw >= 1) return Math.floor(raw);
+    return Math.ceil(SCAN_DEPTH_MAX_ENTRIES / COURT_ENTRIES_PER_PAGE);
+}
+
+// Tail sampling: when a case has more history than the forward scan window
+// covers, walk backward from the last page and keep the oldest entries so the
+// analysis gets "origin" context (initial filings, opening rulings, intro docs).
+// The last page is often partial (e.g. page 39 of 39 may hold a single entry),
+// so we accumulate across up to TAIL_SAMPLE_MAX_PAGES until we reach
+// TAIL_SAMPLE_ENTRIES instead of assuming the last page is full.
+const TAIL_SAMPLE_ENTRIES = 10;
+const TAIL_SAMPLE_MAX_PAGES = 2;
+
 class CourtSearchPuppeteer {
     constructor() {
         this.baseUrl = 'https://e-oglasna.pravosudje.hr';
@@ -29,7 +53,11 @@ class CourtSearchPuppeteer {
     async init() {
         try {
             const launchOptions = {
-                headless: process.env.NODE_ENV === 'production',
+                // Headful by default in local dev so operators can watch runs;
+                // production and explicit PUPPETEER_HEADLESS=1 (scripts/CI,
+                // displayless hosts) run headless while keeping the local
+                // puppeteer.launch transport.
+                headless: process.env.NODE_ENV === 'production' || process.env.PUPPETEER_HEADLESS === '1',
                 args: [
                     '--no-sandbox',
                     '--disable-setuid-sandbox',
@@ -59,18 +87,31 @@ class CourtSearchPuppeteer {
             // Enhanced request handling
             if (process.env.NODE_ENV !== 'production') {
                 await this.page.setRequestInterception(true);
+                // PUPPETEER_QUIET=1 (fixture scripts): silence per-request
+                // console chatter and abort third-party tracker/chat widgets
+                // (real network round trips + log noise; the results page
+                // works without them). Default off — production/dev behavior
+                // is byte-identical to before.
+                const quiet = process.env.PUPPETEER_QUIET === '1';
+                const TRACKER_HOSTS = [
+                    'googletagmanager.com',
+                    'google-analytics.com',
+                    'espis-virtualni-asistenti-agent.pravosudje.hr'
+                ];
                 this.page.on('request', (request) => {
                     // Block unnecessary resources to speed up loading
                     if (['image', 'stylesheet', 'font'].includes(request.resourceType())) {
                         request.abort();
+                    } else if (quiet && TRACKER_HOSTS.some((host) => request.url().includes(host))) {
+                        request.abort();
                     } else {
-                        console.log('Request:', request.url());
+                        if (!quiet) console.log('Request:', request.url());
                         request.continue();
                     }
                 });
 
                 this.page.on('requestfailed', (request) => {
-                    console.error('Request failed:', request.url(), request.failure()?.errorText);
+                    if (!quiet) console.error('Request failed:', request.url(), request.failure()?.errorText);
                 });
 
                 // Add response monitoring
@@ -169,35 +210,52 @@ class CourtSearchPuppeteer {
     /**
      * Aggregates per-page search metadata from a multi-page crawl into a single
      * normalized discovery metadata block. Each page becomes its own entry in
-     * `searchWindows`, while the top-level fields describe the whole window.
+     * `searchWindows`, while the top-level fields (pagesScanned/currentPage/
+     * hasNextPage) describe the FORWARD window only — tail-sample pages are
+     * listed in `searchWindows` and counted in `tailPagesScanned` so they never
+     * distort the forward frontier reported to discovery heuristics and the UI.
      */
     aggregateSearchWindows(pageMetadataList, totalRawCount) {
         const pages = Array.isArray(pageMetadataList) ? pageMetadataList : [];
-        const last = pages[pages.length - 1] || {};
-        const pagesScanned = pages.length || 1;
+        const forwardPages = pages.filter((page) => page.tailWindow !== true);
+        const tailPages = pages.filter((page) => page.tailWindow === true);
+        const forward = forwardPages[forwardPages.length - 1] || pages[pages.length - 1] || {};
+        const pagesScanned = forwardPages.length || 1;
 
-        return {
+        const aggregated = {
             discoveryMode: 'search-window',
-            acquisitionModes: ['search-window'],
+            acquisitionModes: tailPages.length > 0
+                ? ['search-window', 'search-window-tail']
+                : ['search-window'],
             searchWindows: pages.map((page, index) => ({
-                mode: 'search-window',
+                mode: page.tailWindow ? 'search-window-tail' : 'search-window',
                 currentPage: page.currentPage ?? index + 1,
                 pagesScanned: 1,
                 hasNextPage: Boolean(page.hasNextPage),
                 rawParsedEntryCount: page.rawParsedEntryCount ?? null
             })),
-            totalResults: last.totalResults ?? null,
-            totalPages: last.totalPages ?? null,
+            totalResults: forward.totalResults ?? null,
+            totalPages: forward.totalPages ?? null,
             pagesScanned,
-            currentPage: last.currentPage ?? 1,
-            hasNextPage: last.hasNextPage ?? false,
+            currentPage: forward.currentPage ?? 1,
+            hasNextPage: forward.hasNextPage ?? false,
             rawParsedEntryCount: totalRawCount
         };
+        if (tailPages.length > 0) {
+            aggregated.tailPagesScanned = tailPages.length;
+        }
+        return aggregated;
     }
 
-    async performSearchAcrossPages(searchTerm, maxPages = null) {
-        const limit = Number.isFinite(maxPages) ? Math.max(1, maxPages) : resolveMaxPagesScanned();
-        console.log(`[performSearchAcrossPages] Searching for "${searchTerm}" across up to ${limit} page(s)...`);
+    async performSearchAcrossPages(searchTerm, maxPages = null, options = {}) {
+        // `Infinity` (full depth) scans every page until the result set runs out,
+        // bounded by FULL_SCAN_MAX_PAGES; `null` falls back to the
+        // DISCOVERY_MAX_PAGES_SCANNED default window.
+        const limit = maxPages === Infinity
+            ? Infinity
+            : (Number.isFinite(maxPages) ? Math.max(1, maxPages) : resolveMaxPagesScanned());
+        const pageBudget = limit === Infinity ? resolveFullScanMaxPages() : limit;
+        console.log(`[performSearchAcrossPages] Searching for "${searchTerm}" across up to ${limit === Infinity ? `all (cap ${pageBudget})` : limit} page(s)...`);
 
         await this.performSearch(searchTerm);
         const firstPage = await this.parseSearchResultsPage();
@@ -208,7 +266,7 @@ class CourtSearchPuppeteer {
         let currentPage = firstPage.searchMetadata.currentPage || 1;
         let hasNextPage = firstPage.searchMetadata.hasNextPage || false;
 
-        while (hasNextPage && pageMetadataList.length < limit) {
+        while (hasNextPage && pageMetadataList.length < pageBudget) {
             const nextPage = currentPage + 1;
             await this.navigateToSearchResultsPage(searchTerm, nextPage);
             const parsed = await this.parseSearchResultsPage();
@@ -223,13 +281,116 @@ class CourtSearchPuppeteer {
             if (results.length === 0) break;
         }
 
-        const searchMetadata = this.aggregateSearchWindows(pageMetadataList, allResults.length);
+        // The ceiling fired only when the site still reports more pages but the
+        // full-scan budget is exhausted. Surface it so reports can be honest
+        // about "Sve dostupne" having stopped at the cap.
+        const fullScanCapped = limit === Infinity && hasNextPage && pageMetadataList.length >= pageBudget;
+
+        let searchMetadata = this.aggregateSearchWindows(pageMetadataList, allResults.length);
+
+        // Grab the oldest entries of the case (tail) so long histories get their
+        // origin context. Only fires when the forward window didn't already cover
+        // the full result set.
+        const tail = await this.performTailSample(searchTerm, searchMetadata, options);
+        if (tail.results.length > 0) {
+            allResults.push(...tail.results);
+            pageMetadataList.push(...tail.windows);
+            searchMetadata = this.aggregateSearchWindows(pageMetadataList, allResults.length);
+        }
+        searchMetadata.tailSampling = tail.summary;
+        if (fullScanCapped) {
+            searchMetadata.fullScanCapped = true;
+        }
+
         return { results: allResults, searchMetadata };
+    }
+
+    /**
+     * Walks backward from the last result page, accumulating entries until
+     * TAIL_SAMPLE_ENTRIES oldest entries are captured (or TAIL_SAMPLE_MAX_PAGES
+     * are visited). Handles partial last pages by continuing to the previous
+     * page instead of assuming the last page holds a full batch.
+     */
+    async performTailSample(searchTerm, searchMetadata, options = {}) {
+        const enabled = options.tailSample === true;
+        const totalPages = Number.isFinite(searchMetadata?.totalPages) ? searchMetadata.totalPages : null;
+        const pagesScanned = Number.isFinite(searchMetadata?.pagesScanned) ? searchMetadata.pagesScanned : 0;
+
+        if (!enabled || totalPages === null) {
+            return { results: [], windows: [], summary: { enabled: false, tailRule: null } };
+        }
+        if (totalPages <= pagesScanned) {
+            return {
+                results: [],
+                windows: [],
+                summary: { enabled: true, reason: 'window-fully-scanned', entriesKept: 0, pages: 0, tailRule: 'global-oldest' }
+            };
+        }
+
+        const accumulated = [];
+        const windows = [];
+        let page = totalPages;
+
+        while (accumulated.length < TAIL_SAMPLE_ENTRIES
+            && page > pagesScanned
+            && windows.length < TAIL_SAMPLE_MAX_PAGES) {
+            await this.navigateToSearchResultsPage(searchTerm, page);
+            const parsed = await this.parseSearchResultsPage();
+            const pageResults = parsed.results || [];
+            const pageMetadata = parsed.searchMetadata || {};
+
+            pageMetadata.tailWindow = true;
+            for (const item of pageResults) {
+                item.acquisition = {
+                    mode: 'search-window-tail',
+                    currentPage: Number.isFinite(pageMetadata.currentPage) ? pageMetadata.currentPage : page,
+                    sampling: 'tail'
+                };
+            }
+
+            accumulated.push(...pageResults);
+            windows.push(pageMetadata);
+            page -= 1;
+
+            if (pageResults.length === 0) break;
+        }
+
+        // `accumulated` is oldest-first (highest page first). Keep the oldest
+        // TAIL_SAMPLE_ENTRIES, then reverse so the overall result list stays in
+        // descending recency order after being appended to the forward window.
+        const kept = accumulated.slice(0, TAIL_SAMPLE_ENTRIES).reverse();
+
+        return {
+            results: kept,
+            windows,
+            summary: {
+                enabled: true,
+                // Tail rule disclosure (T0-3): the page-walk tail is always the
+                // globally oldest entries of the search window — unlike the CSV
+                // balanced path, which tails the selected primary case. Runs
+                // disclose which rule applied via this summary.
+                tailRule: 'global-oldest',
+                entriesCollected: accumulated.length,
+                entriesKept: kept.length,
+                // Downstream doc-link filtering can drop kept entries, so report
+                // how many of the kept ones actually carry a download link.
+                entriesKeptWithDocuments: kept.filter((item) => Boolean(item.documentDownloadLink)).length,
+                pages: windows.length
+            }
+        };
     }
 
     mapSearchResultsToPipelineEntries(results, searchMetadata, limit = null) {
         const normalizedLimit = Number.isFinite(limit) ? Math.max(0, limit) : null;
-        const effectiveResults = normalizedLimit === null ? results : results.slice(0, normalizedLimit);
+
+        // Numeric limits truncate the forward window only; tail-sample entries
+        // are the whole point of balanced depth and always survive.
+        let effectiveResults = results;
+        if (normalizedLimit !== null) {
+            const forward = results.filter((r) => r.acquisition?.mode !== 'search-window-tail');
+            const tail = results.filter((r) => r.acquisition?.mode === 'search-window-tail');
+            effectiveResults = [...forward.slice(0, normalizedLimit), ...tail];
+        }
 
         return effectiveResults.map((caseInfo) => ({
             caseInfo,
@@ -805,16 +966,21 @@ class CourtSearchPuppeteer {
     }
 
     /**
-     * The new primary method for the analysis pipeline. It finds the latest N cases
+     * The new primary method for the analysis pipeline. It finds the latest N court entries
      * that have direct document download links.
      * @param {string} searchTerm
-     * @param {number|null} limit - The number of cases to return. A null limit
+     * @param {number|null} limit - The number of court entries to return. A null limit
      *  captures the full scanned window (full document history).
-     * @returns {Promise<Array<{caseInfo: object, documentLinks: Array<object>}>>}
+     * @param {number|null} maxPages
+     * @param {boolean} tailSample
+     * @param {string|null} debtorOib - Accepted only for signature parity with the CSV
+     *  client; it is intentionally ignored here because Puppeteer has no reliable
+     *  per-entry debtor-OIB field.
+     * @returns {Promise<{ casesToProcess: Array<object>, discoveryMetadata: object }>}
      */
-    async searchAndGetLatestCasesWithDocuments(searchTerm, limit = 2, maxPages = null) {
+    async searchAndGetLatestCasesWithDocuments(searchTerm, limit = 2, maxPages = null, tailSample = false, debtorOib = null) {
         console.log('[searchAndGetLatestCasesWithDocuments] Starting search...');
-        const { results: allResults, searchMetadata } = await this.performSearchAcrossPages(searchTerm, maxPages);
+        const { results: allResults, searchMetadata } = await this.performSearchAcrossPages(searchTerm, maxPages, { tailSample });
 
         if (allResults.length === 0) {
             console.warn('[searchAndGetLatestCasesWithDocuments] Search yielded no results.');
@@ -839,8 +1005,14 @@ class CourtSearchPuppeteer {
 
         // Take the most recent ones from the top of the list, up to the limit.
         // A null limit (Track 3b full document history) captures the entire
-        // scanned window instead of truncating to the top-N.
-        const limitedResults = limit == null ? resultsWithDocs : resultsWithDocs.slice(0, limit);
+        // scanned window instead of truncating to the top-N. Numeric limits
+        // truncate the forward window only — tail entries always survive.
+        const limitedResults = limit == null
+            ? resultsWithDocs
+            : [
+                ...resultsWithDocs.filter((r) => r.acquisition?.mode !== 'search-window-tail').slice(0, limit),
+                ...resultsWithDocs.filter((r) => r.acquisition?.mode === 'search-window-tail')
+            ];
         console.log(`[searchAndGetLatestCasesWithDocuments] Processing the latest ${limitedResults.length} case(s).`);
 
         // Map them to the format your pipeline expects
@@ -850,9 +1022,13 @@ class CourtSearchPuppeteer {
         };
     }
 
-    async searchAndGetLatestCases(searchTerm, limit = null, maxPages = null) {
+    async searchAndGetLatestCases(searchTerm, limit = null, maxPages = null, tailSample = false, debtorOib = null) {
+        // Accepted only for signature parity with the CSV client; it is
+        // intentionally ignored because Puppeteer has no reliable per-entry
+        // debtor-OIB field.
+        void debtorOib;
         console.log('[searchAndGetLatestCases] Starting search...');
-        const { results: allResults, searchMetadata } = await this.performSearchAcrossPages(searchTerm, maxPages);
+        const { results: allResults, searchMetadata } = await this.performSearchAcrossPages(searchTerm, maxPages, { tailSample });
 
         if (allResults.length === 0) {
             console.warn('[searchAndGetLatestCases] Search yielded no results.');

@@ -22,7 +22,6 @@ jest.mock('../court-analysis/agents/analysis-agent', () => ({
     AnalyzeDocumentsTool: jest.fn().mockImplementation(() => ({
         _call: mockAnalyzeCall
     })),
-    generateComparativeAnalysis: jest.fn().mockResolvedValue('Comparative Analysis')
 }));
 
 
@@ -41,6 +40,14 @@ jest.mock('../court-analysis/reasoning/synthesizer', () => ({
 
 jest.mock('../court-analysis/reasoning/verifier', () => ({
     verifyReport: mockVerifyReport
+}));
+
+// Optional reasoning LLM passes (rerank/planner/follow-up) construct Gemini
+// clients lazily; stub the SDK so the deterministic path runs without network.
+jest.mock('@langchain/google-genai', () => ({
+    ChatGoogleGenerativeAI: jest.fn().mockImplementation(() => ({
+        invoke: jest.fn().mockResolvedValue({ content: '[]' }),
+    })),
 }));
 
 jest.mock('adm-zip', () => {
