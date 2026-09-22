@@ -27,7 +27,7 @@ try {
 }
 
 // Bump when OCR prompt text or the batch marker contract changes.
-const OCR_PROMPT_VERSION = 1;
+const OCR_PROMPT_VERSION = 2;
 
 function versionSegment() {
     const model = String(geminiModel || 'unknown-model').replace(/[^a-zA-Z0-9._-]/g, '_');
@@ -46,6 +46,17 @@ function pageFilePath(contentHash, pageNumber) {
         resolveStoreRoot(),
         versionSegment(),
         `${contentHash}-p${pageNumber}.json`,
+    );
+}
+
+// Native-PDF transcription is cached separately from rendered-page OCR.
+// It has a different marker contract and must never be mistaken for an
+// individual page entry during a raster fallback.
+function nativePdfFilePath(contentHash) {
+    return path.join(
+        resolveStoreRoot(),
+        versionSegment(),
+        `${contentHash}-native-pdf.json`,
     );
 }
 
@@ -79,11 +90,36 @@ function writeOcrPageToDisk(contentHash, pageNumber, text) {
     }
 }
 
+function readNativePdfFromDisk(contentHash) {
+    try {
+        const parsed = JSON.parse(fs.readFileSync(nativePdfFilePath(contentHash), 'utf8'));
+        return typeof parsed?.text === 'string' ? parsed.text : null;
+    } catch (err) {
+        return null;
+    }
+}
+
+function writeNativePdfToDisk(contentHash, text) {
+    if (typeof text !== 'string') return;
+    try {
+        const filePath = nativePdfFilePath(contentHash);
+        fs.mkdirSync(path.dirname(filePath), { recursive: true });
+        const tmpPath = `${filePath}.tmp-${process.pid}-${Date.now()}`;
+        fs.writeFileSync(tmpPath, JSON.stringify({ text }));
+        fs.renameSync(tmpPath, filePath);
+    } catch (err) {
+        // Cache writes must never break an in-flight document transcription.
+    }
+}
+
 module.exports = {
     OCR_PROMPT_VERSION,
     versionSegment,
     resolveStoreRoot,
     pageFilePath,
+    nativePdfFilePath,
     readOcrPageFromDisk,
     writeOcrPageToDisk,
+    readNativePdfFromDisk,
+    writeNativePdfToDisk,
 };

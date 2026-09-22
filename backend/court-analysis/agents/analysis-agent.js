@@ -36,6 +36,12 @@ const {
     EXTRACTION_SCHEMA_VERSION,
 } = require("../reasoning/extractionSchema");
 const ocrPageStore = require("../../helpers/ocrPageStore");
+const {
+    DOCUMENT_INPUT_MODES,
+    resolveDocumentInputMode,
+    shouldUseNativePdf,
+    transcribeNativePdf,
+} = require("../../helpers/nativePdfDocument");
 // Role-scoped clients: document JSON analysis and vision OCR differ in
 // temperature and output-token policy; targeted field repair (T1-3) gets the
 // cheap, zero-temperature lite role with a field-scoped output cap.
@@ -492,6 +498,105 @@ function splitBatchedOcrPages(responseText, expectedPages) {
     return segments;
 }
 
+function recordNativePdfUsage(usage, options = {}) {
+    if (!usage || !options.tracker) return;
+    options.tracker.record(usage);
+    if (typeof options.onUsage === 'function') {
+        options.onUsage(options.tracker.snapshot());
+    }
+}
+
+function normalizePageMarkedTranscript(responseText, expectedPages) {
+    const pages = splitBatchedOcrPages(responseText, expectedPages);
+    if (pages.some((page) => typeof page !== 'string' || page.trim().length === 0)) {
+        return null;
+    }
+    return pages
+        .map((page, index) => `=== STRANICA ${index + 1} ===\n${page.trim()}`)
+        .join('\n\n');
+}
+
+/**
+ * Native document input path for scanned PDFs. It is deliberately bounded to
+ * an entire document that fits the same normal OCR page budget; longer PDFs
+ * use the existing page-bounded raster path rather than silently uploading a
+ * full docket. A malformed/unsupported native response is a normal fallback,
+ * never a run failure.
+ */
+async function extractTextViaNativePdf(filePath, progressCallback, options = {}) {
+    const mode = resolveDocumentInputMode();
+    if (mode === DOCUMENT_INPUT_MODES.LOCAL) {
+        return buildExtractionResult({ error: 'native-pdf-disabled' });
+    }
+
+    try {
+        const fileBytes = fs.readFileSync(filePath);
+        if (fileBytes.length > resolvePdfMaxBytes()) {
+            return buildExtractionResult({ method: 'native-pdf', error: EXTRACTION_ERROR_CODES.PDF_TOO_LARGE });
+        }
+        const pdf = await pdfjsLib.getDocument({
+            data: new Uint8Array(fileBytes),
+            standardFontDataUrl: PDFJS_STANDARD_FONT_DATA_URL,
+        }).promise;
+        const pageCount = pdf.numPages;
+        await pdf.destroy();
+
+        if (!shouldUseNativePdf({
+            mode,
+            pageCount,
+            fallbackMaxPages: resolveOcrMaxPages(),
+        })) {
+            agentLog.log(
+                `[Native PDF] Skipping ${path.basename(filePath)}: mode=${mode}, pages=${pageCount}, ` +
+                `native range is ${process.env.NATIVE_PDF_MIN_PAGES || 1}-${Math.min(resolveOcrMaxPages(), Number.parseInt(process.env.NATIVE_PDF_MAX_PAGES, 10) || resolveOcrMaxPages())}.`,
+            );
+            return buildExtractionResult({ method: 'native-pdf', pages: pageCount, error: 'native-pdf-outside-budget' });
+        }
+
+        const contentHash = crypto.createHash('sha256').update(fileBytes).digest('hex');
+        const cached = ocrPageStore.readNativePdfFromDisk(contentHash);
+        const cachedText = cached && normalizePageMarkedTranscript(cached, pageCount);
+        if (cachedText) {
+            agentLog.log(`[Native PDF] Persistent cache hit: ${contentHash.slice(0, 8)} (${pageCount} pages).`);
+            return buildExtractionResult({ text: cachedText, method: 'native-pdf', pages: pageCount });
+        }
+
+        progressCallback && progressCallback({
+            step: 'analyzing',
+            message: `OCR: šaljem izvorni PDF (${pageCount} stranica) u Gemini (${path.basename(filePath)})...`,
+        });
+        const result = await withGeminiRetry(
+            () => withGeminiTimeout(async (signal) => {
+                const response = await transcribeNativePdf({
+                    apiKey: GEMINI_API_KEY,
+                    model: GEMINI_MODEL,
+                    fileBytes,
+                    pageCount,
+                    signal,
+                });
+                recordNativePdfUsage(response.usage, options);
+                return response;
+            }, { timeoutMs: resolveOcrTimeoutMs() }),
+        );
+        const text = normalizePageMarkedTranscript(result?.text, pageCount);
+        if (!text) {
+            agentLog.error(`[Native PDF] Invalid page-marked transcript for ${path.basename(filePath)}; falling back to raster OCR.`);
+            return buildExtractionResult({ method: 'native-pdf', pages: pageCount, error: 'native-pdf-invalid-transcript' });
+        }
+        ocrPageStore.writeNativePdfToDisk(contentHash, text);
+        return buildExtractionResult({ text, method: 'native-pdf', pages: pageCount });
+    } catch (err) {
+        agentLog.error(
+            `[Native PDF] Failed for ${filePath}; falling back to raster OCR:`,
+            err?.name === 'AbortError' ? err.message : err,
+        );
+        return buildExtractionResult({
+            method: 'native-pdf',
+            error: isTimeoutLikeError(err) ? EXTRACTION_ERROR_CODES.OCR_TIMEOUT : EXTRACTION_ERROR_CODES.OCR_FAILED,
+        });
+    }
+}
+
 /**
  * Extracts text from an image-based PDF using pdf.js and Gemini Vision.
  * This method has NO external system dependencies like Ghostscript.
@@ -846,7 +951,19 @@ class AnalyzeDocumentsTool extends Tool {
                             ? `[Analyzer] Text extraction failed for ${path.basename(file.filePath)} (error=${extraction.error}); trying OCR fallback`
                             : `[Analyzer] No embedded text layer in ${path.basename(file.filePath)} (likely scanned); trying OCR fallback`,
                     );
-                    const ocrResult = await extractTextViaOCR(file.filePath, progressCallback, { tracker: usageTracker, onUsage });
+                    // Native document input is an optional, bounded upgrade
+                    // for scanned PDFs. It retains PDF layout/table context
+                    // while returning the same page-marked source text our
+                    // grounding pipeline expects. Any failure falls through
+                    // to the established raster OCR path.
+                    const nativePdfResult = await extractTextViaNativePdf(
+                        file.filePath,
+                        progressCallback,
+                        { tracker: usageTracker, onUsage },
+                    );
+                    const ocrResult = nativePdfResult.text && nativePdfResult.text.trim().length > 0
+                        ? nativePdfResult
+                        : await extractTextViaOCR(file.filePath, progressCallback, { tracker: usageTracker, onUsage });
                     if (ocrResult.text && ocrResult.text.trim().length > 0) {
                         text = ocrResult.text;
                         extraction = ocrResult;
@@ -1214,6 +1331,7 @@ function resetOcrPageCacheForTests() {
 module.exports = {
     AnalyzeDocumentsTool,
     extractTextFromFile,
+    extractTextViaNativePdf,
     extractTextViaOCR,
     resetOcrPageCacheForTests,
 };

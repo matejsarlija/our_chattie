@@ -4,6 +4,7 @@ const path = require('path');
 
 const mockGetDocument = jest.fn();
 const mockGeminiInvoke = jest.fn();
+const mockNativeGenerateContent = jest.fn();
 const mockCreateCanvas = jest.fn();
 const mockWithGeminiTimeout = jest.fn((fn, opts) => fn(opts));
 
@@ -22,6 +23,13 @@ jest.mock('@langchain/google-genai', () => ({
     })),
 }));
 
+jest.mock('@google/genai', () => ({
+    GoogleGenAI: jest.fn().mockImplementation(() => ({
+        models: { generateContent: mockNativeGenerateContent },
+    })),
+    MediaResolution: { MEDIA_RESOLUTION_MEDIUM: 'MEDIA_RESOLUTION_MEDIUM' },
+}));
+
 jest.mock('../helpers/geminiRetry', () => ({
     withGeminiRetry: (fn) => fn(),
     withGeminiTimeout: (...args) => mockWithGeminiTimeout(...args),
@@ -31,7 +39,12 @@ jest.mock('../helpers/geminiUsage', () => ({
     trackGeminiInvoke: (_gemini, prompt, _opts) => mockGeminiInvoke(prompt),
 }));
 
-const { extractTextFromFile, extractTextViaOCR, resetOcrPageCacheForTests } = require('../court-analysis/agents/analysis-agent');
+const {
+    extractTextFromFile,
+    extractTextViaNativePdf,
+    extractTextViaOCR,
+    resetOcrPageCacheForTests,
+} = require('../court-analysis/agents/analysis-agent');
 
 describe('extractTextFromFile', () => {
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'extraction-test-'));
@@ -323,6 +336,131 @@ describe('extractTextViaOCR', () => {
                 process.env.OCR_MAX_PAGES = originalMaxPages;
             }
             fs.unlinkSync(tmpFile);
+        }
+    });
+});
+
+describe('extractTextViaNativePdf', () => {
+    let nativeOcrCacheDir;
+
+    beforeAll(() => {
+        nativeOcrCacheDir = fs.mkdtempSync(path.join(os.tmpdir(), 'native-pdf-store-test-'));
+        process.env.OCR_CACHE_DIR = nativeOcrCacheDir;
+    });
+
+    beforeEach(() => {
+        mockNativeGenerateContent.mockReset();
+        delete process.env.DOCUMENT_INPUT_MODE;
+        delete process.env.NATIVE_PDF_MIN_PAGES;
+        delete process.env.NATIVE_PDF_MAX_PAGES;
+        delete process.env.OCR_MAX_PAGES;
+    });
+
+    afterEach(() => {
+        delete process.env.DOCUMENT_INPUT_MODE;
+        delete process.env.NATIVE_PDF_MIN_PAGES;
+        delete process.env.NATIVE_PDF_MAX_PAGES;
+        delete process.env.OCR_MAX_PAGES;
+    });
+
+    afterAll(() => {
+        delete process.env.OCR_CACHE_DIR;
+        if (nativeOcrCacheDir) fs.rmSync(nativeOcrCacheDir, { recursive: true, force: true });
+    });
+
+    function setupNativePdf(pageCount) {
+        mockGetDocument.mockReturnValue({
+            promise: Promise.resolve({ numPages: pageCount, destroy: jest.fn() }),
+        });
+    }
+
+    function tempNativePdf(label) {
+        const filePath = path.join(os.tmpdir(), `native-pdf-${label}-${Date.now()}-${Math.random()}.pdf`);
+        fs.writeFileSync(filePath, Buffer.from(`native-pdf-${label}`));
+        return filePath;
+    }
+
+    it('sends a bounded scanned PDF as native PDF input and preserves page markers', async () => {
+        process.env.DOCUMENT_INPUT_MODE = 'native_pdf';
+        setupNativePdf(2);
+        mockNativeGenerateContent.mockResolvedValue({
+            text: '=== STRANICA 1 ===\nPrva stranica\n=== STRANICA 2 ===\nDruga stranica',
+            usageMetadata: { promptTokenCount: 100, candidatesTokenCount: 20, totalTokenCount: 120 },
+        });
+        const filePath = tempNativePdf('direct');
+        const tracker = { record: jest.fn(), snapshot: jest.fn(() => ({ totalTokens: 120 })) };
+        try {
+            const result = await extractTextViaNativePdf(filePath, null, { tracker });
+            expect(result).toEqual(expect.objectContaining({
+                method: 'native-pdf', pages: 2, truncated: false, error: null,
+            }));
+            expect(result.text).toContain('=== STRANICA 1 ===');
+            expect(result.text).toContain('=== STRANICA 2 ===');
+            expect(tracker.record).toHaveBeenCalledWith(expect.objectContaining({ totalTokens: 120 }));
+            const request = mockNativeGenerateContent.mock.calls[0][0];
+            expect(request.contents[0].parts[0].inlineData.mimeType).toBe('application/pdf');
+            expect(request.contents[0].parts[1].text).toContain('=== STRANICA N ===');
+            expect(request.config.mediaResolution).toBeUndefined();
+        } finally {
+            fs.unlinkSync(filePath);
+        }
+    });
+
+    it('declines an over-budget native upload so raster OCR can keep its bounded page prefix', async () => {
+        process.env.DOCUMENT_INPUT_MODE = 'native_pdf';
+        process.env.OCR_MAX_PAGES = '2';
+        setupNativePdf(3);
+        const filePath = tempNativePdf('over-budget');
+        try {
+            const result = await extractTextViaNativePdf(filePath);
+            expect(result.text).toBe('');
+            expect(result.error).toBe('native-pdf-outside-budget');
+            expect(mockNativeGenerateContent).not.toHaveBeenCalled();
+        } finally {
+            fs.unlinkSync(filePath);
+        }
+    });
+
+    it('rejects an unmarked native response so callers fall back to raster OCR', async () => {
+        process.env.DOCUMENT_INPUT_MODE = 'native_pdf';
+        setupNativePdf(1);
+        mockNativeGenerateContent.mockResolvedValue({ text: 'Text without required page marker' });
+        const filePath = tempNativePdf('invalid-transcript');
+        try {
+            const result = await extractTextViaNativePdf(filePath);
+            expect(result.text).toBe('');
+            expect(result.error).toBe('native-pdf-invalid-transcript');
+        } finally {
+            fs.unlinkSync(filePath);
+        }
+    });
+
+    it('uses native PDF by default for a bounded scanned filing', async () => {
+        setupNativePdf(20);
+        mockNativeGenerateContent.mockResolvedValue({
+            text: Array.from({ length: 20 }, (_, index) => `=== STRANICA ${index + 1} ===\nStranica ${index + 1}`).join('\n'),
+        });
+        const filePath = tempNativePdf('default-auto');
+        try {
+            const result = await extractTextViaNativePdf(filePath);
+            expect(result).toEqual(expect.objectContaining({ method: 'native-pdf', pages: 20, error: null }));
+            expect(mockNativeGenerateContent).toHaveBeenCalledTimes(1);
+        } finally {
+            fs.unlinkSync(filePath);
+        }
+    });
+
+    it('keeps a 21-page filing out of native upload by default so fallback remains bounded', async () => {
+        setupNativePdf(21);
+        const filePath = tempNativePdf('default-over-budget');
+        try {
+            const result = await extractTextViaNativePdf(filePath);
+            expect(result).toEqual(expect.objectContaining({
+                method: 'native-pdf', pages: 21, error: 'native-pdf-outside-budget',
+            }));
+            expect(mockNativeGenerateContent).not.toHaveBeenCalled();
+        } finally {
+            fs.unlinkSync(filePath);
         }
     });
 });
