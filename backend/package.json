@@ -20,6 +20,7 @@
     "eval:reasoning:strict": "node scripts/eval-reasoning.js --strict",
     "verify:reasoning": "node scripts/verify-live-reasoning.js",
     "verify:ocr-batch": "node scripts/verify-live-ocr-batch.js",
+    "benchmark:native-pdf": "node scripts/benchmark-native-pdf.js",
     "verify:nightly-live": "node scripts/verify-live-reasoning.js && node scripts/verify-live-ocr-batch.js"
   },
   "keywords": [],
