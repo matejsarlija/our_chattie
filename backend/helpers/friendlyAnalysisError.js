@@ -14,6 +14,8 @@ const TIMEOUT_MESSAGE = 'Zahtjev AI servisu je premašio dopušteno vrijeme ček
 const MALFORMED_JSON_MESSAGE = 'AI odgovor nije bio valjani JSON pa dokument čeka ponovnu obradu.';
 const TRUNCATION_MESSAGE = 'AI odgovor je prekinut zbog ograničenja veličine pa dokument čeka ponovnu obradu.';
 const SCHEMA_MISMATCH_MESSAGE = 'Struktura AI odgovora nije valjana pa dokument čeka ponovnu obradu.';
+const PDF_TOO_LARGE_MESSAGE = 'PDF dokument premašuje dopuštenu veličinu za OCR.';
+const PDF_PAGE_LIMIT_MESSAGE = 'PDF dokument premašuje posebno postavljeno ograničenje broja stranica za OCR.';
 
 function describeStage(stage) {
     return STAGE_LABELS[stage] || 'obrade zahtjeva';
@@ -127,6 +129,12 @@ function classifyFileFailure(message) {
     if (/schema mismatch|failed schema validation|struktura .* nije valjana/i.test(raw)) {
         return { code: 'schema-mismatch', reason: SCHEMA_MISMATCH_MESSAGE };
     }
+    if (/pdf exceeds the maximum file size for OCR|pdf-too-large/i.test(raw)) {
+        return { code: 'pdf-too-large', reason: PDF_TOO_LARGE_MESSAGE };
+    }
+    if (/pdf exceeds the maximum page count for OCR|pdf-page-limit-exceeded/i.test(raw)) {
+        return { code: 'pdf-page-limit-exceeded', reason: PDF_PAGE_LIMIT_MESSAGE };
+    }
     if (/OCR failed/i.test(raw)) {
         return { code: 'ocr-failed', reason: 'OCR čitanje dokumenta nije uspjelo.' };
     }
@@ -234,5 +242,7 @@ module.exports = {
     TIMEOUT_MESSAGE,
     MALFORMED_JSON_MESSAGE,
     TRUNCATION_MESSAGE,
-    SCHEMA_MISMATCH_MESSAGE
+    SCHEMA_MISMATCH_MESSAGE,
+    PDF_TOO_LARGE_MESSAGE,
+    PDF_PAGE_LIMIT_MESSAGE
 };

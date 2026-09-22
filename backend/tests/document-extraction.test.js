@@ -634,7 +634,7 @@ describe('OCR resilience and cost guards', () => {
             expect(second.pages).toBe(3);
 
             const batchMessage = mockGeminiInvoke.mock.calls[3][0][0];
-            // Instruction + exactly the two pending page images.
+            // Exactly the two pending page images + trailing instruction.
             expect(batchMessage.content).toHaveLength(3);
 
             const pageTwoAt = second.text.indexOf('two body');
@@ -719,7 +719,7 @@ describe('OCR resilience and cost guards', () => {
         try {
             await extractTextViaOCR(tmpFile);
             const message = mockGeminiInvoke.mock.calls[mockGeminiInvoke.mock.calls.length - 1][0][0];
-            expect(message.content[1].image_url.startsWith('data:image/jpeg;base64,')).toBe(true);
+            expect(message.content[0].image_url.startsWith('data:image/jpeg;base64,')).toBe(true);
         } finally {
             fs.unlinkSync(tmpFile);
         }
@@ -791,6 +791,35 @@ describe('OCR resilience and cost guards', () => {
         }
     });
 
+    it('honors an explicit high-resolution raster scale within its long-edge cap', async () => {
+        const previousScale = process.env.OCR_RENDER_SCALE;
+        const previousLongEdge = process.env.OCR_IMAGE_LONG_EDGE;
+        process.env.OCR_RENDER_SCALE = '3.5';
+        process.env.OCR_IMAGE_LONG_EDGE = '3072';
+        const page = {
+            getViewport: jest.fn(({ scale }) => ({ width: 600 * scale, height: 840 * scale })),
+            render: jest.fn().mockReturnValue({ promise: Promise.resolve() }),
+        };
+        mockCreateCanvas.mockReturnValue(mockCanvas());
+        mockGetDocument.mockReturnValue({
+            promise: Promise.resolve({ numPages: 1, getPage: jest.fn().mockResolvedValue(page) }),
+        });
+        mockGeminiInvoke.mockResolvedValue({ content: 'high resolution text' });
+        const tmpFile = uniqueTmpPdf('high-resolution');
+        try {
+            await extractTextViaOCR(tmpFile);
+            expect(page.getViewport).toHaveBeenNthCalledWith(1, { scale: 1 });
+            // 840 * 3.5 = 2940, below the 3072px cap, so the requested scale survives.
+            expect(page.getViewport).toHaveBeenNthCalledWith(2, { scale: 3.5 });
+        } finally {
+            if (previousScale === undefined) delete process.env.OCR_RENDER_SCALE;
+            else process.env.OCR_RENDER_SCALE = previousScale;
+            if (previousLongEdge === undefined) delete process.env.OCR_IMAGE_LONG_EDGE;
+            else process.env.OCR_IMAGE_LONG_EDGE = previousLongEdge;
+            fs.unlinkSync(tmpFile);
+        }
+    });
+
     it('reads multiple pages in one batched request when markers are complete', async () => {
         setupOcr({ numPages: 3 });
         mockGeminiInvoke.mockImplementation(() => Promise.resolve({
@@ -810,9 +839,10 @@ describe('OCR resilience and cost guards', () => {
             expect(result.text).not.toContain('=== STRANICA');
 
             const message = mockGeminiInvoke.mock.calls[0][0][0];
-            // Instruction + one image part per pending page.
+            // One image part per pending page, instruction text last.
             expect(message.content).toHaveLength(4);
-            expect(message.content[0].text).toContain('=== STRANICA N ===');
+            const last = message.content[message.content.length - 1];
+            expect(last.text).toContain('=== STRANICA N ===');
         } finally {
             fs.unlinkSync(tmpFile);
         }
@@ -837,6 +867,146 @@ describe('OCR resilience and cost guards', () => {
             expect(result.text).toContain('batch page one');
             expect(result.text).toContain('batch page two');
             expect(result.text).toContain('sequential page three');
+        } finally {
+            fs.unlinkSync(tmpFile);
+        }
+    });
+
+    it('places images before the instruction in batched OCR requests', async () => {
+        setupOcr({ numPages: 3 });
+        mockGeminiInvoke.mockImplementation(() => Promise.resolve({
+            content: '=== STRANICA 1 ===\none\n=== STRANICA 2 ===\ntwo\n=== STRANICA 3 ===\nthree',
+        }));
+
+        const tmpFile = uniqueTmpPdf('order-batch');
+        try {
+            await extractTextViaOCR(tmpFile);
+            const message = mockGeminiInvoke.mock.calls[0][0][0];
+            expect(message.content).toHaveLength(4);
+            for (let i = 0; i < 3; i++) {
+                expect(message.content[i].image_url.startsWith('data:image/jpeg;base64,')).toBe(true);
+            }
+            const last = message.content[3];
+            expect(last.type).toBe('text');
+            expect(last.text).toContain('=== STRANICA N ===');
+            expect(last.text).toContain('Croatian');
+        } finally {
+            fs.unlinkSync(tmpFile);
+        }
+    });
+
+    it('places the image before the instruction in single-page OCR requests', async () => {
+        setupOcr({ numPages: 1 });
+        mockGeminiInvoke.mockResolvedValue({ content: 'single page text' });
+
+        const tmpFile = uniqueTmpPdf('order-single');
+        try {
+            const result = await extractTextViaOCR(tmpFile);
+            expect(result.error).toBeNull();
+            const message = mockGeminiInvoke.mock.calls[0][0][0];
+            expect(message.content).toHaveLength(2);
+            expect(message.content[0].image_url.startsWith('data:image/jpeg;base64,')).toBe(true);
+            expect(message.content[1].type).toBe('text');
+            expect(message.content[1].text).toContain('Croatian');
+        } finally {
+            fs.unlinkSync(tmpFile);
+        }
+    });
+
+    it('rejects oversized PDFs before any Gemini call', async () => {
+        const previous = process.env.OCR_MAX_PDF_BYTES;
+        process.env.OCR_MAX_PDF_BYTES = '16';
+        setupOcr({ numPages: 1 });
+        mockGeminiInvoke.mockResolvedValue({ content: 'should never be called' });
+
+        const tmpFile = uniqueTmpPdf('preflight-bytes');
+        try {
+            const result = await extractTextViaOCR(tmpFile);
+            expect(result.text).toBe('');
+            expect(result.pages).toBe(0);
+            expect(result.error).toBe('pdf-too-large');
+            expect(mockGeminiInvoke).not.toHaveBeenCalled();
+            expect(mockGetDocument).not.toHaveBeenCalled();
+        } finally {
+            if (previous === undefined) delete process.env.OCR_MAX_PDF_BYTES;
+            else process.env.OCR_MAX_PDF_BYTES = previous;
+            fs.unlinkSync(tmpFile);
+        }
+    });
+
+    it('rejects page-excess PDFs before any Gemini call', async () => {
+        const previous = process.env.OCR_HARD_MAX_PAGES;
+        process.env.OCR_HARD_MAX_PAGES = '2';
+        setupOcr({ numPages: 3 });
+        mockGeminiInvoke.mockResolvedValue({ content: 'should never be called' });
+
+        const tmpFile = uniqueTmpPdf('preflight-pages');
+        try {
+            const result = await extractTextViaOCR(tmpFile);
+            expect(result.text).toBe('');
+            expect(result.pages).toBe(0);
+            expect(result.error).toBe('pdf-page-limit-exceeded');
+            expect(mockGeminiInvoke).not.toHaveBeenCalled();
+        } finally {
+            if (previous === undefined) delete process.env.OCR_HARD_MAX_PAGES;
+            else process.env.OCR_HARD_MAX_PAGES = previous;
+            fs.unlinkSync(tmpFile);
+        }
+    });
+
+    it('uses OCR_MAX_PAGES, not a default whole-document page rejection, for long PDFs', async () => {
+        const previousHardMax = process.env.OCR_HARD_MAX_PAGES;
+        const previousMaxPages = process.env.OCR_MAX_PAGES;
+        delete process.env.OCR_HARD_MAX_PAGES;
+        process.env.OCR_MAX_PAGES = '2';
+        setupOcr({ numPages: 1001 });
+        mockGeminiInvoke.mockResolvedValue({
+            content: '=== STRANICA 1 ===\nfirst\n=== STRANICA 2 ===\nsecond',
+        });
+
+        const tmpFile = uniqueTmpPdf('long-bounded');
+        try {
+            const result = await extractTextViaOCR(tmpFile);
+            expect(result.error).toBeNull();
+            expect(result.pages).toBe(2);
+            expect(result.truncated).toBe(true);
+            expect(mockGeminiInvoke).toHaveBeenCalledTimes(1);
+        } finally {
+            if (previousHardMax === undefined) delete process.env.OCR_HARD_MAX_PAGES;
+            else process.env.OCR_HARD_MAX_PAGES = previousHardMax;
+            if (previousMaxPages === undefined) delete process.env.OCR_MAX_PAGES;
+            else process.env.OCR_MAX_PAGES = previousMaxPages;
+            fs.unlinkSync(tmpFile);
+        }
+    });
+
+    it('relies on the pdf.js rotation default instead of overriding orientation', async () => {
+        const viewportArgs = [];
+        const page = {
+            getViewport: jest.fn((opts) => {
+                viewportArgs.push(opts);
+                return { width: 200, height: 100 };
+            }),
+            render: jest.fn().mockReturnValue({ promise: Promise.resolve() }),
+        };
+        mockCreateCanvas.mockImplementation(() => mockCanvas());
+        mockGetDocument.mockReturnValue({
+            promise: Promise.resolve({
+                numPages: 1,
+                getPage: jest.fn().mockResolvedValue(page),
+            }),
+        });
+        mockGeminiInvoke.mockResolvedValue({ content: 'ok' });
+
+        const tmpFile = uniqueTmpPdf('rotation-default');
+        try {
+            await extractTextViaOCR(tmpFile);
+            // renderPageToJpeg must never pin rotation: pdf.js getViewport()
+            // already defaults to the page's own /Rotate metadata.
+            expect(viewportArgs.length).toBeGreaterThan(0);
+            for (const opts of viewportArgs) {
+                expect(opts).not.toHaveProperty('rotation');
+            }
         } finally {
             fs.unlinkSync(tmpFile);
         }

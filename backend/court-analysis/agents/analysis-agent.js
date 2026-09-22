@@ -250,6 +250,8 @@ const EXTRACTION_ERROR_CODES = {
     OCR_TIMEOUT: "ocr-timeout",
     OCR_FAILED: "ocr-failed",
     OCR_PARTIAL: "ocr-partial",
+    PDF_TOO_LARGE: "pdf-too-large",
+    PDF_PAGE_LIMIT_EXCEEDED: "pdf-page-limit-exceeded",
 };
 
 function buildExtractionResult(overrides = {}) {
@@ -361,7 +363,28 @@ async function extractTextFromFile(filePath) {
  */
 function resolveOcrMaxPages() {
     const raw = Number.parseInt(process.env.OCR_MAX_PAGES, 10);
-    return Number.isFinite(raw) && raw >= 1 ? Math.floor(raw) : 5;
+    return Number.isFinite(raw) && raw >= 1 ? Math.floor(raw) : 20;
+}
+
+// File-size preflight is checked BEFORE any Gemini call so a pathological PDF
+// fails with a clear code instead of deep inside OCR. `OCR_MAX_PAGES` is the
+// normal per-run budget control: it limits rendered/sent pages, not the
+// document's total page count. We rasterize selected pages rather than upload
+// the original PDF, so a 1,001-page docket can still yield a bounded first-10
+// page partial result.
+const PDF_PREFLIGHT_MAX_BYTES = 50 * 1024 * 1024;
+
+function resolvePdfMaxBytes() {
+    const raw = Number(process.env.OCR_MAX_PDF_BYTES);
+    return Number.isFinite(raw) && raw >= 1 ? Math.floor(raw) : PDF_PREFLIGHT_MAX_BYTES;
+}
+
+function resolvePdfHardMaxPages() {
+    const raw = Number.parseInt(process.env.OCR_HARD_MAX_PAGES, 10);
+    // This is an opt-in operator circuit breaker for pathological PDFs, not a
+    // Gemini limit. Leaving it unset preserves the useful bounded OCR path
+    // for arbitrarily long documents via OCR_MAX_PAGES.
+    return Number.isFinite(raw) && raw >= 1 ? Math.floor(raw) : null;
 }
 
 function isTimeoutLikeError(err) {
@@ -378,21 +401,45 @@ function resolveOcrTimeoutMs() {
 
 // Measured on real e-Oglasna scans: JPEG payloads run ~5x smaller than PNG at
 // equal scale (scanner sensor noise defeats deflate), while the per-page
-// vision token cost is tile-based and format-independent. The long-edge cap
-// only engages for oversized page formats; A4 at scale 2 stays as-is.
-const OCR_IMAGE_LONG_EDGE = 2000;
+// vision token cost is tile-based and format-independent. Defaults preserve
+// the historical 72-DPI path; the two settings make higher-resolution OCR a
+// measurable, reversible experiment rather than an accidental global cost
+// increase.
+const DEFAULT_OCR_RENDER_SCALE = 1;
+const DEFAULT_OCR_IMAGE_LONG_EDGE = 2000;
+
+function resolveOcrRenderScale() {
+    const raw = Number(process.env.OCR_RENDER_SCALE);
+    return Number.isFinite(raw) && raw >= 0.5 && raw <= 6
+        ? raw
+        : DEFAULT_OCR_RENDER_SCALE;
+}
+
+function resolveOcrImageLongEdge() {
+    const raw = Number.parseInt(process.env.OCR_IMAGE_LONG_EDGE, 10);
+    return Number.isFinite(raw) && raw >= 512 && raw <= 4096
+        ? raw
+        : DEFAULT_OCR_IMAGE_LONG_EDGE;
+}
 
 async function renderPageToJpeg(page) {
+    // No explicit rotation is passed: pdf.js getViewport() defaults to the
+    // page's own /Rotate metadata, so rotated scans already render upright.
+    // Do not override it here — pinning rotation: 0 would un-correct them.
     const baseViewport = page.getViewport({ scale: 1 });
     const longestEdge = Math.max(baseViewport.width, baseViewport.height);
-    const scale = longestEdge > OCR_IMAGE_LONG_EDGE
-        ? OCR_IMAGE_LONG_EDGE / longestEdge
-        : 1;
+    const requestedScale = resolveOcrRenderScale();
+    const capScale = resolveOcrImageLongEdge() / longestEdge;
+    const scale = Math.min(requestedScale, capScale);
     const viewport = page.getViewport({ scale });
     const canvas = createCanvas(viewport.width, viewport.height);
     const context = canvas.getContext("2d");
     await page.render({ canvasContext: context, viewport }).promise;
-    return canvas.toBuffer("image/jpeg");
+    // Quality 0.9, not the 0.75 default: JPEG artifacts attack glyph edges
+    // first, which is exactly where small-print OIBs/amounts live. Still far
+    // smaller than PNG, and token cost is tile-based so this changes no
+    // billing — only upload bytes.
+    return canvas.toBuffer("image/jpeg", { quality: 0.9 });
 }
 
 // Page-level OCR memo keyed by document content hash, so transient second-pass
@@ -456,7 +503,7 @@ const OCR_BATCH_MARKER_RE = /^===\s*STRANICA\s+(\d+)\s*===/gim;
 
 function buildOcrBatchInstruction() {
     return (
-        "Extract all text from each document image. Images are provided in a fixed order. " +
+        "Extract all text from each document image. The documents are in Croatian. Images are provided in a fixed order. " +
         "For EACH image, start with a header line exactly '=== STRANICA N ===' " +
         "(N is the 1-based position of that image in THIS message: the first image is 1, the second is 2, and so on), " +
         "followed by that page's raw text on the following lines. " +
@@ -617,12 +664,36 @@ async function extractTextViaOCR(filePath, progressCallback, options = {}) {
 
     try {
         const fileBytes = fs.readFileSync(filePath);
+        const maxBytes = resolvePdfMaxBytes();
+        if (fileBytes.length > maxBytes) {
+            agentLog.error(
+                `[OCR] Preflight reject for ${path.basename(filePath)}: ` +
+                    `${fileBytes.length} bytes exceeds the ${maxBytes}-byte limit. No Gemini call made.`,
+            );
+            return buildExtractionResult({
+                method: "ocr",
+                pages: 0,
+                error: EXTRACTION_ERROR_CODES.PDF_TOO_LARGE,
+            });
+        }
         const contentHash = crypto.createHash("sha256").update(fileBytes).digest("hex");
         const pdf = await pdfjsLib.getDocument({
             data: new Uint8Array(fileBytes),
             standardFontDataUrl: PDFJS_STANDARD_FONT_DATA_URL,
         }).promise;
         const numPages = pdf.numPages;
+        const hardMaxPages = resolvePdfHardMaxPages();
+        if (hardMaxPages !== null && numPages > hardMaxPages) {
+            agentLog.error(
+                `[OCR] Preflight reject for ${path.basename(filePath)}: ` +
+                    `${numPages} pages exceeds the ${hardMaxPages}-page limit. No Gemini call made.`,
+            );
+            return buildExtractionResult({
+                method: "ocr",
+                pages: 0,
+                error: EXTRACTION_ERROR_CODES.PDF_PAGE_LIMIT_EXCEEDED,
+            });
+        }
         const maxPages = Math.min(numPages, resolveOcrMaxPages());
 
         // Cache-first: whatever this process already read costs nothing.
@@ -647,9 +718,11 @@ async function extractTextViaOCR(filePath, progressCallback, options = {}) {
                     message: `OCR: šaljem ${pendingPageNumbers.length} stranica u jednom zahtjevu (${path.basename(filePath)})...`,
                 });
             try {
-                const content = [
-                    { type: "text", text: buildOcrBatchInstruction() },
-                ];
+                // Media first, instruction last: the multimodal model treats
+                // leading image parts as the subject and the trailing text as
+                // the task. Segments stay aligned to IMAGE positions, so the
+                // instruction's trailing position never shifts page numbering.
+                const content = [];
                 for (const pageNumber of pendingPageNumbers) {
                     const page = await pdf.getPage(pageNumber);
                     const imageBuffer = await renderPageToJpeg(page);
@@ -658,6 +731,7 @@ async function extractTextViaOCR(filePath, progressCallback, options = {}) {
                         image_url: `data:image/jpeg;base64,${imageBuffer.toString("base64")}`,
                     });
                 }
+                content.push({ type: "text", text: buildOcrBatchInstruction() });
                 const message = new HumanMessage({ content });
 
                 const response = await withGeminiRetry(
@@ -722,12 +796,12 @@ async function extractTextViaOCR(filePath, progressCallback, options = {}) {
                 const message = new HumanMessage({
                     content: [
                         {
-                            type: "text",
-                            text: "Extract all text from this document image. Provide only the raw text.",
-                        },
-                        {
                             type: "image_url",
                             image_url: `data:image/jpeg;base64,${imageBuffer.toString("base64")}`,
+                        },
+                        {
+                            type: "text",
+                            text: "Extract all text from this document image. The document is in Croatian. Provide only the raw text.",
                         },
                     ],
                 });
@@ -844,6 +918,10 @@ function describeExtractionFailure(extraction) {
             return "OCR extracted only part of the scanned document before being interrupted.";
         case EXTRACTION_ERROR_CODES.OCR_FAILED:
             return "OCR failed while reading the scanned document.";
+        case EXTRACTION_ERROR_CODES.PDF_TOO_LARGE:
+            return "the PDF exceeds the maximum file size for OCR.";
+        case EXTRACTION_ERROR_CODES.PDF_PAGE_LIMIT_EXCEEDED:
+            return "the PDF exceeds the maximum page count for OCR.";
         default:
             return "no readable text was found in the document.";
     }

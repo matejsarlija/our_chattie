@@ -45,8 +45,9 @@ const GEMINI_ROLE_CONFIG = {
     // Vision OCR of rasterized pages — longer raw-text outputs.
     ocr: { model: DEFAULT_GEMINI_MODEL, temperature: 0.1, maxOutputTokens: 4096 },
     // Multi-page OCR batching: several page images in one request, so the
-    // output ceiling must cover the combined raw text of all pages.
-    'ocr-batch': { model: DEFAULT_GEMINI_MODEL, temperature: 0.1, maxOutputTokens: 8192 },
+    // output ceiling must cover the combined raw text of all pages (up to
+    // OCR_MAX_PAGES=20 of dense filing text).
+    'ocr-batch': { model: DEFAULT_GEMINI_MODEL, temperature: 0.1, maxOutputTokens: 16384 },
     // Full structured report synthesis. Raised 4096 → 8192 → 24576 as dense
     // clusters kept truncating mid-JSON (370 claims + timeline exceeded 8192
     // on a real run). gemini-2.5-flash allows up to 65536 output tokens.
