@@ -99,6 +99,25 @@ function hasUsableExtraction(value) {
     );
 }
 
+// A valid empty propertyFlow is normally fine. It is not fine, however, when
+// the source itself says that a receivable was assigned: that is a lifecycle
+// transaction, not merely another amount. This deliberately relies on source
+// text (not a suggestive filename) so the bounded repair below cannot invent a
+// transfer from metadata alone.
+function hasReceivableAssignmentCue(sourceText) {
+    const normalized = String(sourceText || '')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase();
+    const assignment = /\b(?:ugovor\s+o\s+(?:ustupu|prijenosu)|ustup(?:a|anje|ljena|ljen)|cesija|cesion)\b/.test(normalized);
+    const receivable = /\b(?:trazbin|potrazivin)/.test(normalized);
+    return assignment && receivable;
+}
+
+function propertyFlowRepairGap(detail) {
+    return { field: 'propertyFlow', code: 'source-cue-empty', detail };
+}
+
 const pdfjsLib = require("pdfjs-dist/legacy/build/pdf.js");
 const { withGeminiRetry, withGeminiTimeout } = require("../../helpers/geminiRetry");
 const { trackGeminiInvoke } = require("../../helpers/geminiUsage");
@@ -1120,7 +1139,7 @@ class AnalyzeDocumentsTool extends Tool {
                 From the court document text below, extract key information as a JSON object with the following keys: "caseNumber", "decisionDate", and "summary" (a medium-sized paragraph, nicely formatted, to be in Croatian please, as that is what our customers speak).
                 Do include any important figures (currency amounts) you find in the summary.
                 Also extract any financial amounts (payments, claims, costs, reservations) into an optional "amounts" array, with ONE item per table row — if the document contains an itemized table, register, or list (popis tražbina, diobeni popis, troškovnik, obračun), extract one item per row and never merge rows into a single summary amount. Each item being a JSON object with: "description" (what the money is for, in Croatian), "amount" (number), "currency" ("EUR" or "HRK"), "date" (if known), "direction" (one of "potraživanje" when the amount is a claim in the debtor's favor, "obveza" when it is a liability against the debtor, or "awarded" | "rejected" | "netted" when a ruling decides it), "amountRole" (one of "total" | "line_item" | "principal" | "cost" | "paid" | "fee" — the figure's function in the document: "total" for stated sums, "line_item" for table/register rows; omit when unclear), "eventType" (one of "prijava" | "ustup" | "namirenje" | "drugo", when the amount records a lifecycle event), "legalEffect" (one of "creates" | "modifies" | "supersedes" | "resolves" | "implements" | "unknown" — what this entry's document does to the claim or right; omit when unclear), "references" (array of registry or filing identifiers this entry explicitly cites besides its own filingReference; empty array when none), "relationshipBasis" (one of "explicit_identifier" | "explicit_text" | "inferred" — how a "supersedes" link is evidenced in the source text; omit when there is no supersedes link), "payerName" and "payerOib" (who pays, OIB is 11 digits, if stated), "recipientName" and "recipientOib" (who receives, if stated), "amountEur" and "amountHrk" (when the source states BOTH currencies for one figure, copy each verbatim; otherwise omit), "isplatniRed" (payment-priority rank such as "drugi viši isplatni red", if stated), "claimRegistryNumber" (the "redni broj" from the claim register, if stated), "filingReference" (this document's "poslovni broj", if stated), and "quote" (a verbatim supporting quote copied exactly from the source text below that proves this amount; copy 1-2 sentences word-for-word, do not paraphrase). If the document contains no amounts, set "amounts" to an empty array.
-                Also extract any property/asset transactions (real estate sales, movable-asset sales, receivable assignments/cessions) into an optional "propertyFlow" array, with ONE item per table row under the same row rule as amounts above, each item being a JSON object with: "description" (what the asset is, in Croatian), "identifier" (cadastral parcel, registration number, or null when absent), "assetType" (one of "nekretnina" | "pokretnina" | "tražbina" | "drugo"), "transferor" (seller/assignor, if known), "transferee" (buyer/assignee, if known), "value" (number, if known), "currency" ("EUR" or "HRK", if known), "date" (if known), "legalEffect" (one of "creates" | "modifies" | "supersedes" | "resolves" | "implements" | "unknown" — what this entry's document does to the asset or right; omit when unclear), "references" (array of registry or filing identifiers this entry explicitly cites besides its own filingReference; empty array when none), "relationshipBasis" (one of "explicit_identifier" | "explicit_text" | "inferred" — how a "supersedes" link is evidenced in the source text; omit when there is no supersedes link), and "quote" (verbatim supporting quote as above). For assetType "tražbina" (receivable/claim, e.g. "Ugovor o ustupu tražbina") additionally include "eventType" (one of "prijava" | "ustup" | "namirenje" | "drugo" — the lifecycle stage), "isplatniRed" (payment-priority rank, if stated), "claimRegistryNumber" (the "redni broj", if stated), "filingReference" (the document's "poslovni broj", if stated) and, when this entry continues an earlier lifecycle stage of the SAME receivable described in the analysed documents, "supersedes" (a short textual reference to that earlier entry, e.g. its description, case number, filing date or original creditor as cited in the source text). If the document contains no property transactions, set "propertyFlow" to an empty array.
+                Also extract any property/asset transactions (real estate sales, movable-asset sales, receivable assignments/cessions) into an optional "propertyFlow" array, with ONE item per table row under the same row rule as amounts above, each item being a JSON object with: "description" (what the asset is, in Croatian), "identifier" (cadastral parcel, registration number, or null when absent), "assetType" (one of "nekretnina" | "pokretnina" | "tražbina" | "drugo"), "transferor" (seller/assignor, if known), "transferee" (buyer/assignee, if known), "value" (number, if known), "currency" ("EUR" or "HRK", if known), "date" (if known), "legalEffect" (one of "creates" | "modifies" | "supersedes" | "resolves" | "implements" | "unknown" — what this entry's document does to the asset or right; omit when unclear), "references" (array of registry or filing identifiers this entry explicitly cites besides its own filingReference; empty array when none), "relationshipBasis" (one of "explicit_identifier" | "explicit_text" | "inferred" — how a "supersedes" link is evidenced in the source text; omit when there is no supersedes link), and "quote" (verbatim supporting quote as above). A receivable assignment/cession is ALWAYS a propertyFlow transaction even when it is stated in prose rather than a table: when the source says "Ugovor o ustupu", "cesija", or that a party assigns/transfers a "tražbina", add at least one assetType "tražbina" entry with eventType "ustup"; do not leave propertyFlow empty. For assetType "tražbina" (receivable/claim, e.g. "Ugovor o ustupu tražbina") additionally include "eventType" (one of "prijava" | "ustup" | "namirenje" | "drugo" — the lifecycle stage), "isplatniRed" (payment-priority rank, if stated), "claimRegistryNumber" (the "redni broj", if stated), "filingReference" (the document's "poslovni broj", if stated) and, when this entry continues an earlier lifecycle stage of the SAME receivable described in the analysed documents, "supersedes" (a short textual reference to that earlier entry, e.g. its description, case number, filing date or original creditor as cited in the source text). If the document contains no property transactions, set "propertyFlow" to an empty array.
                 Also extract "citedFilingReferences": an array of "poslovni broj" values this document explicitly references (e.g. filings it appeals against or decides upon); empty array when none are cited.
                 Provide ONLY the json object and nothing else. Text:\n\n${analysisInput.analysisText}`;
 
@@ -1201,12 +1220,51 @@ class AnalyzeDocumentsTool extends Tool {
                     }
                 }
 
+                // A parseable empty array ordinarily needs no repair. A
+                // source-grounded assignment cue is the narrow exception:
+                // the initial extraction has missed a legally material
+                // receivable transfer. Re-read only propertyFlow from the
+                // original source once; never manufacture an entry in code.
+                let assignmentCueGap = null;
+                if (
+                    hasReceivableAssignmentCue(analysisInput.analysisText) &&
+                    Array.isArray(validated.value?.propertyFlow) &&
+                    validated.value.propertyFlow.length === 0
+                ) {
+                    try {
+                        const repairContent = await invokeRepairGemini(
+                            buildFieldRepairPrompt({ field: 'propertyFlow', sourceText: analysisInput.analysisText }),
+                            repairCtx,
+                        );
+                        const repair = parseFieldRepairResponse(repairContent, 'propertyFlow');
+                        if (repair.ok && !repair.absent && repair.value.length > 0) {
+                            validated = validateExtraction({
+                                ...validated.value,
+                                propertyFlow: repair.value,
+                            });
+                        } else {
+                            assignmentCueGap = propertyFlowRepairGap(
+                                repair.ok
+                                    ? 'source states a receivable assignment but targeted property-flow repair returned no entry'
+                                    : `source states a receivable assignment but targeted property-flow repair was unusable: ${repair.reason}`,
+                            );
+                        }
+                    } catch (repairErr) {
+                        assignmentCueGap = propertyFlowRepairGap(
+                            `source states a receivable assignment but targeted property-flow repair failed: ${repairErr.message}`,
+                        );
+                        agentLog.warn(`[Analyzer] Assignment property-flow repair failed for ${file.text}: ${repairErr.message}`);
+                    }
+                }
+
                 const aiResult = {
                     ...validated.value,
                     // Inject the reliably scraped parties into the final result object.
                     parties: caseInfo.participants || [],
                     // Claimed-but-unavailable remainder: inspectable, never silent.
-                    ...(validated.gaps.length > 0 ? { _extractionGaps: validated.gaps } : {}),
+                    ...((validated.gaps.length > 0 || assignmentCueGap)
+                        ? { _extractionGaps: [...validated.gaps, ...(assignmentCueGap ? [assignmentCueGap] : [])] }
+                        : {}),
                 };
                 // Per-document grounding check (deterministic containment,
                 // never an LLM judge): verify each quote against the FULL

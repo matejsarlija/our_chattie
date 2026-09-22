@@ -29,6 +29,17 @@ const GOOD_AMOUNT = {
     quote: 'Tražbina vjerovnika iznosi 15.000 EUR.'
 };
 
+const ASSIGNMENT_FLOW = {
+    description: 'Ustup tražbine društva PROKURATOR d.o.o. društvu COAST d.o.o.',
+    assetType: 'tražbina',
+    eventType: 'ustup',
+    transferor: 'PROKURATOR d.o.o.',
+    transferee: 'COAST d.o.o.',
+    value: 27682562.91,
+    currency: 'EUR',
+    quote: 'Ugovorom o ustupu tražbine PROKURATOR d.o.o. ustupa tražbinu društvu COAST d.o.o. u iznosu od 27.682.562,91 EUR.'
+};
+
 function goodDoc(amounts = [GOOD_AMOUNT]) {
     return JSON.stringify({
         caseNumber: 'ST-2/2013',
@@ -71,6 +82,28 @@ describe('AnalyzeDocumentsTool field repair (T1-3)', () => {
         expect(item.aiResult.amounts).toHaveLength(1);
         expect(item.aiResult._extractionGaps).toBeUndefined();
         expect(result.coverage).toEqual(expect.objectContaining({ analyzed: 1, failed: 0 }));
+    });
+
+    test('repairs a valid-but-empty propertyFlow when source explicitly assigns a receivable', async () => {
+        const source = ASSIGNMENT_FLOW.quote;
+        mockGeminiInvoke.mockImplementation((prompt) => {
+            if (String(prompt).includes('FIELD REPAIR')) {
+                expect(String(prompt)).toContain('operative receivable assignment');
+                expect(String(prompt)).toContain(source);
+                return Promise.resolve({ content: JSON.stringify({ value: [ASSIGNMENT_FLOW], absent: false }) });
+            }
+            return Promise.resolve({ content: goodDoc() });
+        });
+
+        const result = await run([txtFile('ustup.txt', source)]);
+
+        expect(mockGeminiInvoke).toHaveBeenCalledTimes(2);
+        const item = result.individualAnalyses[0];
+        expect(item.aiResult.propertyFlow).toEqual([
+            expect.objectContaining({ assetType: 'tražbina', eventType: 'ustup', value: 27682562.91 }),
+        ]);
+        expect(item.aiResult.propertyFlow[0].grounded).toBe(true);
+        expect(item.aiResult._extractionGaps).toBeUndefined();
     });
 
     test('malformed amounts array is repaired from the source excerpt, valid fields preserved', async () => {
