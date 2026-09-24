@@ -10,6 +10,7 @@ const { shouldAttemptRerank, createLlmRerank, resolveRerankMode } = require('./r
 const { runFollowUpVerification } = require('./followUpVerification');
 const { runQueryPlanner, mergeRetrievalQueries } = require('./queryPlanner');
 const { buildSynthesisInput } = require('./synthesisInputBuilder');
+const { buildProfileReportInput } = require('./contextReportAdapter');
 const { createGeminiClient } = require('../../helpers/geminiConfig');
 const { withGeminiRetry, withGeminiTimeout } = require('../../helpers/geminiRetry');
 const { trackGeminiInvoke } = require('../../helpers/geminiUsage');
@@ -46,12 +47,51 @@ async function generateClusterReport(clusterEvidencePackage, options = {}) {
     // options.runId (null outside real runs); every logger.* call below
     // carries it so one run's lines isolate with a single grep.
     const runId = options.runId || null;
+    // LE-1 (spec §5.1) — shared upstream artifacts for fair Lab comparison.
+    // When `options.sharedUpstream` is supplied (by runExperiment.js), the
+    // retrieval/rerank/advisory passes already ran once against an isolated
+    // clone of the frozen package. Use those exact artifacts and never
+    // silently recompute them from process settings; the boundary must be
+    // explicit so all three variants provably share one input hash.
+    const sharedUpstream = options.sharedUpstream || null;
+    let retrieval = null;
+    let rerankedRetrieval = null;
+    let plannedQueryCount = 0;
+    if (sharedUpstream) {
+        if (!sharedUpstream.retrieval || !sharedUpstream.rerankedRetrieval) {
+            throw new Error('generateClusterReport: sharedUpstream must carry retrieval and rerankedRetrieval.');
+        }
+        retrieval = sharedUpstream.retrieval;
+        rerankedRetrieval = sharedUpstream.rerankedRetrieval;
+        plannedQueryCount = Number.isFinite(sharedUpstream.plannedQueryCount) ? sharedUpstream.plannedQueryCount : 0;
+        // The orchestrator applies these to the per-variant clone before
+        // calling; apply defensively here too so a direct caller that passes
+        // sharedUpstream without pre-applying still sees identical advisory
+        // annotations. Idempotent: only fills absent fields.
+        try {
+            const reconciliation = clusterEvidencePackage?.reconciliation || null;
+            if (reconciliation && typeof reconciliation === 'object') {
+                if (reconciliation.claimLinks == null && sharedUpstream.claimLinks != null) {
+                    reconciliation.claimLinks = sharedUpstream.claimLinks;
+                }
+                if (reconciliation.significanceRanking == null && sharedUpstream.significanceRanking != null) {
+                    reconciliation.significanceRanking = sharedUpstream.significanceRanking;
+                }
+            }
+        } catch (err) {
+            agentLog.warn(`[SharedUpstream] Advisory application failed; continuing (${err.message})`);
+        }
+        logger.info('reportService.sharedUpstream', 'Using shared Lab upstream artifacts', {
+            runId,
+            plannedQueries: plannedQueryCount,
+            results: Array.isArray(retrieval?.results) ? retrieval.results.length : 0,
+        });
+    } else {
     // Query planning (Phase 1.3): one small call lets the model add case-
     // specific queries on top of the fixed templates. Off/plan-gated via
     // shouldRunOptionalPass; any planner failure silently degrades to templates.
     const retrievalOptions = { ...(options.retrieval || {}) };
     const hasPresetQueries = Array.isArray(retrievalOptions.queries) && retrievalOptions.queries.length > 0;
-    let plannedQueryCount = 0;
     if (!hasPresetQueries && shouldRunOptionalPass(resolveReasoningPlanner())) {
         try {
             const planned = await runQueryPlanner(clusterEvidencePackage, {
@@ -80,7 +120,7 @@ async function generateClusterReport(clusterEvidencePackage, options = {}) {
         }
     }
 
-    const retrieval = retrieveEvidence(clusterEvidencePackage, retrievalOptions);
+    retrieval = retrieveEvidence(clusterEvidencePackage, retrievalOptions);
     logger.info('reportService.retrieve', 'Evidence retrieval completed', {
         runId,
         queries: Array.isArray(retrieval?.queries) ? retrieval.queries.length : 0,
@@ -105,7 +145,7 @@ async function generateClusterReport(clusterEvidencePackage, options = {}) {
         rerankOptions.llmRerank = createLlmRerank({ tracker: options.tracker, onUsage: options.onUsage });
     }
 
-    const rerankedRetrieval = await rerankEvidence(retrieval, rerankOptions);
+    rerankedRetrieval = await rerankEvidence(retrieval, rerankOptions);
     logger.info('reportService.rerank', 'Evidence rerank completed', {
         runId,
         status: rerankedRetrieval?.rerankStatus || null,
@@ -158,8 +198,39 @@ async function generateClusterReport(clusterEvidencePackage, options = {}) {
     } catch (err) {
         agentLog.warn(`[AdvisoryPasses] Claim-judge/significance failed; report continues unannotated (${err.message})`);
     }
+    } // end non-shared upstream: planner/retrieval/rerank/advisory ran above
 
-    const reasoningEvidence = buildSynthesisInput(clusterEvidencePackage, retrieval, rerankedRetrieval);
+    // LC-3 — profile-aware report input. Without `options.labProfile` this is
+    // exactly the historical flat path (baseline parity: same call, same
+    // shape, no extra meta keys). With a Lab profile id, the context adapter
+    // layers DAG branch + derived claims on top of that same flat input.
+    // `options.summarizeLlm` is the LC-2 model seam (mocked in tests); when
+    // absent, summaries-on profiles degrade to partial, never fail.
+    const labProfile = options.labProfile || null;
+    let reasoningEvidence;
+    let contextTrace = null;
+    if (labProfile) {
+        const adapted = await buildProfileReportInput({
+            evidencePackage: clusterEvidencePackage,
+            retrieval,
+            rerankedRetrieval,
+            profileId: labProfile,
+            summarizeLlm: options.summarizeLlm || null,
+            tracker: options.tracker,
+            onUsage: options.onUsage,
+        });
+        reasoningEvidence = adapted.input;
+        contextTrace = adapted.trace;
+        logger.info('reportService.context', 'Context report input built', {
+            runId,
+            profile: labProfile,
+            rootId: contextTrace?.rootId || null,
+            branchClaims: contextTrace?.claims?.branch ?? 0,
+            derivedClaims: contextTrace?.claims?.derived ?? 0,
+        });
+    } else {
+        reasoningEvidence = buildSynthesisInput(clusterEvidencePackage, retrieval, rerankedRetrieval);
+    }
     logger.info('reportService.synthesize', 'Synthesis input built', {
         runId,
         timeline: Array.isArray(reasoningEvidence?.timeline) ? reasoningEvidence.timeline.length : 0,
@@ -197,8 +268,10 @@ async function generateClusterReport(clusterEvidencePackage, options = {}) {
     // per run when conflicts exist, grounding both sides in indexed chunks.
     // Off/plan-gated via shouldRunOptionalPass; failure leaves the report
     // untouched.
+    // LE-1 (spec §5.1): follow-up verification is disabled for Lab runs in
+    // v1 — variants must not rerun passes outside the shared boundary.
     let finalReport = verifiedReport;
-    if (shouldRunOptionalPass(resolveReasoningFollowUp())) {
+    if (!labProfile && shouldRunOptionalPass(resolveReasoningFollowUp())) {
         try {
             const followUp = await runFollowUpVerification(verifiedReport, clusterEvidencePackage, {
                 followUpLlm: async ({ prompt }) => {
@@ -261,7 +334,10 @@ async function generateClusterReport(clusterEvidencePackage, options = {}) {
             ...(finalReport?.meta || {}),
             retrieval: stripRetrievalText(retrieval),
             rerank: rerankedRetrieval,
-            scope
+            scope,
+            // Lab-only: the baseline path (no `labProfile`) keeps the exact
+            // historical meta shape — no persisted-run format change.
+            ...(contextTrace ? { contextTrace } : {}),
         }
     };
 }

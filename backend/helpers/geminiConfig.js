@@ -73,7 +73,15 @@ const GEMINI_ROLE_CONFIG = {
     planner: { model: LITE_GEMINI_MODEL, temperature: 0.1, maxOutputTokens: 512 },
     // Mermaid diagram generation.
     visualizer: { model: DEFAULT_GEMINI_MODEL, temperature: 0.1, maxOutputTokens: 2048 },
+    // Analysis Lab node summaries (LC-2): compact cited statements over one
+    // ContextNode's evidence. Small, strictly-bounded output like verify.
+    contextNode: { model: DEFAULT_GEMINI_MODEL, temperature: 0.1, maxOutputTokens: 2048 },
 };
+
+// Prompt version for the Lab node-summary prompt. The single source of
+// truth — profiles.js snapshots this value, contextNodeSummary.js stamps it
+// into prompts and trace records.
+const CONTEXT_NODE_PROMPT_VERSION = 'v1';
 
 function createGeminiClient(role) {
     const roleConfig = GEMINI_ROLE_CONFIG[role] || {};
@@ -103,6 +111,7 @@ module.exports = {
     LITE_GEMINI_MODEL,
     GEMINI_MODEL,
     GEMINI_API_KEY,
+    CONTEXT_NODE_PROMPT_VERSION,
     assertGeminiConfig,
     GEMINI_ROLE_CONFIG,
     createGeminiClient,

@@ -1,0 +1,417 @@
+{
+  "packageType": "ClusterEvidencePackage",
+  "schemaVersion": 1,
+  "reasoningScope": "single-cluster",
+  "selectedClusterIds": ["St-2/2013"],
+  "clusterId": "St-2/2013",
+  "primaryCaseNumber": "St-2/2013",
+  "query": { "type": "case_number", "text": "St-2/2013" },
+  "identity": {
+    "consistency": "consistent",
+    "notes": ["Sanitized Lab fixture modeled on Kerum replay conventions; synthetic OIBs and excerpts only."],
+    "participantNames": ["PROKURATOR d.o.o.", "COAST d.o.o.", "CRO-GO d.o.o."],
+    "participantOibs": ["11111111111", "22222222222", "33333333333"]
+  },
+  "discovery": {
+    "reasoningClusterId": "St-2/2013",
+    "recommendedPrimaryClusterId": "St-2/2013",
+    "selectedCluster": {
+      "clusterId": "St-2/2013",
+      "oldestEntryDate": "2024-03-14",
+      "newestEntryDate": "2026-06-23",
+      "entryDateSpanDays": 831
+    },
+    "secondaryClusterIds": [],
+    "discoveryMode": "frozen-fixture",
+    "acquisitionModes": ["csv-export"],
+    "totalResults": 40,
+    "rawEntryCount": 40,
+    "coverageConfidence": "medium",
+    "coverageLedger": {
+      "scanned": 40,
+      "selected": 3,
+      "samplingNote": "sanitized fixture subset"
+    }
+  },
+  "selection": {
+    "selectedForReasoning": true,
+    "score": 0.92,
+    "reason": "primary cluster",
+    "diagnostics": null
+  },
+  "entries": [
+    {
+      "index": 0,
+      "caseNumber": "St-2/2013",
+      "title": "Prijava tražbine — CRO-GO d.o.o.",
+      "court": "Trgovački sud Split",
+      "date": "2024-03-14",
+      "detailLink": "https://e-oglasna.pravosudje.hr/entry/st-2-2013-1042",
+      "participants": [{ "name": "CRO-GO d.o.o.", "oib": "33333333333", "role": "vjerovnik" }],
+      "documentLinks": [
+        {
+          "id": "St-2/2013::entry-1::doc-1",
+          "url": null,
+          "text": "Prijava tražbine CRO-GO.pdf",
+          "entryIndex": 0,
+          "caseNumber": "St-2/2013"
+        }
+      ]
+    },
+    {
+      "index": 1,
+      "caseNumber": "St-2/2013",
+      "title": "Ugovor o ustupu tražbine PROKURATOR → COAST",
+      "court": "Trgovački sud Split",
+      "date": "2025-07-17",
+      "detailLink": "https://e-oglasna.pravosudje.hr/entry/st-2-2013-1155",
+      "participants": [
+        { "name": "PROKURATOR d.o.o.", "oib": "11111111111", "role": "ustupitelj" },
+        { "name": "COAST d.o.o.", "oib": "22222222222", "role": "stjecatelj" }
+      ],
+      "documentLinks": [
+        {
+          "id": "St-2/2013::entry-2::doc-1",
+          "url": null,
+          "text": "Ugovor o ustupu Prokurator-Coast.pdf",
+          "entryIndex": 1,
+          "caseNumber": "St-2/2013"
+        }
+      ]
+    },
+    {
+      "index": 2,
+      "caseNumber": "St-2/2013",
+      "title": "Podnesak vjerovnika",
+      "court": "Trgovački sud Split",
+      "date": "2026-06-23",
+      "detailLink": "https://e-oglasna.pravosudje.hr/entry/st-2-2013-1201",
+      "participants": [{ "name": "COAST d.o.o.", "oib": "22222222222", "role": "vjerovnik" }],
+      "documentLinks": [
+        {
+          "id": "St-2/2013::entry-3::doc-1",
+          "url": null,
+          "text": "Podnesak vjerovnika 2026-06.pdf",
+          "entryIndex": 2,
+          "caseNumber": "St-2/2013"
+        }
+      ]
+    }
+  ],
+  "documentLinks": [
+    {
+      "id": "St-2/2013::entry-1::doc-1",
+      "url": null,
+      "text": "Prijava tražbine CRO-GO.pdf",
+      "entryIndex": 0,
+      "caseNumber": "St-2/2013"
+    },
+    {
+      "id": "St-2/2013::entry-2::doc-1",
+      "url": null,
+      "text": "Ugovor o ustupu Prokurator-Coast.pdf",
+      "entryIndex": 1,
+      "caseNumber": "St-2/2013"
+    },
+    {
+      "id": "St-2/2013::entry-3::doc-1",
+      "url": null,
+      "text": "Podnesak vjerovnika 2026-06.pdf",
+      "entryIndex": 2,
+      "caseNumber": "St-2/2013"
+    }
+  ],
+  "analyses": [
+    {
+      "id": "lab-doc-01",
+      "fileName": "Prijava tražbine CRO-GO.pdf",
+      "caseNumber": "St-2/2013",
+      "decisionDate": "2024-03-14",
+      "entryDate": "2024-03-14",
+      "sourceEntryIndex": 0,
+      "sourceDocumentLinkId": "St-2/2013::entry-1::doc-1",
+      "documentRole": "prijava",
+      "summary": "Prijava tražbine društva CRO-GO s rednim brojem 106 u drugom višem isplatnom redu.",
+      "parties": [{ "name": "CRO-GO d.o.o.", "oib": "33333333333", "role": "vjerovnik" }],
+      "amounts": [
+        {
+          "description": "Prijavljena tražbina CRO-GO, redni broj 106",
+          "amount": 1200000,
+          "currency": "EUR",
+          "date": "2024-03-14",
+          "direction": "potraživanje",
+          "eventType": "prijava",
+          "isplatniRed": "drugi viši",
+          "claimRegistryNumber": "106",
+          "filingReference": "St-2/2013-1042",
+          "quote": "Prijavljuje se tražbina u iznosu od 1.200.000,00 EUR pod rednim brojem 106.",
+          "grounded": true
+        }
+      ],
+      "propertyFlow": [],
+      "citedFilingReferences": ["St-2/2013-1042"]
+    },
+    {
+      "id": "lab-doc-02",
+      "fileName": "Ugovor o ustupu Prokurator-Coast.pdf",
+      "caseNumber": "St-2/2013",
+      "decisionDate": "2025-07-17",
+      "entryDate": "2025-07-17",
+      "sourceEntryIndex": 1,
+      "sourceDocumentLinkId": "St-2/2013::entry-2::doc-1",
+      "documentRole": "ugovor-ustup",
+      "summary": "Ugovor o ustupu tražbine s društva PROKURATOR na COAST s pozivom na raniju prijavu.",
+      "parties": [
+        { "name": "PROKURATOR d.o.o.", "oib": "11111111111", "role": "ustupitelj" },
+        { "name": "COAST d.o.o.", "oib": "22222222222", "role": "stjecatelj" }
+      ],
+      "amounts": [],
+      "propertyFlow": [
+        {
+          "description": "Ustup tražbine PROKURATOR → COAST",
+          "assetType": "tražbina",
+          "transferor": "PROKURATOR d.o.o.",
+          "transferee": "COAST d.o.o.",
+          "value": 27682562.91,
+          "currency": "EUR",
+          "date": "2025-07-17",
+          "eventType": "ustup",
+          "isplatniRed": "drugi viši",
+          "claimRegistryNumber": "98",
+          "filingReference": "St-2/2013-1155",
+          "supersedes": "St-2/2013-1098/redni broj 98",
+          "quote": "Ustupa se tražbina u iznosu od 27.682.562,91 EUR na društvo COAST d.o.o.",
+          "grounded": true
+        },
+        {
+          "description": "Navodni ustup bez identifikatora",
+          "assetType": "tražbina",
+          "transferor": null,
+          "transferee": "COAST d.o.o.",
+          "value": null,
+          "currency": null,
+          "date": "2025-07-17",
+          "eventType": "ustup",
+          "isplatniRed": null,
+          "claimRegistryNumber": null,
+          "filingReference": null,
+          "supersedes": null,
+          "quote": "Navodi se i raniji usmeni dogovor o ustupu dijela tražbine.",
+          "grounded": false
+        }
+      ],
+      "citedFilingReferences": ["St-2/2013-1098", "St-2/2013-1155"]
+    },
+    {
+      "id": "lab-doc-03",
+      "fileName": "Podnesak vjerovnika 2026-06.pdf",
+      "caseNumber": "St-2/2013",
+      "decisionDate": "2026-06-23",
+      "entryDate": "2026-06-23",
+      "sourceEntryIndex": 2,
+      "sourceDocumentLinkId": "St-2/2013::entry-3::doc-1",
+      "documentRole": "podnesak",
+      "summary": "Podnesak navodi isti iznos tražbine u kunama i time otvara valutni konflikt.",
+      "parties": [{ "name": "COAST d.o.o.", "oib": "22222222222", "role": "vjerovnik" }],
+      "amounts": [
+        {
+          "description": "Iznos tražbine iskazan u kunama",
+          "amount": 9084692.55,
+          "currency": "HRK",
+          "date": "2026-06-23",
+          "direction": "potraživanje",
+          "eventType": "drugo",
+          "isplatniRed": "drugi viši",
+          "claimRegistryNumber": "98",
+          "filingReference": "St-2/2013-1201",
+          "quote": "Tražbina se iskazuje u iznosu od 9.084.692,55 HRK.",
+          "grounded": true
+        },
+        {
+          "description": "Iznos tražbine iskazan u eurima",
+          "amount": 1205850.44,
+          "currency": "EUR",
+          "date": "2026-06-23",
+          "direction": "potraživanje",
+          "eventType": "drugo",
+          "isplatniRed": "drugi viši",
+          "claimRegistryNumber": "98",
+          "filingReference": "St-2/2013-1201",
+          "quote": "Isto potraživanje iskazano kao 1.205.850,44 EUR.",
+          "grounded": true
+        }
+      ],
+      "propertyFlow": [],
+      "citedFilingReferences": ["St-2/2013-1155", "St-2/2013-1201"]
+    }
+  ],
+  "factLedger": [
+    {
+      "id": "ledger-1",
+      "kind": "amount",
+      "description": "Prijavljena tražbina CRO-GO, redni broj 106",
+      "value": 1200000,
+      "currency": "EUR",
+      "date": "2024-03-14",
+      "claimRegistryNumber": "106",
+      "filingReference": "St-2/2013-1042",
+      "quote": "Prijavljuje se tražbina u iznosu od 1.200.000,00 EUR pod rednim brojem 106.",
+      "grounded": true,
+      "doc": { "analysisId": "lab-doc-01", "fileName": "Prijava tražbine CRO-GO.pdf", "sourceEntryIndex": 0 }
+    },
+    {
+      "id": "ledger-2",
+      "kind": "property",
+      "description": "Ustup tražbine PROKURATOR → COAST",
+      "value": 27682562.91,
+      "currency": "EUR",
+      "date": "2025-07-17",
+      "claimRegistryNumber": "98",
+      "filingReference": "St-2/2013-1155",
+      "supersedes": "St-2/2013-1098/redni broj 98",
+      "quote": "Ustupa se tražbina u iznosu od 27.682.562,91 EUR na društvo COAST d.o.o.",
+      "grounded": true,
+      "doc": { "analysisId": "lab-doc-02", "fileName": "Ugovor o ustupu Prokurator-Coast.pdf", "sourceEntryIndex": 1 }
+    },
+    {
+      "id": "ledger-3",
+      "kind": "amount",
+      "description": "Iznos tražbine iskazan u kunama",
+      "value": 9084692.55,
+      "currency": "HRK",
+      "date": "2026-06-23",
+      "claimRegistryNumber": "98",
+      "filingReference": "St-2/2013-1201",
+      "quote": "Tražbina se iskazuje u iznosu od 9.084.692,55 HRK.",
+      "grounded": true,
+      "doc": { "analysisId": "lab-doc-03", "fileName": "Podnesak vjerovnika 2026-06.pdf", "sourceEntryIndex": 2 }
+    },
+    {
+      "id": "ledger-4",
+      "kind": "amount",
+      "description": "Iznos tražbine iskazan u eurima",
+      "value": 1205850.44,
+      "currency": "EUR",
+      "date": "2026-06-23",
+      "claimRegistryNumber": "98",
+      "filingReference": "St-2/2013-1201",
+      "quote": "Isto potraživanje iskazano kao 1.205.850,44 EUR.",
+      "grounded": true,
+      "doc": { "analysisId": "lab-doc-03", "fileName": "Podnesak vjerovnika 2026-06.pdf", "sourceEntryIndex": 2 }
+    }
+  ],
+  "chunks": [
+    {
+      "id": "chunk-lab-01",
+      "text": "Prijavljuje se tražbina u iznosu od 1.200.000,00 EUR pod rednim brojem 106.",
+      "metadata": { "fileName": "Prijava tražbine CRO-GO.pdf", "caseNumber": "St-2/2013", "sourceType": "chunk" }
+    },
+    {
+      "id": "chunk-lab-02",
+      "text": "Ustupa se tražbina u iznosu od 27.682.562,91 EUR na društvo COAST d.o.o.",
+      "metadata": { "fileName": "Ugovor o ustupu Prokurator-Coast.pdf", "caseNumber": "St-2/2013", "sourceType": "chunk" }
+    }
+  ],
+  "coverage": {
+    "analyzed": 3,
+    "failed": 1,
+    "total": 4,
+    "coverageRatio": 0.75,
+    "complete": false,
+    "failedFiles": [
+      { "fileName": "Diobeni popis (sanitized placeholder).pdf", "code": "download-failed", "reason": "fixture marks one critical file as unavailable" }
+    ],
+    "groundedClaims": 5,
+    "totalClaims": 6,
+    "gaps": ["Diobeni popis unavailable in frozen fixture; distribution outcome not supported."]
+  },
+  "moneyFlow": {
+    "count": 1,
+    "entries": [
+      {
+        "id": "money-1",
+        "amount": 1200000,
+        "currency": "EUR",
+        "description": "Prijavljena tražbina CRO-GO, redni broj 106",
+        "date": "2024-03-14",
+        "direction": "potraživanje",
+        "grounded": true,
+        "isplatniRed": "drugi viši",
+        "claimRegistryNumber": "106",
+        "filingReference": "St-2/2013-1042",
+        "fileName": "Prijava tražbine CRO-GO.pdf",
+        "caseNumber": "St-2/2013",
+        "sourceEntryIndex": 0,
+        "sourceDocumentLinkId": "St-2/2013::entry-1::doc-1"
+      }
+    ],
+    "currencyTotals": { "EUR": 1200000 },
+    "hasMoneyFlow": true
+  },
+  "propertyFlow": {
+    "count": 1,
+    "entries": [
+      {
+        "id": "prop-1",
+        "description": "Ustup tražbine PROKURATOR → COAST",
+        "assetType": "tražbina",
+        "eventType": "ustup",
+        "transferor": "PROKURATOR d.o.o.",
+        "transferee": "COAST d.o.o.",
+        "value": 27682562.91,
+        "currency": "EUR",
+        "date": "2025-07-17",
+        "grounded": true,
+        "isplatniRed": "drugi viši",
+        "claimRegistryNumber": "98",
+        "filingReference": "St-2/2013-1155",
+        "supersedes": "St-2/2013-1098/redni broj 98",
+        "fileName": "Ugovor o ustupu Prokurator-Coast.pdf",
+        "caseNumber": "St-2/2013",
+        "sourceEntryIndex": 1,
+        "sourceDocumentLinkId": "St-2/2013::entry-2::doc-1"
+      }
+    ],
+    "hasPropertyFlow": true
+  },
+  "reconciliation": {
+    "conflicts": [
+      {
+        "kind": "arithmetic",
+        "finding": "Valutni konflikt: 9.084.692,55 HRK (≈ 1.205.850,44 EUR po fiksnom tečaju) prema 1.205.850,44 EUR — izvorne vrijednosti sačuvane s obje strane.",
+        "amounts": [
+          { "value": 9084692.55, "currency": "HRK" },
+          { "value": 1205850.44, "currency": "EUR" }
+        ]
+      }
+    ],
+    "openQuestions": [
+      {
+        "kind": "lifecycle",
+        "text": "Navodni ustup bez stabilnog identifikatora ne može se povezati s izvornom prijavom; ostaje nerazriješen."
+      }
+    ],
+    "validationWarnings": []
+  },
+  "citationGraph": {
+    "nodes": [
+      { "id": "St-2/2013-1042", "analysisId": "lab-doc-01" },
+      { "id": "St-2/2013-1098", "analysisId": null },
+      { "id": "St-2/2013-1155", "analysisId": "lab-doc-02" },
+      { "id": "St-2/2013-1201", "analysisId": "lab-doc-03" }
+    ],
+    "edges": [
+      { "from": "St-2/2013-1155", "to": "St-2/2013-1098", "basis": "explicit_identifier" },
+      { "from": "St-2/2013-1201", "to": "St-2/2013-1155", "basis": "explicit_identifier" }
+    ]
+  },
+  "retrieval": {
+    "rerankStatus": "fallback",
+    "rerankReason": "fixture-marks-degraded-rerank",
+    "sources": ["chunk-lab-01", "chunk-lab-02"]
+  },
+  "scope": {
+    "status": "partial",
+    "blockedConclusions": ["Puni ishod predmeta nije podržan: diobeni popis nedostupan u zamrznutom paketu."]
+  }
+}

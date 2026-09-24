@@ -162,6 +162,7 @@ function applyBudgetTiers(claims, rerankedRetrieval) {
 }
 
 function buildSynthesisInput(clusterEvidencePackage, retrieval, rerankedRetrieval = retrieval) {
+
     const normalizedEvidence = normalizeReasoningEvidence(clusterEvidencePackage);
     const retrievedClaims = buildRetrievedEvidenceClaims(rerankedRetrieval, clusterEvidencePackage);
 
@@ -182,7 +183,22 @@ function buildSynthesisInput(clusterEvidencePackage, retrieval, rerankedRetrieva
     };
 }
 
+/**
+ * Appends derived context claims (LC-3) after the flat chronological claims.
+ * Claim assembly stays owned by this module: the flat order is untouched
+ * (baseline parity), and context claims arrive in node-id order so the
+ * report writer reads baseline evidence first, then DAG branches, then
+ * node-summary derivatives.
+ */
+function appendContextClaims(flatClaims, contextClaims) {
+    return [
+        ...(Array.isArray(flatClaims) ? flatClaims : []),
+        ...(Array.isArray(contextClaims) ? contextClaims : []),
+    ];
+}
+
 module.exports = {
     buildSynthesisInput,
-    buildRetrievedEvidenceClaims
+    buildRetrievedEvidenceClaims,
+    appendContextClaims
 };

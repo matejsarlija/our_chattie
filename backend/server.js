@@ -37,6 +37,8 @@ const { runCourtAnalysis } = require('./court-analysis/pipeline');
 const { generateClusterReport, composeOverviewMarkdown } = require('./court-analysis/reasoning/reportService');
 const { createAnalysisReportRetryHandler } = require('./helpers/analysisReportRetry');
 const { createLocalStore } = require('./services/localStore');
+const { createAnalysisLabStore } = require('./services/analysisLabStore');
+const { createAnalysisLabRouter } = require('./court-analysis/reasoning/analysisLab/api');
 const { createChangeCheckService } = require('./change-detection/service');
 const { createChangeDetectionRouter } = require('./change-detection/api');
 
@@ -57,6 +59,10 @@ async function startServer() {
 
   // Local, single-tenant analysis persistence store.
   const analysisStore = createLocalStore();
+
+  // Analysis Lab (LE-3): experiment records live in their own
+  // `experiments.json` namespace — never in `runs.json`.
+  const analysisLabStore = createAnalysisLabStore();
 
   // Change detection (Phase B): one shared service over the CSV export client
   // and the JSON snapshot store; CLI and REST reuse the same instance shape.
@@ -362,6 +368,15 @@ async function startServer() {
       composeNarrative: (report) => composeOverviewMarkdown(report),
     }),
   );
+
+  // Analysis Lab comparison runs (LE-3): same read/write limiter policy as
+  // the analysis endpoints; no live-case acquisition inside the Lab.
+  app.use('/api/analysis-lab', createAnalysisLabRouter({
+    labStore: analysisLabStore,
+    analysisStore,
+    readLimiter: analysisReadIpLimiter,
+    writeLimiter: analysisWriteIpLimiter,
+  }));
 
   app.get('/health', (req, res) => {
     res.status(200).json({ status: 'ok' });
