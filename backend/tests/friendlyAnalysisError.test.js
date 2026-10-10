@@ -137,6 +137,8 @@ describe('classifyFileFailure', () => {
     MALFORMED_JSON_MESSAGE,
     TRUNCATION_MESSAGE,
     SCHEMA_MISMATCH_MESSAGE,
+    PDF_TOO_LARGE_MESSAGE,
+    PDF_PAGE_LIMIT_MESSAGE,
   } = require('../helpers/friendlyAnalysisError');
 
   test('daily-quota wording maps to the daily-limit reason', () => {
@@ -168,6 +170,15 @@ describe('classifyFileFailure', () => {
     });
     expect(classifyFileFailure('Could not extract text from file: OCR failed while reading the scanned document.').code)
       .toBe('ocr-failed');
+  });
+
+  test('OCR preflight limits retain their precise failure code', () => {
+    expect(classifyFileFailure(
+      'Could not extract text from file: the PDF exceeds the maximum file size for OCR.',
+    )).toEqual({ code: 'pdf-too-large', reason: PDF_TOO_LARGE_MESSAGE });
+    expect(classifyFileFailure(
+      'Could not extract text from file: the PDF exceeds the maximum page count for OCR.',
+    )).toEqual({ code: 'pdf-page-limit-exceeded', reason: PDF_PAGE_LIMIT_MESSAGE });
   });
 
   test('unknown and empty inputs fall back gracefully', () => {

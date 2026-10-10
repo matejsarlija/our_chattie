@@ -26,7 +26,6 @@ function parseArgs(argv) {
         scrapeLimit: null,
         output: null,
         label: null,
-        noVisualizer: false,
     };
 
     for (let i = 0; i < argv.length; i += 1) {
@@ -62,10 +61,6 @@ function parseArgs(argv) {
             continue;
         }
 
-        if (value === "--no-visualizer") {
-            parsed.noVisualizer = true;
-            continue;
-        }
     }
 
     if (!parsed.searchTerm) {
@@ -264,7 +259,6 @@ async function main() {
             },
             {
                 caseLimit,
-                enableVisualizer: !args.noVisualizer,
             },
         );
     } finally {
@@ -281,7 +275,6 @@ async function main() {
             searchTerm: args.searchTerm,
             caseLimit,
             scrapeLimit,
-            visualizerEnabled: !args.noVisualizer,
             note: "Captured from existing analysis pipeline only. No reasoning synthesizer/verifier modules are invoked here.",
         },
         progressEvents,
@@ -309,7 +302,6 @@ async function main() {
                 result?.processedCases || [],
             ),
             comparativeAnalysis: result?.comparativeAnalysis || null,
-            visualization: result?.visualization || null,
             rawResult: result,
         },
         uploads: {

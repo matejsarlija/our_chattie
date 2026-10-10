@@ -205,6 +205,68 @@ describe('localStore.listAnalysisRuns', () => {
     const page = await store.listAnalysisRuns({ limit: 10, offset: 0 });
     expect(page).toEqual({ data: [], count: 0 });
   });
+
+  // Regression: the list projection originally stripped result_json from EVERY
+  // caller. The analysis Lab enumerates runs through this same method to build
+  // its package catalogue from run.result_json.clusterEvidencePackage, so it
+  // silently began offering zero analysis-run packages. Internal consumers must
+  // be able to opt back in.
+  test('strips the heavy payload by default but keeps it available on request', async () => {
+    const { store } = makeStore();
+    const run = await store.createAnalysisRun({ oib: '66124057408', queryType: 'oib', queryValue: '66124057408' });
+    await store.completeAnalysisRun({
+      analysisId: run.id,
+      resultText: 'Sažetak',
+      resultJson: { report: { narrative: 'Sažetak' }, clusterEvidencePackage: { primaryCaseNumber: 'St-2/2013' } },
+    });
+
+    const slim = await store.listAnalysisRuns({ limit: 10, offset: 0 });
+    expect(slim.data[0].result_json).toBeUndefined();
+    expect(slim.data[0].result_text).toBeUndefined();
+    // ...but the projected summary is present and carries the case number.
+    expect(slim.data[0].summary.caseNumber).toBe('St-2/2013');
+
+    const full = await store.listAnalysisRuns({ limit: 10, offset: 0, includeResults: true });
+    expect(full.data[0].result_json.clusterEvidencePackage.primaryCaseNumber).toBe('St-2/2013');
+    expect(full.data[0].result_text).toBe('Sažetak');
+  });
+
+  test('projects a summary at completion', async () => {
+    const { store } = makeStore();
+    const run = await store.createAnalysisRun({ oib: '11111111111', queryType: 'oib', queryValue: '11111111111' });
+    await store.completeAnalysisRun({
+      analysisId: run.id,
+      resultText: 'Sažetak',
+      resultJson: {
+        clusterEvidencePackage: {
+          primaryCaseNumber: 'St-2/2013',
+          identity: { participantNames: ['PROKURATOR d.o.o.'], participantOibs: ['11111111111'] },
+          coverage: { analyzed: 3, total: 4, failed: 1, groundedClaims: 5, totalClaims: 6 },
+        },
+      },
+    });
+
+    const page = await store.listAnalysisRuns({ limit: 10, offset: 0 });
+    const { summary } = page.data[0];
+    expect(summary.caseNumber).toBe('St-2/2013');
+    expect(summary.participantNames).toEqual(['PROKURATOR d.o.o.']);
+    expect(summary.coverage).toMatchObject({ analyzed: 3, total: 4, groundedClaims: 5, totalClaims: 6 });
+  });
+
+  test('a failed run still gets a summary from whatever it collected', async () => {
+    const { store } = makeStore();
+    const run = await store.createAnalysisRun({ oib: 'Stč-2150/2022', queryType: 'case_number', queryValue: 'Stč-2150/2022' });
+    await store.failAnalysisRun({
+      analysisId: run.id,
+      errorMessage: 'Prekinuto',
+      resultJson: { processedCases: [{ caseResult: { caseNumber: 'Stč-2150/2022', court: 'Općinski sud u Splitu' } }] },
+    });
+
+    const page = await store.listAnalysisRuns({ limit: 10, offset: 0 });
+    expect(page.data[0].summary.caseNumber).toBe('Stč-2150/2022');
+    expect(page.data[0].summary.court).toBe('Općinski sud u Splitu');
+    expect(page.data[0].summary.coverage).toBeNull();
+  });
 });
 
 describe('localStore.getAnalysisRun / getAnalysisRunFull', () => {

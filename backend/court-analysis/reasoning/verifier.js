@@ -4,7 +4,7 @@ const { trackGeminiInvoke } = require("../../helpers/geminiUsage");
 const { createGeminiClient, outputCapWarning } = require("../../helpers/geminiConfig");
 const { extractJsonBlock } = require("../../helpers/jsonExtract");
 const agentLog = require("../../helpers/agentLog");
-const { isPoorDocumentCoverage, coverageOpenQuestion, applyCoverageConfidenceGuard } = require('./coverageGuard');
+const { isPoorDocumentCoverage, hasPartialDocumentCoverage, coverageOpenQuestion, applyCoverageConfidenceGuard } = require('./coverageGuard');
 
 const gemini = createGeminiClient("verify");
 
@@ -202,8 +202,9 @@ async function verifyReport(report, evidencePackage, options = {}) {
         });
 
         const guardedFindings = applyCoverageConfidenceGuard(stitchedFindings, evidencePackage);
-        if (isPoorDocumentCoverage(evidencePackage?.meta?.coverage)) {
-            const question = coverageOpenQuestion(evidencePackage.meta.coverage);
+        const coverage = evidencePackage?.meta?.coverage;
+        if (isPoorDocumentCoverage(coverage) || hasPartialDocumentCoverage(coverage)) {
+            const question = coverageOpenQuestion(coverage);
             if (!openQuestions.includes(question)) openQuestions.push(question);
         }
 

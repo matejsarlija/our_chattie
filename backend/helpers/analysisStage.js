@@ -23,7 +23,6 @@ const LEGACY_TO_CANONICAL = {
   fetching: 'downloading',
   analyzing: 'reasoning',
   comparing: 'reasoning',
-  visualizing: 'reasoning',
 };
 
 function normalizeAnalysisProgressEvent(event) {

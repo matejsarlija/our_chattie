@@ -45,8 +45,9 @@ const GEMINI_ROLE_CONFIG = {
     // Vision OCR of rasterized pages — longer raw-text outputs.
     ocr: { model: DEFAULT_GEMINI_MODEL, temperature: 0.1, maxOutputTokens: 4096 },
     // Multi-page OCR batching: several page images in one request, so the
-    // output ceiling must cover the combined raw text of all pages.
-    'ocr-batch': { model: DEFAULT_GEMINI_MODEL, temperature: 0.1, maxOutputTokens: 8192 },
+    // output ceiling must cover the combined raw text of all pages (up to
+    // OCR_MAX_PAGES=20 of dense filing text).
+    'ocr-batch': { model: DEFAULT_GEMINI_MODEL, temperature: 0.1, maxOutputTokens: 16384 },
     // Full structured report synthesis. Raised 4096 → 8192 → 24576 as dense
     // clusters kept truncating mid-JSON (370 claims + timeline exceeded 8192
     // on a real run). gemini-2.5-flash allows up to 65536 output tokens.
@@ -70,9 +71,15 @@ const GEMINI_ROLE_CONFIG = {
     // Retrieval query planning: ≤6 short query objects as one JSON array —
     // small and strictly-bounded, same reasoning as rerank.
     planner: { model: LITE_GEMINI_MODEL, temperature: 0.1, maxOutputTokens: 512 },
-    // Mermaid diagram generation.
-    visualizer: { model: DEFAULT_GEMINI_MODEL, temperature: 0.1, maxOutputTokens: 2048 },
+    // Analysis Lab node summaries (LC-2): compact cited statements over one
+    // ContextNode's evidence. Small, strictly-bounded output like verify.
+    contextNode: { model: DEFAULT_GEMINI_MODEL, temperature: 0.1, maxOutputTokens: 2048 },
 };
+
+// Prompt version for the Lab node-summary prompt. The single source of
+// truth — profiles.js snapshots this value, contextNodeSummary.js stamps it
+// into prompts and trace records.
+const CONTEXT_NODE_PROMPT_VERSION = 'v1';
 
 function createGeminiClient(role) {
     const roleConfig = GEMINI_ROLE_CONFIG[role] || {};
@@ -102,6 +109,7 @@ module.exports = {
     LITE_GEMINI_MODEL,
     GEMINI_MODEL,
     GEMINI_API_KEY,
+    CONTEXT_NODE_PROMPT_VERSION,
     assertGeminiConfig,
     GEMINI_ROLE_CONFIG,
     createGeminiClient,

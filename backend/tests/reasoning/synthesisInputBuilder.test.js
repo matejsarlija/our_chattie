@@ -132,4 +132,45 @@ describe('synthesisInputBuilder', () => {
         expect(claimTexts).toContain('Rješenje u odabranom predmetu');
         expect(claimTexts).not.toContain('Objava iz sekundarnog predmeta');
     });
+    test('spreads the full cited-claim limit across the chronology', () => {
+        mockNormalizeReasoningEvidence.mockReturnValue({
+            timeline: [],
+            claims: Array.from({ length: 24 }, (_, index) => ({
+                id: `analysis-${index + 1}`,
+                text: `Document summary ${index + 1}`,
+                confidence: 'medium',
+                evidence: [{
+                    sourceId: `document-${index + 1}`,
+                    text: `Document summary ${index + 1}`,
+                    metadata: {
+                        sourceType: 'analysis',
+                        fileName: `document-${index + 1}.pdf`,
+                    },
+                }],
+            })),
+            meta: {},
+        });
+        const reranked = {
+            results: Array.from({ length: 24 }, (_, index) => ({
+                matches: [{
+                    sourceId: `document-${index + 1}`,
+                    text: `Ground truth passage ${index + 1}`,
+                    metadata: {
+                        sourceType: 'chunk',
+                        fileName: `document-${index + 1}.pdf`,
+                    },
+                }],
+            })),
+        };
+
+        const input = buildSynthesisInput({ clusterId: 'St-1/2024' }, reranked, reranked);
+        const fullClaims = input.claims.filter((claim) => claim.id.startsWith('analysis-') && claim.digest !== true);
+
+        expect(fullClaims.map((claim) => claim.id)).toEqual([
+            'analysis-1', 'analysis-3', 'analysis-5', 'analysis-7',
+            'analysis-9', 'analysis-11', 'analysis-14', 'analysis-16',
+            'analysis-18', 'analysis-20', 'analysis-22', 'analysis-24',
+        ]);
+        expect(input.claims.find((claim) => claim.id === 'analysis-12').digest).toBe(true);
+    });
 });

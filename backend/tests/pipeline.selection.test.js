@@ -1,7 +1,6 @@
 // Mock dependencies
 const mockDownloadCall = jest.fn();
 const mockAnalyzeCall = jest.fn();
-const mockVisualizerCall = jest.fn();
 const mockSynthesizeReport = jest.fn();
 const mockVerifyReport = jest.fn((report) => Promise.resolve(report));
 const mockNormalizeReasoningEvidence = jest.fn((evidencePackage) => ({
@@ -24,12 +23,6 @@ jest.mock('../court-analysis/agents/analysis-agent', () => ({
 
 jest.mock('../court-registry/enricher', () => ({
     enrichParticipants: jest.fn().mockImplementation(p => Promise.resolve(p))
-}));
-
-jest.mock('../court-analysis/agents/visualizer-agent', () => ({
-    VisualizerTool: jest.fn().mockImplementation(() => ({
-        _call: mockVisualizerCall
-    }))
 }));
 
 jest.mock('../court-analysis/reasoning/synthesizer', () => ({
@@ -67,7 +60,6 @@ describe('processScrapedCases Selection Policy', () => {
     beforeEach(() => {
         mockDownloadCall.mockReset();
         mockAnalyzeCall.mockReset();
-        mockVisualizerCall.mockReset();
         
         mockDownloadCall.mockImplementation(({ documentLinks }) => {
             return Promise.resolve(documentLinks.map((l, i) => ({ 
@@ -77,7 +69,6 @@ describe('processScrapedCases Selection Policy', () => {
         });
         
         mockAnalyzeCall.mockResolvedValue({ individualAnalyses: [], finalSummary: 'Analysis' });
-        mockVisualizerCall.mockResolvedValue('graph TD; A-->B');
         mockSynthesizeReport.mockResolvedValue({
             schemaVersion: '1.0.0',
             narrative: 'Structured report',
@@ -101,7 +92,7 @@ describe('processScrapedCases Selection Policy', () => {
         ];
 
         const progressCallback = jest.fn();
-        const options = { caseLimit: 3, enableVisualizer: false };
+        const options = { caseLimit: 3 };
         
         const result = await processScrapedCases(casesToProcess, progressCallback, options);
         
@@ -129,7 +120,7 @@ describe('processScrapedCases Selection Policy', () => {
         const result = await processScrapedCases(
             casesToProcess,
             jest.fn(),
-            { caseLimit: 3, enableVisualizer: false },
+            { caseLimit: 3 },
         );
 
         expect(result.discoverySummary.capturedDistinctCaseCount).toBe(4);
@@ -151,7 +142,7 @@ describe('processScrapedCases Selection Policy', () => {
         const result = await processScrapedCases(
             casesToProcess,
             jest.fn(),
-            { caseLimit: 2, enableVisualizer: false },
+            { caseLimit: 2 },
         );
 
         expect(result.discoverySummary.recommendedPrimaryClusterId).toBe('C_COVERED');
@@ -171,7 +162,7 @@ describe('processScrapedCases Selection Policy', () => {
         const result = await processScrapedCases(
             casesToProcess,
             jest.fn(),
-            { caseLimit: 1, enableVisualizer: false },
+            { caseLimit: 1 },
         );
 
         expect(result.processedCases.map(c => c.caseResult.caseNumber)).toEqual(['C_NEWER']);
@@ -189,7 +180,7 @@ describe('processScrapedCases Selection Policy', () => {
         const result = await processScrapedCases(
             casesToProcess,
             jest.fn(),
-            { caseLimit: 2, enableVisualizer: false },
+            { caseLimit: 2 },
         );
 
         expect(result.discoverySummary.recommendedPrimaryClusterId).toBe('C_HIGH');
@@ -203,7 +194,7 @@ describe('processScrapedCases Selection Policy', () => {
             { caseInfo: { caseNumber: 'C2', title: 'T2' }, documentLinks: [{ url: 'u2' }] },
         ];
 
-        const options = { caseLimit: 5, enableVisualizer: false };
+        const options = { caseLimit: 5 };
         const result = await processScrapedCases(casesToProcess, jest.fn(), options);
         
         expect(result.discoverySummary.capturedDistinctCaseCount).toBe(2);
@@ -217,31 +208,13 @@ describe('processScrapedCases Selection Policy', () => {
         ];
 
         // No caseLimit in options
-        const result = await processScrapedCases(casesToProcess, jest.fn(), { enableVisualizer: false });
+        const result = await processScrapedCases(casesToProcess, jest.fn(), { });
         
         expect(result.discoverySummary.capturedDistinctCaseCount).toBe(2);
         expect(result.processedCases).toHaveLength(1);
     });
 
-    test('keeps visualizer enabled by default when only caseLimit is passed', async () => {
-        const casesToProcess = [
-            { caseInfo: { caseNumber: 'C1', title: 'T1' }, documentLinks: [{ url: 'u1' }] },
-        ];
 
-        await processScrapedCases(casesToProcess, jest.fn(), { caseLimit: 1 });
-
-        expect(mockVisualizerCall).toHaveBeenCalledTimes(1);
-    });
-
-    test('does not run visualizer when explicitly disabled', async () => {
-        const casesToProcess = [
-            { caseInfo: { caseNumber: 'C1', title: 'T1' }, documentLinks: [{ url: 'u1' }] },
-        ];
-
-        await processScrapedCases(casesToProcess, jest.fn(), { caseLimit: 1, enableVisualizer: false });
-
-        expect(mockVisualizerCall).not.toHaveBeenCalled();
-    });
 
     test('does not append unrelated expansion entries into the selected primary cluster', async () => {
         const fixture = require('../fixtures/analysis-baselines/undercovered-primary-cluster-expansion.json');
@@ -251,7 +224,6 @@ describe('processScrapedCases Selection Policy', () => {
             jest.fn(),
             {
                 caseLimit: 1,
-                enableVisualizer: false,
                 query: fixture.query,
                 discoveryMetadata: fixture.discoveryMetadata,
                 clusterExpansion: fixture.clusterExpansion
@@ -276,7 +248,7 @@ describe('processScrapedCases Selection Policy', () => {
         const result = await processScrapedCases(
             casesToProcess,
             jest.fn(),
-            { caseLimit: 3, enableVisualizer: false },
+            { caseLimit: 3 },
         );
 
         const anonymousOne = result.discoverySummary.clusters.find(cluster => cluster.clusterId === 'anonymous-1');
@@ -308,7 +280,7 @@ describe('processScrapedCases Selection Policy', () => {
         const result = await processScrapedCases(
             casesToProcess,
             jest.fn(),
-            { caseLimit: 2, enableVisualizer: false },
+            { caseLimit: 2 },
         );
 
         const primaryCluster = result.discoverySummary.clusters.find((cluster) => cluster.clusterId === 'C_PRIMARY');
@@ -339,7 +311,6 @@ describe('processScrapedCases Selection Policy', () => {
             jest.fn(),
             {
                 caseLimit: 1,
-                enableVisualizer: false,
                 query: { type: 'case_number', value: 'C_SUFFICIENT' }
             },
         );

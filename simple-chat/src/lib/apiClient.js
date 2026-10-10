@@ -94,3 +94,19 @@ export const updateSettings = (patch) => apiFetch('/api/settings', {
 });
 
 export const ApiClientError = ApiError;
+
+// Analysis Lab (LE-3): replay-first comparison runs over frozen evidence.
+export const listLabPackages = () => apiFetch('/api/analysis-lab/packages');
+
+export const createLabExperiment = (body) => apiFetch('/api/analysis-lab/experiments', {
+  method: 'POST',
+  body,
+});
+
+export const listLabExperiments = ({ limit = 50, offset = 0 } = {}) => apiFetch(
+  `/api/analysis-lab/experiments?limit=${encodeURIComponent(limit)}&offset=${encodeURIComponent(offset)}`
+);
+
+export const getLabExperiment = (id) => apiFetch(
+  `/api/analysis-lab/experiments/${encodeURIComponent(id)}`
+);

@@ -103,6 +103,34 @@ describe('buildFactLedger (TL-1)', () => {
         expect(docIdentity(null)).toEqual(expect.objectContaining({ contentHash: null }));
         expect(docIdentity({ id: 'a' }).sourceEntryIndex).toBeNull();
     });
+    test('exact amount/property echoes share a cross-category fact id without being dropped', () => {
+        const rows = buildFactLedger([{
+            id: 'analysis-1',
+            fileName: 'Rjesenje.pdf',
+            sourceDocumentLinkId: 'link-1',
+            amounts: [{
+                description: 'Djelomično namirenje tražbine',
+                amount: 25,
+                currency: 'EUR',
+                date: '2024-01-01',
+                direction: 'netted',
+                quote: 'Namiruje se 25 EUR po prijenosu tražbine.',
+            }],
+            propertyFlow: [{
+                description: 'Namirenje prenesene tražbine',
+                value: 25,
+                currency: 'EUR',
+                date: '2024-01-01',
+                assetType: 'tražbina',
+                eventType: 'namirenje',
+                quote: 'Namiruje se 25 EUR po prijenosu tražbine.',
+            }],
+        }]);
+
+        expect(rows).toHaveLength(2);
+        expect(rows[0].crossCategoryFactId).toBeTruthy();
+        expect(rows[0].crossCategoryFactId).toBe(rows[1].crossCategoryFactId);
+    });
 });
 
 describe('dedupeLedgerRows (TL-1)', () => {

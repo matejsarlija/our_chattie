@@ -26,9 +26,6 @@ jest.mock('../court-registry/enricher', () => ({
     enrichParticipants: jest.fn().mockImplementation(p => Promise.resolve(p))
 }));
 
-jest.mock('../court-analysis/agents/visualizer-agent', () => ({
-    VisualizerTool: jest.fn()
-}));
 
 jest.mock('../court-analysis/reasoning/synthesizer', () => ({
     synthesizeReport: mockSynthesizeReport,
@@ -97,7 +94,6 @@ describe('processScrapedCases discovery reconciliation', () => {
             jest.fn(),
             {
                 caseLimit: 3,
-                enableVisualizer: false,
                 query: fixture.query,
                 discoveryMetadata: fixture.discoveryMetadata
             }
@@ -166,7 +162,6 @@ describe('processScrapedCases discovery reconciliation', () => {
             jest.fn(),
             {
                 caseLimit: 5,
-                enableVisualizer: false,
                 query: fixture.query,
                 discoveryMetadata: fixture.discoveryMetadata
             }
@@ -220,7 +215,6 @@ describe('processScrapedCases discovery reconciliation', () => {
             jest.fn(),
             {
                 caseLimit: 5,
-                enableVisualizer: false,
                 query: fixture.query,
                 discoveryMetadata: fixture.discoveryMetadata
             }
@@ -247,7 +241,6 @@ describe('processScrapedCases discovery reconciliation', () => {
             jest.fn(),
             {
                 caseLimit: 1,
-                enableVisualizer: false,
                 query: fixture.query,
                 discoveryMetadata: fixture.discoveryMetadata
             }
@@ -280,7 +273,6 @@ describe('processScrapedCases discovery reconciliation', () => {
             jest.fn(),
             {
                 caseLimit: 2,
-                enableVisualizer: false,
                 query: fixture.query,
                 discoveryMetadata: fixture.discoveryMetadata
             }
@@ -313,7 +305,6 @@ describe('processScrapedCases discovery reconciliation', () => {
             jest.fn(),
             {
                 caseLimit: 1,
-                enableVisualizer: false,
                 query: fixture.query,
                 discoveryMetadata: fixture.discoveryMetadata
             }
@@ -364,7 +355,6 @@ describe('processScrapedCases discovery reconciliation', () => {
             jest.fn(),
             {
                 caseLimit: 1,
-                enableVisualizer: false,
                 query: fixture.query,
                 discoveryMetadata: fixture.discoveryMetadata,
                 clusterExpansion: fixture.clusterExpansion
@@ -507,7 +497,6 @@ describe('processScrapedCases discovery reconciliation', () => {
             jest.fn(),
             {
                 caseLimit: 3,
-                enableVisualizer: false,
                 query: fixture.query,
                 discoveryMetadata: fixture.discoveryMetadata
             }
@@ -552,7 +541,6 @@ describe('processScrapedCases discovery reconciliation', () => {
             progress,
             {
                 caseLimit: 3,
-                enableVisualizer: false,
                 query: fixture.query,
                 discoveryMetadata: fixture.discoveryMetadata
             }

@@ -131,12 +131,23 @@ function applyBudgetTiers(claims, rerankedRetrieval) {
         return { claim, tier: 'full' }; // structural/document-link claims are short
     });
 
-    // Cap full analysis claims at FULL_CLAIM_LIMIT by citation order.
-    let fullCount = 0;
-    for (const entry of decorated) {
-        if (entry.tier !== 'full-cited') continue;
-        fullCount += 1;
-        if (fullCount > FULL_CLAIM_LIMIT) entry.tier = 'digest';
+    // Claims arrive chronologically. Spread the fixed full-text budget over
+    // that sequence so long cases retain evidence from both early and late
+    // filings instead of silently favoring the first twelve.
+    const citedIndexes = decorated
+        .map((entry, index) => entry.tier === 'full-cited' ? index : -1)
+        .filter((index) => index >= 0);
+    if (citedIndexes.length > FULL_CLAIM_LIMIT) {
+        const keepIndexes = new Set();
+        for (let slot = 0; slot < FULL_CLAIM_LIMIT; slot += 1) {
+            const candidatePosition = FULL_CLAIM_LIMIT === 1
+                ? 0
+                : Math.round(slot * (citedIndexes.length - 1) / (FULL_CLAIM_LIMIT - 1));
+            keepIndexes.add(citedIndexes[candidatePosition]);
+        }
+        for (const index of citedIndexes) {
+            if (!keepIndexes.has(index)) decorated[index].tier = 'digest';
+        }
     }
 
     let sized = decorated.map(({ claim, tier }) => (
@@ -162,6 +173,7 @@ function applyBudgetTiers(claims, rerankedRetrieval) {
 }
 
 function buildSynthesisInput(clusterEvidencePackage, retrieval, rerankedRetrieval = retrieval) {
+
     const normalizedEvidence = normalizeReasoningEvidence(clusterEvidencePackage);
     const retrievedClaims = buildRetrievedEvidenceClaims(rerankedRetrieval, clusterEvidencePackage);
 
@@ -182,7 +194,22 @@ function buildSynthesisInput(clusterEvidencePackage, retrieval, rerankedRetrieva
     };
 }
 
+/**
+ * Appends derived context claims (LC-3) after the flat chronological claims.
+ * Claim assembly stays owned by this module: the flat order is untouched
+ * (baseline parity), and context claims arrive in node-id order so the
+ * report writer reads baseline evidence first, then DAG branches, then
+ * node-summary derivatives.
+ */
+function appendContextClaims(flatClaims, contextClaims) {
+    return [
+        ...(Array.isArray(flatClaims) ? flatClaims : []),
+        ...(Array.isArray(contextClaims) ? contextClaims : []),
+    ];
+}
+
 module.exports = {
     buildSynthesisInput,
-    buildRetrievedEvidenceClaims
+    buildRetrievedEvidenceClaims,
+    appendContextClaims
 };

@@ -31,6 +31,16 @@ describe('ocrPageStore', () => {
         expect(store.readOcrPageFromDisk('abc123', 1)).toBe('');
     });
 
+    it('round-trips a native-PDF transcript separately from rendered pages', () => {
+        const store = require('../helpers/ocrPageStore');
+        const transcript = '=== STRANICA 1 ===\nPrva stranica';
+        store.writeNativePdfToDisk('abc123', transcript);
+
+        expect(store.readNativePdfFromDisk('abc123')).toBe(transcript);
+        expect(store.readOcrPageFromDisk('abc123', 1)).toBeNull();
+        expect(store.nativePdfFilePath('abc123')).not.toBe(store.pageFilePath('abc123', 1));
+    });
+
     it('refuses non-string payloads', () => {
         const store = require('../helpers/ocrPageStore');
         store.writeOcrPageToDisk('abc123', 1, null);
@@ -53,12 +63,14 @@ describe('ocrPageStore', () => {
 
     it('namespaces entries by prompt-version and model so upgrades invalidate cleanly', () => {
         let store;
+        let oldSegment;
         try {
             process.env.GEMINI_MODEL = 'gemini-test-swap';
             jest.resetModules();
             store = require('../helpers/ocrPageStore');
             store.writeOcrPageToDisk('abc123', 1, 'old model text');
-            expect(store.versionSegment()).toContain('gemini-test-swap');
+            oldSegment = store.versionSegment();
+            expect(oldSegment).toContain('gemini-test-swap');
         } finally {
             delete process.env.GEMINI_MODEL;
             jest.resetModules();
@@ -69,6 +81,8 @@ describe('ocrPageStore', () => {
         expect(store.versionSegment()).not.toContain('gemini-test-swap');
         expect(store.readOcrPageFromDisk('abc123', 1)).toBeNull();
         // ...and the old entry must still be on disk under its own namespace.
-        expect(fs.existsSync(path.join(root, store.versionSegment(), '..', 'v1-gemini-test-swap', 'abc123-p1.json'))).toBe(true);
+        // The segment is captured, never hardcoded, so prompt-version bumps
+        // don't break this assertion.
+        expect(fs.existsSync(path.join(root, oldSegment, 'abc123-p1.json'))).toBe(true);
     });
 });

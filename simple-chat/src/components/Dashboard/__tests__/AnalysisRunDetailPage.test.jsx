@@ -33,10 +33,6 @@ jest.mock('../DashboardShell', () => ({
   default: ({ children }) => <div data-testid="dashboard-shell">{children}</div>,
 }));
 
-jest.mock('../../MermaidDiagram', () => ({
-  __esModule: true,
-  default: () => <div data-testid="mermaid-diagram" />,
-}));
 
 jest.mock('react-router-dom', () => ({
   __esModule: true,
@@ -91,7 +87,7 @@ describe('AnalysisRunDetailPage metadata modules', () => {
     expect(screen.getByText('Naziv objave')).toBeInTheDocument();
     expect(screen.getByText('Objava 14/2026 - Stecaj duznika')).toBeInTheDocument();
     expect(screen.getByText('Broj predmeta')).toBeInTheDocument();
-    expect(screen.getByText('St-357/2013')).toBeInTheDocument();
+    expect(screen.getAllByText('St-357/2013').length).toBeGreaterThan(0);
   });
 
   test('derives ID objave from detailLink when entryDisplayId is missing', () => {
@@ -186,6 +182,44 @@ describe('AnalysisRunDetailPage metadata modules', () => {
     expect(screen.getByText('Objava 14/2026 - Stecaj duznika')).toBeInTheDocument();
   });
 
+  test('shows the persisted report narrative first without duplicating the composed overview', () => {
+    useAnalysisRunDetail.mockReturnValue({
+      run: {
+        id: 'run-1',
+        status: 'done',
+        oib: '12345678901',
+        result_text: 'Persisted narrative.\\n\\n## Otvorena pitanja\\n- Persisted question.',
+        result_json: {
+          processedCases: [],
+          report: {
+            narrative: 'Persisted narrative.',
+            openQuestions: ['Persisted question.'],
+            nextSteps: ['Persisted next step.'],
+          },
+        },
+      },
+      events: [],
+      loading: false,
+      eventsLoading: false,
+      error: '',
+      isRunning: false,
+      connectionMode: 'idle',
+      lastUpdatedAt: '2026-02-27T12:00:00.000Z',
+      refresh: jest.fn(),
+    });
+
+    const { container } = render(<AnalysisRunDetailPage />);
+    const brief = container.querySelector('[data-testid="analysis-case-brief"]');
+    expect(brief).toBeInTheDocument();
+    expect(brief).toHaveTextContent('Persisted narrative.');
+    expect(brief).not.toHaveTextContent('Persisted question.');
+    expect(container.textContent.indexOf('Sažetak predmeta'))
+      .toBeLessThan(container.textContent.indexOf('Prilozi analize'));
+    expect(screen.queryByText('Rezultat analize')).not.toBeInTheDocument();
+    expect(screen.getByText('Persisted question.')).toBeInTheDocument();
+    expect(screen.getByText('Persisted next step.')).toBeInTheDocument();
+  });
+
   test('TU-1: lawyer-first section order on a complete run', () => {
     useAnalysisRunDetail.mockReturnValue({
       run: {
@@ -194,9 +228,18 @@ describe('AnalysisRunDetailPage metadata modules', () => {
         oib: '66124057408',
         result_text: 'Narativ.',
         result_json: {
-          processedCases: [],
+          processedCases: [{
+            groupMetadata: { selectedForReasoning: true },
+            analysis: { coverage: { analyzed: 57, failed: 6, total: 63, coverageRatio: 0.9, complete: false, failedFiles: [], groundedClaims: 366, totalClaims: 375 } },
+          }],
           clusterEvidencePackage: {
-            moneyFlow: { entries: [{ id: 'money-1', description: 'Tražbina.', amount: 100, currency: 'EUR' }] },
+            analyses: [{
+              id: 'analysis-1',
+              fileName: 'Rješenje.pdf',
+              sourceDocumentLinkId: 'link-1',
+            }],
+            documentLinks: [{ id: 'link-1', url: 'https://court.example.test/rjesenje.pdf', text: 'Rješenje.pdf' }],
+            moneyFlow: { entries: [{ id: 'money-1', description: 'Tražbina.', amount: 100, currency: 'EUR', amountEur: 100 }] },
           },
           report: {
             schemaVersion: '1.0.0',
@@ -206,9 +249,13 @@ describe('AnalysisRunDetailPage metadata modules', () => {
               { date: '2025-01-01', description: 'Stari korak.' },
               { date: '2026-06-23', description: 'Najnoviji korak.' },
             ],
-            conflicts: [{ finding: 'Sukob.', kind: 'arithmetic', source: 'reconciliation' }],
+            conflicts: [{ finding: 'Sukob.', kind: 'arithmetic', source: 'reconciliation', sources: ['analysis-1'] }],
             openQuestions: [{ text: 'Pitanje.', kind: 'lifecycle', source: 'reconciliation' }],
-            meta: { scope: { analysisStatus: 'partial', supported: [], blocked: [], blockingEvidence: [], degraded: [], corpus: {} } },
+            meta: {
+              scope: { analysisStatus: 'partial', supported: [], blocked: [], blockingEvidence: [], degraded: [], corpus: {} },
+              retrieval: { queries: [], results: [], metrics: { matchCount: 14 } },
+              rerank: { rerankStatus: 'active', metrics: {} },
+            },
           },
         },
       },
@@ -224,13 +271,17 @@ describe('AnalysisRunDetailPage metadata modules', () => {
 
     const { container } = render(<AnalysisRunDetailPage />);
     const text = container.textContent;
+    // Coverage and scope lead the answer column (the trust gate comes before
+    // the money); the reasoning trace now lives in the right rail, which in DOM
+    // order follows the whole answer column.
     const order = [
-      'Što dokazi u ovoj analizi mogu potvrditi',
-      'Tijek novca',
-      'Rizici i otvorena pitanja',
+      'Sažetak predmeta',
+      'Pokrivenost analize',
+      'Opseg analize',
+      'Novčane stavke',
+      'Konflikti i pitanja',
       'Najnoviji postupovni korak',
       'Prilozi analize',
-      'Rezultat analize',
       'Telemetrija zaključivanja',
     ].map((heading) => ({ heading, index: text.indexOf(heading) }));
     for (const { heading, index } of order) {
@@ -239,6 +290,11 @@ describe('AnalysisRunDetailPage metadata modules', () => {
     const indexes = order.map((entry) => entry.index);
     expect([...indexes].sort((a, b) => a - b)).toEqual(indexes);
     expect(screen.getByText('2026-06-23 — Najnoviji korak.')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Rješenje.pdf' })).toHaveAttribute(
+      'href',
+      'https://court.example.test/rjesenje.pdf',
+    );
+    expect(screen.getAllByText('Determinističko usklađivanje')).toHaveLength(2);
   });
 
   test('renders Predmet label for case-number query runs', () => {
@@ -264,7 +320,7 @@ describe('AnalysisRunDetailPage metadata modules', () => {
 
     render(<AnalysisRunDetailPage />);
 
-    expect(screen.getByText('Predmet: St-357/2013')).toBeInTheDocument();
+    expect(screen.getByText('Predmet St-357/2013')).toBeInTheDocument();
   });
 
   test('renders Tekst label for text query runs', () => {
@@ -290,7 +346,7 @@ describe('AnalysisRunDetailPage metadata modules', () => {
 
     render(<AnalysisRunDetailPage />);
 
-    expect(screen.getByText('Tekst: adriatic osiguranje')).toBeInTheDocument();
+    expect(screen.getByText('Tekst adriatic osiguranje')).toBeInTheDocument();
   });
 
   test('renders OIB label for explicit oib query runs', () => {
@@ -316,7 +372,7 @@ describe('AnalysisRunDetailPage metadata modules', () => {
 
     render(<AnalysisRunDetailPage />);
 
-    expect(screen.getByText('OIB: 12345678901')).toBeInTheDocument();
+    expect(screen.getByText('OIB 12345678901')).toBeInTheDocument();
   });
 
   test('renders neutral Upit label for unknown query types', () => {
@@ -342,8 +398,8 @@ describe('AnalysisRunDetailPage metadata modules', () => {
 
     render(<AnalysisRunDetailPage />);
 
-    expect(screen.getByText('Upit: nepoznato')).toBeInTheDocument();
-    expect(screen.queryByText('OIB: nepoznato')).not.toBeInTheDocument();
+    expect(screen.getByText('Upit nepoznato')).toBeInTheDocument();
+    expect(screen.queryByText(/OIB nepoznato/)).toBeNull();
   });
 
   test('renders structured annex sections when report exists', () => {
@@ -382,11 +438,15 @@ describe('AnalysisRunDetailPage metadata modules', () => {
 
     expect(screen.getByText('Nalazi')).toBeInTheDocument();
     expect(screen.getByText('Utvrden je kontinuitet postupanja.')).toBeInTheDocument();
-    expect(screen.getByText('Vremenska crta')).toBeInTheDocument();
+    // Chronology is owned by CaseTimeline, NOT duplicated inside the annex.
+    expect(screen.getByTestId('case-timeline')).toBeInTheDocument();
+    expect(screen.queryByText('Vremenska crta')).not.toBeInTheDocument();
     expect(screen.getByText('Otvoren postupak.')).toBeInTheDocument();
-    expect(screen.getByText('2026-01-10')).toBeInTheDocument();
+    // CaseTimeline human-formats the ISO date-only string via the shared
+    // formatDate (hr-HR, dateStyle medium -> abbreviated month).
+    expect(screen.getByText('10. sij 2026.')).toBeInTheDocument();
     // TU-1: conflicts live in the merged severity-ranked risk list now.
-    expect(screen.getByText('Rizici i otvorena pitanja')).toBeInTheDocument();
+    expect(screen.getByText('Konflikti i pitanja')).toBeInTheDocument();
     expect(screen.getByText('Nesklad u navodu o datumu dospijeca.')).toBeInTheDocument();
   });
 
@@ -419,7 +479,7 @@ describe('AnalysisRunDetailPage metadata modules', () => {
     render(<AnalysisRunDetailPage />);
 
     // TU-1: open questions render inside the merged risk list.
-    expect(screen.getByText('Rizici i otvorena pitanja')).toBeInTheDocument();
+    expect(screen.getByText('Konflikti i pitanja')).toBeInTheDocument();
     expect(screen.getByText('Nedostaje datum dospijeća glavnog potraživanja.')).toBeInTheDocument();
   });
 
@@ -453,7 +513,7 @@ describe('AnalysisRunDetailPage metadata modules', () => {
     render(<AnalysisRunDetailPage />);
 
     expect(screen.getByText('Prilozi analize')).toBeInTheDocument();
-    expect(screen.getAllByText('-').length).toBeGreaterThanOrEqual(4);
+    expect(screen.getAllByText('—').length).toBeGreaterThanOrEqual(2);
   });
 
   test('renders narrative fallback when report is missing', () => {
@@ -508,7 +568,7 @@ describe('AnalysisRunDetailPage metadata modules', () => {
     render(<AnalysisRunDetailPage />);
 
     expect(screen.queryByText('Nalazi')).not.toBeInTheDocument();
-    expect(screen.queryByText('Vremenska crta')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('case-timeline')).not.toBeInTheDocument();
     expect(screen.queryByText('Konflikti')).not.toBeInTheDocument();
   });
 
@@ -561,10 +621,15 @@ describe('AnalysisRunDetailPage metadata modules', () => {
 
     render(<AnalysisRunDetailPage />);
 
-    expect(screen.getAllByText('Citati').length).toBeGreaterThanOrEqual(2);
+    expect(screen.getAllByTestId('citation-list').length).toBeGreaterThanOrEqual(2);
     expect(screen.getByText('Stecajni spis | Rjesenje.pdf | str. 3')).toBeInTheDocument();
     expect(screen.getByText('Objava | odlomak 2')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Otvori izvor' })).toHaveAttribute('href', 'https://example.com/rjesenje.pdf');
+    const sourceLink = screen.getByRole('link', { name: /Otvori izvor/ });
+    expect(sourceLink).toHaveAttribute('href', 'https://example.com/rjesenje.pdf');
+    // the citation line is part of the link's accessible name, so a screen
+    // reader hears the source and the page, not just "open source"
+    expect(sourceLink).toHaveAccessibleName(/Stecajni spis/);
+    expect(sourceLink).toHaveAccessibleName(/str\. 3/);
   });
 
   test('handles invalid citation arrays safely', () => {
@@ -599,7 +664,7 @@ describe('AnalysisRunDetailPage metadata modules', () => {
     render(<AnalysisRunDetailPage />);
 
     expect(screen.getByText('Nalaz bez valjanih citata.')).toBeInTheDocument();
-    expect(screen.queryByText('Citati')).not.toBeInTheDocument();
+    expect(screen.queryAllByTestId('citation-list')).toHaveLength(0);
   });
 
   test('M-09: citations expand into the retrieval that surfaced them', () => {
@@ -648,8 +713,15 @@ describe('AnalysisRunDetailPage metadata modules', () => {
 
     render(<AnalysisRunDetailPage />);
 
-    expect(screen.queryByText('trazbina Kerum dug')).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: /Zašto je dohvaćeno/ }));
+    // A native <details> keeps its content in the DOM and reveals it on
+    // activation, so the meaningful assertion is the open state, not absence.
+    const summary = screen.getByText(/Zašto je dohvaćeno \(1\)/);
+    const disclosure = summary.closest('details');
+    expect(disclosure).not.toBeNull();
+    expect(disclosure.open).toBe(false);
+
+    fireEvent.click(summary);
+    expect(disclosure.open).toBe(true);
     expect(screen.getByText('trazbina Kerum dug')).toBeInTheDocument();
     expect(screen.getByText(/token:trazbina/)).toBeInTheDocument();
   });
@@ -727,11 +799,11 @@ describe('AnalysisRunDetailPage metadata modules', () => {
     render(<AnalysisRunDetailPage />);
 
     // One merged surface with per-item kind tags instead of provenance groups.
-    expect(screen.getByText('Rizici i otvorena pitanja')).toBeInTheDocument();
+    expect(screen.getByText('Konflikti i pitanja')).toBeInTheDocument();
     expect(screen.queryByText('Utvrđeno kodom — aritmetička nepodudaranja')).not.toBeInTheDocument();
     expect(screen.queryByText('Životni ciklus tražbina — nerazriješena pitanja')).not.toBeInTheDocument();
     expect(screen.getByText('Aritmetika')).toBeInTheDocument();
-    expect(screen.getByText('Životni ciklus')).toBeInTheDocument();
+    expect(screen.getByText('Životni ciklus tražbine')).toBeInTheDocument();
     expect(screen.getByText(/Različiti iznosi za istu namjenu/)).toBeInTheDocument();
     expect(screen.getByText(/Tražbina se pojavljuje bez lanca/)).toBeInTheDocument();
   });
@@ -828,7 +900,7 @@ describe('AnalysisRunDetailPage metadata modules', () => {
     expect(screen.getByText(/Djelomični rezultati su sačuvani/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /Povezane objave/i }));
     expect(screen.getByText('Objava 14/2026 - Stecaj duznika')).toBeInTheDocument();
-    expect(screen.getByText('St-357/2013')).toBeInTheDocument();
+    expect(screen.getAllByText('St-357/2013').length).toBeGreaterThan(0);
   });
 
   test('shows an error-aware result empty state when an errored run has no partial result_text', () => {
@@ -1025,9 +1097,9 @@ describe('AnalysisRunDetailPage metadata modules', () => {
 
     render(<AnalysisRunDetailPage />);
 
-    expect(screen.getByText('Pokrivenost analize dokumenata')).toBeInTheDocument();
-    expect(screen.getByText(/Analizirano je 2 od 3 dokumenata/)).toBeInTheDocument();
-    expect(screen.getByText('1 neanalizirano')).toBeInTheDocument();
+    expect(screen.getByText('Pokrivenost analize')).toBeInTheDocument();
+    expect(screen.getByText(/2 od 3 dokumenata/)).toBeInTheDocument();
+    expect(screen.getByText(/2 od 3 dokumenata · 1 nije uspjelo/)).toBeInTheDocument();
     expect(screen.getByText(/doc3\.pdf/)).toBeInTheDocument();
     // The classified Croatian reason surfaces — never the raw technical message.
     expect(screen.getByText(/Dnevni limit AI analize je iscrpljen/)).toBeInTheDocument();

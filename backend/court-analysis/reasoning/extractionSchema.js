@@ -16,7 +16,7 @@
 //   earlier model summary, and may answer `absent` (source does not state the
 //   field) — which accepts as empty without a gap.
 
-const EXTRACTION_SCHEMA_VERSION = 1;
+const EXTRACTION_SCHEMA_VERSION = 2;
 
 const TOP_LEVEL_FIELDS = [
     'caseNumber',
@@ -39,7 +39,9 @@ const EVENT_TYPES = ['prijava', 'ustup', 'namirenje', 'drugo'];
 // misdrive TL-2 matching), absent values stay null without a gap.
 const AMOUNT_ROLES = ['total', 'line_item', 'principal', 'cost', 'paid', 'fee'];
 const LEGAL_EFFECTS = ['creates', 'modifies', 'supersedes', 'resolves', 'implements', 'unknown'];
+const VALUE_ROLES = ['claim_balance', 'transfer_consideration', 'payment_amount', 'asset_value', 'unknown'];
 const RELATIONSHIP_BASES = ['explicit_identifier', 'explicit_text', 'inferred'];
+const VALUE_ROLE_GUIDANCE = 'For every non-null propertyFlow.value, include valueRole: "claim_balance" only when the source explicitly states the outstanding claim balance; "transfer_consideration" for the price paid for an assignment; "payment_amount" for a payment or recovery; "asset_value" for another asset valuation; or "unknown" when the amount’s meaning cannot be established. Never treat a payment or assignment price as a remaining claim balance.';
 
 function asStringOrNull(value) {
     if (value === null || value === undefined) return null;
@@ -161,6 +163,10 @@ function validatePropertyItem(raw, index) {
     if (raw.eventType !== undefined && raw.eventType !== null && eventType === null) {
         gaps.push(gap(`${path}.eventType`, 'schema-mismatch', `unsupported event type: ${String(raw.eventType).slice(0, 24)}`));
     }
+    const valueRole = asEnumOrNull(raw.valueRole, VALUE_ROLES);
+    if (raw.valueRole !== undefined && raw.valueRole !== null && valueRole === null) {
+        gaps.push(gap(`${path}.valueRole`, 'schema-mismatch', `unsupported value role: ${String(raw.valueRole).slice(0, 32)}`));
+    }
     const legalEffect = asEnumOrNull(raw.legalEffect, LEGAL_EFFECTS);
     if (raw.legalEffect !== undefined && raw.legalEffect !== null && legalEffect === null) {
         gaps.push(gap(`${path}.legalEffect`, 'schema-mismatch', `unsupported legal effect: ${String(raw.legalEffect).slice(0, 24)}`));
@@ -185,6 +191,7 @@ function validatePropertyItem(raw, index) {
             date: asStringOrNull(raw.date),
             quote: asStringOrNull(raw.quote),
             eventType,
+            valueRole,
             legalEffect,
             references,
             relationshipBasis,
@@ -296,7 +303,7 @@ function parseFieldRepairResponse(content, field) {
 
 const FIELD_SPECS = {
     amounts: 'an "amounts" array with ONE item per table row — if the document contains an itemized table, register, or list (popis tražbina, diobeni popis, troškovnik, obračun), extract one item per row and never merge rows into a single summary amount; each item: {"description" (Croatian, required), "amount" (number), "currency" ("EUR"|"HRK"), "date", "direction" ("potraživanje"|"obveza"|"awarded"|"rejected"|"netted"), "amountRole" (one of "total"|"line_item"|"principal"|"cost"|"paid"|"fee" — the figure\'s function in the document: "total" for stated sums, "line_item" for table/register rows; omit when unclear), "eventType" ("prijava"|"ustup"|"namirenje"|"drugo", when the amount records a lifecycle event), "legalEffect" (one of "creates"|"modifies"|"supersedes"|"resolves"|"implements"|"unknown" — what this entry\'s document does to the claim/right; omit when unclear), "references" (array of registry/filing identifiers this entry explicitly cites besides its own filingReference; [] when none), "relationshipBasis" (one of "explicit_identifier"|"explicit_text"|"inferred" — how a "supersedes" link is evidenced; omit without supersedes), "payerName", "payerOib" (11 digits), "recipientName", "recipientOib", "amountEur"/"amountHrk" (only when the source states BOTH, verbatim), "isplatniRed", "claimRegistryNumber" ("redni broj"), "filingReference" ("poslovni broj"), "quote" (verbatim 1-2 sentences from the source text below, word-for-word, never paraphrased)}',
-    propertyFlow: 'a "propertyFlow" array with ONE item per table row under the same row rule as amounts; each item: {"description" (Croatian, required), "identifier", "assetType" ("nekretnina"|"pokretnina"|"tražbina"|"drugo"), "transferor", "transferee", "value" (number), "currency" ("EUR"|"HRK"), "date", "quote" (verbatim as above), "legalEffect" and "references" and "relationshipBasis" (same meanings as for amounts); for "tražbina" also "eventType" ("prijava"|"ustup"|"namirenje"|"drugo"), "isplatniRed", "claimRegistryNumber", "filingReference", "supersedes" (short textual reference to the earlier lifecycle entry as cited in the source text)}'
+    propertyFlow: 'a "propertyFlow" array with ONE item per table row under the same row rule as amounts; also extract an operative receivable assignment/cession stated in prose ("Ugovor o ustupu", "cesija", assignment/transfer of a "tražbina") as at least one assetType "tražbina", eventType "ustup" entry — it is never absent merely because it has no table; each item: {"description" (Croatian, required), "identifier", "assetType" ("nekretnina"|"pokretnina"|"tražbina"|"drugo"), "transferor", "transferee", "value" (number), "currency" ("EUR"|"HRK"), "date", "quote" (verbatim as above), "legalEffect" and "references" and "relationshipBasis" (same meanings as for amounts); for "tražbina" also "eventType" ("prijava"|"ustup"|"namirenje"|"drugo"), "isplatniRed", "claimRegistryNumber", "filingReference", "supersedes" (short textual reference to the earlier lifecycle entry as cited in the source text)}'
 };
 
 /**
@@ -307,7 +314,7 @@ function buildFieldRepairPrompt({ field, sourceText }) {
     const spec = FIELD_SPECS[field];
     if (!spec) throw new Error(`Field ${field} is not repairable`);
     const excerpt = String(sourceText || '');
-    return `FIELD REPAIR. A previous extraction of the court document below produced an unusable "${field}" value. Re-extract ONLY that field from the source text below.\n\nReturn ONLY a JSON object of the form {"value": <the re-extracted ${field} value per this spec>, "absent": true|false}. Set "absent" to true (with "value" null, or [] for arrays) when the source text does not state this field at all — never invent a missing fact. "value" must follow this spec: ${spec}.\n\nProvide ONLY the json object and nothing else. Text:\n\n${excerpt}`;
+    return `FIELD REPAIR. A previous extraction of the court document below produced an unusable "${field}" value. Re-extract ONLY that field from the source text below.\n\nReturn ONLY a JSON object of the form {"value": <the re-extracted ${field} value per this spec>, "absent": true|false}. Set "absent" to true (with "value" null, or [] for arrays) when the source text does not state this field at all — never invent a missing fact. "value" must follow this spec: ${spec}${field === 'propertyFlow' ? ` ${VALUE_ROLE_GUIDANCE}` : ''}\n\nProvide ONLY the json object and nothing else. Text:\n\n${excerpt}`;
 }
 
 /**
@@ -316,7 +323,7 @@ function buildFieldRepairPrompt({ field, sourceText }) {
  */
 function buildFullRepairPrompt({ sourceText }) {
     const excerpt = String(sourceText || '');
-    return `EXTRACTION REPAIR. A previous extraction of the court document below produced no usable JSON. Extract key information from the source text below as a JSON object with keys: "caseNumber", "decisionDate", "summary" (one medium paragraph, Croatian), ${FIELD_SPECS.amounts} (as "amounts"; [] when none), ${FIELD_SPECS.propertyFlow} (as "propertyFlow"; [] when none), and "citedFilingReferences" (array of "poslovni broj" values explicitly referenced; [] when none).\n\nProvide ONLY the json object and nothing else. Text:\n\n${excerpt}`;
+    return `EXTRACTION REPAIR. A previous extraction of this court document produced no usable JSON. Extract key information from the source text below as a JSON object with keys: "caseNumber", "decisionDate", "summary" (one medium paragraph, Croatian), ${FIELD_SPECS.amounts} (as "amounts"; [] when none), ${FIELD_SPECS.propertyFlow} (as "propertyFlow"; [] when none). ${VALUE_ROLE_GUIDANCE} Also extract "citedFilingReferences" (array of "poslovni broj" values explicitly referenced; [] when none).\n\nProvide ONLY the json object and nothing else. Text:\n\n${excerpt}`;
 }
 
 module.exports = {
@@ -329,6 +336,7 @@ module.exports = {
     RELATIONSHIP_BASES,
     CURRENCIES,
     ASSET_TYPES,
+    VALUE_ROLES,
     EVENT_TYPES,
     FIELD_SPECS,
     validateExtraction,

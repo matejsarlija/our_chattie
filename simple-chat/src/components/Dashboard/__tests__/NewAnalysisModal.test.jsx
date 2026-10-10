@@ -34,8 +34,25 @@ describe('NewAnalysisModal', () => {
     fireEvent.change(screen.getByPlaceholderText(/12345678901/i), { target: { value: '123' } });
     fireEvent.click(screen.getByRole('button', { name: /pokreni/i }));
 
-    expect(await screen.findByText(/točno 11 znamenki/i)).toBeInTheDocument();
+    const oibInput = screen.getByLabelText('OIB');
+    expect(await screen.findByRole('alert')).toHaveTextContent(/točno 11 znamenki/i);
+    expect(oibInput).toHaveAttribute('aria-invalid', 'true');
+    expect(oibInput).toHaveAttribute('aria-describedby');
     expect(mockStreamCourtAnalysis).not.toHaveBeenCalled();
+  });
+
+  test('focuses the OIB field and closes with Escape', () => {
+    const onClose = jest.fn();
+    render(
+      <>
+        <button type="button">Otvori analizu</button>
+        <NewAnalysisModal isOpen onClose={onClose} />
+      </>,
+    );
+
+    expect(screen.getByLabelText('OIB')).toHaveFocus();
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(onClose).toHaveBeenCalled();
   });
 
   test('navigates to detail when analysisId arrives', async () => {

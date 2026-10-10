@@ -25,12 +25,12 @@ describe('normalizeAnalysisProgressEvent', () => {
 
   test('maps known reasoning-stage aliases', () => {
     const normalized = normalizeAnalysisProgressEvent({
-      step: 'visualizing',
+      step: 'comparing',
       progress: 95,
-      message: 'Vizualizacija',
+      message: 'Usporedba',
     });
 
     expect(normalized.step).toBe('reasoning');
-    expect(normalized.metadata.originalStep).toBe('visualizing');
+    expect(normalized.metadata.originalStep).toBe('comparing');
   });
 });

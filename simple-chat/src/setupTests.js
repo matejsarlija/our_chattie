@@ -24,7 +24,11 @@ jest.mock(
     useNavigate: () => jest.fn(),
     useParams: () => ({}),
     useSearchParams: () => [new URLSearchParams(), jest.fn()],
-    Link: ({ children, to }) => <a href={to}>{children}</a>,
+    // Forward className and any other props. The previous mock silently
+    // DROPPED className, so a test asserting on a Link's classes (e.g. the runs
+    // table's stretched link) saw an empty string and could not tell a real
+    // regression from a mock artefact.
+    Link: ({ children, to, ...rest }) => <a href={to} {...rest}>{children}</a>,
   }),
   { virtual: true }
 );

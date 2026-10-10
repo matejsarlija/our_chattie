@@ -8,11 +8,14 @@
 //
 // This module owns the ONE normalize + collect implementation. The Gemini
 // extraction prompt still produces two arrays (`amounts`, `propertyFlow`);
-// `collectFlows` maps both into one array. Nothing calls it yet in PR1 —
-// `moneyFlow.js`/`propertyFlow.js` keep serving today's paths untouched.
+// `collectFlows` maps both into one array. Legacy money/property modules
+// expose derived views over that collector.
 
 const { convertToEur, dualMismatch } = require('./currencyConversion');
 const { normalizeText } = require('./indexer');
+const { normalizePaymentRank } = require('./paymentRank');
+const { parseDate } = require('./timelineBuilder');
+const { normalizeClaimRegistryNumber } = require('./claimRegistry');
 
 // J-01 — signed/directional amounts: potraživanje (asset/claim) vs obveza
 // (liability), or an explicit ruling outcome (awarded/rejected/netted).
@@ -176,6 +179,12 @@ function normalizeAmountRole(value) {
     const raw = String(value || '').trim().toLowerCase();
     return VALID_AMOUNT_ROLES.includes(raw) ? raw : null;
 }
+const VALUE_ROLES = ['claim_balance', 'transfer_consideration', 'payment_amount', 'asset_value', 'unknown'];
+
+function normalizeValueRole(value) {
+    const raw = String(value || '').trim().toLowerCase();
+    return VALUE_ROLES.includes(raw) ? raw : null;
+}
 
 function normalizeLegalEffect(value) {
     const raw = String(value || '').trim().toLowerCase();
@@ -301,6 +310,8 @@ function normalizeFlowItem(raw, index, analysis, options = {}) {
         // `amountRole` is meaningful on the amounts path; other families keep
         // the raw value when present so future matchers can use it.
         amountRole: normalizeAmountRole(raw.amountRole ?? raw.amount_role),
+        valueRole: normalizeValueRole(raw.valueRole ?? raw.value_role),
+        crossCategoryFactId: cleanText(raw.crossCategoryFactId),
         legalEffect: normalizeLegalEffect(raw.legalEffect ?? raw.legal_effect),
         references: normalizeReferences(raw.references),
         relationshipBasis: normalizeRelationshipBasis(raw.relationshipBasis ?? raw.relationship_basis),
@@ -340,13 +351,11 @@ function normalizeFlowItem(raw, index, analysis, options = {}) {
     };
 }
 
-// TL-1/TL-2 — byte-identical attachment merge. Entries whose document bytes
-// hash equally AND whose normalized fact content matches collapse to one
-// entry with merged `sources`/`filings` (every filing that attached the
-// document is retained). Entries without a content hash never merge —
-// without bytes, identity cannot be proven. Ids and property ordinals are
-// reassigned after the merge so downstream `flow-N`/`prop-N` references stay
-// consistent; callers must run `rewriteLegacySupersedes` after this.
+// Entry-level extraction dedupe. Byte-identical documents may merge across
+// filings; when bytes are unavailable, merging is limited to rows from the
+// same identified source document. The fact key excludes model prose, but
+// requires stable claim/asset identity plus the same value, date, parties and
+// event. Conflicting explicit filing references remain separate.
 function mergeIdenticalEntries(entries) {
     const list = Array.isArray(entries) ? entries : [];
     const filingOf = (entry) => ({
@@ -365,46 +374,113 @@ function mergeIdenticalEntries(entries) {
         }
         return sources;
     };
-    const keyOf = (entry) => [
-        entry?.contentHash || '',
-        entry?.assetType || '',
-        normalizeText(entry?.description || ''),
-        String(entry?.value ?? ''),
-        entry?.currency || '',
-        normalizeText(entry?.claimRegistryNumber || ''),
-        normalizeText(entry?.filingReference || ''),
-        normalizeText(entry?.identifier || ''),
-        normalizeText(entry?.transferor || ''),
-        normalizeText(entry?.transferee || ''),
-        entry?.eventType || '',
-        entry?.amountRole || '',
-        entry?.isplatniRed || ''
-    ].join('::');
+    const normalizedRegistry = (value) => normalizeText(normalizeClaimRegistryNumber(value));
+    const normalizedReference = (value) => normalizeText(value)
+        .replace(/[–—−]/g, '-')
+        .replace(/\s+/g, '');
+    const stableIdentity = (entry) => {
+        const registry = normalizedRegistry(entry?.claimRegistryNumber);
+        const identifier = normalizeText(entry?.identifier || '').trim();
+        const filingReference = normalizedReference(entry?.filingReference || '');
+        return registry || identifier || filingReference;
+    };
+    const sourceScope = (entry) => {
+        if (!entry?.sourceId) return null;
+        if (entry.sourceDocumentLinkId) {
+            return `${entry.sourceId}::link:${entry.sourceDocumentLinkId}`;
+        }
+        if (Number.isInteger(entry.sourceEntryIndex)) {
+            return `${entry.sourceId}::entry:${entry.sourceEntryIndex}`;
+        }
+        return null;
+    };
+    const keyOf = (entry) => {
+        const timestamp = parseDate(String(entry?.date || ''));
+        const date = timestamp === null ? normalizeText(entry?.date || '') : String(timestamp);
+        const rank = normalizePaymentRank(entry?.isplatniRed || '');
+        return [
+            entry?.contentHash || sourceScope(entry) || '',
+            entry?.assetType || '',
+            String(entry?.value ?? ''),
+            entry?.currency || '',
+            date,
+            normalizeText(entry?.identifier || ''),
+            normalizeText(entry?.transferorOib || entry?.transferor || ''),
+            normalizeText(entry?.transfereeOib || entry?.transferee || ''),
+            entry?.eventType || '',
+            entry?.amountRole || '',
+            normalizeText(entry?.legalEffect || ''),
+            entry?.valueRole || ''
+        ].join('::');
+    };
+    const identifiersCompatible = (left, right) => {
+        const leftRegistry = normalizedRegistry(left?.claimRegistryNumber);
+        const rightRegistry = normalizedRegistry(right?.claimRegistryNumber);
+        const leftIdentifier = normalizeText(left?.identifier || '').trim();
+        const rightIdentifier = normalizeText(right?.identifier || '').trim();
+        return (!leftRegistry || !rightRegistry || leftRegistry === rightRegistry)
+            && (!leftIdentifier || !rightIdentifier || leftIdentifier === rightIdentifier);
+    };
+    const hasMergeScope = (entry) => Boolean(entry?.contentHash || sourceScope(entry));
+    const referencesCompatible = (left, right) => {
+        const leftReference = normalizedReference(left?.filingReference || '');
+        const rightReference = normalizedReference(right?.filingReference || '');
+        return (!leftReference || !rightReference || leftReference === rightReference)
+            && identifiersCompatible(left, right)
+            && Boolean(left?.contentHash || right?.contentHash || stableIdentity(left) || stableIdentity(right));
+    };
+    const stringsOf = (entry, field, variantsField) => {
+        const values = Array.isArray(entry?.[variantsField]) ? [...entry[variantsField]] : [];
+        if (typeof entry?.[field] === 'string' && entry[field].trim()) values.unshift(entry[field].trim());
+        return [...new Set(values.filter((value) => typeof value === 'string' && value.trim()).map((value) => value.trim()))];
+    };
     const byKey = new Map();
     const merged = [];
     for (const entry of list) {
-        if (!entry?.contentHash) {
-            entry.sources = sourcesOf(entry);
-            entry.filings = filingsOf(entry);
-            merged.push(entry);
+        const filings = filingsOf(entry);
+        const sources = sourcesOf(entry);
+        if (!hasMergeScope(entry)) {
+            merged.push({
+                ...entry,
+                duplicateCount: Math.max(1, Number(entry?.duplicateCount) || 1),
+                descriptionVariants: stringsOf(entry, 'description', 'descriptionVariants'),
+                quoteVariants: stringsOf(entry, 'quote', 'quoteVariants'),
+                sources,
+                filings
+            });
             continue;
         }
         const key = keyOf(entry);
-        if (!byKey.has(key)) {
-            const kept = {
+        const candidates = byKey.get(key) || [];
+        const kept = candidates.find((candidate) => referencesCompatible(candidate, entry));
+        if (!kept) {
+            const added = {
                 ...entry,
-                sources: sourcesOf(entry),
-                filings: filingsOf(entry)
+                duplicateCount: Math.max(1, Number(entry?.duplicateCount) || 1),
+                descriptionVariants: stringsOf(entry, 'description', 'descriptionVariants'),
+                quoteVariants: stringsOf(entry, 'quote', 'quoteVariants'),
+                sources,
+                filings
             };
-            byKey.set(key, kept);
-            merged.push(kept);
+            candidates.push(added);
+            byKey.set(key, candidates);
+            merged.push(added);
             continue;
         }
-        const kept = byKey.get(key);
-        for (const source of sourcesOf(entry)) {
+        kept.duplicateCount += Math.max(1, Number(entry?.duplicateCount) || 1);
+        for (const field of ['claimRegistryNumber', 'identifier', 'filingReference', 'isplatniRed']) {
+            if (!kept[field] && entry[field]) kept[field] = entry[field];
+        }
+        for (const value of stringsOf(entry, 'description', 'descriptionVariants')) {
+            if (!kept.descriptionVariants.includes(value)) kept.descriptionVariants.push(value);
+        }
+        for (const value of stringsOf(entry, 'quote', 'quoteVariants')) {
+            if (!kept.quoteVariants.includes(value)) kept.quoteVariants.push(value);
+        }
+        for (const source of sources) {
             if (!kept.sources.includes(source)) kept.sources.push(source);
         }
-        for (const filing of filingsOf(entry)) {
+        for (const filing of filings) {
             if (!kept.filings.some((f) =>
                 f.sourceId === filing.sourceId && f.sourceEntryIndex === filing.sourceEntryIndex && f.sourceDocumentLinkId === filing.sourceDocumentLinkId
             )) kept.filings.push(filing);
@@ -471,9 +547,9 @@ function collectFlows(analyses) {
             }
         }
     }
-    // TL-1/TL-2 — collapse byte-identical attachment duplicates (merged
-    // sources/filings, renumbered ids) before legacy supersedes rewriting,
-    // which resolves against final ids.
+    // Collapse repeated extraction of a stable fact within one source, and
+    // byte-identical cross-filing attachments. Distinct source files without
+    // byte hashes are never matched by filename or fact similarity.
     const mergedEntries = mergeIdenticalEntries(entries);
     entries.length = 0;
     entries.push(...mergedEntries);
@@ -503,19 +579,17 @@ function collectFlows(analyses) {
 
 /**
  * Backward-compatible derived views (flow-consolidation PR2): `pkg.moneyFlow`
- * / `pkg.propertyFlow` keep their exact current shapes so synthesizer,
- * frontend and persisted-run readers need zero changes. Each view filters
- * the unified array by `assetType` and renumbers its own id sequence in
- * historical order (which collectFlows preserves per family), renaming
- * fields back to the legacy vocabulary. Unified-only fields
- * (`transferor`/`transferee` canonicals, OIB unions, `direction` on property
- * entries) stay invisible to the views.
+ * / `pkg.propertyFlow` retain their legacy fields and conditionally add
+ * duplicate provenance (`duplicateCount`, source filings and description
+ * variants) for entries collapsed by the unified collector.
+ * Each view filters the unified array by `assetType` and renumbers its own id
+ * sequence in historical order, renaming fields back to legacy vocabulary.
  */
 
 /**
  * Money view: `novac` entries only, `value`→`amount` (+EUR fields), legacy
- * alias fields exposed, lifecycle fields omitted — byte-identical to the old
- * `collectMoneyFlows` output for the same input.
+ * aliases exposed and lifecycle fields omitted. Unmerged output retains the
+ * prior shape; merged rows include the duplicate provenance documented above.
  */
 function deriveMoneyFlowView(flows) {
     const entries = [];
@@ -543,6 +617,15 @@ function deriveMoneyFlowView(flows) {
             filingReference: flow.filingReference ?? null,
             quote: flow.quote ?? null,
             grounded: flow.grounded === true,
+            ...(flow.eventType ? { eventType: flow.eventType } : {}),
+            ...(flow.amountRole ? { amountRole: flow.amountRole } : {}),
+            ...(flow.crossCategoryFactId ? { crossCategoryFactId: flow.crossCategoryFactId } : {}),
+            ...(flow.duplicateCount > 1 ? {
+                duplicateCount: flow.duplicateCount,
+                descriptionVariants: [...(flow.descriptionVariants || [])],
+                sources: [...(flow.sources || [])],
+                filings: (flow.filings || []).map((filing) => ({ ...filing })),
+            } : {}),
             sourceId: flow.sourceId ?? null,
             fileName: flow.fileName ?? null,
             caseNumber: flow.caseNumber ?? null,
@@ -586,13 +669,9 @@ function propertyIdByFlowId(flows) {
 }
 
 /**
- * Property view: every non-`novac` entry, legacy vocabulary
- * (`value`/`valueEur`, `transferor`/`transferee`, conditional `eventType` /
- * `supersedes` / EUR keys exactly as the old spread behaved) — byte-identical
- * to the old `collectPropertyFlows` output for the same input. Legacy
- * `prop-N` supersedes references round-trip: the unified collector rewrites
- * them to `flow-N`, and this view maps exact `flow-N` references back to the
- * renumbered `prop-N` ids (descriptive-text references pass through).
+ * Property view: every non-`novac` entry, legacy vocabulary, with property
+ * ids mapped back from unified `flow-N` references. Unmerged output retains
+ * the prior shape; merged rows include duplicate provenance.
  */
 function derivePropertyFlowView(flows) {
     const propIdByFlowId = propertyIdByFlowId(flows);
@@ -612,6 +691,8 @@ function derivePropertyFlowView(flows) {
             : {}),
         ...(flow.dualCurrency ? { dualCurrency: flow.dualCurrency } : {}),
         ...(flow.currencyNote ? { currencyNote: flow.currencyNote } : {}),
+        ...(flow.valueRole ? { valueRole: flow.valueRole } : {}),
+        ...(flow.crossCategoryFactId ? { crossCategoryFactId: flow.crossCategoryFactId } : {}),
         isplatniRed: flow.isplatniRed ?? null,
         claimRegistryNumber: flow.claimRegistryNumber ?? null,
         filingReference: flow.filingReference ?? null,
@@ -624,6 +705,12 @@ function derivePropertyFlowView(flows) {
         caseNumber: flow.caseNumber ?? null,
         sourceEntryIndex: flow.sourceEntryIndex ?? null,
         sourceDocumentLinkId: flow.sourceDocumentLinkId ?? null,
+        ...(flow.duplicateCount > 1 ? {
+            duplicateCount: flow.duplicateCount,
+            descriptionVariants: [...(flow.descriptionVariants || [])],
+            sources: [...(flow.sources || [])],
+            filings: (flow.filings || []).map((filing) => ({ ...filing })),
+        } : {}),
     }));
     return { count: entries.length, entries, hasPropertyFlow: entries.length > 0 };
 }
@@ -643,4 +730,6 @@ module.exports = {
     cleanText,
     VALID_ASSET_TYPES,
     VALID_EVENT_TYPES,
+    normalizeValueRole,
+    VALUE_ROLES,
 };

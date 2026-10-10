@@ -211,7 +211,6 @@ describe('Track 2: resolveAutoExpansion (2b orchestration)', () => {
 
         const resolved = {
             caseLimit: 1,
-            enableVisualizer: false,
             query: { type: 'oib', value: '66124057408' },
             clusterExpansion: null,
             discoveryMetadata: { pagesScanned: 1, currentPage: 1, hasNextPage: false }
@@ -243,7 +242,6 @@ describe('Track 2: resolveAutoExpansion (2b orchestration)', () => {
 
         const resolved = {
             caseLimit: 1,
-            enableVisualizer: false,
             query: { type: 'text', value: 'KERUM' },
             clusterExpansion: null,
             discoveryMetadata: { pagesScanned: 1, currentPage: 1, hasNextPage: false }

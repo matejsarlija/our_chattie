@@ -4,7 +4,6 @@ const mockInit = jest.fn();
 const mockClose = jest.fn();
 const mockDownloadCall = jest.fn();
 const mockAnalyzeCall = jest.fn();
-const mockVisualizerCall = jest.fn();
 const mockSynthesizeReport = jest.fn();
 const mockVerifyReport = jest.fn((report) => Promise.resolve(report));
 const mockNormalizeReasoningEvidence = jest.fn((evidencePackage) => ({
@@ -40,12 +39,6 @@ jest.mock('../court-analysis/agents/download-agent', () => ({
 jest.mock('../court-analysis/agents/analysis-agent', () => ({
     AnalyzeDocumentsTool: jest.fn().mockImplementation(() => ({
         _call: mockAnalyzeCall,
-    })),
-}));
-
-jest.mock('../court-analysis/agents/visualizer-agent', () => ({
-    VisualizerTool: jest.fn().mockImplementation(() => ({
-        _call: mockVisualizerCall,
     })),
 }));
 
@@ -119,7 +112,6 @@ describe('runCourtAnalysis pipeline (deterministic)', () => {
             documentLinks.map((link, idx) => ({ filePath: `/tmp/pipeline_${idx}.pdf`, url: link.url })),
         ));
         mockAnalyzeCall.mockResolvedValue({ individualAnalyses: [], finalSummary: 'Analysis' });
-        mockVisualizerCall.mockResolvedValue('graph TD; A-->B');
         mockSynthesizeReport.mockResolvedValue({
             schemaVersion: '1.0.0',
             narrative: 'Structured report',
@@ -134,7 +126,7 @@ describe('runCourtAnalysis pipeline (deterministic)', () => {
 
     test('keeps discovery breadth but reasons only over the selected primary cluster', async () => {
         const progress = jest.fn();
-        const result = await runCourtAnalysis('66124057408', { caseLimit: 3, enableVisualizer: false }, progress);
+        const result = await runCourtAnalysis('66124057408', { caseLimit: 3 }, progress);
 
         expect(mockSearchAndGetLatestCasesWithDocuments).toHaveBeenCalledWith('66124057408', 40, 3, true, null, null);
         expect(result.discoverySummary.capturedDistinctCaseCount).toBe(4);
@@ -151,17 +143,13 @@ describe('runCourtAnalysis pipeline (deterministic)', () => {
         expect(mockClose).toHaveBeenCalledTimes(1);
     });
 
-    test('enables visualizer by default when only caseLimit is provided', async () => {
-        await runCourtAnalysis('66124057408', { caseLimit: 1 }, jest.fn());
-        expect(mockVisualizerCall).toHaveBeenCalledTimes(1);
-    });
 
     test('threads resolved typed query into discovery and the selected-cluster evidence package', async () => {
         const query = { type: 'oib', value: '66124057408' };
 
         const result = await runCourtAnalysis(
             query.value,
-            { caseLimit: 3, enableVisualizer: false, query },
+            { caseLimit: 3, query },
             jest.fn()
         );
 
@@ -213,7 +201,6 @@ describe('runCourtAnalysis pipeline (deterministic)', () => {
         expect(result.primaryCluster.participantOibs).toEqual(['11111111111']);
         expect(mockDownloadCall).not.toHaveBeenCalled();
         expect(mockAnalyzeCall).not.toHaveBeenCalled();
-        expect(mockVisualizerCall).not.toHaveBeenCalled();
     });
 
     test('runCourtDiscovery threads the OIB query value as the debtor identity hint', async () => {

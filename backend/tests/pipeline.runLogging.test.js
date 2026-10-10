@@ -37,9 +37,6 @@ jest.mock('../court-registry/enricher', () => ({
     enrichParticipants: jest.fn().mockImplementation(p => Promise.resolve(p))
 }));
 
-jest.mock('../court-analysis/agents/visualizer-agent', () => ({
-    VisualizerTool: jest.fn()
-}));
 
 jest.mock('../court-analysis/reasoning/synthesizer', () => ({
     synthesizeReport: mockSynthesizeReport,
@@ -70,7 +67,6 @@ const fixture = require('../fixtures/analysis-baselines/mixed-multi-cluster.json
 function baseOptions(overrides = {}) {
     return {
         caseLimit: 3,
-        enableVisualizer: false,
         query: fixture.query,
         discoveryMetadata: fixture.discoveryMetadata,
         ...overrides,
