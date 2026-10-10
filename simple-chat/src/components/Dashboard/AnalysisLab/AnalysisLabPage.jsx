@@ -21,8 +21,8 @@ export default function AnalysisLabPage() {
           <p className="font-mono text-xs uppercase tracking-widest text-[var(--text-muted)]">Analitički laboratorij</p>
           <h1 className="mt-1 text-2xl font-semibold tracking-tight text-[var(--text)]">Tri načina da se pročita isti predmet</h1>
           <p className="mt-1 max-w-2xl text-sm text-[var(--text-muted)]">
-            Uspoređujemo ravni ulaz, deterministički DAG i DAG sa sažecima — svi izvedeni iz istog zamrznutog paketa dokaza.
-            Kartica provjere opisuje razliku; ne proglašava pobjednika.
+            Uspoređujemo izvještaj bez grupiranja, izvještaj s tematskim grupama i varijantu s automatskim sažecima tema.
+            Sve tri koriste isti zamrznuti paket dokaza. Mjere opisuju razlike; ne biraju pobjednika.
           </p>
         </div>
 

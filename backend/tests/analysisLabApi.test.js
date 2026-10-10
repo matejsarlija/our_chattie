@@ -264,6 +264,57 @@ describe('analysis lab experiment reads (LE-3)', () => {
         expect(comparison.flatToDag).toMatchObject({ from: 'baseline-flat-v1', to: 'context-tree-v1' });
         expect(comparison.summaryIncrementalCost).not.toBe('unknown');
     });
+
+    test('detail read resolves full source excerpts for ungrounded facts', async () => {
+        const { app, labStore, analysisStore } = makeApp();
+        const pkg = cloneEvidencePackage(LAB_FIXTURE);
+        pkg.analyses[0].amounts[0].grounded = false;
+        const run = await analysisStore.createAnalysisRun({
+            oib: 'St-2/2013',
+            queryType: 'case_number',
+            queryValue: 'St-2/2013',
+        });
+        await analysisStore.completeAnalysisRun({
+            analysisId: run.id,
+            resultText: 'Sažetak',
+            resultJson: { comparativeAnalysis: 'Sažetak', clusterEvidencePackage: pkg },
+        });
+        const experiment = await labStore.createExperiment({
+            evidencePackageRef: run.id,
+            evidencePackageHash: evidencePackageDigest(pkg),
+        });
+        for (const profileId of ['baseline-flat-v1', 'context-tree-v1', 'context-tree-summarized-v1']) {
+            await labStore.completeExperimentVariant({
+                experimentId: experiment.id,
+                profileId,
+                report: { findings: [] },
+                trace: {
+                    profileId,
+                    fragments: profileId === 'baseline-flat-v1' ? {} : {
+                        contextNodes: [{
+                            nodeId: 'thread-1',
+                            coverage: { groundedClaims: 0, totalClaims: 1, gaps: ['ungrounded:ledger-1'] },
+                        }],
+                    },
+                },
+            });
+        }
+
+        const response = await request(app)
+            .get(`/api/analysis-lab/experiments/${experiment.id}`);
+        expect(response.status).toBe(200);
+
+        const nodes = response.body.experiment.variants['context-tree-v1'].trace.fragments.contextNodes;
+        const fragment = nodes.find((node) => node.ungroundedFactCount === 1);
+        expect(fragment).toBeDefined();
+        expect(fragment.ungroundedFacts).toEqual([expect.objectContaining({
+            factId: 'ledger-1',
+            fileName: 'Prijava tražbine CRO-GO.pdf',
+            quoteProvided: true,
+            excerpt: expect.stringContaining('Prijavljuje se tražbina'),
+        })]);
+        expect(fragment.ungroundedFactDetailsOmittedCount).toBe(0);
+    });
     test('saved-run experiment exposes only safe original document URLs', async () => {
         const { app, analysisStore } = makeApp();
         const pkg = cloneEvidencePackage(LAB_FIXTURE);

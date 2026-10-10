@@ -1,5 +1,96 @@
 import { useMemo, useState } from 'react';
 import { profileLabel, LAB_PROFILE_ORDER } from './labMeta';
+const NODE_KIND_LABELS = {
+  'claim-thread': 'Povezana grupa tražbina',
+  'property-thread': 'Povezana grupa imovine',
+  unresolved: 'Činjenica ostavljena odvojeno',
+  'procedural-period': 'Činjenice iz razdoblja',
+  'case-root': 'Pregled predmeta',
+};
+
+const nodeKindLabel = (kind) => NODE_KIND_LABELS[kind] || 'Grupa činjenica';
+const factCountLabel = (count) => {
+  if (count === 1) return '1 činjenica';
+  if (count >= 2 && count <= 4) return `${count} činjenice`;
+  return `${count} činjenica`;
+};
+
+const ungroundedFactCount = (coverage) => {
+  if (Number.isInteger(coverage?.ungroundedFactCount)) return coverage.ungroundedFactCount;
+  if (Array.isArray(coverage?.gaps)) {
+    return coverage.gaps.filter((gap) => String(gap).startsWith('ungrounded:')).length;
+  }
+  if (Number.isInteger(coverage?.totalClaims) && Number.isInteger(coverage?.groundedClaims)) {
+    return Math.max(0, coverage.totalClaims - coverage.groundedClaims);
+  }
+  return 0;
+};
+
+const citationMismatchLabel = (count) => {
+  const facts = count === 1 ? '1 činjenicu' : count >= 2 && count <= 4 ? `${count} činjenice` : `${count} činjenica`;
+  return `Za ${facts} nije bilo moguće pronaći pouzdano podudaranje citata s tekstom izvora.`;
+};
+
+const summaryReasonLabel = (reason) => ({
+  'call-failed': 'Poziv za izradu sažetka nije uspio.',
+  'invalid-summary': 'Odgovor nije imao prihvatljiv format ili poveznice na prepoznate izvore.',
+  'node-budget-exhausted': 'Dosegnuta je granica broja sažetaka; izvorne činjenice ostaju dostupne.',
+  'summaries-unavailable': 'Sažeci nisu uključeni za ovu varijantu.',
+  'empty-packet': 'Nije bilo dovoljno izvornih činjenica za sažetak.',
+  'ineligible-kind': 'Ova vrsta grupe ne dobiva automatski sažetak.',
+}[reason] || 'Razlog nije zabilježen.');
+
+const omissionReasonLabel = (reason) => ({
+  'context-node-budget-exhausted': 'Tema nije uključena jer je dosegnuta granica broja tema za ovu varijantu.',
+  'node-budget-exhausted': 'Sažetak nije izrađen jer je dosegnuta granica broja sažetaka.',
+  'unresolvable-citation': 'Sažeti zaključak nije uključen jer se nije mogao povezati s izvornim dokumentom.',
+}[reason] || 'Stavka nije uključena; razlog nije zabilježen.');
+
+function groupOmissions(entries) {
+  const groups = new Map();
+  for (const entry of entries) {
+    const key = entry?.reason || 'unknown';
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(entry);
+  }
+  return [...groups.entries()].map(([reason, items]) => ({ reason, items }));
+}
+
+function omissionCountLabel(count, singular, paucal, plural) {
+  if (count === 1) return `1 ${singular}`;
+  if (count >= 2 && count <= 4) return `${count} ${paucal}`;
+  return `${count} ${plural}`;
+}
+
+function OmissionGroup({ group, kind }) {
+  const count = group.items.length;
+  const subject = kind === 'topic'
+    ? omissionCountLabel(count, 'tematska grupa nije uključena', 'tematske grupe nisu uključene', 'tematskih grupa nije uključeno')
+    : kind === 'summary'
+      ? omissionCountLabel(count, 'sažetak nije izrađen', 'sažetka nisu izrađena', 'sažetaka nije izrađeno')
+      : omissionCountLabel(count, 'sažeti zaključak nije uključen', 'sažeta zaključka nisu uključena', 'sažetih zaključaka nije uključeno');
+  return (
+    <li className="text-[var(--text)]">
+      <p>{subject}.</p>
+      <p className="mt-0.5 text-[var(--text-muted)]">{omissionReasonLabel(group.reason)}</p>
+      <details className="mt-1">
+        <summary className="cursor-pointer text-xs text-[var(--text-muted)] focus-visible:outline-2 focus-visible:outline-offset-2">
+          Tehnički zapisi ({count})
+        </summary>
+        <ul className="mt-1 space-y-1 break-words font-mono text-xs text-[var(--text-muted)]">
+          {group.items.map((entry, index) => (
+            <li key={`${entry.nodeId || entry.factId || group.reason}-${index}`}>
+              {entry.nodeId && <span>ID teme: {entry.nodeId} · </span>}
+              {entry.factId && <span>ID činjenice: {entry.factId} · </span>}
+              {entry.reason && <span>Razlog: {entry.reason} · </span>}
+              {entry.detail || 'Bez dodatnih pojedinosti.'}
+            </li>
+          ))}
+        </ul>
+      </details>
+    </li>
+  );
+}
 
 const unavailable = (label) => (
   <p className="rounded-lg border border-dashed border-[var(--border)] p-3 text-sm text-[var(--text-muted)]">
@@ -102,11 +193,6 @@ function collectDoubtfulSources(trace, isFlat, sourceDocumentsById) {
           add(sourceId, null, 'izvedeni sažetak — provjerite izvor');
         }
       }
-      if ((node?.coverage?.gaps || []).length > 0 || node?.status === 'unresolved') {
-        for (const sourceId of node?.sourceDocumentIds || []) {
-          add(sourceId, null, 'praznina ili nerazriješena veza u ovom čvoru');
-        }
-      }
     }
   }
 
@@ -125,11 +211,11 @@ function SourceReviewNudge({ sources, sourceDocumentsStatus }) {
       data-testid="lab-source-review"
     >
       <h3 id="lab-source-review-heading" className="text-sm font-semibold text-[var(--text)]">
-        Provjerite izvor · {sources.length} {sources.length === 1 ? 'dokument' : 'dokumenata'}
+        Izvori za provjeru · {sources.length} {sources.length === 1 ? 'dokument' : 'dokumenata'}
       </h3>
       <p className="mt-1 text-sm text-[var(--text-muted)]">
-        Ove stavke imaju neprovjeren izvadak, nedostajući dokaz ili izvedeni sažetak.
-        Pregledajte izvornu datoteku prije nego što ih tretirate kao potvrđene.
+        Izvadak nedostaje ili nije potvrđen, ili se dokument koristi kao izvor za sažetak.
+        Sažetak sam po sebi nije dokaz; otvorite izvornu datoteku za provjeru.
       </p>
       {sourceDocumentsStatus === 'package-changed' ? (
         <p className="mt-1 text-xs font-medium text-[var(--warning)]">Izvorni paket više ne odgovara snimci ovog eksperimenta.</p>
@@ -158,111 +244,199 @@ function sourceDocumentFor(sourceDocumentsById, sourceId, fileName) {
 }
 
 
-function NodeDetail({ node, fragment, outcome, dagSelections, sourceDocumentsById }) {
+function NodeDetail({ node, fragment, outcome, summariesEnabled, dagSelections, sourceDocumentsById }) {
   const selectionReasons = useMemo(() => {
     if (!Array.isArray(dagSelections)) return [];
     return dagSelections.filter((entry) => entry?.nodeId === node?.nodeId);
   }, [dagSelections, node]);
 
   if (!node) {
-    return <p className="text-sm text-[var(--text-muted)]">Odaberite čvor s popisa.</p>;
+    return <p className="text-sm text-[var(--text-muted)]">Odaberite grupu ili činjenicu s popisa.</p>;
   }
+
+  const factCount = Number.isInteger(fragment?.coverage?.totalClaims)
+    ? fragment.coverage.totalClaims
+    : Array.isArray(node.factIds) ? node.factIds.length : 0;
+  const unverifiedCount = ungroundedFactCount(fragment?.coverage);
+  const unverifiedFacts = Array.isArray(fragment?.ungroundedFacts)
+    ? fragment.ungroundedFacts
+    : (fragment?.facts || []).filter((fact) => fact?.grounded === false);
+  const unverifiedDetailsOmitted = Number.isInteger(fragment?.ungroundedFactDetailsOmittedCount)
+    ? fragment.ungroundedFactDetailsOmittedCount
+    : Math.max(0, unverifiedCount - unverifiedFacts.length);
+  const omittedExcerptCount = Number.isInteger(fragment?.omittedFactCount)
+    ? fragment.omittedFactCount
+    : Math.max(0, factCount - (fragment?.facts?.length || 0));
+  const title = fragment?.title || nodeKindLabel(node.kind);
 
   return (
     <div>
       <p className="font-mono text-xs uppercase tracking-wide text-[var(--text-muted)]">
-        {node.kind || 'nepoznata vrsta'} · {node.nodeId}
+        {nodeKindLabel(node.kind)} · {factCountLabel(factCount)}
       </p>
-      <h3 className="mt-1 text-xl font-semibold text-[var(--text)]">{node.nodeId}</h3>
+      <h3 className="mt-1 text-xl font-semibold text-[var(--text)]">{title}</h3>
 
-      <div className="mt-4 space-y-3 text-sm">
-        <div>
-          <h4 className="font-mono text-xs uppercase tracking-wide text-[var(--text-muted)]">Činjenice</h4>
-          <div className="mt-1">{idList(node.factIds)}</div>
-        </div>
-        <div>
-          <h4 className="font-mono text-xs uppercase tracking-wide text-[var(--text-muted)]">Izvorni dokumenti i citati</h4>
-          <div className="mt-1 space-y-2">
-            <div><span className="text-[var(--text-muted)]">Dokumenti: </span>{idList(fragment?.sourceDocumentIds || node.sourceDocumentIds)}</div>
-            <div><span className="text-[var(--text-muted)]">Citati: </span>{idList(fragment?.citationIds || node.citationIds)}</div>
-          </div>
-        </div>
-        {fragment?.coverage && (
-          <div>
-            <h4 className="font-mono text-xs uppercase tracking-wide text-[var(--text-muted)]">Pokrivenost</h4>
-            <p className="mt-1 text-[var(--text)]">Uzemljeno {fragment.coverage.groundedClaims ?? '?'} / {fragment.coverage.totalClaims ?? '?'}</p>
-            {Array.isArray(fragment.coverage.gaps) && fragment.coverage.gaps.length > 0
-              ? <ul className="mt-1 list-disc pl-5 text-[var(--text-muted)]">{fragment.coverage.gaps.map((gap, index) => <li key={`${node.nodeId}-gap-${index}`}>{String(gap)}</li>)}</ul>
-              : <p className="mt-1 text-[var(--text-muted)]">Nema zabilježenih praznina.</p>}
-          </div>
+      {node.kind === 'unresolved' && (
+        <p className="mt-3 rounded-lg border border-[var(--border)] bg-[var(--surface-muted)] p-3 text-sm text-[var(--text)]">
+          Nije pronađen broj prijave tražbine ili oznaka podneska za sigurno povezivanje.
+          Zato je ova činjenica ostavljena odvojeno, umjesto da se nagađa kojoj temi pripada.
+        </p>
+      )}
+
+      <div className="mt-4 space-y-4 text-sm">
+        {fragment?.coverage && node.kind !== 'unresolved' && (
+          <section>
+            <h4 className="font-semibold text-[var(--text)]">Automatska provjera citata</h4>
+            <p className="mt-1 text-[var(--text)]">
+              Citati koji se podudaraju s tekstom izvora: {fragment.coverage.groundedClaims ?? '?'} / {factCount || 'nepoznato'}
+            </p>
+            <p className="mt-1 text-xs text-[var(--text-muted)]">
+              Automatska provjera podudaranja teksta; ne ocjenjuje je li činjenica točna.
+            </p>
+            {unverifiedCount > 0 ? (
+              <div className="mt-2 rounded-lg border border-[var(--border)] bg-[var(--surface-muted)] p-3">
+                <p className="font-medium text-[var(--text)]">{citationMismatchLabel(unverifiedCount)}</p>
+                {unverifiedFacts.length > 0 ? (
+                  <details className="mt-1">
+                    <summary className="min-h-11 cursor-pointer py-2 text-sm font-medium text-[var(--text)] focus-visible:outline-2 focus-visible:outline-offset-2">
+                      Prikaži stavke za provjeru ({unverifiedFacts.length} od {unverifiedCount})
+                    </summary>
+                    <ul className="space-y-3">
+                      {unverifiedFacts.map((fact) => (
+                        <li key={fact.factId} className="border-t border-[var(--border)] pt-2">
+                          <p className="font-medium text-[var(--text)]">
+                            {fact.fileName || 'Izvorni dokument nije dostupan'}
+                          </p>
+                          <p className="mt-1 whitespace-pre-wrap text-[var(--text)]">
+                            {fact.quoteProvided === false
+                              ? `Citat nije dostupan. Izdvojeni opis: ${fact.excerpt || 'nije dostupan.'}`
+                              : fact.excerpt || 'Citirani odlomak nije dostupan u ovoj snimci.'}
+                          </p>
+                          <SourceDocumentLink
+                            document={sourceDocumentFor(sourceDocumentsById, fact.sourceId, fact.fileName)}
+                            compact
+                          />
+                        </li>
+                      ))}
+                    </ul>
+                    {unverifiedDetailsOmitted > 0 && (
+                      <p className="mt-2 text-xs text-[var(--text-muted)]">
+                        Još {unverifiedDetailsOmitted} stavki nema pojedinosti u ovoj snimci.
+                      </p>
+                    )}
+                  </details>
+                ) : (
+                  <p className="mt-1 text-xs text-[var(--text-muted)]">
+                    Pojedinosti o tim citatima nisu sačuvane u ovoj snimci.
+                  </p>
+                )}
+              </div>
+            ) : (
+              <p className="mt-1 text-[var(--text-muted)]">Svi prikazani citati podudaraju se s tekstom izvora.</p>
+            )}
+          </section>
         )}
+
         {Array.isArray(fragment?.summary) && fragment.summary.length > 0 && (
-          <div>
-            <h4 className="font-mono text-xs uppercase tracking-wide text-[var(--text-muted)]">Izvedeni sažeci · kontekst, ne dokaz</h4>
+          <section>
+            <h4 className="font-semibold text-[var(--text)]">Sažetak za kontekst · nije dokaz</h4>
             <ul className="mt-2 space-y-2">
               {fragment.summary.map((statement, index) => (
                 <li key={`${node.nodeId}-summary-${index}`} className="rounded-lg border border-dashed border-[var(--border)] p-3">
                   <p className="whitespace-pre-wrap text-[var(--text)]">{statement.text || 'Tekst sažetka nije dostupan.'}</p>
-                  <p className="mt-1 text-xs text-[var(--text-muted)]">Uzemljenje: nije dokazano; izvorni dokumenti i citati su navedeni samo radi provjere.</p>
-                  <div className="mt-1"><span className="text-xs text-[var(--text-muted)]">Izvori: </span>{idList(statement.sourceDocumentIds)}</div>
+                  <p className="mt-1 text-xs text-[var(--text-muted)]">Sažetak je sastavljen radi konteksta. Njegove poveznice vode na poznate izvore, ali to samo po sebi ne potvrđuje sadržaj — provjerite izvorni odlomak.</p>
                   {statement.sourceDocumentIds?.map((sourceId) => (
-                    <div key={`${node.nodeId}-${sourceId}`} className="mt-1">
+                    <div key={`${node.nodeId}-${sourceId}`} className="mt-2">
                       <SourceDocumentLink document={sourceDocumentFor(sourceDocumentsById, sourceId)} compact />
                     </div>
                   ))}
-                  <div className="mt-1"><span className="text-xs text-[var(--text-muted)]">Činjenice: </span>{idList(statement.factIds)}</div>
-                  <div className="mt-1"><span className="text-xs text-[var(--text-muted)]">Citati: </span>{idList(statement.citationIds)}</div>
                 </li>
               ))}
             </ul>
-          </div>
+          </section>
         )}
+
         {Array.isArray(fragment?.facts) && fragment.facts.length > 0 && (
-          <div>
-            <h4 className="font-mono text-xs uppercase tracking-wide text-[var(--text-muted)]">Izvadci i uzemljenje</h4>
+          <section>
+            <h4 className="font-semibold text-[var(--text)]">Izvorni odlomci ({fragment.facts.length} od {factCount})</h4>
             <ul className="mt-2 space-y-2">
               {fragment.facts.map((fact) => (
                 <li key={fact.factId} className="rounded-lg bg-[var(--surface-muted)] p-3">
-                  <p className="font-mono text-xs text-[var(--text-muted)]">{fact.factId} · {fact.fileName || fact.sourceId || 'izvor nije dostupan'}{fact.date ? ` · ${fact.date}` : ''}</p>
+                  <p className="font-mono text-xs text-[var(--text-muted)]">
+                    {fact.fileName || 'Izvorni dokument nije dostupan'}{fact.date ? ` · ${fact.date}` : ''}
+                  </p>
                   <p className="mt-1 whitespace-pre-wrap text-[var(--text)]">{fact.excerpt || 'Izvadak nije dostupan.'}</p>
-                  <p className="mt-1 text-xs text-[var(--text-muted)]">Uzemljenje: {fact.grounded === true ? 'potvrđeno' : 'nepotvrđeno'}</p>
+                  <p className="mt-1 text-xs text-[var(--text-muted)]">
+                    {fact.grounded === true
+                      ? 'Izvadak pronađen u izvornom tekstu.'
+                      : fact.grounded === false
+                        ? 'Izvadak nije potvrđen u izvornom tekstu.'
+                        : 'Provjera izvornog teksta nije zabilježena.'}
+                  </p>
                   <SourceDocumentLink
                     document={sourceDocumentFor(sourceDocumentsById, fact.sourceId, fact.fileName)}
                     compact
                   />
-                  {fact.citationIds?.length > 0 && <div className="mt-1">Citati: {idList(fact.citationIds)}</div>}
                 </li>
               ))}
             </ul>
-            {fragment.omittedFactCount > 0 && <p className="mt-1 text-xs text-[var(--text-muted)]">Još {fragment.omittedFactCount} činjenica nije prikazano.</p>}
-          </div>
+            {omittedExcerptCount > 0 && (
+              <p className="mt-1 text-xs text-[var(--text-muted)]">
+                Još {omittedExcerptCount} izvornih činjenica nije prikazano u ovom popisu.
+              </p>
+            )}
+          </section>
         )}
-        {outcome ? (
-          <div className="rounded-lg border border-[var(--border)] p-3">
-            <h4 className="font-mono text-xs uppercase tracking-wide text-[var(--text-muted)]">Ishod sažetka</h4>
+
+        {summariesEnabled !== true ? (
+          <p className="rounded-lg border border-[var(--border)] p-3 text-sm text-[var(--text-muted)]">
+            Ova varijanta ne izrađuje zasebne sažetke po temi; koristi izvorne činjenice iznad.
+          </p>
+        ) : outcome ? (
+          <section className="rounded-lg border border-[var(--border)] p-3">
+            <h4 className="font-semibold text-[var(--text)]">Ishod sažetka</h4>
             <p className="mt-1 text-[var(--text)]">
-              Status: <strong>{outcome.status}</strong>
-              {outcome.reason ? ` · razlog: ${outcome.reason}` : ''}
+              {outcome.status === 'complete'
+                ? 'Sažetak je prihvaćen uz prepoznatljive poveznice na izvore.'
+                : outcome.reason === 'invalid-summary'
+                  ? 'Automatski sažetak nije prihvaćen.'
+                  : 'Sažetak nije izrađen; izvorne činjenice iznad ostaju dostupne.'}
             </p>
-            <p className="mt-0.5 font-mono text-xs text-[var(--text-muted)]">
-              prihvaćeno {outcome.accepted ?? '?'} · odbačeno {outcome.rejected ?? '?'} · poziva {outcome.calls ?? '?'}
-            </p>
-          </div>
+            {outcome.reason && <p className="mt-1 text-[var(--text-muted)]">{summaryReasonLabel(outcome.reason)}</p>}
+            {outcome.reason === 'invalid-summary' && (
+              <p className="mt-1 text-xs text-[var(--text-muted)]">
+                Izvorni odlomci iznad i njihova provjera ostaju zasebni; odbijanje sažetka ne znači da ti odlomci nisu potvrđeni.
+              </p>
+            )}
+          </section>
         ) : (
-          unavailable('Ishod sažetka za ovaj čvor')
+          <p className="rounded-lg border border-dashed border-[var(--border)] p-3 text-sm text-[var(--text-muted)]">
+            Ishod izrade sažetka nije zabilježen.
+          </p>
         )}
-        {selectionReasons.length > 0 && (
-          <div>
-            <h4 className="font-mono text-xs uppercase tracking-wide text-[var(--text-muted)]">Razlog odabira</h4>
-            <ul className="mt-1 space-y-1">
-              {selectionReasons.map((entry, index) => (
-                <li key={`sel-${index}`} className="text-[var(--text)]">
-                  {entry.reason || entry.basis || 'odabran determinističkim pravilima'}
-                  {entry.detail ? ` — ${entry.detail}` : ''}
-                </li>
-              ))}
-            </ul>
-          </div>
+
+        {(node.nodeId || node.factIds?.length || fragment?.sourceDocumentIds?.length || fragment?.citationIds?.length || selectionReasons.length > 0) && (
+          <details className="border-t border-[var(--border)] pt-3">
+            <summary className="min-h-11 cursor-pointer py-2 text-sm font-medium text-[var(--text)] focus-visible:outline-2 focus-visible:outline-offset-2">
+              Tehnički podaci i identifikatori
+            </summary>
+            <div className="space-y-2 text-xs text-[var(--text-muted)]">
+              {node.nodeId && <p>ID teme: <code className="break-all">{node.nodeId}</code></p>}
+              <div>Interni ID-jevi činjenica: {idList(node.factIds)}</div>
+              <div>Interni ID-jevi dokumenata: {idList(fragment?.sourceDocumentIds || node.sourceDocumentIds)}</div>
+              <div>Oznake citata: {idList(fragment?.citationIds || node.citationIds)}</div>
+              {selectionReasons.length > 0 && (
+                <div>
+                  Razlog uključivanja u ovu varijantu:
+                  <ul className="mt-1 list-disc pl-5">
+                    {selectionReasons.map((entry, index) => (
+                      <li key={`sel-${index}`}>{entry.reason || entry.basis || 'nije zabilježen'}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          </details>
         )}
       </div>
     </div>
@@ -270,31 +444,44 @@ function NodeDetail({ node, fragment, outcome, dagSelections, sourceDocumentsByI
 }
 
 function FlatClaimDetail({ claim, sourceDocumentsById }) {
-  if (!claim) return <p className="text-sm text-[var(--text-muted)]">Odaberite tvrdnju s popisa.</p>;
+  if (!claim) return <p className="text-sm text-[var(--text-muted)]">Odaberite nalaz s popisa.</p>;
   return (
     <div>
-      <p className="font-mono text-xs uppercase tracking-wide text-[var(--text-muted)]">Tvrdnja · {claim.claimId || 'bez id'}</p>
-      <h3 className="mt-1 text-lg font-semibold text-[var(--text)]">{claim.claimId || 'Ravni ulaz'}</h3>
-      <p className="mt-3 whitespace-pre-wrap text-sm text-[var(--text)]">{claim.text || 'Tekst tvrdnje nije dostupan.'}</p>
+      <p className="font-mono text-xs uppercase tracking-wide text-[var(--text-muted)]">Nalaz izrađen izravno iz izvornih činjenica</p>
+      <h3 className="mt-1 text-lg font-semibold text-[var(--text)]">Nalaz</h3>
+      <p className="mt-3 whitespace-pre-wrap text-sm text-[var(--text)]">{claim.text || 'Tekst nalaza nije dostupan.'}</p>
       {claim.evidence?.length ? (
-        <div className="mt-4">
-          <h4 className="font-mono text-xs uppercase tracking-wide text-[var(--text-muted)]">Izvorni izvadci i uzemljenje</h4>
+        <section className="mt-4">
+          <h4 className="font-semibold text-[var(--text)]">Izvorni odlomci</h4>
           <ul className="mt-2 space-y-2">
             {claim.evidence.map((entry, index) => (
               <li key={`${claim.claimId}-${entry.sourceId || index}`} className="rounded-lg bg-[var(--surface-muted)] p-3">
-                <p className="font-mono text-xs text-[var(--text-muted)]">{entry.fileName || entry.sourceId || 'izvor nije dostupan'}</p>
+                <p className="font-mono text-xs text-[var(--text-muted)]">{entry.fileName || 'Izvorni dokument nije dostupan'}</p>
                 <p className="mt-1 whitespace-pre-wrap text-sm text-[var(--text)]">{entry.text || 'Izvadak nije dostupan.'}</p>
-                <p className="mt-1 text-xs text-[var(--text-muted)]">Uzemljenje: {entry.grounded === true ? 'potvrđeno' : entry.grounded === false ? 'nepotvrđeno' : 'nije zabilježeno'}</p>
+                <p className="mt-1 text-xs text-[var(--text-muted)]">
+                  {entry.grounded === true
+                    ? 'Izvadak pronađen u izvornom tekstu.'
+                    : entry.grounded === false
+                      ? 'Izvadak nije potvrđen u izvornom tekstu.'
+                      : 'Provjera izvornog teksta nije zabilježena.'}
+                </p>
                 <SourceDocumentLink
                   document={sourceDocumentFor(sourceDocumentsById, entry.sourceId, entry.fileName)}
                   compact
                 />
-                {entry.citationIds?.length > 0 && <div className="mt-1">Citati: {idList(entry.citationIds)}</div>}
               </li>
             ))}
           </ul>
-        </div>
-      ) : unavailable('Izvorni izvadci za tvrdnju')}
+        </section>
+      ) : unavailable('Izvorni odlomci za ovaj nalaz')}
+      {claim.claimId && (
+        <details className="mt-4 border-t border-[var(--border)] pt-3">
+          <summary className="min-h-11 cursor-pointer py-2 text-sm font-medium text-[var(--text)] focus-visible:outline-2 focus-visible:outline-offset-2">
+            Tehnički ID nalaza
+          </summary>
+          <code className="text-xs text-[var(--text-muted)]">{claim.claimId}</code>
+        </details>
+      )}
     </div>
   );
 }
@@ -316,6 +503,9 @@ export default function LabFragmentsPane({ variants, activeProfile, onProfileCha
   const outcomes = Array.isArray(summaries?.outcomes) ? summaries.outcomes : [];
   const summaryOmitted = Array.isArray(summaries?.omitted) ? summaries.omitted : [];
   const droppedDerived = Array.isArray(summaries?.droppedDerived) ? summaries.droppedDerived : [];
+  const topicOmissions = groupOmissions(omitted);
+  const summaryOmissions = groupOmissions(summaryOmitted);
+  const droppedSummaryClaims = groupOmissions(droppedDerived);
   const outcomeByNode = useMemo(() => {
     const map = new Map();
     for (const outcome of outcomes) {
@@ -367,15 +557,18 @@ export default function LabFragmentsPane({ variants, activeProfile, onProfileCha
         </div>
       ) : (
         <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,16rem)_minmax(0,1fr)_minmax(0,20rem)]">
-          <aside aria-label="Kontekstni čvorovi" className="rounded-xl border border-[var(--border)] bg-[var(--surface)]">
-            <h3 className="border-b border-[var(--border)] px-3 py-2.5 font-mono text-xs uppercase tracking-wide text-[var(--text-muted)]">
-              {isFlat ? 'Ravni ulaz' : `Kontekstni čvorovi · ${profileLabel(activeProfile)}`}
+          <aside aria-label="Teme i odvojene činjenice" className="rounded-xl border border-[var(--border)] bg-[var(--surface)]">
+            <h3 className="border-b border-[var(--border)] px-3 py-2.5 text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">
+              {isFlat ? 'Bez tematskog grupiranja' : `Teme i činjenice · ${profileLabel(activeProfile)}`}
             </h3>
+            <p className="px-3 py-2 text-xs text-[var(--text-muted)]">
+              Odaberite stavku da biste vidjeli izvorne odlomke i što treba provjeriti.
+            </p>
             <div className="max-h-96 overflow-y-auto p-2">
               {isFlat ? (
                 <div className="space-y-2 p-1 text-sm">
                   <p className="text-[var(--text)]">
-                    Ravni profil nema DAG čvorova: {trace?.claims?.flat ?? '?'} tvrdnji ide izravno u sintezu.
+                    Ravni profil šalje izdvojene tvrdnje izravno u izvještaj, bez grupiranja po temama.
                   </p>
                   {flatClaims.length === 0 ? unavailable('Popis odabranih tvrdnji') : (
                     <ul className="space-y-1">
@@ -384,7 +577,7 @@ export default function LabFragmentsPane({ variants, activeProfile, onProfileCha
                           <button type="button" onClick={() => setSelectedFlatClaimId(claim.claimId)}
                             aria-current={(claim.claimId || null) === (selectedFlatClaim?.claimId || null) ? 'true' : undefined}
                             className="w-full rounded-lg border-l-2 border-l-transparent px-3 py-2 text-left text-sm text-[var(--text)] hover:bg-[var(--surface-muted)] focus-visible:outline-2 focus-visible:outline-offset-2">
-                            <span className="block font-mono text-[11px] text-[var(--text-muted)]">{claim.claimId || 'tvrdnja'}</span>
+                            <span className="block text-xs text-[var(--text-muted)]">Nalaz {index + 1}</span>
                             <span className="block truncate">{claim.text || 'Tekst nije dostupan.'}</span>
                           </button>
                         </li>
@@ -394,7 +587,7 @@ export default function LabFragmentsPane({ variants, activeProfile, onProfileCha
                   )}
                 </div>
               ) : nodes.length === 0 ? (
-                <p className="p-2 text-sm text-[var(--text-muted)]">Nema odabranih čvorova.</p>
+                <p className="p-2 text-sm text-[var(--text-muted)]">Ova varijanta nema tematskih grupa za prikaz.</p>
               ) : (
                 <ul className="space-y-1">
                   {nodes.map((node, index) => {
@@ -412,13 +605,23 @@ export default function LabFragmentsPane({ variants, activeProfile, onProfileCha
                               : 'border-l-transparent hover:bg-[var(--surface-muted)]'
                           }`}
                         >
-                          <span className="block font-mono text-[11px] uppercase tracking-wide text-[var(--text-muted)]">
-                            {node?.kind || '?'} · {(node?.factIds || []).length} činjenica
+                          <span className="block text-xs text-[var(--text-muted)]">
+                            {nodeKindLabel(node?.kind)} · {factCountLabel(Number.isInteger(contextFragmentByNode.get(node?.nodeId)?.coverage?.totalClaims)
+                              ? contextFragmentByNode.get(node?.nodeId).coverage.totalClaims
+                              : (node?.factIds || []).length)}
                           </span>
-                          <span className="block truncate text-sm font-medium text-[var(--text)]">{node?.nodeId}</span>
+                          <span className="block truncate text-sm font-medium text-[var(--text)]">
+                            {contextFragmentByNode.get(node?.nodeId)?.title
+                              || contextFragmentByNode.get(node?.nodeId)?.facts?.[0]?.description
+                              || nodeKindLabel(node?.kind)}
+                          </span>
                           {outcome && (
-                            <span className="mt-0.5 inline-block font-mono text-[11px] text-[var(--text-muted)]">
-                              sažetak: {outcome.status}
+                            <span className="mt-0.5 inline-block text-xs text-[var(--text-muted)]">
+                              {outcome.status === 'complete'
+                                ? 'Sažetak prihvaćen'
+                                : outcome.reason === 'invalid-summary'
+                                  ? 'Sažetak nije prihvaćen'
+                                  : 'Sažetak nije izrađen'}
                             </span>
                           )}
                         </button>
@@ -434,59 +637,71 @@ export default function LabFragmentsPane({ variants, activeProfile, onProfileCha
             {isFlat ? (
               <FlatClaimDetail claim={selectedFlatClaim} sourceDocumentsById={sourceDocumentsById} />
             ) : (
-              <NodeDetail node={selectedNode} fragment={selectedNode ? contextFragmentByNode.get(selectedNode.nodeId) : null} outcome={selectedNode ? outcomeByNode.get(selectedNode.nodeId) : null} dagSelections={trace?.dag?.selections} sourceDocumentsById={sourceDocumentsById} />
+              <NodeDetail
+                node={selectedNode}
+                fragment={selectedNode ? contextFragmentByNode.get(selectedNode.nodeId) : null}
+                outcome={selectedNode ? outcomeByNode.get(selectedNode.nodeId) : null}
+                summariesEnabled={summaries?.enabled === true}
+                dagSelections={trace?.dag?.selections}
+                sourceDocumentsById={sourceDocumentsById}
+              />
             )}
           </article>
 
-          <aside aria-label="Trag, potrošnja i snimka profila" className="space-y-4">
-            <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4">
-              <h3 className="font-mono text-xs uppercase tracking-wide text-[var(--text-muted)]">Izostavljeno i odbačeno</h3>
-              {omitted.length === 0 && summaryOmitted.length === 0 && droppedDerived.length === 0 ? (
-                <p className="mt-2 text-sm text-[var(--text-muted)]">Ništa nije izostavljeno.</p>
+          <aside aria-label="Detalji obrade" className="space-y-4">
+            <section className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4">
+              <h3 className="text-sm font-semibold text-[var(--text)]">Što ova varijanta nije uključila</h3>
+              {topicOmissions.length === 0 && summaryOmissions.length === 0 && droppedSummaryClaims.length === 0 ? (
+                <p className="mt-2 text-sm text-[var(--text-muted)]">Nema izostavljenih tema ni sažetaka.</p>
               ) : (
-                <ul className="mt-2 space-y-2 text-sm">
-                  {[...omitted, ...summaryOmitted].map((entry, index) => (
-                    <li key={`omit-${index}`} className="text-[var(--text)]">
-                      <span className="font-mono text-xs">{entry.nodeId || entry.factId || '?'}</span>
-                      {' — '}
-                      {entry.reason || '?'}
-                      {entry.detail ? ` (${entry.detail})` : ''}
-                    </li>
-                  ))}
-                  {droppedDerived.map((entry, index) => (
-                    <li key={`drop-${index}`} className="text-[var(--text)]">
-                      <span className="font-mono text-xs">{entry.nodeId || '?'}</span>
-                      {' — odbačena izvedena tvrdnja: '}
-                      {entry.reason || '?'}
-                    </li>
-                  ))}
+                <ul className="mt-2 space-y-4 text-sm">
+                  {topicOmissions.map((group) => <OmissionGroup key={`topic-${group.reason}`} group={group} kind="topic" />)}
+                  {summaryOmissions.map((group) => <OmissionGroup key={`summary-${group.reason}`} group={group} kind="summary" />)}
+                  {droppedSummaryClaims.map((group) => <OmissionGroup key={`derived-${group.reason}`} group={group} kind="derived" />)}
                 </ul>
               )}
-            </div>
+            </section>
 
-            <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4">
-              <h3 className="font-mono text-xs uppercase tracking-wide text-[var(--text-muted)]">Potrošnja</h3>
+            <section className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4">
+              <h3 className="text-sm font-semibold text-[var(--text)]">Resursi korišteni</h3>
               {usage ? (
-                <p className="mt-2 font-mono text-xs text-[var(--text)]">
-                  {usage.calls ?? '?'} poziva · {usage.totalTokens ?? '?'} tokena · {usage.elapsedMs ?? '?'} ms
-                </p>
-              ) : (
-                unavailable('Potrošnja')
-              )}
-            </div>
-
-            <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4">
-              <h3 className="font-mono text-xs uppercase tracking-wide text-[var(--text-muted)]">Snimka profila</h3>
-              {snapshot ? (
-                <dl className="mt-2 space-y-1 font-mono text-xs text-[var(--text)]">
-                  <div className="flex justify-between gap-2"><dt className="text-[var(--text-muted)]">strategija</dt><dd>{snapshot.contextStrategy || '?'}</dd></div>
-                  <div className="flex justify-between gap-2"><dt className="text-[var(--text-muted)]">sažeci</dt><dd>{snapshot.nodeSummaries || '?'}</dd></div>
-                  <div className="flex justify-between gap-2"><dt className="text-[var(--text-muted)]">revizija</dt><dd className="truncate">{snapshot.codeRevision || '?'}</dd></div>
+                <dl className="mt-2 space-y-1 text-sm text-[var(--text)]">
+                  <div className="flex justify-between gap-2"><dt>Pozivi AI modelu</dt><dd className="tabular-nums">{usage.calls ?? 'Nepoznato'}</dd></div>
+                  <div className="flex justify-between gap-2"><dt>Tokeni obrađeni</dt><dd className="tabular-nums">{usage.totalTokens ?? 'Nepoznato'}</dd></div>
+                  <div className="flex justify-between gap-2"><dt>Trajanje</dt><dd className="tabular-nums">{usage.elapsedMs != null ? `${(usage.elapsedMs / 1000).toFixed(1)} s` : 'Nepoznato'}</dd></div>
                 </dl>
               ) : (
-                unavailable('Snimka profila')
+                unavailable('Resursi')
               )}
-            </div>
+            </section>
+
+            <section className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4">
+              <h3 className="text-sm font-semibold text-[var(--text)]">Postavke metode</h3>
+              {snapshot ? (
+                <>
+                  <dl className="mt-2 space-y-1 text-sm text-[var(--text)]">
+                    <div className="flex justify-between gap-2">
+                      <dt>Način organiziranja</dt>
+                      <dd>{snapshot.contextStrategy === 'case-context' ? 'Tematske grupe' : snapshot.contextStrategy === 'flat' ? 'Bez grupiranja' : 'Nepoznato'}</dd>
+                    </div>
+                    <div className="flex justify-between gap-2">
+                      <dt>Sažeci po temi</dt>
+                      <dd>{snapshot.nodeSummaries === 'on' ? 'Uključeni' : snapshot.nodeSummaries === 'off' ? 'Isključeni' : 'Nepoznato'}</dd>
+                    </div>
+                  </dl>
+                  {snapshot.codeRevision && (
+                    <details className="mt-2 border-t border-[var(--border)] pt-2">
+                      <summary className="cursor-pointer text-xs text-[var(--text-muted)] focus-visible:outline-2 focus-visible:outline-offset-2">
+                        Tehnička revizija
+                      </summary>
+                      <code className="mt-1 block break-all text-xs text-[var(--text-muted)]">{snapshot.codeRevision}</code>
+                    </details>
+                  )}
+                </>
+              ) : (
+                unavailable('Postavke metode')
+              )}
+            </section>
           </aside>
         </div>
       )}
