@@ -135,14 +135,14 @@ function classifyFileFailure(message) {
     if (/pdf exceeds the maximum page count for OCR|pdf-page-limit-exceeded/i.test(raw)) {
         return { code: 'pdf-page-limit-exceeded', reason: PDF_PAGE_LIMIT_MESSAGE };
     }
-    if (/OCR failed/i.test(raw)) {
-        return { code: 'ocr-failed', reason: 'OCR čitanje dokumenta nije uspjelo.' };
-    }
     if (/could not be parsed|unsupported file type|file not found|no readable text/i.test(raw)) {
         return {
             code: 'unreadable-file',
             reason: 'Datoteka nije mogla biti očitana (nečitljiva ili nepodržanog formata).',
         };
+    }
+    if (/OCR failed/i.test(raw)) {
+        return { code: 'ocr-failed', reason: 'OCR čitanje dokumenta nije uspjelo.' };
     }
     return { code: 'unclassified', reason: 'Obrada datoteke nije uspjela.' };
 }

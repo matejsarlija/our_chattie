@@ -69,6 +69,45 @@ describe('attachAnalysesToEvidencePackage — ground-truth chunk branch (Phase 0
         expect(pkg.coverage.failed).toBe(1);
     });
 
+    test('marks successfully analyzed but truncated documents as partial coverage', () => {
+        const pkg = attachAnalysesToEvidencePackage(basePackage(), [{
+            analysis: {
+                individualAnalyses: [{
+                    filePath: '/tmp/partial.pdf',
+                    text: 'partial.pdf',
+                    extraction: {
+                        method: 'ocr',
+                        pages: 20,
+                        chars: 8000,
+                        truncated: true,
+                        error: null,
+                    },
+                    truncated: true,
+                    aiResult: {
+                        caseNumber: 'St-1/2024',
+                        summary: 'Djelomičan sažetak.',
+                        amounts: [],
+                        propertyFlow: [],
+                    },
+                }],
+            },
+        }], null);
+
+        expect(pkg.analyses[0]).toEqual(expect.objectContaining({
+            extraction: expect.objectContaining({ method: 'ocr', pages: 20, truncated: true }),
+            truncated: true,
+        }));
+        expect(pkg.coverage).toEqual(expect.objectContaining({
+            analyzed: 1,
+            failed: 0,
+            partial: 1,
+            complete: false,
+        }));
+        expect(pkg.coverage.gaps).toEqual(expect.arrayContaining([
+            expect.stringContaining('partial.pdf'),
+        ]));
+    });
+
     test('items without extracted text contribute no chunks', () => {
         const pkg = attachAnalysesToEvidencePackage(basePackage(), [{
             analysis: {

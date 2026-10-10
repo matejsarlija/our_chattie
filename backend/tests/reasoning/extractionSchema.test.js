@@ -150,8 +150,26 @@ describe('validateExtraction', () => {
         ]));
     });
 
+    test('property amounts retain explicit value roles and reject unknown roles', () => {
+        const valid = validateExtraction({
+            propertyFlow: [{
+                description: 'Saldo tražbine',
+                value: 100,
+                assetType: 'tražbina',
+                valueRole: 'claim_balance',
+            }],
+        });
+        expect(valid.value.propertyFlow[0].valueRole).toBe('claim_balance');
+
+        const invalid = validateExtraction({
+            propertyFlow: [{ description: 'Vrijednost', valueRole: 'maybe-balance' }],
+        });
+        expect(invalid.value.propertyFlow[0].valueRole).toBeNull();
+        expect(invalid.gaps.map((item) => item.field)).toContain('propertyFlow[0].valueRole');
+    });
+
     test('schema version and repairable set are published', () => {
-        expect(EXTRACTION_SCHEMA_VERSION).toBe(1);
+        expect(EXTRACTION_SCHEMA_VERSION).toBe(2);
         expect(REPAIRABLE_FIELDS).toEqual(['amounts', 'propertyFlow']);
     });
 });

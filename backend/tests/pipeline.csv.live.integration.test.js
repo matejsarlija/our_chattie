@@ -56,7 +56,6 @@ jest.mock('../helpers/geminiConfig', () => {
         }),
         ocr: 'Mock OCR page text.',
         'ocr-batch': '=== STRANICA 1 ===\nMock OCR page text.',
-        visualizer: 'flowchart TD\n    A[Mock] --> B[Diagram]',
     };
     const mockUsageMetadata = { input_tokens: 50, output_tokens: 20, total_tokens: 70 };
     return {

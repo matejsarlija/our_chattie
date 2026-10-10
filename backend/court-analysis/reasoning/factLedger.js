@@ -13,10 +13,12 @@
 // page-map precondition belongs to a future extraction-input ticket.
 //
 // Byte-identical attachments (the same filing re-attached across objave)
-// collapse to one row with merged `filings` provenance. Only byte-identical
-// content shares a row (whitespace-normalized hash); near-duplicates stay
-// separate per the TD-1 no-go and TX-3 research-only constraint.
+// collapse to one row with merged `filings` provenance. Cross-category
+// repetitions are linked, never dropped: an amount and a receivable event can
+// be two projections of the same source statement without being independent
+// evidence.
 
+const crypto = require('crypto');
 const { normalizeText } = require('./indexer');
 const { parseAmount } = require('./flow');
 
@@ -71,6 +73,8 @@ function buildFactLedger(analyses) {
                 direction: cleanString(raw.direction),
                 amountRole: cleanString(raw.amountRole),
                 eventType: cleanString(raw.eventType),
+                valueRole: cleanString(raw.valueRole),
+                crossCategoryFactId: null,
                 legalEffect: cleanString(raw.legalEffect),
                 references: Array.isArray(raw.references) ? raw.references.filter((r) => typeof r === 'string' && r.trim()) : [],
                 relationshipBasis: cleanString(raw.relationshipBasis),
@@ -104,6 +108,8 @@ function buildFactLedger(analyses) {
                 direction: cleanString(raw.direction),
                 amountRole: null,
                 eventType: cleanString(raw.eventType),
+                valueRole: cleanString(raw.valueRole),
+                crossCategoryFactId: null,
                 legalEffect: cleanString(raw.legalEffect),
                 references: Array.isArray(raw.references) ? raw.references.filter((r) => typeof r === 'string' && r.trim()) : [],
                 relationshipBasis: cleanString(raw.relationshipBasis),
@@ -129,6 +135,44 @@ function buildFactLedger(analyses) {
             });
         }
     }
+    return annotateCrossCategoryEchoes(rows);
+}
+function annotateCrossCategoryEchoes(rows) {
+    const groups = new Map();
+    for (const row of rows) {
+        if (!['amount', 'property'].includes(row?.kind)
+            || !Number.isFinite(row.value)
+            || !row.currency
+            || typeof row.quote !== 'string'
+            || !row.quote.trim()) continue;
+        const source = row.doc?.contentHash || row.doc?.sourceDocumentLinkId || row.doc?.analysisId;
+        if (!source) continue;
+        const key = [
+            source,
+            normalizeText(row.quote),
+            row.value,
+            row.currency,
+        ].join('::');
+        if (!groups.has(key)) groups.set(key, { amount: [], property: [] });
+        groups.get(key)[row.kind].push(row);
+    }
+
+    const compatible = (left, right) => {
+        const bothMatch = (a, b) => !a || !b || normalizeText(a) === normalizeText(b);
+        return bothMatch(left.date, right.date)
+            && bothMatch(left.eventType, right.eventType)
+            && bothMatch(left.claimRegistryNumber, right.claimRegistryNumber)
+            && bothMatch(left.filingReference, right.filingReference);
+    };
+    for (const [key, group] of groups) {
+        if (group.amount.length !== 1 || group.property.length !== 1) continue;
+        const [amount] = group.amount;
+        const [property] = group.property;
+        if (!compatible(amount, property)) continue;
+        const id = `cross-${crypto.createHash('sha256').update(key).digest('hex').slice(0, 24)}`;
+        amount.crossCategoryFactId = id;
+        property.crossCategoryFactId = id;
+    }
     return rows;
 }
 
@@ -138,8 +182,16 @@ function ledgerRowKey(row) {
         normalizeText(row.description || ''),
         String(row.value ?? ''),
         row.currency || '',
+        normalizeText(row.date || ''),
+        normalizeText(row.direction || ''),
+        normalizeText(row.amountRole || ''),
+        normalizeText(row.valueRole || ''),
+        normalizeText(row.eventType || ''),
+        normalizeText(row.legalEffect || ''),
+        normalizeText(row.quote || ''),
         normalizeText(row.claimRegistryNumber || ''),
-        normalizeText(row.filingReference || '')
+        normalizeText(row.filingReference || ''),
+        normalizeText(row.assetType || '')
     ];
     return parts.join('::');
 }

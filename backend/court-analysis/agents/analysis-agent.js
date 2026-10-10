@@ -118,6 +118,99 @@ function propertyFlowRepairGap(detail) {
     return { field: 'propertyFlow', code: 'source-cue-empty', detail };
 }
 
+async function validateAndRepairAnalysisSegment(response, segment, file, repairCtx) {
+    let validated = validateExtraction(extractJsonBlock(response?.content));
+    const rootWasUnparseable = !validated.value;
+
+    if (rootWasUnparseable || !hasUsableExtraction(validated.value)) {
+        agentLog.warn(outputCapWarning("analysis"));
+        try {
+            const repairContent = await invokeRepairGemini(
+                buildFullRepairPrompt({ sourceText: segment.text }),
+                repairCtx,
+            );
+            const salvaged = validateExtraction(extractJsonBlock(repairContent));
+            if (salvaged.value) validated = salvaged;
+        } catch (repairErr) {
+            agentLog.warn(`[Analyzer] Full repair failed for ${file.text}: ${repairErr.message}`);
+        }
+        if (!validated.value || !hasUsableExtraction(validated.value)) {
+            if (!rootWasUnparseable) {
+                throw new Error(
+                    `Extraction schema mismatch in ${file.text || file.filePath}; no usable content salvaged.`,
+                );
+            }
+            throw new Error(
+                `AI returned non-JSON response: "${String(response?.content || "").slice(0, 100)}..."`,
+            );
+        }
+    } else if (!validated.valid) {
+        for (const field of repairGapFields(validated)) {
+            try {
+                const repairContent = await invokeRepairGemini(
+                    buildFieldRepairPrompt({ field, sourceText: segment.text }),
+                    repairCtx,
+                );
+                const repair = parseFieldRepairResponse(repairContent, field);
+                if (repair.ok) {
+                    validated = validateExtraction({
+                        ...validated.value,
+                        [field]: repair.absent ? [] : repair.value,
+                    });
+                } else {
+                    agentLog.warn(`[Analyzer] Field repair rejected for ${file.text} field ${field}: ${repair.reason}`);
+                }
+            } catch (repairErr) {
+                agentLog.warn(`[Analyzer] Field repair failed for ${file.text} field ${field}: ${repairErr.message}`);
+            }
+        }
+        if (!hasUsableExtraction(validated.value)) {
+            const remaining = repairGapFields(validated);
+            throw new Error(
+                `Extraction schema mismatch for field(s) ${(remaining.length > 0 ? remaining : ['document']).join(', ')} in ${file.text || file.filePath}; no usable content salvaged.`,
+            );
+        }
+    }
+
+    let assignmentCueGap = null;
+    if (
+        hasReceivableAssignmentCue(segment.text)
+        && Array.isArray(validated.value?.propertyFlow)
+        && validated.value.propertyFlow.length === 0
+    ) {
+        try {
+            const repairContent = await invokeRepairGemini(
+                buildFieldRepairPrompt({ field: 'propertyFlow', sourceText: segment.text }),
+                repairCtx,
+            );
+            const repair = parseFieldRepairResponse(repairContent, 'propertyFlow');
+            if (repair.ok && !repair.absent && repair.value.length > 0) {
+                validated = validateExtraction({
+                    ...validated.value,
+                    propertyFlow: repair.value,
+                });
+            } else {
+                assignmentCueGap = propertyFlowRepairGap(
+                    repair.ok
+                        ? 'source states a receivable assignment but targeted property-flow repair returned no entry'
+                        : `source states a receivable assignment but targeted property-flow repair was unusable: ${repair.reason}`,
+                );
+            }
+        } catch (repairErr) {
+            assignmentCueGap = propertyFlowRepairGap(
+                `source states a receivable assignment but targeted property-flow repair failed: ${repairErr.message}`,
+            );
+            agentLog.warn(`[Analyzer] Assignment property-flow repair failed for ${file.text}: ${repairErr.message}`);
+        }
+    }
+
+    return {
+        value: validated.value,
+        gaps: validated.gaps,
+        assignmentCueGap,
+    };
+}
+
 const pdfjsLib = require("pdfjs-dist/legacy/build/pdf.js");
 const { withGeminiRetry, withGeminiTimeout } = require("../../helpers/geminiRetry");
 const { trackGeminiInvoke } = require("../../helpers/geminiUsage");
@@ -145,11 +238,9 @@ const PDFJS_STANDARD_FONT_DATA_URL = (() => {
 
 const { createCanvas } = require("canvas");
 
-const DIRECT_TEXT_LIMIT = 25000;
 const CHUNKING_TRIGGER_TEXT_LENGTH = 25000;
 const ANALYSIS_CHUNK_SIZE = 3500;
 const ANALYSIS_CHUNK_OVERLAP = 350;
-const ANALYSIS_RETRIEVAL_LIMIT = 6;
 
 // Pacing for document analysis. Files are processed with bounded concurrency
 // so a batch does not fan out every file in parallel and burst the provider's
@@ -171,86 +262,139 @@ const ANALYSIS_HEARTBEAT_MS = (() => {
     return Number.isFinite(raw) && raw >= 1000 ? raw : 45000;
 })();
 
-function buildRetrievalTerms(caseInfo = {}, file = {}) {
-    const terms = new Set();
-    if (caseInfo.caseNumber) terms.add(String(caseInfo.caseNumber).toLowerCase());
-    if (file.text) terms.add(String(file.text).toLowerCase());
-    if (file.url) terms.add(String(file.url).toLowerCase());
-
-    (caseInfo.participants || []).forEach((participant) => {
-        if (participant?.name) terms.add(String(participant.name).toLowerCase());
-        if (participant?.oib) terms.add(String(participant.oib).toLowerCase());
+function buildPageRanges(pageTexts, pageNumbers = pageTexts.map((_, index) => index + 1)) {
+    let cursor = 0;
+    return pageTexts.map((pageText, index) => {
+        const startIndex = cursor;
+        const endIndex = startIndex + pageText.length;
+        cursor = endIndex + 2;
+        return { pageNumber: pageNumbers[index], startIndex, endIndex };
     });
-
-    return Array.from(terms).filter(Boolean);
 }
 
-function rankChunksForAnalysis(chunks = [], retrievalTerms = []) {
-    return chunks
-        .map((chunk, index) => {
-            const lowerText = String(chunk.text || "").toLowerCase();
-            const lexicalHits = retrievalTerms.reduce((hits, term) => {
-                if (!term) return hits;
-                return lowerText.includes(term) ? hits + 1 : hits;
-            }, 0);
-
-            return {
-                chunk,
-                score: lexicalHits,
-                index,
-            };
-        })
-        .sort((a, b) => {
-            if (a.score !== b.score) return b.score - a.score;
-            return a.index - b.index;
-        });
+function pageRangesFromMarkedText(text) {
+    const markers = [...String(text || '').matchAll(/^=== STRANICA (\d+) ===\s*$/gm)];
+    return markers.map((marker, index) => ({
+        pageNumber: Number(marker[1]),
+        startIndex: marker.index,
+        endIndex: markers[index + 1]?.index ?? String(text).length,
+    }));
 }
 
-function buildAnalysisInputText(text, caseInfo, file) {
-    if (!text || text.length <= CHUNKING_TRIGGER_TEXT_LENGTH) {
+function pageNumbersForRange(pageRanges, startIndex, endIndex) {
+    return (pageRanges || [])
+        .filter((page) => page.endIndex > startIndex && page.startIndex < endIndex)
+        .map((page) => page.pageNumber);
+}
+
+function buildAnalysisSegments(text, file, pageRanges = []) {
+    const sourceText = String(text || '');
+    const docId = path.basename(file?.filePath || file?.text || 'analysis-doc');
+    const resolvedPageRanges = pageRanges.length > 0 ? pageRanges : pageRangesFromMarkedText(sourceText);
+    if (sourceText.length <= CHUNKING_TRIGGER_TEXT_LENGTH) {
         return {
-            analysisText: String(text || "").slice(0, DIRECT_TEXT_LIMIT),
             usedChunking: false,
-            chunkCount: 0,
-            retrievedChunkCount: 0,
+            segments: [{
+                id: `${docId}:full`,
+                text: sourceText,
+                startIndex: 0,
+                endIndex: sourceText.length,
+                pageNumbers: pageNumbersForRange(resolvedPageRanges, 0, sourceText.length),
+            }],
         };
     }
 
-    const docId = path.basename(file?.filePath || file?.text || "analysis-doc");
-    const chunks = splitTextIntoChunks(text, {
+    const chunks = splitTextIntoChunks(sourceText, {
         chunkSize: ANALYSIS_CHUNK_SIZE,
         chunkOverlap: ANALYSIS_CHUNK_OVERLAP,
         docId,
     });
+    return {
+        usedChunking: true,
+        segments: chunks.map((chunk, index) => {
+            const startIndex = chunk.metadata?.startIndex ?? 0;
+            const endIndex = chunk.metadata?.endIndex ?? startIndex + chunk.text.length;
+            return {
+                id: chunk.id || `${docId}:chunk-${index + 1}`,
+                text: chunk.text,
+                startIndex,
+                endIndex,
+                pageNumbers: pageNumbersForRange(resolvedPageRanges, startIndex, endIndex),
+            };
+        }),
+    };
+}
 
-    if (!chunks || chunks.length === 0) {
-        return {
-            analysisText: text.slice(0, DIRECT_TEXT_LIMIT),
-            usedChunking: false,
-            chunkCount: 0,
-            retrievedChunkCount: 0,
-        };
-    }
+function mergeAnalysisChunkResults(chunkResults, sourceText) {
+    const successes = chunkResults.filter((result) => result.value);
+    const factsFor = (field) => {
+        const merged = [];
+        const seen = new Map();
+        for (const { segment, value } of successes) {
+            for (const fact of Array.isArray(value[field]) ? value[field] : []) {
+                const quote = typeof fact?.quote === 'string' ? fact.quote.trim() : '';
+                const identity = quote
+                    ? JSON.stringify(Object.keys(fact).sort().map((key) => [key, fact[key]]))
+                    : null;
+                const quoteStart = quote ? String(sourceText || '').indexOf(quote) : -1;
+                const duplicateFromOverlap = identity && quoteStart >= 0
+                    ? (seen.get(identity) || []).some((prior) => {
+                        const overlapStart = Math.max(prior.segment.startIndex, segment.startIndex);
+                        const overlapEnd = Math.min(prior.segment.endIndex, segment.endIndex);
+                        return overlapStart < overlapEnd
+                            && quoteStart < overlapEnd
+                            && quoteStart + quote.length > overlapStart;
+                    })
+                    : false;
+                if (duplicateFromOverlap) continue;
 
-    const retrievalTerms = buildRetrievalTerms(caseInfo, file);
-    const ranked = rankChunksForAnalysis(chunks, retrievalTerms);
-    const selected = ranked
-        .slice(0, ANALYSIS_RETRIEVAL_LIMIT)
-        .map(({ chunk }) => chunk);
-
-    const analysisText = selected
-        .map(
-            (chunk, index) =>
-                `[Chunk ${index + 1} | ${chunk.id || "no-id"}]\n${chunk.text}`,
-        )
-        .join("\n\n")
-        .slice(0, DIRECT_TEXT_LIMIT);
+                const mergedFact = {
+                    ...fact,
+                    sourceChunkId: segment.id,
+                    sourceStartIndex: segment.startIndex,
+                    sourceEndIndex: segment.endIndex,
+                    sourcePages: segment.pageNumbers,
+                };
+                merged.push(mergedFact);
+                if (identity) {
+                    const prior = seen.get(identity) || [];
+                    prior.push({ segment, fact: mergedFact });
+                    seen.set(identity, prior);
+                }
+            }
+        }
+        return merged;
+    };
+    const summaries = [...new Set(successes.map(({ value }) => value.summary).filter(Boolean))];
+    const citedFilingReferences = [...new Set(successes.flatMap(({ value }) => (
+        Array.isArray(value.citedFilingReferences) ? value.citedFilingReferences : []
+    )))];
 
     return {
-        analysisText,
-        usedChunking: true,
-        chunkCount: chunks.length,
-        retrievedChunkCount: selected.length,
+        caseNumber: successes.find(({ value }) => value.caseNumber)?.value.caseNumber || null,
+        decisionDate: successes.find(({ value }) => value.decisionDate)?.value.decisionDate || null,
+        summary: summaries.join('\n\n'),
+        amounts: factsFor('amounts'),
+        propertyFlow: factsFor('propertyFlow'),
+        citedFilingReferences,
+        gaps: successes.flatMap(({ segment, gaps }) => (
+            (gaps || []).map((gap) => ({ ...gap, chunkId: segment.id }))
+        )),
+        assignmentCueGaps: successes
+            .filter((result) => result.assignmentCueGap)
+            .map(({ segment, assignmentCueGap }) => ({ ...assignmentCueGap, chunkId: segment.id })),
+    };
+}
+
+function summarizeExtractionMetadata(extraction, text) {
+    if (!extraction) return null;
+    return {
+        method: extraction.method || null,
+        pages: Number.isFinite(extraction.pages) ? extraction.pages : 0,
+        chars: String(text || '').length,
+        truncated: extraction.truncated === true,
+        error: extraction.error || null,
+        fallbackError: extraction.fallbackError || null,
     };
 }
 
@@ -278,6 +422,7 @@ function buildExtractionResult(overrides = {}) {
         text: "",
         method: null,
         pages: 0,
+        pageRanges: [],
         truncated: false,
         error: null,
         ...overrides,
@@ -285,8 +430,7 @@ function buildExtractionResult(overrides = {}) {
 }
 
 // Compact fact line for extraction outcomes, emitted once per analyzed file
-// so logs answer "how was this file's text obtained and how much did we
-// actually get" without needing debug verbosity.
+// so logs answer how the text was obtained and how much was recovered.
 function summarizeExtraction(extraction) {
     return [
         `method=${extraction?.method || "none"}`,
@@ -294,13 +438,14 @@ function summarizeExtraction(extraction) {
         `chars=${(extraction?.text || "").length}`,
         `truncated=${Boolean(extraction?.truncated)}`,
         `error=${extraction?.error || "null"}`,
+        `fallbackError=${extraction?.fallbackError || "null"}`,
     ].join(" ");
 }
 
 /**
  * Extracts raw text from a file based on its extension.
  * @param {string} filePath
- * @returns {Promise<{text: string, method: string|null, pages: number, truncated: boolean, error: string|null}>}
+ * @returns {Promise<{text: string, method: string|null, pages: number, pageRanges: Array, truncated: boolean, error: string|null}>}
  * Never rejects: failures are reported via `error` with `text: ""`.
  */
 async function extractTextFromFile(filePath) {
@@ -323,15 +468,17 @@ async function extractTextFromFile(filePath) {
                 const content = await page.getTextContent();
                 const pageText = content.items
                     .filter((item) => typeof item.str === "string")
-                    .map((item) => item.str)
-                    .join(" ");
+                    .map((item) => `${item.str}${item.hasEOL ? "\n" : " "}`)
+                    .join("")
+                    .trim();
                 pageTexts.push(pageText);
             }
             await doc.destroy();
             return buildExtractionResult({
-                text: pageTexts.join("\n\n").trim(),
+                text: pageTexts.join("\n\n"),
                 method: "pdf-text",
                 pages: pageTexts.length,
+                pageRanges: buildPageRanges(pageTexts),
             });
         }
         if (lowerPath.endsWith(".docx")) {
@@ -650,7 +797,12 @@ async function extractTextViaNativePdf(filePath, progressCallback, options = {})
             return buildExtractionResult({ method: 'native-pdf', pages: pageCount, error: 'native-pdf-invalid-transcript' });
         }
         ocrPageStore.writeNativePdfToDisk(contentHash, text);
-        return buildExtractionResult({ text, method: 'native-pdf', pages: pageCount });
+        return buildExtractionResult({
+            text,
+            method: 'native-pdf',
+            pages: pageCount,
+            pageRanges: pageRangesFromMarkedText(text),
+        });
     } catch (err) {
         agentLog.error(
             `[Native PDF] Failed for ${filePath}; falling back to raster OCR:`,
@@ -861,8 +1013,10 @@ async function extractTextViaOCR(filePath, progressCallback, options = {}) {
             throw firstFailure || new Error("No OCR pages were processed.");
         }
 
-        const combinedText = obtainedPages.map((pageNumber) => pageTexts.get(pageNumber)).join("\n\n") + "\n\n";
-        const truncated = numPages > maxPages;
+        const orderedPageTexts = obtainedPages.map((pageNumber) => pageTexts.get(pageNumber));
+        const combinedText = orderedPageTexts.join("\n\n");
+        const pageRanges = buildPageRanges(orderedPageTexts, obtainedPages);
+        const truncated = numPages > maxPages || Boolean(firstFailure) || pagesProcessed < maxPages;
 
         if (firstFailure || pagesProcessed < maxPages) {
             agentLog.log(
@@ -870,9 +1024,10 @@ async function extractTextViaOCR(filePath, progressCallback, options = {}) {
                     `${firstFailure ? " after a page failure" : ""}.`,
             );
             return buildExtractionResult({
-                text: combinedText.trim(),
+                text: combinedText,
                 method: "ocr",
                 pages: pagesProcessed,
+                pageRanges,
                 truncated,
                 error: EXTRACTION_ERROR_CODES.OCR_PARTIAL,
             });
@@ -884,9 +1039,10 @@ async function extractTextViaOCR(filePath, progressCallback, options = {}) {
                 `${truncated ? ` (capped at OCR_MAX_PAGES=${maxPages})` : ""}.`,
         );
         return buildExtractionResult({
-            text: combinedText.trim(),
+            text: combinedText,
             method: "ocr",
             pages: pagesProcessed,
+            pageRanges,
             truncated,
         });
     } catch (err) {
@@ -947,7 +1103,10 @@ function describeExtractionFailure(extraction) {
 }
 
 function buildExtractionErrorMessage(extraction) {
-    return `Could not extract text from file: ${describeExtractionFailure(extraction)}`;
+    const fallbackFailure = extraction?.fallbackError
+        ? ` OCR fallback also failed: ${describeExtractionFailure({ error: extraction.fallbackError })}`
+        : '';
+    return `Could not extract text from file: ${describeExtractionFailure(extraction)}${fallbackFailure}`;
 }
 
 class AnalyzeDocumentsTool extends Tool {
@@ -1031,9 +1190,12 @@ class AnalyzeDocumentsTool extends Tool {
             // grounding gap for the clusters that need grounding most.
             let retrievalChunks = null;
             let contentHash = null;
+            let extraction = null;
+            let text = '';
+            let analysisChunks = null;
             try {
-                let extraction = await extractTextFromFile(file.filePath);
-                let text = extraction.text;
+                extraction = await extractTextFromFile(file.filePath);
+                text = extraction.text;
 
                 // If the PDF has no usable text, try OCR. The two reasons are
                 // logged separately on purpose: a parse error (corrupt or
@@ -1064,11 +1226,14 @@ class AnalyzeDocumentsTool extends Tool {
                     if (ocrResult.text && ocrResult.text.trim().length > 0) {
                         text = ocrResult.text;
                         extraction = ocrResult;
-                    } else if (!extraction.error) {
-                        // The text layer was empty (likely a scanned document)
-                        // and OCR could not rescue it — surface WHY it failed
-                        // instead of a generic "may be empty or corrupt".
-                        extraction = { ...extraction, error: ocrResult.error || EXTRACTION_ERROR_CODES.OCR_FAILED };
+                    } else {
+                        const primaryError = extraction.error;
+                        extraction = {
+                            ...extraction,
+                            ...ocrResult,
+                            error: primaryError || ocrResult.error || EXTRACTION_ERROR_CODES.OCR_FAILED,
+                            ...(primaryError && ocrResult.error ? { fallbackError: ocrResult.error } : {}),
+                        };
                     }
                 }
 
@@ -1117,19 +1282,27 @@ class AnalyzeDocumentsTool extends Tool {
                     }).join('\n')
                     : "Participant information was not available from the source page.";
 
-                const analysisInput = buildAnalysisInputText(text, caseInfo, file);
+                const analysisInput = buildAnalysisSegments(text, file, extraction.pageRanges);
+                const chunkResults = [];
+                const chunkFailures = [];
+                analysisChunks = { total: analysisInput.segments.length, completed: 0, failed: 0 };
                 if (analysisInput.usedChunking) {
-                    progressCallback &&
-                        progressCallback({
-                            step: "chunking",
-                            message: `Chunked ${file.text} into ${analysisInput.chunkCount} chunks.`,
-                        });
-                    progressCallback &&
-                        progressCallback({
-                            step: "retrieving",
-                            message: `Retrieved ${analysisInput.retrievedChunkCount} relevant chunks for ${file.text}.`,
-                        });
+                    progressCallback?.({
+                        step: "chunking",
+                        message: `Čitam svih ${analysisInput.segments.length} odlomaka dokumenta ${file.text}.`,
+                    });
                 }
+
+                for (const [segmentIndex, segment] of analysisInput.segments.entries()) {
+                    const pageLabel = segment.pageNumbers.length > 0
+                        ? `, stranice ${segment.pageNumbers[0]}-${segment.pageNumbers.at(-1)}`
+                        : '';
+                    progressCallback?.({
+                        step: "analyzing",
+                        kind: "chunk",
+                        message: `Analiziram odlomak ${segmentIndex + 1}/${analysisInput.segments.length}${pageLabel} dokumenta ${file.text}.`,
+                    });
+                    try {
 
                 //console.log(`Analyzing text from file: ${file.filePath}, the text length is: ${text.length}`);
                 // alt prompt: a medium-sized paragraph, two at most, ...
@@ -1140,8 +1313,9 @@ class AnalyzeDocumentsTool extends Tool {
                 Do include any important figures (currency amounts) you find in the summary.
                 Also extract any financial amounts (payments, claims, costs, reservations) into an optional "amounts" array, with ONE item per table row — if the document contains an itemized table, register, or list (popis tražbina, diobeni popis, troškovnik, obračun), extract one item per row and never merge rows into a single summary amount. Each item being a JSON object with: "description" (what the money is for, in Croatian), "amount" (number), "currency" ("EUR" or "HRK"), "date" (if known), "direction" (one of "potraživanje" when the amount is a claim in the debtor's favor, "obveza" when it is a liability against the debtor, or "awarded" | "rejected" | "netted" when a ruling decides it), "amountRole" (one of "total" | "line_item" | "principal" | "cost" | "paid" | "fee" — the figure's function in the document: "total" for stated sums, "line_item" for table/register rows; omit when unclear), "eventType" (one of "prijava" | "ustup" | "namirenje" | "drugo", when the amount records a lifecycle event), "legalEffect" (one of "creates" | "modifies" | "supersedes" | "resolves" | "implements" | "unknown" — what this entry's document does to the claim or right; omit when unclear), "references" (array of registry or filing identifiers this entry explicitly cites besides its own filingReference; empty array when none), "relationshipBasis" (one of "explicit_identifier" | "explicit_text" | "inferred" — how a "supersedes" link is evidenced in the source text; omit when there is no supersedes link), "payerName" and "payerOib" (who pays, OIB is 11 digits, if stated), "recipientName" and "recipientOib" (who receives, if stated), "amountEur" and "amountHrk" (when the source states BOTH currencies for one figure, copy each verbatim; otherwise omit), "isplatniRed" (payment-priority rank such as "drugi viši isplatni red", if stated), "claimRegistryNumber" (the "redni broj" from the claim register, if stated), "filingReference" (this document's "poslovni broj", if stated), and "quote" (a verbatim supporting quote copied exactly from the source text below that proves this amount; copy 1-2 sentences word-for-word, do not paraphrase). If the document contains no amounts, set "amounts" to an empty array.
                 Also extract any property/asset transactions (real estate sales, movable-asset sales, receivable assignments/cessions) into an optional "propertyFlow" array, with ONE item per table row under the same row rule as amounts above, each item being a JSON object with: "description" (what the asset is, in Croatian), "identifier" (cadastral parcel, registration number, or null when absent), "assetType" (one of "nekretnina" | "pokretnina" | "tražbina" | "drugo"), "transferor" (seller/assignor, if known), "transferee" (buyer/assignee, if known), "value" (number, if known), "currency" ("EUR" or "HRK", if known), "date" (if known), "legalEffect" (one of "creates" | "modifies" | "supersedes" | "resolves" | "implements" | "unknown" — what this entry's document does to the asset or right; omit when unclear), "references" (array of registry or filing identifiers this entry explicitly cites besides its own filingReference; empty array when none), "relationshipBasis" (one of "explicit_identifier" | "explicit_text" | "inferred" — how a "supersedes" link is evidenced in the source text; omit when there is no supersedes link), and "quote" (verbatim supporting quote as above). A receivable assignment/cession is ALWAYS a propertyFlow transaction even when it is stated in prose rather than a table: when the source says "Ugovor o ustupu", "cesija", or that a party assigns/transfers a "tražbina", add at least one assetType "tražbina" entry with eventType "ustup"; do not leave propertyFlow empty. For assetType "tražbina" (receivable/claim, e.g. "Ugovor o ustupu tražbina") additionally include "eventType" (one of "prijava" | "ustup" | "namirenje" | "drugo" — the lifecycle stage), "isplatniRed" (payment-priority rank, if stated), "claimRegistryNumber" (the "redni broj", if stated), "filingReference" (the document's "poslovni broj", if stated) and, when this entry continues an earlier lifecycle stage of the SAME receivable described in the analysed documents, "supersedes" (a short textual reference to that earlier entry, e.g. its description, case number, filing date or original creditor as cited in the source text). If the document contains no property transactions, set "propertyFlow" to an empty array.
+                For each non-null propertyFlow.value, also classify valueRole as "claim_balance" only when the source explicitly states the outstanding claim balance; "transfer_consideration" for the assignment price; "payment_amount" for a payment or recovery; "asset_value" for another asset valuation; or "unknown" when unclear. Never treat a payment or assignment price as a remaining claim balance.
                 Also extract "citedFilingReferences": an array of "poslovni broj" values this document explicitly references (e.g. filings it appeals against or decides upon); empty array when none are cited.
-                Provide ONLY the json object and nothing else. Text:\n\n${analysisInput.analysisText}`;
+                Provide ONLY the json object and nothing else. Text:\n\n${segment.text}`;
 
                 const response = await withGeminiRetry(
                     () => withGeminiTimeout((signal) => trackGeminiInvoke(gemini, prompt, { signal, tracker: usageTracker, onUsage })),
@@ -1156,114 +1330,45 @@ class AnalyzeDocumentsTool extends Tool {
                     },
                 );
 
-                // Recovery-parse the paid-for completion instead of failing
-                // the file on fence markers or chatter around the JSON.
-                const aiResultPartial = extractJsonBlock(response.content);
-                const repairCtx = { file, progressCallback, usageTracker, onUsage };
 
-                // T1-3 — schema-constrained extraction: validate first, then
-                // repair ONLY what is malformed. Valid fields are always
-                // preserved; a repair may return absent (source does not state
-                // the field) but never invents a missing fact.
-                let validated = validateExtraction(aiResultPartial);
-                const rootWasUnparseable = !validated.value;
-                if (rootWasUnparseable || !hasUsableExtraction(validated.value)) {
-                    // Entirely unparseable main completion: one full-salvage
-                    // repair attempt against the source excerpt. Failure keeps
-                    // the original malformed-json classification below.
-                    agentLog.warn(outputCapWarning("analysis"));
-                    try {
-                        const repairContent = await invokeRepairGemini(
-                            buildFullRepairPrompt({ sourceText: analysisInput.analysisText }),
-                            repairCtx
-                        );
-                        const salvaged = validateExtraction(extractJsonBlock(repairContent));
-                        if (salvaged.value) validated = salvaged;
-                    } catch (repairErr) {
-                        agentLog.warn(`[Analyzer] Full repair failed for ${file.text}: ${repairErr.message}`);
-                    }
-                    if (!validated.value || !hasUsableExtraction(validated.value)) {
-                        if (!rootWasUnparseable) {
-                            throw new Error(
-                                `Extraction schema mismatch in ${file.text || file.filePath}; no usable content salvaged.`
-                            );
-                        }
-                        throw new Error(
-                            `AI returned non-JSON response: "${String(response?.content || "").slice(0, 100)}..."`,
-                        );
-                    }
-                } else if (!validated.valid) {
-                    for (const field of repairGapFields(validated)) {
-                        try {
-                            const repairContent = await invokeRepairGemini(
-                                buildFieldRepairPrompt({ field, sourceText: analysisInput.analysisText }),
-                                repairCtx
-                            );
-                            const repair = parseFieldRepairResponse(repairContent, field);
-                            if (repair.ok) {
-                                validated = validateExtraction({
-                                    ...validated.value,
-                                    [field]: repair.absent ? [] : repair.value
-                                });
-                            } else {
-                                agentLog.warn(`[Analyzer] Field repair rejected for ${file.text} field ${field}: ${repair.reason}`);
-                            }
-                        } catch (repairErr) {
-                            agentLog.warn(`[Analyzer] Field repair failed for ${file.text} field ${field}: ${repairErr.message}`);
-                        }
-                    }
-                    if (!hasUsableExtraction(validated.value)) {
-                        const remaining = repairGapFields(validated);
-                        throw new Error(
-                            `Extraction schema mismatch for field(s) ${(remaining.length > 0 ? remaining : ['document']).join(', ')} in ${file.text || file.filePath}; no usable content salvaged.`
-                        );
+                const segmentResult = await validateAndRepairAnalysisSegment(
+                    response,
+                    segment,
+                    file,
+                    { file, progressCallback, usageTracker, onUsage },
+                );
+                chunkResults.push({ segment, ...segmentResult });
+                analysisChunks.completed += 1;
+                    } catch (segmentError) {
+                        chunkFailures.push({ segment, error: segmentError });
+                        agentLog.warn(`[Analyzer] Chunk ${segment.id} failed for ${file.text}: ${segmentError.message}`);
                     }
                 }
 
-                // A parseable empty array ordinarily needs no repair. A
-                // source-grounded assignment cue is the narrow exception:
-                // the initial extraction has missed a legally material
-                // receivable transfer. Re-read only propertyFlow from the
-                // original source once; never manufacture an entry in code.
-                let assignmentCueGap = null;
-                if (
-                    hasReceivableAssignmentCue(analysisInput.analysisText) &&
-                    Array.isArray(validated.value?.propertyFlow) &&
-                    validated.value.propertyFlow.length === 0
-                ) {
-                    try {
-                        const repairContent = await invokeRepairGemini(
-                            buildFieldRepairPrompt({ field: 'propertyFlow', sourceText: analysisInput.analysisText }),
-                            repairCtx,
-                        );
-                        const repair = parseFieldRepairResponse(repairContent, 'propertyFlow');
-                        if (repair.ok && !repair.absent && repair.value.length > 0) {
-                            validated = validateExtraction({
-                                ...validated.value,
-                                propertyFlow: repair.value,
-                            });
-                        } else {
-                            assignmentCueGap = propertyFlowRepairGap(
-                                repair.ok
-                                    ? 'source states a receivable assignment but targeted property-flow repair returned no entry'
-                                    : `source states a receivable assignment but targeted property-flow repair was unusable: ${repair.reason}`,
-                            );
-                        }
-                    } catch (repairErr) {
-                        assignmentCueGap = propertyFlowRepairGap(
-                            `source states a receivable assignment but targeted property-flow repair failed: ${repairErr.message}`,
-                        );
-                        agentLog.warn(`[Analyzer] Assignment property-flow repair failed for ${file.text}: ${repairErr.message}`);
-                    }
+                analysisChunks.failed = chunkFailures.length;
+                analysisChunks.failedChunkIds = chunkFailures.map(({ segment }) => segment.id);
+                if (chunkResults.length === 0) {
+                    const failureDetails = chunkFailures
+                        .map(({ segment, error }) => `Chunk ${segment.id}: ${error?.message || String(error)}`)
+                        .join('; ');
+                    throw new Error(
+                        `All ${analysisInput.segments.length} analysis chunks failed for ${file.text}. ${failureDetails}`,
+                        { cause: chunkFailures[0]?.error },
+                    );
                 }
+                const merged = mergeAnalysisChunkResults(chunkResults, text);
+                const { gaps, assignmentCueGaps, ...mergedValues } = merged;
+                const chunkFailureGaps = chunkFailures.map(({ segment, error }) => ({
+                    field: 'document',
+                    code: 'analysis_chunk_failed',
+                    detail: `Chunk ${segment.id} failed: ${error.message}`,
+                }));
 
                 const aiResult = {
-                    ...validated.value,
-                    // Inject the reliably scraped parties into the final result object.
+                    ...mergedValues,
                     parties: caseInfo.participants || [],
-                    // Claimed-but-unavailable remainder: inspectable, never silent.
-                    ...((validated.gaps.length > 0 || assignmentCueGap)
-                        ? { _extractionGaps: [...validated.gaps, ...(assignmentCueGap ? [assignmentCueGap] : [])] }
+                    ...((gaps.length > 0 || assignmentCueGaps.length > 0 || chunkFailureGaps.length > 0)
+                        ? { _extractionGaps: [...gaps, ...assignmentCueGaps, ...chunkFailureGaps] }
                         : {}),
                 };
                 // Per-document grounding check (deterministic containment,
@@ -1298,6 +1403,10 @@ class AnalyzeDocumentsTool extends Tool {
                     ...file,
                     aiResult,
                     contentHash,
+                    extraction: summarizeExtractionMetadata(extraction, text),
+                    truncated: extraction?.truncated === true,
+                    degraded: chunkFailures.length > 0,
+                    analysisChunks,
                     ...(retrievalChunks ? { retrievalChunks } : {}),
                 };
             } catch (err) {
@@ -1319,6 +1428,9 @@ class AnalyzeDocumentsTool extends Tool {
                     aiResult: null,
                     error: err.message,
                     ...(contentHash ? { contentHash } : {}),
+                    extraction: summarizeExtractionMetadata(extraction, text),
+                    truncated: extraction?.truncated === true,
+                    ...(analysisChunks ? { analysisChunks } : {}),
                     ...(retrievalChunks ? { retrievalChunks } : {}),
                 };
             }
@@ -1421,6 +1533,7 @@ function buildAnalysisCoverage(individualAnalyses) {
     const total = Array.isArray(individualAnalyses) ? individualAnalyses.length : 0;
     const analyzed = (individualAnalyses || []).filter((item) => Boolean(item?.aiResult));
     const failed = (individualAnalyses || []).filter((item) => !item?.aiResult);
+    const partial = analyzed.filter((item) => item?.truncated || item?.degraded);
     const coverageRatio = total > 0 ? Number((analyzed.length / total).toFixed(2)) : 0;
 
     // Grounding dimension: counted across amounts[] + propertyFlow[] entries
@@ -1441,11 +1554,24 @@ function buildAnalysisCoverage(individualAnalyses) {
     return {
         analyzed: analyzed.length,
         failed: failed.length,
+        partial: partial.length,
         total,
         coverageRatio,
-        complete: total > 0 && analyzed.length === total,
+        complete: total > 0 && analyzed.length === total && partial.length === 0,
         groundedClaims,
         totalClaims,
+        partialFiles: partial.map((item) => ({
+            fileName: item?.text || item?.filePath || "nepoznata datoteka",
+            extraction: item?.extraction || null,
+            truncated: item?.truncated === true,
+            degraded: item?.degraded === true,
+            analysisChunks: item?.analysisChunks || null,
+        })),
+        gaps: partial.map((item) => {
+            const name = item?.text || item?.filePath || "nepoznata datoteka";
+            if (item?.degraded) return `Djelomična analiza odlomaka: ${name}`;
+            return `Djelomično izdvajanje teksta: ${name}`;
+        }),
         failedFiles: failed.map((item) => {
             const classified = classifyFileFailureDetailed(item?.error);
             return {

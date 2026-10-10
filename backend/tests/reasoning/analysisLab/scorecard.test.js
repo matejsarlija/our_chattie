@@ -146,6 +146,26 @@ describe('computeVariantScorecard (LE-2)', () => {
             elapsedMs: 450,
         });
     });
+    test('saved package scorecards count partial extracted documents', () => {
+        const evidencePackage = cloneEvidencePackage(LAB_FIXTURE);
+        evidencePackage.analyses[0].truncated = true;
+        evidencePackage.coverage.partial = 1;
+        evidencePackage.coverage.gaps = [...(evidencePackage.coverage.gaps || []), 'partial-extraction'];
+        const hash = evidencePackageDigest(evidencePackage);
+        const scorecard = computeVariantScorecard({
+            evidencePackage,
+            report: variantReport(),
+            trace: contextTrace(hash),
+            usage: { calls: 1, inputTokens: 100, outputTokens: 20, totalTokens: 120, elapsedMs: 10 },
+            profileSnapshot: snapshotProfile('context-tree-v1', { codeRevision: 'test-rev' }),
+            evidencePackageHash: hash,
+        });
+
+        expect(scorecard.coverage).toMatchObject({
+            ocrOrNativeTruncations: 1,
+            coverageGaps: evidencePackage.coverage.gaps.length,
+        });
+    });
 
     test('flat profile marks context fields not-applicable instead of zero', () => {
         const hash = evidencePackageDigest(LAB_FIXTURE);

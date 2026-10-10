@@ -388,12 +388,12 @@ describe('composeOverviewMarkdown', () => {
     expect(composeOverviewMarkdown({ narrative: 'Samo narativ.' })).toBe('Samo narativ.');
   });
 
-  test('returns empty string for null/empty reports so guards skip the visualizer', () => {
+  test('returns empty string for null/empty reports', () => {
     expect(composeOverviewMarkdown(null)).toBe('');
     expect(composeOverviewMarkdown({})).toBe('');
   });
 
-  test('placeholder narratives pass through unchanged (visualizer guard matches them)', () => {
+  test('placeholder narratives pass through unchanged', () => {
     const placeholder = 'Nema dovoljno dokaza za generiranje izvješća.';
     expect(composeOverviewMarkdown({ narrative: placeholder })).toBe(placeholder);
   });

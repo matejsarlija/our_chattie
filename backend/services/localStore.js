@@ -8,6 +8,8 @@ const {
   REASONING_ON_OFF,
 } = require('../helpers/reasoningSettings');
 
+const { buildRunSummary, toRunListItem } = require('../court-analysis/utils/runSummary');
+
 const DEFAULT_DATA_DIR = path.join(__dirname, '..', 'data', 'analysis');
 
 function getDataDir(override) {
@@ -181,6 +183,10 @@ function createLocalStore(options = {}) {
       run.result_text = resultText;
       run.result_format = 'markdown';
       run.result_json = resultJson;
+      // Project the listable facts once, at completion, so the list endpoint
+      // never has to ship result_json. buildRunSummary never throws, so this
+      // cannot fail an otherwise-successful analysis.
+      run.summary = buildRunSummary({ run, resultJson });
       run.completed_at = nowIso();
       run.updated_at = nowIso();
       writeRuns(runs);
@@ -196,6 +202,9 @@ function createLocalStore(options = {}) {
       run.error = errorMessage;
       if (resultJson !== null) run.result_json = resultJson;
       if (resultText !== null) run.result_text = resultText;
+      // A failed run can still have discovered a case and partially analysed
+      // documents, so the list row is worth populating.
+      run.summary = buildRunSummary({ run, resultJson: run.result_json });
       run.completed_at = nowIso();
       run.updated_at = nowIso();
       writeRuns(runs);
@@ -203,11 +212,31 @@ function createLocalStore(options = {}) {
     });
   }
 
-  async function listAnalysisRuns({ limit, offset }) {
+  /**
+   * List runs, newest first.
+   *
+   * By default the heavy payload is stripped: each run carries ~120KB of
+   * `result_text` + `result_json`, so a 10-row page was costing ~2.75MB. The
+   * pre-projected `summary` carries everything a list view needs, and the full
+   * payload stays available on the single-run endpoints.
+   *
+   * `includeResults: true` returns the full records and is for INTERNAL
+   * consumers that genuinely need the evidence package — the analysis Lab
+   * enumerates runs here to build its package catalogue, and would otherwise
+   * silently start offering zero analysis-run packages. Do not pass it from an
+   * HTTP list route.
+   *
+   * Runs completed before the projection existed have no `summary`, so it is
+   * derived on read rather than leaving the column empty.
+   */
+  async function listAnalysisRuns({ limit, offset, includeResults = false }) {
     const runs = readRuns();
     const sorted = [...runs].sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
     const page = sorted.slice(offset, offset + limit);
-    return { data: page, count: sorted.length };
+    return {
+      data: includeResults ? page : page.map(toRunListItem),
+      count: sorted.length,
+    };
   }
 
   async function getAnalysisRun({ id }) {
@@ -217,11 +246,10 @@ function createLocalStore(options = {}) {
 
   async function getAnalysisEvents({ analysisId }) {
     const eventsMap = readEventsMap();
-    const events = eventsMap[analysisId] || [];
-    return [...events].sort((a, b) => {
-      if (a.created_at === b.created_at) return a.id < b.id ? -1 : 1;
-      return a.created_at < b.created_at ? -1 : 1;
-    });
+    // appendAnalysisEvent serializes writes and appends in causal order. Keep
+    // that order: millisecond timestamps can tie, and random UUID tie-breaks
+    // would reorder distinct events.
+    return [...(eventsMap[analysisId] || [])];
   }
 
   async function getAnalysisRunFull({ id }) {

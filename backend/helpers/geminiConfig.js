@@ -71,8 +71,6 @@ const GEMINI_ROLE_CONFIG = {
     // Retrieval query planning: ≤6 short query objects as one JSON array —
     // small and strictly-bounded, same reasoning as rerank.
     planner: { model: LITE_GEMINI_MODEL, temperature: 0.1, maxOutputTokens: 512 },
-    // Mermaid diagram generation.
-    visualizer: { model: DEFAULT_GEMINI_MODEL, temperature: 0.1, maxOutputTokens: 2048 },
     // Analysis Lab node summaries (LC-2): compact cited statements over one
     // ContextNode's evidence. Small, strictly-bounded output like verify.
     contextNode: { model: DEFAULT_GEMINI_MODEL, temperature: 0.1, maxOutputTokens: 2048 },

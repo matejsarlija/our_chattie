@@ -166,7 +166,6 @@ describe('single-cluster paginated fixture (live-verified KERUM shape)', () => {
 
         const resolved = {
             caseLimit: 5,
-            enableVisualizer: false,
             query: fixture.query,
             clusterExpansion: null,
             discoveryMetadata: fixture.discoveryMetadata

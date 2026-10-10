@@ -136,6 +136,8 @@ describe('AnalyzeDocumentsTool edge/error cases', () => {
             expect(result.individualAnalyses[0].aiResult).toBeNull();
             expect(result.individualAnalyses[0].error).toContain('Could not extract text from file');
             expect(result.individualAnalyses[0].error).toContain('could not be parsed');
+            expect(result.individualAnalyses[0].extraction.error).toBe('pdf-parse-failed');
+            expect(result.individualAnalyses[0].extraction.fallbackError).toBe('ocr-failed');
         } finally {
             fs.rmSync(tmpDir, { recursive: true, force: true });
         }

@@ -5,7 +5,6 @@ const { DownloadDocumentsTool } = require('./agents/download-agent');
 const { ExtractArchiveTool } = require('./agents/extract-tool');
 // We will modify AnalyzeDocumentsTool, so we need to import it
 const { AnalyzeDocumentsTool } = require('./agents/analysis-agent');
-const { VisualizerTool } = require('./agents/visualizer-agent');
 const { enrichParticipants } = require('../court-registry/enricher');
 const {
     DEFAULT_CASE_LIMIT,
@@ -93,13 +92,7 @@ function composeFallbackOverviewMarkdown(allProcessedCases) {
 
 // Placeholder strings emitted by the reasoning layer when synthesis has no
 // usable evidence (createEmptyReport). They carry no analyzable substance, so
-// the visualizer must not run against them (it would only emit an empty stub).
-const USELESS_ANALYSIS_TEXT_RE = /gre[šs]ka pri generiranju|nema dostupnih podataka za generiranje analize|analiza dokumenata nije uspje[šs]no izvr[šs]ena|nema dovoljno dokaza/i;
 
-function isUsableAnalysisText(text) {
-    const value = String(text || '').trim();
-    return value.length > 0 && !USELESS_ANALYSIS_TEXT_RE.test(value);
-}
 
 function clampCaseLimit(rawLimit) {
     const numeric = Number.parseInt(String(rawLimit), 10);
@@ -1263,7 +1256,6 @@ function resolveAnalysisArgs(caseLimitOrOptions, maybeProgressCallback) {
         return {
             caseLimit: DEFAULT_CASE_LIMIT,
             scrapeLimit: computeRawScrapeLimit(depth.maxEntries),
-            enableVisualizer: true,
             runId: null,
             ...depth,
             progressCallback: caseLimitOrOptions,
@@ -1276,7 +1268,6 @@ function resolveAnalysisArgs(caseLimitOrOptions, maybeProgressCallback) {
         return {
             caseLimit,
             scrapeLimit: computeRawScrapeLimit(depth.maxEntries),
-            enableVisualizer: true,
             runId: null,
             ...depth,
             progressCallback: maybeProgressCallback,
@@ -1289,7 +1280,6 @@ function resolveAnalysisArgs(caseLimitOrOptions, maybeProgressCallback) {
         return {
             caseLimit,
             scrapeLimit: computeRawScrapeLimit(depth.maxEntries),
-            enableVisualizer: caseLimitOrOptions.enableVisualizer !== false,
             query: caseLimitOrOptions.query || null,
             clusterExpansion: caseLimitOrOptions.clusterExpansion || null,
             discoverySource: caseLimitOrOptions.discoverySource || null,
@@ -1303,7 +1293,6 @@ function resolveAnalysisArgs(caseLimitOrOptions, maybeProgressCallback) {
     return {
         caseLimit: DEFAULT_CASE_LIMIT,
         scrapeLimit: computeRawScrapeLimit(depth.maxEntries),
-        enableVisualizer: true,
         query: null,
         runId: null,
         ...depth,
@@ -1408,7 +1397,6 @@ async function runCourtAnalysis(searchTerm, caseLimitOrOptions, progressCallback
         // Process the scraped cases using the separate function
         const result = await processScrapedCases(casesToProcess, callback, {
             caseLimit: expandedResolved.caseLimit,
-            enableVisualizer: expandedResolved.enableVisualizer,
             query: expandedResolved.query || { value: searchTerm },
             clusterExpansion: expandedResolved.clusterExpansion,
             discoveryMetadata,
@@ -1498,7 +1486,6 @@ async function runCourtAnalysisWithExistingAutomator(searchTerm, caseLimitOrOpti
         // Process using the shared logic
         const result = await processScrapedCases(casesToProcess, callback, {
             caseLimit: expandedResolved.caseLimit,
-            enableVisualizer: expandedResolved.enableVisualizer,
             query: expandedResolved.query || { value: searchTerm },
             clusterExpansion: expandedResolved.clusterExpansion,
             discoveryMetadata,
@@ -1522,9 +1509,8 @@ async function runCourtAnalysisWithExistingAutomator(searchTerm, caseLimitOrOpti
  * @param {function} progressCallback - The callback for sending progress updates.
  * @returns {Promise<object>} The final result with processed cases and comparative analysis.
  */
-async function processScrapedCases(casesToProcess, progressCallback, options = { enableVisualizer: true }) {
+async function processScrapedCases(casesToProcess, progressCallback, options = {}) {
     const resolvedOptions = {
-        enableVisualizer: true,
         ...options,
     };
     // Run correlation: server.js mints a run id per analysis request and
@@ -1875,24 +1861,27 @@ async function processScrapedCases(casesToProcess, progressCallback, options = {
             reportError,
         });
 
-        // --- VISUALIZATION STEP ---
-        if (resolvedOptions.enableVisualizer && isUsableAnalysisText(comparativeAnalysis)) {
-            stageAwareProgress?.({ step: 'reasoning', progress: 95, message: 'Generiram vizualizaciju tijeka predmeta...' });
-            try {
-                const visualizerTool = new VisualizerTool();
-                const diagramCode = await visualizerTool._call(comparativeAnalysis, {
-                    moneyFlow: enrichedEvidencePackage?.moneyFlow || null,
-                    propertyFlow: enrichedEvidencePackage?.propertyFlow || null,
-                    tracker: usageTracker,
-                    onUsage: emitUsage
-                });
-                if (diagramCode && diagramCode !== "Error generating diagram.") {
-                    comparativeAnalysis += `\n\n${diagramCode}`;
-                }
-            } catch (err) {
-                agentLog.error('Visualization failed gracefully:', err.message);
-            }
-        }
+        // VISUALIZATION REMOVED.
+        //
+        // This used to call `VisualizerTool` to have Gemini restate the
+        // already-structured moneyFlow / propertyFlow entries as a Mermaid
+        // flowchart, appending the raw diagram to `comparativeAnalysis`.
+        //
+        // Removed because it never worked and could not be made to work
+        // reliably: across 13 real runs exactly one produced a diagram, and that
+        // one was an empty placeholder ("Nema dostupnih podataka za
+        // vizualizaciju."). The one substantive diagram in the repo - frozen
+        // into the baseline fixture - fails to parse, on a stray backtick inside
+        // a node label. The backend performed no parse validation at all and the
+        // frontend only logged to console.error, so no failure was ever
+        // observable or countable after the fact.
+        //
+        // Nothing is lost. The chronology it inferred from prose now renders
+        // from `report.timeline`, which the page already received and never
+        // displayed in full. The money and property flows it re-encoded already
+        // render from their structured entries. Its speculative future branches
+        // ("Ishod 1 (vjerojatnije)") were never data and remain available as
+        // `report.openQuestions`.
         // -------------------------
 
         stageAwareProgress?.({ step: 'complete', progress: 100, message: 'Analiza je završena!' });
@@ -2005,5 +1994,4 @@ module.exports = {
     applyConfiguredClusterExpansion,
     executeClusterExpansionSearches,
     resolveAutoExpansion,
-    isUsableAnalysisText
 };

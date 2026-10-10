@@ -29,10 +29,6 @@ jest.mock('../court-registry/enricher', () => ({
     enrichParticipants: jest.fn().mockImplementation(p => Promise.resolve(p))
 }));
 
-jest.mock('../court-analysis/agents/visualizer-agent', () => ({
-    VisualizerTool: jest.fn()
-}));
-
 jest.mock('../court-analysis/reasoning/synthesizer', () => ({
     synthesizeReport: mockSynthesizeReport,
     normalizeReasoningEvidence: mockNormalizeReasoningEvidence
@@ -108,7 +104,7 @@ describe('processScrapedCases Grouping Integration', () => {
 
         const progressCallback = jest.fn();
         
-        const result = await processScrapedCases(casesToProcess, progressCallback, { enableVisualizer: false });
+        const result = await processScrapedCases(casesToProcess, progressCallback, { });
         
         expect(result.discoverySummary.clusters.map(cluster => cluster.clusterId)).toEqual(['ST-1/23', 'ST-2/23']);
         expect(result.discoverySummary.secondaryClusterIds).toEqual(['ST-2/23']);

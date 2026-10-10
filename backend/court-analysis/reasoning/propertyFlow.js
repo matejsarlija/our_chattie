@@ -15,6 +15,7 @@
 const { findCitationLinkedPairs } = require('./citationGraph');
 const { normalizeText } = require('./indexer');
 const { parseDate } = require('./timelineBuilder');
+const { normalizeClaimRegistryNumber } = require('./claimRegistry');
 
 // Normalize + collect moved to flow.js (flow-consolidation PR2): the unified
 // collector + property derived view reproduce this module's historical output
@@ -92,11 +93,12 @@ function resolveSupersedesTargetWithBasis(ref, entriesById, entries) {
     // resolves by exact identifier equality before any prose guessing.
     const list = Array.isArray(entries) ? entries : [];
     const lowered = trimmed.toLowerCase();
+    const normalizedTrimmed = normalizeClaimRegistryNumber(trimmed);
     for (const entry of list) {
-        if (typeof entry?.claimRegistryNumber === 'string'
-            && entry.claimRegistryNumber.trim()
-            && (entry.claimRegistryNumber.trim() === trimmed
-                || entry.claimRegistryNumber.trim().toLowerCase() === lowered)) {
+        const entryReg = normalizeClaimRegistryNumber(entry?.claimRegistryNumber);
+        if (entryReg
+            && (entryReg === normalizedTrimmed
+                || entryReg.toLowerCase() === normalizedTrimmed.toLowerCase())) {
             return { target: entry, basis: 'registry' };
         }
     }
@@ -132,11 +134,12 @@ function resolveSupersedesTargetWithBasis(ref, entriesById, entries) {
  * unlinked competing descriptions without identifiers must not become
  * conflicts.
  */
+
 function sharesLifecycleIdentifiers(groupEntries) {
     const seen = { registry: new Set(), filing: new Set(), party: new Set(), rank: new Set(), date: new Set() };
     const norm = (value) => normalizeText(String(value || '')).trim();
     for (const entry of groupEntries) {
-        const reg = typeof entry?.claimRegistryNumber === 'string' ? entry.claimRegistryNumber.trim() : '';
+        const reg = normalizeClaimRegistryNumber(entry?.claimRegistryNumber);
         if (reg) {
             if (seen.registry.has(reg)) return true;
             seen.registry.add(reg);
@@ -174,11 +177,9 @@ function sharesLifecycleIdentifiers(groupEntries) {
 function buildValueChangeTimeline(groupEntries, linkage, valueFn) {
     const effective = typeof valueFn === 'function'
         ? valueFn
-        : (e) => (Number.isFinite(e.valueEur) ? e.valueEur : e.value);
+        : (entry) => (Number.isFinite(entry.valueEur) ? entry.valueEur : entry.value);
     // Chronological order must use real date parsing (ISO + Croatian
-    // `dd.mm.yyyy.` via parseDate), not string comparison — a Croatian
-    // "15.06.2022." sorts *after* "2023-06-01" lexicographically.
-    // Undated stages sort last, stable otherwise.
+    // `dd.mm.yyyy.`), not string comparison. Undated stages sort last.
     const decorated = (Array.isArray(groupEntries) ? groupEntries : []).map((entry, index) => ({
         entry,
         index,
@@ -193,43 +194,65 @@ function buildValueChangeTimeline(groupEntries, linkage, valueFn) {
     const sorted = decorated.map(({ entry }) => entry);
     const first = sorted[0];
     const last = sorted[sorted.length - 1];
-    // K-03: timeline math on the consolidated EUR scale when both ends
-    // have one; otherwise the legacy raw values.
-    const eurScale = Number.isFinite(first.valueEur) && Number.isFinite(last.valueEur);
-    const originalValue = eurScale
-        ? first.valueEur
-        : (Number.isFinite(first.value) ? first.value : null);
-    const latestValue = eurScale
-        ? last.valueEur
-        : (Number.isFinite(last.value) ? last.value : null);
-    let delta = null;
-    let discountPct = null;
-    if (originalValue !== null && latestValue !== null) {
-        delta = latestValue - originalValue;
-        discountPct = originalValue !== 0 ? Number(((delta / originalValue) * 100).toFixed(2)) : null;
-    }
-    const currency = eurScale ? 'EUR' : (last.currency || first.currency || '');
+    const balanceStages = sorted.filter((entry) =>
+        entry?.valueRole === 'claim_balance' && Number.isFinite(effective(entry))
+    );
+    const firstBalanceCandidate = balanceStages[0] || null;
+    const lastBalanceCandidate = balanceStages[balanceStages.length - 1] || null;
+    const eurScale = Number.isFinite(firstBalanceCandidate?.valueEur)
+        && Number.isFinite(lastBalanceCandidate?.valueEur);
+    const balanceCurrencies = new Set(balanceStages.map((entry) => entry?.currency).filter(Boolean));
+    const sameCurrency = firstBalanceCandidate?.currency
+        && firstBalanceCandidate.currency === lastBalanceCandidate?.currency;
+    const comparable = balanceStages.length >= 2 && (eurScale || sameCurrency);
+    const firstBalance = comparable ? firstBalanceCandidate : null;
+    const lastBalance = comparable ? lastBalanceCandidate : null;
+    const originalValue = comparable
+        ? (eurScale ? firstBalance.valueEur : firstBalance.value)
+        : null;
+    const latestValue = comparable
+        ? (eurScale ? lastBalance.valueEur : lastBalance.value)
+        : null;
+    const delta = comparable ? latestValue - originalValue : null;
+    const discountPct = comparable && originalValue !== 0
+        ? Number(((delta / originalValue) * 100).toFixed(2))
+        : null;
+    const currency = eurScale ? 'EUR'
+        : (firstBalance?.currency || lastBalance?.currency || last.currency || first.currency || '');
+    const comparisonReason = comparable
+        ? null
+        : balanceStages.length < 2
+            ? 'At least two explicitly identified claim balances are required; event amounts are not treated as balances.'
+            : balanceCurrencies.size > 1
+                ? 'Claim balances in different currencies cannot be compared without a deterministic conversion.'
+                : 'Claim balances need a known currency before comparison.';
     return {
         description: first.description,
         linkage,
-        stages: sorted.map((e) => ({
-            id: e.id,
-            eventType: e.eventType || null,
-            value: effective(e) ?? null,
-            currency: eurScale ? 'EUR' : (e.currency || null),
-            date: e.date || null,
-            transferor: e.transferor || null,
-            transferee: e.transferee || null,
-            sourceId: e.sourceId || null,
-            fileName: e.fileName || null,
+        stages: sorted.map((entry) => ({
+            id: entry.id,
+            eventType: entry.eventType || null,
+            valueRole: entry.valueRole || null,
+            value: effective(entry) ?? null,
+            currency: eurScale ? 'EUR' : (entry.currency || null),
+            date: entry.date || null,
+            transferor: entry.transferor || null,
+            transferee: entry.transferee || null,
+            sourceId: entry.sourceId || null,
+            fileName: entry.fileName || null,
+            crossCategoryFactId: entry.crossCategoryFactId || null,
         })),
         originalValue,
         latestValue,
         currency,
         delta,
         discountPct,
-        finding: `Tražbina "${first.description}" u iznosu od ${formatValue(originalValue, currency)} ustupljena je za ${formatValue(latestValue, currency)}.`,
-        sources: sorted.map((e) => e.sourceId).filter(Boolean),
+        comparisonStatus: comparable ? 'comparable' : 'not-comparable',
+        comparisonReason,
+        finding: comparable
+            ? `Usporedivi iskazi salda tražbine "${first.description}": ${formatValue(originalValue, currency)} → ${formatValue(latestValue, currency)}.`
+            : `Povezani zapisi za tražbinu "${first.description}" sadrže događaje, ali nema dva izričito označena usporediva salda; promjena salda nije izračunata.`,
+        sources: sorted.map((entry) => entry.sourceId).filter(Boolean),
     };
 }
 
@@ -269,7 +292,7 @@ function reconcileTrazbinaLifecycle(trazbinaEntries, allEntries, context = {}, v
     const registryClusters = new Map();
     const registryConsumed = new Set();
     for (const entry of trazbina) {
-        const reg = typeof entry?.claimRegistryNumber === 'string' ? entry.claimRegistryNumber.trim() : '';
+        const reg = normalizeClaimRegistryNumber(entry?.claimRegistryNumber);
         if (!reg) continue;
         if (!registryClusters.has(reg)) registryClusters.set(reg, []);
         registryClusters.get(reg).push(entry);

@@ -316,8 +316,11 @@ function attachAnalysesToEvidencePackage(pkg, processedCases, clusterId = null) 
             entryDate: entryDate || null,
             sourceEntryIndex,
             sourceDocumentLinkId,
-            // TL-1 — stable document identity for ledger-level byte dedupe.
             ...(typeof item.contentHash === 'string' && item.contentHash ? { contentHash: item.contentHash } : {}),
+            extraction: item.extraction || null,
+            truncated: item.truncated === true,
+            degraded: item.degraded === true,
+            analysisChunks: item.analysisChunks || null,
             summary: item.aiResult.summary || null,
             parties: Array.isArray(item.aiResult.parties) ? item.aiResult.parties : [],
             amounts: Array.isArray(item.aiResult.amounts) ? item.aiResult.amounts : [],
@@ -346,6 +349,7 @@ function attachAnalysesToEvidencePackage(pkg, processedCases, clusterId = null) 
             description: row.description, amount: row.value, amountEur: row.valueEur,
             currency: row.currency, date: row.date, direction: row.direction,
             amountRole: row.amountRole, eventType: row.eventType,
+            valueRole: row.valueRole, crossCategoryFactId: row.crossCategoryFactId,
             legalEffect: row.legalEffect, references: row.references,
             relationshipBasis: row.relationshipBasis, payerName: row.parties?.payerName,
             payerOib: row.parties?.payerOib, recipientName: row.parties?.recipientName,
@@ -363,7 +367,9 @@ function attachAnalysesToEvidencePackage(pkg, processedCases, clusterId = null) 
             legalEffect: row.legalEffect, references: row.references,
             relationshipBasis: row.relationshipBasis, isplatniRed: row.isplatniRed,
             claimRegistryNumber: row.claimRegistryNumber, filingReference: row.filingReference,
-            supersedes: row.supersedes, quote: row.quote, grounded: row.grounded,
+            supersedes: row.supersedes, valueRole: row.valueRole,
+            crossCategoryFactId: row.crossCategoryFactId,
+            quote: row.quote, grounded: row.grounded,
             filings: row.filings,
             sources: row.filings.map((filing) => filing.analysisId).filter(Boolean),
         }] : [],
@@ -413,6 +419,15 @@ function attachAnalysesToEvidencePackage(pkg, processedCases, clusterId = null) 
 
     const total = individualAnalyses.length;
     const analyzed = analyses.length;
+    const partialFiles = individualAnalyses
+        .filter((item) => item?.aiResult && (item.truncated || item.degraded))
+        .map((item) => ({
+            fileName: item.text || item.filePath || 'nepoznata datoteka',
+            extraction: item.extraction || null,
+            truncated: item.truncated === true,
+            degraded: item.degraded === true,
+            analysisChunks: item.analysisChunks || null,
+        }));
     const failedFiles = individualAnalyses
         .filter((item) => !item?.aiResult)
         .map((item) => {
@@ -428,9 +443,14 @@ function attachAnalysesToEvidencePackage(pkg, processedCases, clusterId = null) 
     const coverage = {
         analyzed,
         failed: total - analyzed,
+        partial: partialFiles.length,
         total,
         coverageRatio: total > 0 ? Number((analyzed / total).toFixed(2)) : 0,
-        complete: total > 0 && analyzed === total,
+        complete: total > 0 && analyzed === total && partialFiles.length === 0,
+        partialFiles,
+        gaps: partialFiles.map((item) => item.degraded
+            ? `Djelomična analiza odlomaka: ${item.fileName}`
+            : `Djelomično izdvajanje teksta: ${item.fileName}`),
         failedFiles,
         ...countGroundedClaims(analyses),
     };

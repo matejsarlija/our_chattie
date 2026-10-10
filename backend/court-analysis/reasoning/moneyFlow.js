@@ -3,9 +3,11 @@
 // Track 3c — money-flow reconstruction. Analyses that contain financial
 // figures produce a structured `amounts` array (extracted by the analysis
 // agent). This module normalizes those raw amounts into a deterministic,
-// source-cited money-flow surface so the report meta and the "Tijek novca"
-// visualizer subgraph can render real payments/claims instead of relying on
-// free-text prose alone.
+// source-cited money-flow surface, so the report meta and the "Tijek novca"
+// section carry real payments/claims instead of relying on free-text prose
+// alone. (It once also fed a mermaid "visualizer" subgraph, removed in
+// Phase 2.5; the structured surface itself is unchanged and still the
+// canonical rendering source.)
 
 const {
     normalizeCurrency,

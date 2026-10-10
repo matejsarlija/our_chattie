@@ -230,6 +230,36 @@ function createAnalysisLabRouter(options = {}) {
         }
         return { evidencePackage: pkg, kind: 'analysis-run' };
     }
+    function safeSourceUrl(value) {
+        try {
+            const url = new URL(value);
+            if ((url.protocol !== 'https:' && url.protocol !== 'http:') || url.username || url.password) return null;
+            return url.href;
+        } catch {
+            return null;
+        }
+    }
+
+    function buildSourceDocuments(evidencePackage) {
+        const linksById = new Map(
+            (Array.isArray(evidencePackage?.documentLinks) ? evidencePackage.documentLinks : [])
+                .filter((link) => link?.id)
+                .map((link) => [link.id, link])
+        );
+        return (Array.isArray(evidencePackage?.analyses) ? evidencePackage.analyses : [])
+            .filter((analysis) => analysis?.id)
+            .map((analysis) => {
+                const link = linksById.get(analysis.sourceDocumentLinkId);
+                const rawName = analysis.fileName || link?.text || 'Izvorni dokument';
+                return {
+                    analysisId: String(analysis.id),
+                    sourceDocumentLinkId: link?.id || null,
+                    fileName: String(rawName).split(/[\\/]/).pop(),
+                    url: safeSourceUrl(link?.url),
+                };
+            });
+    }
+
 
     // List eligible frozen packages: built-in fixtures + completed analysis
     // runs that persisted a `clusterEvidencePackage`. Summary-only.
@@ -238,7 +268,11 @@ function createAnalysisLabRouter(options = {}) {
             const packages = listFixturePackages(fixturesDir);
             if (analysisStore && typeof analysisStore.listAnalysisRuns === 'function') {
                 try {
-                    const { data } = await analysisStore.listAnalysisRuns({ limit: 100, offset: 0 });
+                    // includeResults: the catalogue is built from each run's
+                    // evidence package, which lives in the heavy result_json.
+                    // The list route strips that by default to keep the
+                    // dashboard page small, so ask for it explicitly here.
+                    const { data } = await analysisStore.listAnalysisRuns({ limit: 100, offset: 0, includeResults: true });
                     for (const run of Array.isArray(data) ? data : []) {
                         const pkg = run?.result_json?.clusterEvidencePackage || null;
                         if (!pkg || validateClusterEvidencePackage(pkg).valid !== true) continue;
@@ -324,8 +358,23 @@ function createAnalysisLabRouter(options = {}) {
         try {
             const experiment = await labStore.getExperiment({ id: req.params.id });
             const bounded = boundExperimentForResponse(experiment);
+            let sourceDocuments = [];
+            let sourceDocumentsStatus = 'unavailable';
+            try {
+                const frozen = await resolveFrozenPackage(experiment.evidencePackageRef);
+                if (evidencePackageDigest(frozen.evidencePackage) === experiment.evidencePackageHash) {
+                    sourceDocuments = buildSourceDocuments(frozen.evidencePackage);
+                    sourceDocumentsStatus = sourceDocuments.some((document) => document.url)
+                        ? 'available'
+                        : 'no-links';
+                } else {
+                    sourceDocumentsStatus = 'package-changed';
+                }
+            } catch {
+                sourceDocumentsStatus = 'unavailable';
+            }
             res.json({
-                experiment: bounded,
+                experiment: { ...bounded, sourceDocuments, sourceDocumentsStatus },
                 comparison: buildComparisonViewModel(bounded),
             });
         } catch (err) {

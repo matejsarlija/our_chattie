@@ -1,5 +1,6 @@
 const {
     collectFlows,
+    derivePropertyFlowView,
     normalizeFlowItem,
     inferAssetType,
     normalizeCurrency,
@@ -218,6 +219,114 @@ describe('reasoning flow (unified normalize + collect)', () => {
                 },
             ]);
             expect(flows.entries[1].supersedes).toBe('flow-1');
+        });
+    });
+
+    describe('entry duplicate handling', () => {
+        const assignment = (overrides = {}) => ({
+            description: 'Ustup tražbine od Banke A na Društvo B',
+            assetType: 'tražbina',
+            eventType: 'ustup',
+            transferor: 'Banka A',
+            transferee: 'Društvo B',
+            value: 27888441.11,
+            currency: 'EUR',
+            date: '2019-09-27',
+            claimRegistryNumber: '200',
+            isplatniRed: 'II. višeg isplatnog reda',
+            ...overrides,
+        });
+
+        test('dedupes paraphrases within one unhashed source and retains provenance/count', () => {
+            const flows = collectFlows([{
+                ...analysis({ sourceEntryIndex: 4, sourceDocumentLinkId: 'link-a' }),
+                amounts: [],
+                propertyFlow: [
+                    assignment(),
+                    assignment({
+                        description: 'Ustup i prijenos prava i tražbina',
+                        claimRegistryNumber: null,
+                        isplatniRed: 'drugi viši isplatni red',
+                        filingReference: 'OV – 8580/19',
+                    }),
+                    assignment({
+                        description: 'Ustup tražbine Zagrebačke banke na DDM INVEST III AG',
+                        filingReference: 'OV - 8580/19',
+                    }),
+                ],
+            }]);
+
+            expect(flows.entries).toHaveLength(1);
+            expect(flows.entries[0]).toEqual(expect.objectContaining({
+                duplicateCount: 3,
+                filingReference: 'OV – 8580/19',
+                sources: ['a-1'],
+                filings: [expect.objectContaining({
+                    sourceId: 'a-1',
+                    sourceEntryIndex: 4,
+                    sourceDocumentLinkId: 'link-a',
+                })],
+            }));
+            expect(derivePropertyFlowView(flows).entries[0]).toEqual(expect.objectContaining({
+                duplicateCount: 3,
+                descriptionVariants: [
+                    'Ustup tražbine od Banke A na Društvo B',
+                    'Ustup i prijenos prava i tražbina',
+                    'Ustup tražbine Zagrebačke banke na DDM INVEST III AG',
+                ],
+                sources: ['a-1'],
+                filings: [expect.objectContaining({ sourceDocumentLinkId: 'link-a' })],
+            }));
+        });
+
+        test('keeps conflicting filings and unhashed filename collisions apart', () => {
+            const first = {
+                ...analysis({ id: 'uploads/Podnesak.pdf', sourceEntryIndex: 4, sourceDocumentLinkId: 'link-a' }),
+                amounts: [],
+                propertyFlow: [assignment({ filingReference: 'OV - 8580/19' })],
+            };
+            const distinctFiling = {
+                ...analysis({ id: 'uploads/Podnesak.pdf', sourceEntryIndex: 4, sourceDocumentLinkId: 'link-a' }),
+                amounts: [],
+                propertyFlow: [assignment({ filingReference: 'St - 2/2013' })],
+            };
+            const samePathDifferentFiling = {
+                ...analysis({ id: 'uploads/Podnesak.pdf', sourceEntryIndex: 5, sourceDocumentLinkId: 'link-b' }),
+                amounts: [],
+                propertyFlow: [assignment({ filingReference: 'OV - 8580/19' })],
+            };
+            const differentBytes = {
+                ...analysis({ id: 'uploads/Podnesak.pdf', contentHash: 'other-bytes' }),
+                amounts: [],
+                propertyFlow: [assignment({ filingReference: 'OV - 8580/19' })],
+            };
+
+            expect(collectFlows([first, distinctFiling, samePathDifferentFiling, differentBytes]).entries).toHaveLength(4);
+        });
+
+        test('byte-identical attachments still merge across filings with paraphrased descriptions', () => {
+            const flows = collectFlows([
+                {
+                    ...analysis({ id: 'a-1', sourceEntryIndex: 4, sourceDocumentLinkId: 'link-a', contentHash: 'same-bytes' }),
+                    amounts: [],
+                    propertyFlow: [assignment({ filingReference: 'OV – 8580/19' })],
+                },
+                {
+                    ...analysis({ id: 'a-2', sourceEntryIndex: 5, sourceDocumentLinkId: 'link-b', contentHash: 'same-bytes' }),
+                    amounts: [],
+                    propertyFlow: [assignment({
+                        description: 'Ustup i prijenos prava i tražbina',
+                        claimRegistryNumber: '200.',
+                        isplatniRed: 'drugi viši isplatni red',
+                        filingReference: 'OV - 8580/19',
+                        date: '27.09.2019.',
+                    })],
+                },
+            ]);
+
+            expect(flows.entries).toHaveLength(1);
+            expect(flows.entries[0].duplicateCount).toBe(2);
+            expect(flows.entries[0].filings).toHaveLength(2);
         });
     });
 

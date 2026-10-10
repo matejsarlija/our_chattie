@@ -253,9 +253,47 @@ describe('analysis lab experiment reads (LE-3)', () => {
             expect(variant.profileSnapshot).toMatchObject({ id: profileId });
             expect(variant.deterministicScorecard).toMatchObject({ version: 1, profileId });
         }
+        expect(experiment.sourceDocuments).toEqual(expect.arrayContaining([
+            expect.objectContaining({
+                analysisId: expect.any(String),
+                fileName: expect.any(String),
+                url: null,
+            }),
+        ]));
+        expect(experiment.sourceDocumentsStatus).toBe('no-links');
         expect(comparison.flatToDag).toMatchObject({ from: 'baseline-flat-v1', to: 'context-tree-v1' });
         expect(comparison.summaryIncrementalCost).not.toBe('unknown');
     });
+    test('saved-run experiment exposes only safe original document URLs', async () => {
+        const { app, analysisStore } = makeApp();
+        const pkg = cloneEvidencePackage(LAB_FIXTURE);
+        pkg.documentLinks[0].url = 'https://court.example.test/source.pdf';
+        pkg.documentLinks[1].url = 'https://user:secret@court.example.test/credentials.pdf';
+        pkg.documentLinks[2].url = 'javascript:alert(1)';
+        const run = await analysisStore.createAnalysisRun({ oib: 'St-2/2013', queryType: 'case_number', queryValue: 'St-2/2013' });
+        await analysisStore.completeAnalysisRun({
+            analysisId: run.id,
+            resultText: 'Sažetak',
+            resultJson: { comparativeAnalysis: 'Sažetak', clusterEvidencePackage: pkg },
+        });
+        const created = await request(app)
+            .post('/api/analysis-lab/experiments')
+            .send({ evidencePackageRef: run.id });
+        expect(created.status).toBe(201);
+
+        const res = await request(app).get(`/api/analysis-lab/experiments/${created.body.experiment.id}`);
+        expect(res.status).toBe(200);
+        expect(res.body.experiment.sourceDocuments).toEqual(expect.arrayContaining([
+            expect.objectContaining({ url: 'https://court.example.test/source.pdf' }),
+        ]));
+        expect(res.body.experiment.sourceDocumentsStatus).toBe('available');
+        expect(res.body.experiment.sourceDocuments.find((source) => source.fileName === 'Ugovor o ustupu Prokurator-Coast.pdf').url).toBeNull();
+        expect(res.body.experiment.sourceDocuments.find((source) => source.fileName === 'Podnesak vjerovnika 2026-06.pdf').url).toBeNull();
+        expect(res.body.experiment.sourceDocuments.every((source) => (
+            source.url === null || /^https?:\/\//.test(source.url)
+        ))).toBe(true);
+    });
+
 
     test('unknown experiment is 404, mirroring analysis run reads', async () => {
         const { app } = makeApp();

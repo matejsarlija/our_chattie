@@ -3,7 +3,6 @@ const mockInit = jest.fn();
 const mockClose = jest.fn();
 const mockDownloadCall = jest.fn();
 const mockAnalyzeCall = jest.fn();
-const mockVisualizerCall = jest.fn();
 const mockSynthesizeReport = jest.fn();
 const mockVerifyReport = jest.fn((report) => Promise.resolve(report));
 const mockNormalizeReasoningEvidence = jest.fn((evidencePackage) => ({
@@ -44,12 +43,6 @@ jest.mock('../court-analysis/agents/analysis-agent', () => ({
   })),
 }));
 
-jest.mock('../court-analysis/agents/visualizer-agent', () => ({
-  VisualizerTool: jest.fn().mockImplementation(() => ({
-    _call: mockVisualizerCall,
-  })),
-}));
-
 jest.mock('../court-analysis/reasoning/synthesizer', () => ({
   synthesizeReport: mockSynthesizeReport,
   normalizeReasoningEvidence: mockNormalizeReasoningEvidence,
@@ -83,7 +76,7 @@ jest.mock('fs', () => ({
   unlink: jest.fn((path, cb) => cb && cb(null)),
 }));
 
-const { runCourtAnalysis, isUsableAnalysisText } = require('../court-analysis/pipeline');
+const { runCourtAnalysis } = require('../court-analysis/pipeline');
 const { buildClusterEvidencePackage, attachAnalysesToEvidencePackage } = require('../court-analysis/reasoning/evidencePackage');
 const { collectSources } = require('../court-analysis/reasoning/indexer');
 const { TIMEOUT_MESSAGE } = require('../helpers/friendlyAnalysisError');
@@ -156,22 +149,20 @@ describe('Track 1: evidence enrichment (1c)', () => {
       total: 3,
       coverageRatio: 0.67,
       complete: false,
-      // Per-file reasons are classified for users: a Gemini timeout is a
-      // transient timeout, so the banner says so instead of echoing the raw
-      // SDK message.
       failedFiles: [{
         fileName: 'doc3.pdf',
         code: 'timeout',
         reason: TIMEOUT_MESSAGE,
         causalChain: ['Gemini request timed out after 30000ms'],
       }],
-      // Grounding dimension: no quotes in these legacy-shaped analyses, so
-      // zero of zero claims verify (additive signal, never a failure).
       groundedClaims: 0,
       totalClaims: 0,
+      partial: 0,
+      partialFiles: [],
+      gaps: [],
     });
-  });
 
+  });
   test('attachAnalysesToEvidencePackage filters to the selected cluster only', () => {
     const pkg = buildClusterEvidencePackage({ cluster: buildBaseCluster(), clusterSummary: {}, discoverySummary: buildDiscoverySummary(), query: null });
     const processedCases = [
@@ -217,6 +208,9 @@ describe('Track 1: evidence enrichment (1c)', () => {
       failedFiles: [],
       groundedClaims: 0,
       totalClaims: 0,
+      partial: 0,
+      partialFiles: [],
+      gaps: [],
     });
   });
 
@@ -328,46 +322,7 @@ describe('Track 1: evidence enrichment (1c)', () => {
   });
 });
 
-describe('Track 1: visualizer guards (1e)', () => {
-  test('isUsableAnalysisText rejects empty and failure-placeholder text', () => {
-    expect(isUsableAnalysisText('')).toBe(false);
-    expect(isUsableAnalysisText('  ')).toBe(false);
-    expect(isUsableAnalysisText(null)).toBe(false);
-    expect(isUsableAnalysisText(undefined)).toBe(false);
-    expect(isUsableAnalysisText('Greška pri generiranju završnog sažetka.')).toBe(false);
-    expect(isUsableAnalysisText('Nema dostupnih podataka za generiranje analize.')).toBe(false);
-    expect(isUsableAnalysisText('Analiza dokumenata nije uspješno izvršena.')).toBe(false);
-  });
-
-  test('isUsableAnalysisText accepts real analytical content', () => {
-    expect(isUsableAnalysisText('Analiza pokazuje nepodmirene tražbine u iznosu od 2 milijuna EUR.')).toBe(true);
-  });
-
-  test('pipeline skips the visualizer when comparative analysis is a failure placeholder', async () => {
-    mockSearchAndGetLatestCasesWithDocuments.mockResolvedValue([
-      { caseInfo: { caseNumber: 'ST-700/2024', title: 'T1', participants: [] }, documentLinks: [{ url: 'u1', text: 'doc1' }] },
-    ]);
-    mockDownloadCall.mockResolvedValue([{ filePath: '/tmp/track1.pdf', url: 'u1' }]);
-    mockAnalyzeCall.mockResolvedValue({ individualAnalyses: [], finalSummary: 'Analysis' });
-
-    // Simulate the real-world failure where synthesis has no evidence and the
-    // report carries only the empty-report placeholder narrative.
-    mockSynthesizeReport.mockResolvedValue({
-      schemaVersion: '1.0.0',
-      narrative: 'Nema dovoljno dokaza za generiranje izvješća.',
-      claims: [],
-      findings: [],
-      openQuestions: [],
-      nextSteps: [],
-      conflicts: [],
-      meta: {},
-    });
-
-    await runCourtAnalysis('66124057408', { caseLimit: 1, enableVisualizer: true }, jest.fn());
-
-    expect(mockVisualizerCall).not.toHaveBeenCalled();
-  });
-
+describe('Track 1: pipeline wiring (1e)', () => {
   test('pipeline attaches analyses to the evidence package and report meta end-to-end', async () => {
     mockSearchAndGetLatestCasesWithDocuments.mockResolvedValue([
       { caseInfo: { caseNumber: 'ST-700/2024', title: 'T1', participants: [] }, documentLinks: [{ url: 'u1', text: 'doc1' }] },
@@ -391,7 +346,7 @@ describe('Track 1: visualizer guards (1e)', () => {
       meta: {},
     });
 
-    const result = await runCourtAnalysis('66124057408', { caseLimit: 1, enableVisualizer: false }, jest.fn());
+    const result = await runCourtAnalysis('66124057408', { caseLimit: 1 }, jest.fn());
 
     expect(result.clusterEvidencePackage.analyses).toHaveLength(1);
     expect(result.clusterEvidencePackage.analyses[0].summary).toBe('Tražbina od 40.000 EUR.');

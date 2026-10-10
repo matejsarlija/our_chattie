@@ -48,7 +48,7 @@ describe('createGeminiClient role factory', () => {
             expect(GEMINI_ROLE_CONFIG[role].temperature).toBe(0);
         }
         expect(Object.keys(GEMINI_ROLE_CONFIG).sort()).toEqual(
-            ['analysis', 'claimJudge', 'contextNode', 'ocr', 'ocr-batch', 'planner', 'repair', 'rerank', 'significance', 'synthesis', 'verify', 'visualizer'],
+            ['analysis', 'claimJudge', 'contextNode', 'ocr', 'ocr-batch', 'planner', 'repair', 'rerank', 'significance', 'synthesis', 'verify'],
         );
     });
 

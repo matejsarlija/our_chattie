@@ -30,10 +30,6 @@ jest.mock('../court-registry/enricher', () => ({
     enrichParticipants: jest.fn().mockImplementation((p) => Promise.resolve(p))
 }));
 
-jest.mock('../court-analysis/agents/visualizer-agent', () => ({
-    VisualizerTool: jest.fn()
-}));
-
 jest.mock('../court-analysis/reasoning/synthesizer', () => ({
     synthesizeReport: mockSynthesizeReport,
     normalizeReasoningEvidence: mockNormalizeReasoningEvidence
@@ -111,7 +107,6 @@ describe('CSV export discovery → pipeline handoff', () => {
 
         const result = await processScrapedCases(casesToProcess, jest.fn(), {
             caseLimit: 5,
-            enableVisualizer: false,
             query: { type: 'oib', value: '66124057408' },
             discoveryMetadata
         });
@@ -155,7 +150,6 @@ describe('CSV export discovery → pipeline handoff', () => {
 
         const result = await processScrapedCases(casesToProcess, jest.fn(), {
             caseLimit: 5,
-            enableVisualizer: false,
             query: { type: 'oib', value: '66124057408' },
             discoveryMetadata
         });

@@ -16,7 +16,7 @@
 //   earlier model summary, and may answer `absent` (source does not state the
 //   field) — which accepts as empty without a gap.
 
-const EXTRACTION_SCHEMA_VERSION = 1;
+const EXTRACTION_SCHEMA_VERSION = 2;
 
 const TOP_LEVEL_FIELDS = [
     'caseNumber',
@@ -39,7 +39,9 @@ const EVENT_TYPES = ['prijava', 'ustup', 'namirenje', 'drugo'];
 // misdrive TL-2 matching), absent values stay null without a gap.
 const AMOUNT_ROLES = ['total', 'line_item', 'principal', 'cost', 'paid', 'fee'];
 const LEGAL_EFFECTS = ['creates', 'modifies', 'supersedes', 'resolves', 'implements', 'unknown'];
+const VALUE_ROLES = ['claim_balance', 'transfer_consideration', 'payment_amount', 'asset_value', 'unknown'];
 const RELATIONSHIP_BASES = ['explicit_identifier', 'explicit_text', 'inferred'];
+const VALUE_ROLE_GUIDANCE = 'For every non-null propertyFlow.value, include valueRole: "claim_balance" only when the source explicitly states the outstanding claim balance; "transfer_consideration" for the price paid for an assignment; "payment_amount" for a payment or recovery; "asset_value" for another asset valuation; or "unknown" when the amount’s meaning cannot be established. Never treat a payment or assignment price as a remaining claim balance.';
 
 function asStringOrNull(value) {
     if (value === null || value === undefined) return null;
@@ -161,6 +163,10 @@ function validatePropertyItem(raw, index) {
     if (raw.eventType !== undefined && raw.eventType !== null && eventType === null) {
         gaps.push(gap(`${path}.eventType`, 'schema-mismatch', `unsupported event type: ${String(raw.eventType).slice(0, 24)}`));
     }
+    const valueRole = asEnumOrNull(raw.valueRole, VALUE_ROLES);
+    if (raw.valueRole !== undefined && raw.valueRole !== null && valueRole === null) {
+        gaps.push(gap(`${path}.valueRole`, 'schema-mismatch', `unsupported value role: ${String(raw.valueRole).slice(0, 32)}`));
+    }
     const legalEffect = asEnumOrNull(raw.legalEffect, LEGAL_EFFECTS);
     if (raw.legalEffect !== undefined && raw.legalEffect !== null && legalEffect === null) {
         gaps.push(gap(`${path}.legalEffect`, 'schema-mismatch', `unsupported legal effect: ${String(raw.legalEffect).slice(0, 24)}`));
@@ -185,6 +191,7 @@ function validatePropertyItem(raw, index) {
             date: asStringOrNull(raw.date),
             quote: asStringOrNull(raw.quote),
             eventType,
+            valueRole,
             legalEffect,
             references,
             relationshipBasis,
@@ -307,7 +314,7 @@ function buildFieldRepairPrompt({ field, sourceText }) {
     const spec = FIELD_SPECS[field];
     if (!spec) throw new Error(`Field ${field} is not repairable`);
     const excerpt = String(sourceText || '');
-    return `FIELD REPAIR. A previous extraction of the court document below produced an unusable "${field}" value. Re-extract ONLY that field from the source text below.\n\nReturn ONLY a JSON object of the form {"value": <the re-extracted ${field} value per this spec>, "absent": true|false}. Set "absent" to true (with "value" null, or [] for arrays) when the source text does not state this field at all — never invent a missing fact. "value" must follow this spec: ${spec}.\n\nProvide ONLY the json object and nothing else. Text:\n\n${excerpt}`;
+    return `FIELD REPAIR. A previous extraction of the court document below produced an unusable "${field}" value. Re-extract ONLY that field from the source text below.\n\nReturn ONLY a JSON object of the form {"value": <the re-extracted ${field} value per this spec>, "absent": true|false}. Set "absent" to true (with "value" null, or [] for arrays) when the source text does not state this field at all — never invent a missing fact. "value" must follow this spec: ${spec}${field === 'propertyFlow' ? ` ${VALUE_ROLE_GUIDANCE}` : ''}\n\nProvide ONLY the json object and nothing else. Text:\n\n${excerpt}`;
 }
 
 /**
@@ -316,7 +323,7 @@ function buildFieldRepairPrompt({ field, sourceText }) {
  */
 function buildFullRepairPrompt({ sourceText }) {
     const excerpt = String(sourceText || '');
-    return `EXTRACTION REPAIR. A previous extraction of the court document below produced no usable JSON. Extract key information from the source text below as a JSON object with keys: "caseNumber", "decisionDate", "summary" (one medium paragraph, Croatian), ${FIELD_SPECS.amounts} (as "amounts"; [] when none), ${FIELD_SPECS.propertyFlow} (as "propertyFlow"; [] when none), and "citedFilingReferences" (array of "poslovni broj" values explicitly referenced; [] when none).\n\nProvide ONLY the json object and nothing else. Text:\n\n${excerpt}`;
+    return `EXTRACTION REPAIR. A previous extraction of this court document produced no usable JSON. Extract key information from the source text below as a JSON object with keys: "caseNumber", "decisionDate", "summary" (one medium paragraph, Croatian), ${FIELD_SPECS.amounts} (as "amounts"; [] when none), ${FIELD_SPECS.propertyFlow} (as "propertyFlow"; [] when none). ${VALUE_ROLE_GUIDANCE} Also extract "citedFilingReferences" (array of "poslovni broj" values explicitly referenced; [] when none).\n\nProvide ONLY the json object and nothing else. Text:\n\n${excerpt}`;
 }
 
 module.exports = {
@@ -329,6 +336,7 @@ module.exports = {
     RELATIONSHIP_BASES,
     CURRENCIES,
     ASSET_TYPES,
+    VALUE_ROLES,
     EVENT_TYPES,
     FIELD_SPECS,
     validateExtraction,

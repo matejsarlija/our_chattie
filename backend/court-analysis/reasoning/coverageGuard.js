@@ -11,8 +11,14 @@ function isPoorDocumentCoverage(coverage) {
     return analyzed === 0 || failed >= analyzed;
 }
 
+function hasPartialDocumentCoverage(coverage) {
+    return Number.isFinite(coverage?.partial) && coverage.partial > 0;
+}
+
 function coverageOpenQuestion(coverage) {
-    return `Analiza dokumenata nije potpuna (${coverage.analyzed || 0} od ${coverage.total || 0} uspješno obrađeno); zaključci utemeljeni samo na naslovima i poveznicama ostaju otvoreni.`;
+    const partial = Number.isFinite(coverage?.partial) ? coverage.partial : 0;
+    const partialNote = partial > 0 ? `; ${partial} dokumenta obrađena su djelomično` : '';
+    return `Analiza dokumenata nije potpuna (${coverage.analyzed || 0} od ${coverage.total || 0} uspješno obrađeno${partialNote}); zaključci utemeljeni samo na naslovima i poveznicama ostaju otvoreni.`;
 }
 
 function analysisSourceIds(evidencePackage) {
@@ -47,6 +53,7 @@ function applyCoverageConfidenceGuard(findings, evidencePackage) {
 
 module.exports = {
     isPoorDocumentCoverage,
+    hasPartialDocumentCoverage,
     coverageOpenQuestion,
     applyCoverageConfidenceGuard
 };

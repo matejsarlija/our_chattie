@@ -67,7 +67,7 @@ describe('analysisLab profiles (LA-1)', () => {
         expect(snapshot.modelRoles.verify.model).toBeTruthy();
         expect(snapshot.promptVersions).toMatchObject({ contextNode: 'v1' });
         expect(snapshot.schemaVersions.evidence).toBe(1);
-        expect(snapshot.schemaVersions.extraction).toBe(1);
+        expect(snapshot.schemaVersions.extraction).toBe(2);
         expect(snapshot.executionSnapshot.followUpVerification).toBe('off');
         // Serializable with no loss.
         expect(JSON.parse(JSON.stringify(snapshot))).toEqual(JSON.parse(JSON.stringify(snapshot)));

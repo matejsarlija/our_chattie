@@ -40,6 +40,7 @@ jest.mock('../helpers/geminiUsage', () => ({
 }));
 
 const {
+    AnalyzeDocumentsTool,
     extractTextFromFile,
     extractTextViaNativePdf,
     extractTextViaOCR,
@@ -338,6 +339,75 @@ describe('extractTextViaOCR', () => {
             fs.unlinkSync(tmpFile);
         }
     });
+
+    it('keeps OCR page truncation visible in successful document coverage', async () => {
+        mockGetDocument.mockReset();
+        mockCreateCanvas.mockReset();
+        mockGeminiInvoke.mockReset();
+        const previousMode = process.env.DOCUMENT_INPUT_MODE;
+        const previousMaxPages = process.env.OCR_MAX_PAGES;
+        process.env.DOCUMENT_INPUT_MODE = 'local';
+        process.env.OCR_MAX_PAGES = '1';
+        mockCreateCanvas.mockReturnValue({
+            width: 200,
+            height: 100,
+            getContext: jest.fn().mockReturnValue({
+                drawImage: jest.fn(), fillRect: jest.fn(), fillText: jest.fn(),
+            }),
+            toBuffer: jest.fn().mockReturnValue(Buffer.from('fake')),
+        });
+        const emptyTextPdf = {
+            numPages: 3,
+            getPage: jest.fn().mockResolvedValue({
+                getTextContent: jest.fn().mockResolvedValue({ items: [] }),
+            }),
+            destroy: jest.fn(),
+        };
+        const renderedPdf = {
+            numPages: 3,
+            getPage: jest.fn().mockResolvedValue(mockPage()),
+            destroy: jest.fn(),
+        };
+        mockGetDocument
+            .mockReturnValueOnce({ promise: Promise.resolve(emptyTextPdf) })
+            .mockReturnValueOnce({ promise: Promise.resolve(renderedPdf) });
+        mockGeminiInvoke
+            .mockResolvedValueOnce({ content: 'Prvi list OCR teksta.' })
+            .mockResolvedValueOnce({
+                content: JSON.stringify({
+                    caseNumber: 'St-1/2024',
+                    summary: 'Sažetak iz prvog lista.',
+                    amounts: [],
+                    propertyFlow: [],
+                }),
+            });
+
+        const tmpFile = path.join(os.tmpdir(), `ocr-analysis-coverage-${Date.now()}-${Math.random()}.pdf`);
+        fs.writeFileSync(tmpFile, Buffer.from(`ocr-analysis-${Date.now()}-${Math.random()}`));
+        try {
+            const result = await new AnalyzeDocumentsTool()._call({
+                files: [{ filePath: tmpFile, text: 'partial.pdf' }],
+                caseInfo: { participants: [] },
+            });
+
+            expect(result.individualAnalyses[0].extraction).toEqual(expect.objectContaining({
+                method: 'ocr',
+                pages: 1,
+                truncated: true,
+            }));
+            expect(result.coverage).toEqual(expect.objectContaining({
+                analyzed: 1,
+                partial: 1,
+                complete: false,
+            }));
+        } finally {
+            if (previousMode === undefined) delete process.env.DOCUMENT_INPUT_MODE;
+            else process.env.DOCUMENT_INPUT_MODE = previousMode;
+            if (previousMaxPages === undefined) delete process.env.OCR_MAX_PAGES;
+            else process.env.OCR_MAX_PAGES = previousMaxPages;
+            fs.unlinkSync(tmpFile);
+        }
+    });
 });
 
 describe('extractTextViaNativePdf', () => {
@@ -349,6 +419,7 @@ describe('extractTextViaNativePdf', () => {
     });
 
     beforeEach(() => {
+        mockGetDocument.mockReset();
         mockNativeGenerateContent.mockReset();
         delete process.env.DOCUMENT_INPUT_MODE;
         delete process.env.NATIVE_PDF_MIN_PAGES;

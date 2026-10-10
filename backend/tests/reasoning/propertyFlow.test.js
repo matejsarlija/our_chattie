@@ -33,7 +33,89 @@ describe('reasoning reconcilePropertyFlows', () => {
         expect(result.valueChanges).toHaveLength(0);
     });
 
-    test('tražbina supersedes chain → value-change timeline, NOT a conflict', () => {
+    test('numeric claim registry number ignores a trailing sentence period', () => {
+        const result = reconcilePropertyFlows({ entries: [
+            {
+                id: 'prop-1', assetType: 'tražbina', eventType: 'prijava', valueRole: 'claim_balance',
+                description: 'Prijava i utvrđenje tražbine Zagrebačke banke d.d.',
+                claimRegistryNumber: '200', date: '2019-05-03', value: 27888441.11,
+                currency: 'EUR', transferee: 'Zagrebačka banka d.d.',
+                quote: 'Tražbina II. višeg isplatnog reda, broj 200.',
+            },
+            {
+                id: 'prop-2', assetType: 'tražbina', eventType: 'ustup', valueRole: 'claim_balance',
+                description: 'Ustup tražbine Zagrebačke banke d.d. na DDM INVEST III AG',
+                claimRegistryNumber: '200.', date: '2019-09-27', value: 27888441.11,
+                currency: 'EUR', transferor: 'Zagrebačka banka d.d.',
+                transferee: 'DDM INVEST III AG',
+                quote: 'Tražbina II. višeg isplatnog reda broj 200 ustupljena je.',
+            },
+        ] });
+
+        expect(result.valueChanges).toHaveLength(1);
+        expect(result.valueChanges[0]).toEqual(expect.objectContaining({
+            linkage: 'claimRegistryNumber',
+            originalValue: 27888441.11,
+            latestValue: 27888441.11,
+        }));
+    });
+
+    // AGENTS.md: "Identifiers that look similar are not always the same identity."
+    // Normalisation must stay narrow — a register prefix or any letter-bearing
+    // identifier keeps its exact form.
+    test('does NOT normalise a non-numeric registry number', () => {
+        const result = reconcilePropertyFlows({ entries: [
+            { id: 'p-1', assetType: 'tražbina', eventType: 'prijava', description: 'A',
+              claimRegistryNumber: '4 St-2/2013', date: '2020-01-01', value: 100, currency: 'EUR' },
+            { id: 'p-2', assetType: 'tražbina', eventType: 'ustup', description: 'B',
+              claimRegistryNumber: '4 St-2/2013.', date: '2020-02-01', value: 100, currency: 'EUR',
+              transferor: 'X', transferee: 'Y' },
+        ] });
+
+        // "4 St-2/2013" and "4 St-2/2013." are NOT reconciled: a letter-bearing
+        // identifier is left exactly as found.
+        expect(result.valueChanges).toHaveLength(0);
+    });
+
+    test('reconciles trailing period on a numeric registry number across three spellings', () => {
+        const mk = (id, reg, date) => ({
+            id, assetType: 'tražbina', eventType: 'ustup', description: 'Ustup tražbine',
+            claimRegistryNumber: reg, date, value: 500, currency: 'EUR',
+            transferor: 'A d.o.o.', transferee: 'B d.o.o.',
+        });
+        const result = reconcilePropertyFlows({ entries: [
+            mk('a', '200', '2020-01-01'),
+            mk('b', '200.', '2020-02-01'),
+            mk('c', '200', '2020-03-01'),
+        ] });
+        expect(result.valueChanges).toHaveLength(1);
+        expect(result.valueChanges[0].stages).toHaveLength(3);
+    });
+
+    // The defect's real-world consequence: one claim split into two chains
+    // renders TWO from->to totals for the same registered claim.
+    test('does not split one registered claim into two double-counted chains', () => {
+        const result = reconcilePropertyFlows({ entries: [
+            { id: 'x-1', assetType: 'tražbina', eventType: 'prijava', description: 'Prijava',
+              claimRegistryNumber: '200', date: '2019-05-03', value: 27888441.11, currency: 'EUR',
+              transferee: 'Zagrebačka banka d.d.' },
+            { id: 'x-2', assetType: 'tražbina', eventType: 'ustup', description: 'Ustup',
+              claimRegistryNumber: '200.', date: '2019-09-27', value: 27888441.11, currency: 'EUR',
+              transferor: 'Zagrebačka banka d.d.', transferee: 'DDM INVEST III AG' },
+            { id: 'x-3', assetType: 'tražbina', eventType: 'ustup', description: 'Ustup daljnji',
+              claimRegistryNumber: '200', date: '2021-07-27', value: 15522637.98, currency: 'EUR',
+              transferor: 'DDM INVEST III AG', transferee: 'Coast d.o.o.' },
+        ] });
+
+        const chain = result.valueChanges[0];
+        expect(chain.originalValue).toBeNull();
+        expect(chain.latestValue).toBeNull();
+        expect(chain.delta).toBeNull();
+        expect(chain.comparisonStatus).toBe('not-comparable');
+        expect(chain.stages.map((stage) => stage.value)).toEqual([27888441.11, 27888441.11, 15522637.98]);
+    });
+
+    test('tražbina supersedes chain stays visible without inferring a balance change from assignment price', () => {
         const flow = collectPropertyFlows([
             makeAnalysis('a-1', 'prijava.pdf', [
                 {
@@ -55,10 +137,11 @@ describe('reasoning reconcilePropertyFlows', () => {
         expect(result.conflicts).toHaveLength(0);
         expect(result.valueChanges).toHaveLength(1);
         expect(result.valueChanges[0]).toEqual(expect.objectContaining({
-            originalValue: 84500,
-            latestValue: 15000,
-            delta: 15000 - 84500,
-            finding: expect.stringContaining('ustupljena je za'),
+            originalValue: null,
+            latestValue: null,
+            delta: null,
+            comparisonStatus: 'not-comparable',
+            finding: expect.stringContaining('promjena salda nije izračunata'),
             sources: expect.any(Array),
         }));
     });
@@ -232,8 +315,9 @@ describe('reasoning reconcilePropertyFlows', () => {
         const result = reconcilePropertyFlows(pkg.propertyFlow);
         expect(result.valueChanges).toHaveLength(1);
         expect(result.valueChanges[0]).toEqual(expect.objectContaining({
-            originalValue: 84500,
-            latestValue: 15000,
+            originalValue: null,
+            latestValue: null,
+            comparisonStatus: 'not-comparable',
         }));
         expect(result.conflicts).toHaveLength(0);
     });
@@ -504,8 +588,8 @@ describe('reasoning reconcilePropertyFlows', () => {
         const timeline = buildValueChangeTimeline([
             // Lexicographically "15.06.2022." > "2023-06-01" — string sorting
             // would put the 2022 stage last and invert original/latest values.
-            { id: 'prop-2', description: 'Tražbina', value: 15000, currency: 'EUR', date: '2023-06-01', sourceId: 's-2', fileName: 'b.pdf' },
-            { id: 'prop-1', description: 'Tražbina', value: 84500, currency: 'EUR', date: '15.06.2022.', sourceId: 's-1', fileName: 'a.pdf' },
+            { id: 'prop-2', description: 'Tražbina', value: 15000, currency: 'EUR', date: '2023-06-01', valueRole: 'claim_balance', sourceId: 's-2', fileName: 'b.pdf' },
+            { id: 'prop-1', description: 'Tražbina', value: 84500, currency: 'EUR', date: '15.06.2022.', valueRole: 'claim_balance', sourceId: 's-1', fileName: 'a.pdf' },
         ], 'test');
         expect(timeline.stages.map((s) => s.id)).toEqual(['prop-1', 'prop-2']);
         expect(timeline.originalValue).toBe(84500);
@@ -550,5 +634,62 @@ describe('reasoning reconcilePropertyFlows', () => {
         const chars = JSON.stringify(dense).length;
         const estimatedCapacity = GEMINI_ROLE_CONFIG.analysis.maxOutputTokens * 4;
         expect(chars).toBeLessThan(estimatedCapacity * 0.75);
+    });
+    test('claim-balance change ignores linked payment and assignment amounts', () => {
+        const result = reconcilePropertyFlows({ entries: [
+            { id: 'claim-1', assetType: 'tražbina', eventType: 'prijava', valueRole: 'claim_balance',
+              description: 'Tražbina 200', claimRegistryNumber: '200', date: '2020-01-01',
+              value: 100, currency: 'EUR' },
+            { id: 'payment-1', assetType: 'tražbina', eventType: 'namirenje', valueRole: 'payment_amount',
+              description: 'Djelomično namirenje tražbine 200', claimRegistryNumber: '200',
+              date: '2021-01-01', value: 25, currency: 'EUR' },
+            { id: 'claim-2', assetType: 'tražbina', eventType: 'prijava', valueRole: 'claim_balance',
+              description: 'Preostala tražbina 200', claimRegistryNumber: '200', date: '2022-01-01',
+              value: 75, currency: 'EUR' },
+        ] });
+
+        expect(result.valueChanges).toHaveLength(1);
+        expect(result.valueChanges[0]).toEqual(expect.objectContaining({
+            originalValue: 100,
+            latestValue: 75,
+            delta: -25,
+            comparisonStatus: 'comparable',
+        }));
+        expect(result.valueChanges[0].stages.map((stage) => stage.value)).toEqual([100, 25, 75]);
+    });
+
+    test('does not compare explicitly labelled claim balances across unsupported currencies', () => {
+        const result = reconcilePropertyFlows({ entries: [
+            { id: 'claim-eur', assetType: 'tražbina', eventType: 'prijava', valueRole: 'claim_balance',
+              description: 'Tražbina 202', claimRegistryNumber: '202', date: '2020-01-01',
+              value: 100, currency: 'EUR' },
+            { id: 'claim-hrk', assetType: 'tražbina', eventType: 'prijava', valueRole: 'claim_balance',
+              description: 'Tražbina 202', claimRegistryNumber: '202', date: '2021-01-01',
+              value: 753.45, currency: 'HRK' },
+        ] });
+
+        expect(result.valueChanges[0]).toEqual(expect.objectContaining({
+            originalValue: null,
+            latestValue: null,
+            delta: null,
+            comparisonStatus: 'not-comparable',
+        }));
+    });
+
+    test('linked amounts without explicit comparable roles remain events, not balance deltas', () => {
+        const result = reconcilePropertyFlows({ entries: [
+            { id: 'claim-1', assetType: 'tražbina', eventType: 'prijava', description: 'Tražbina 201',
+              claimRegistryNumber: '201', value: 100, currency: 'EUR' },
+            { id: 'payment-1', assetType: 'tražbina', eventType: 'namirenje', description: 'Namirenje 201',
+              claimRegistryNumber: '201', value: 25, currency: 'EUR' },
+        ] });
+
+        expect(result.valueChanges[0]).toEqual(expect.objectContaining({
+            originalValue: null,
+            latestValue: null,
+            delta: null,
+            comparisonStatus: 'not-comparable',
+        }));
+        expect(result.valueChanges[0].stages.map((stage) => stage.value)).toEqual([100, 25]);
     });
 });

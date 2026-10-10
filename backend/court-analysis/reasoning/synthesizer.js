@@ -9,6 +9,7 @@ const { validateClusterEvidencePackage } = require("./evidencePackage");
 const { buildTimeline, parseDate } = require("./timelineBuilder");
 const {
     isPoorDocumentCoverage,
+    hasPartialDocumentCoverage,
     coverageOpenQuestion,
     applyCoverageConfidenceGuard
 } = require("./coverageGuard");
@@ -44,8 +45,9 @@ async function synthesizeReport(evidencePackage, options = {}) {
     const partiesText = (meta.parties || []).join(', ');
     const caseNumber = meta.caseNumber || 'Unknown';
     const poorDocumentCoverage = isPoorDocumentCoverage(meta.coverage);
-    const coverageInstruction = poorDocumentCoverage
-        ? `\n    DOCUMENT COVERAGE WARNING: Only ${meta.coverage.analyzed || 0} of ${meta.coverage.total || 0} documents were analyzed successfully. Titles and links are structural metadata only. Do not make substantive findings from them; express those as open questions or use low confidence unless a finding cites analyzed document content.\n`
+    const partialDocumentCoverage = hasPartialDocumentCoverage(meta.coverage);
+    const coverageInstruction = poorDocumentCoverage || partialDocumentCoverage
+        ? `\n    DOCUMENT COVERAGE WARNING: ${meta.coverage.analyzed || 0} of ${meta.coverage.total || 0} documents were analyzed successfully${partialDocumentCoverage ? `; ${meta.coverage.partial} were only partially extracted or analyzed` : ''}. Titles and links are structural metadata only. Do not infer facts from missing pages or failed chunks; qualify findings that depend on incomplete documents and identify those gaps as open questions. Low confidence is not a substitute for missing evidence.\n`
         : '';
 
     const prompt = `
@@ -99,7 +101,7 @@ async function synthesizeReport(evidencePackage, options = {}) {
         })), normalizedEvidence);
 
         const openQuestions = [...(parsed.openQuestions || [])];
-        if (poorDocumentCoverage && !openQuestions.includes(coverageOpenQuestion(meta.coverage))) {
+        if ((poorDocumentCoverage || partialDocumentCoverage) && !openQuestions.includes(coverageOpenQuestion(meta.coverage))) {
             openQuestions.push(coverageOpenQuestion(meta.coverage));
         }
 
