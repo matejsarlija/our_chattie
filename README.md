@@ -32,7 +32,7 @@ This project is GPLv3 licensed (LICENSE.md).
 
 ## Tech Stack
 
--   **Frontend:** React, Tailwind CSS, React Router, react-markdown, Mermaid
+-   **Frontend:** React, Tailwind CSS, React Router, react-markdown
 -   **Backend:** Node.js, Express.js
 -   **Persistence:** Local JSON files (`backend/data/analysis/`)
 -   **Web Scraping:** Puppeteer, Browserless.io (for production deployment)

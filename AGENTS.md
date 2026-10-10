@@ -42,6 +42,17 @@ actually hold today:
 
 Solution must be coherent, cohesive with the existing codebase, and respect all existing codebase paradigms and practices.
 
+## UI Design & Accessibility
+
+Apply these durable findings from the UI audit and shipped redesign; treat old screen-specific proposals and token values as historical unless they match the current code.
+
+- **Meet WCAG AA where the interface carries information.** Body text needs at least 4.5:1 contrast; meaningful control boundaries and focus indicators need at least 3:1. The audit found that faint borders and status dots were a larger contrast risk than most status text. Keep decorative separators distinct from control borders, and never rely on a subtle border or color alone to communicate state.
+- **Status and severity are not color-only.** Pair status color with a visible label and/or glyph. Keep severity calm and readable; do not make every risk an alarm-colored banner. Unverified content should be visually recessed, not reduced to an easily missed badge.
+- **Make interaction accessible by default.** Preserve visible keyboard focus, semantic controls and tables, accessible names/descriptions, and announced validation/save errors. Use the shared Radix-backed `components/ui/Dialog.jsx` for dialogs so Escape, focus trapping/restoration, outside dismissal, scroll locking, and modal semantics stay consistent.
+- **Distinguish empty from unavailable.** “Nothing found” is different from “could not determine.” Render loading, genuinely empty, failed/unavailable, and populated states distinctly wherever the data contract supports them.
+- **Give the answer visual priority over telemetry.** On report pages, conclusions, scope/coverage, and source evidence should be easy to scan; pipeline and retrieval detail are supporting context. Keep source citations legible and keyboard-reachable, and do not duplicate structured findings or chronology in narrative prose. Disclosures must keep content available and indicate how much is hidden when counts are known.
+- **Treat design documents as historical evidence, not runtime truth.** Verify current code, persisted data contracts, and tests before applying older audit recommendations. Keep durable cross-screen UI rules here; do not recreate standalone HTML design audits, handoffs, or prototypes under `docs/` or `design-prototypes/` unless explicitly requested.
+
 ## Project Structure
 
 ```
@@ -96,26 +107,26 @@ our_chattie/
   casually, CI-nightly only)
 
 ### Frontend (run from `simple-chat/` directory)
-- **Development**: `npm start` (CRA) or `npm run dev:vite` (Vite)
-- **Build**: `npm run build` (CRA) or `npm run build:vite` (Vite)
-- **Testing**: `npm test`
+- **Development**: `npm start` (Vite) or `npm run cra:start` (CRA)
+- **Build**: `npm run build` (Vite) or `npm run cra:build` (CRA)
+- **Testing**: `npm test` or `npm run test:unit`
 
 ## Key Integration Points
 
-- **Google Generative AI**: per-role models via LangChain, centralized in
-  `backend/helpers/geminiConfig.js` (`GEMINI_ROLE_CONFIG`). Most roles
-  (`analysis`, `ocr`, `synthesis`, `verify`, `visualizer`) default to
-  `gemini-2.5-flash`; the cheap/small `rerank` and `planner` roles use
-  `gemini-3.5-flash-lite` (moved off `gemini-2.5-flash-lite` after it was
-  deprecated for new API keys). `GEMINI_MODEL` env var overrides the default
-  for all roles; per-role `model` fields override it further.
+- **Google Generative AI**: role-based models via LangChain, centralized in
+  `backend/helpers/geminiConfig.js` (`GEMINI_ROLE_CONFIG`). Document-reading
+  roles default to the configured full model; bounded JSON tasks use the lite
+  model where appropriate. `GEMINI_MODEL` overrides role defaults. Provider
+  limits, token pricing, and wrapper support are version-sensitive: verify them
+  against the installed client and current provider documentation rather than
+  relying on an old guide.
 - **SSE Streaming**: `backend/helpers/sse.js` builds events; must use
   `data: {...}\n\n` format exactly for the frontend parser
   (`useAnalysisRunStream.js`) to detect message boundaries. Used for live
   analysis run progress, with a polling fallback (see Architectural Ethos).
-- **Mermaid diagrams**: `MermaidDiagram.jsx` renders ```` ```mermaid ```` code
-  blocks inside the Gemini-authored report narrative (`visualizer` role in
-  `geminiConfig.js` generates these).
+- **Generated diagrams**: Mermaid and the visualizer role were removed. Do
+  not reintroduce model-authored diagrams or graph libraries without explicit
+  product approval and a grounded, accessible data contract.
 
 ## Court-Analysis Pipeline Notes
 
@@ -220,6 +231,19 @@ visible for future work in `backend/scraper/` and
    Internal-only metadata rots; if a signal matters, render it.
 6. **Grounding is forward-only.** There is deliberately no backfill machinery
    and no retroactive re-verification of cached/frozen analyses.
+7. **Preserve local extraction across long documents.** The 25,000-character
+   threshold in `analysis-agent.js` triggers chunking; it is not a text cutoff.
+   Analyze every extracted chunk, and retain each fact's chunk ID, source
+   offsets, and page numbers. Only collapse an exact repeated fact when its
+   verbatim quote falls inside the actual overlap between chunks. OCR page
+   limits remain explicit truncation; extraction truncation and failed chunks
+   must set partial coverage and appear in `AnalysisCoverageBanner`. Do not
+   silently sample extracted text to fit a prompt; bound provider concurrency
+   separately from text coverage.
+8. **Spread fixed report claim budgets across time.** The chronological
+   synthesis claim list must not be cut to a positional prefix: distribute
+   full-cited claim slots across the chronology so later filings retain a
+   chance to inform the report.
 
 ### Identity, Currency & Provenance
 
@@ -333,13 +357,21 @@ A–F shipped) that still bind future work.
    claims getting dropped by this cap, the fix is to make the cap
    date-aware (e.g. spread the keep-set across the timeline) rather than a
    positional prefix.
+6. **The Analysis Lab is an evaluation lane, not production authority.** Run
+   experiments only from frozen evidence packages or fixtures; compare variants
+   only when their evidence-package hash and shared upstream inputs match. Keep
+   per-variant configuration snapshots, traces, failures, and usage separate;
+   an experiment is immutable and reruns create a new record. Scorecards describe
+   measurable differences and never declare an automatic winner or mutate
+   production defaults.
 
 ## Feature Delivery & Design Docs
 
-New features ship with a spec doc and a task breakdown, plus a design doc as
-a pure `.html` file. Do not create new Storybook stories — existing stories
-stay maintained (keep their prose accurate), but all new UI delivery goes
-through the HTML design doc instead.
+Keep durable cross-cutting UI and accessibility guidance in this file. Add a
+feature-specific spec or task breakdown only when the scope needs a lasting
+contract beyond the implementation and tests, and keep it concise and current.
+Do not create standalone HTML design documents or prototypes unless explicitly
+requested.
 
 ## Knowledge Base & Historical Search (New)
 
