@@ -32,6 +32,31 @@ describe('ReasoningExperimentsPanel', () => {
     expect(screen.getAllByRole('radio', { name: 'Uklj.' }).every((el) => el.getAttribute('aria-checked') === 'true')).toBe(true);
   });
 
+  test('announces save progress and save failures', () => {
+    useSettings.mockReturnValue({
+      reasoningRerankMode: 'auto',
+      reasoningPlanner: 'on',
+      reasoningFollowUp: 'on',
+      saving: true,
+      error: '',
+      saveReasoningSettings: jest.fn(),
+    });
+
+    const { rerender } = render(<ReasoningExperimentsPanel />);
+    expect(screen.getByRole('status')).toHaveTextContent('Spremanje postavki…');
+
+    useSettings.mockReturnValue({
+      reasoningRerankMode: 'auto',
+      reasoningPlanner: 'on',
+      reasoningFollowUp: 'on',
+      saving: false,
+      error: 'Neuspjelo spremanje postavki.',
+      saveReasoningSettings: jest.fn(),
+    });
+    rerender(<ReasoningExperimentsPanel />);
+    expect(screen.getByRole('alert')).toHaveTextContent('Neuspjelo spremanje postavki.');
+  });
+
   test('saving a rerank mode posts only that field', async () => {
     const saveReasoningSettings = jest.fn().mockResolvedValue({});
     useSettings.mockReturnValue({

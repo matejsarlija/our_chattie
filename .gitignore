@@ -32,9 +32,7 @@ build/
 *.md
 /coverage
 */coverage
-# storybook: local-only working files
-*.stories.*
-simple-chat/src/stories/
+
 /dokumentacija*
 
 # opencode
@@ -50,10 +48,6 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
-*storybook.log
-storybook-static
-.storybook/
-src/stories/
 
 # Real e-Oglasna document fixtures: local-only binaries + their manifest.
 # Tests self-skip when absent; committing the manifest without the binaries

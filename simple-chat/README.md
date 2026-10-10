@@ -41,8 +41,4 @@ npm run test:ci           # non-interactive CI test run
 npm run cra:start         # legacy CRA development server
 npm run cra:build         # legacy CRA production build
 npm run build:matrix      # verify Vite and CRA builds
-npm run storybook         # Storybook on port 6006
-npm run build-storybook   # static Storybook build
 ```
-
-The dashboard’s visual decision history lives in `src/stories/Dashboard/AnalysisDetail/README.mdx`.

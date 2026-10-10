@@ -1,0 +1,13 @@
+diff --git a/node_modules/react-scripts/config/webpack.config.js b/node_modules/react-scripts/config/webpack.config.js
+index e465d8e..8fd4570 100644
+--- a/node_modules/react-scripts/config/webpack.config.js
++++ b/node_modules/react-scripts/config/webpack.config.js
+@@ -71,4 +71,2 @@
+ // Check if Tailwind config exists
+-const useTailwind = fs.existsSync(
+-  path.join(paths.appPath, 'tailwind.config.js')
+-);
++const useTailwind = true;
+@@ -162,1 +160,1 @@ module.exports = function (webpackEnv) {
+-                  'tailwindcss',
++                  '@tailwindcss/postcss',

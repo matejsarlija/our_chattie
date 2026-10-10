@@ -118,6 +118,8 @@ export default function LabExperimentDetailPage() {
                     variants={experiment.variants}
                     activeProfile={fragmentProfile || defaultFragmentProfile}
                     onProfileChange={setFragmentProfile}
+                    sourceDocuments={experiment.sourceDocuments}
+                    sourceDocumentsStatus={experiment.sourceDocumentsStatus}
                   />
                 </section>
               )}

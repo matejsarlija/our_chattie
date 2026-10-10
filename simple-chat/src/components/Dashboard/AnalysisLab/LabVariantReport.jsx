@@ -1,5 +1,4 @@
 import ReactMarkdown from 'react-markdown';
-import MermaidDiagram from '../../MermaidDiagram';
 import ErrorBoundary from '../../ErrorBoundary';
 import AnalysisCitationList from '../AnalysisCitationList';
 import { profileLabel } from './labMeta';
@@ -31,22 +30,7 @@ function MarkdownNarrative({ narrative }) {
   return (
     <ErrorBoundary>
       <article className="prose max-w-none prose-sm prose-slate">
-        <ReactMarkdown
-          components={{
-            code({ inline, className, children, ...props }) {
-              const match = /language-mermaid/.exec(className || '');
-              return !inline && match ? (
-                <MermaidDiagram chart={String(children).replace(/\n$/, '')} />
-              ) : (
-                <code className={className} {...props}>
-                  {children}
-                </code>
-              );
-            },
-          }}
-        >
-          {String(narrative)}
-        </ReactMarkdown>
+        <ReactMarkdown>{String(narrative)}</ReactMarkdown>
       </article>
     </ErrorBoundary>
   );

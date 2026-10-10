@@ -21,10 +21,6 @@ jest.mock('../../../../lib/env', () => ({
   env: {},
 }));
 
-jest.mock('../../../MermaidDiagram', () => ({
-  __esModule: true,
-  default: () => null,
-}));
 
 jest.mock('../../../../lib/apiClient', () => ({
   getLabExperiment: jest.fn(),
@@ -188,5 +184,47 @@ describe('Analysis Lab responsive + accessibility pass (LU-2)', () => {
     expect(screen.getByText('Sažetak za provjeru')).toBeInTheDocument();
     expect(screen.getByText('ungrounded-fact')).toBeInTheDocument();
     expect(screen.getAllByText('St-2/2013')).toHaveLength(3);
+  });
+  test('doubtful fragments prominently link to their source document', () => {
+    const variants = {
+      'baseline-flat-v1': {
+        status: 'complete',
+        trace: {
+          baseline: true,
+          fragments: {
+            flatClaims: {
+              claims: [{
+                claimId: 'claim-doubt',
+                text: 'Iznos nije siguran.',
+                evidence: [{
+                  sourceId: 'analysis-1',
+                  fileName: 'Rjesenje.pdf',
+                  text: 'Navodi se iznos od 25 EUR.',
+                  grounded: false,
+                }],
+              }],
+            },
+          },
+        },
+      },
+    };
+
+    render(
+      <LabFragmentsPane
+        variants={variants}
+        activeProfile="baseline-flat-v1"
+        sourceDocuments={[{
+          analysisId: 'analysis-1',
+          fileName: 'Rjesenje.pdf',
+          url: 'https://court.example.test/rjesenje.pdf',
+        }]}
+      />
+    );
+
+    expect(screen.getByRole('heading', { name: /provjerite izvor/i })).toBeInTheDocument();
+    expect(screen.getAllByRole('link', { name: /otvori izvorni dokument.*rjesenje.pdf/i }))
+      .toEqual(expect.arrayContaining([
+        expect.objectContaining({ href: 'https://court.example.test/rjesenje.pdf' }),
+      ]));
   });
 });

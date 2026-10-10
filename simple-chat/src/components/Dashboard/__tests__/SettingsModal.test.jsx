@@ -31,7 +31,7 @@ describe('SettingsModal', () => {
     const onClose = jest.fn();
     render(<SettingsModal isOpen onClose={onClose} />);
 
-    screen.getByRole('button', { name: 'Zatvori' }).click();
+    screen.getByRole('button', { name: 'Zatvori dijalog' }).click();
     expect(onClose).toHaveBeenCalled();
   });
 });

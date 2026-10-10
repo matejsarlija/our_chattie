@@ -144,7 +144,16 @@ export default function ReasoningExperimentsPanel() {
         />
       </SettingRow>
 
-      {error ? <span className="text-xs text-[var(--danger, #ef4444)]">{error}</span> : null}
+      {saving ? (
+        <span role="status" aria-live="polite" className="text-xs text-[var(--text-muted)]">
+          Spremanje postavki…
+        </span>
+      ) : null}
+      {error ? (
+        <span role="alert" className="text-xs text-[var(--danger, #ef4444)]">
+          {error}
+        </span>
+      ) : null}
     </div>
   );
 }

@@ -21,10 +21,6 @@ jest.mock('../../../../lib/env', () => ({
   env: {},
 }));
 
-jest.mock('../../../MermaidDiagram', () => ({
-  __esModule: true,
-  default: () => null,
-}));
 
 jest.mock('../../../../lib/apiClient', () => ({
   getLabExperiment: jest.fn(),
@@ -169,6 +165,14 @@ describe('LabExperimentDetailPage (LU-1)', () => {
     expect(pane).toBeInTheDocument();
     // Page chrome survives even if the narrative renderer degrades.
     expect(screen.getByLabelText('Zajednički zamrznuti ulaz')).toBeInTheDocument();
+
+    // Malformed diagram syntax is inert: no renderer attempts it, so it becomes
+    // an ordinary code block. It cannot throw, and the surrounding narrative
+    // still renders.
+    expect(pane.textContent).toContain('graph TD;');
+    expect(pane.textContent).toContain('Nezatvoreno');
+    // and the javascript: image vector stays neutralized
+    expect(pane.querySelector('img[src^="javascript:"]')).toBeNull();
   });
 
   test('scorecard renders n/a as N/P and unknown as ?', async () => {

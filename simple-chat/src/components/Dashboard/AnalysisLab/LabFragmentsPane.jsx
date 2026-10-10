@@ -19,8 +19,146 @@ const idList = (ids) => {
     </ul>
   );
 };
+function safeSourceUrl(value) {
+  try {
+    const url = new URL(value);
+    if ((url.protocol !== 'https:' && url.protocol !== 'http:') || url.username || url.password) return null;
+    return url.href;
+  } catch {
+    return null;
+  }
+}
 
-function NodeDetail({ node, fragment, outcome, dagSelections }) {
+function indexSourceDocuments(sourceDocuments) {
+  const byId = new Map();
+  for (const document of Array.isArray(sourceDocuments) ? sourceDocuments : []) {
+    const source = { ...document, url: safeSourceUrl(document?.url) };
+    if (source.analysisId) byId.set(source.analysisId, source);
+    if (source.sourceDocumentLinkId) byId.set(source.sourceDocumentLinkId, source);
+  }
+  return byId;
+}
+
+function SourceDocumentLink({ document, compact = false }) {
+  const name = document?.fileName || 'Izvorni dokument';
+  if (!document?.url) {
+    return <span className="text-xs text-[var(--text-muted)]">Izvorna datoteka nije povezana · {name}</span>;
+  }
+  return (
+    <a
+      href={document.url}
+      target="_blank"
+      rel="noopener noreferrer"
+      className={`inline-flex items-center gap-1 font-medium text-[var(--accent)] underline underline-offset-2 focus-visible:outline-2 focus-visible:outline-offset-2 ${compact ? 'text-xs' : 'text-sm'}`}
+    >
+      Otvori izvorni dokument · {name}<span aria-hidden="true">↗</span>
+    </a>
+  );
+}
+
+function collectDoubtfulSources(trace, isFlat, sourceDocumentsById) {
+  const sources = new Map();
+  const add = (sourceId, fileName, reason) => {
+    const document = sourceDocumentsById.get(sourceId) || {
+      analysisId: sourceId || null,
+      fileName: fileName || null,
+      url: null,
+    };
+    const key = sourceId || document.analysisId || document.fileName;
+    if (!key) return;
+    if (!sources.has(key)) sources.set(key, { document, reasons: new Set() });
+    const item = sources.get(key);
+    if (!item.document.fileName && fileName) item.document.fileName = fileName;
+    item.reasons.add(reason);
+  };
+
+  const fragments = trace?.fragments || {};
+  if (isFlat) {
+    for (const claim of fragments?.flatClaims?.claims || []) {
+      for (const evidence of claim?.evidence || []) {
+        if (evidence?.grounded === true && evidence?.text) continue;
+        const reason = evidence?.grounded === false
+          ? 'izvadak nije potvrđen u izvorniku'
+          : !evidence?.text
+            ? 'izvadak nedostaje'
+            : 'provjera izvornika nije zabilježena';
+        add(evidence?.sourceId, evidence?.fileName, reason);
+      }
+    }
+  } else {
+    for (const node of fragments?.contextNodes || []) {
+      const facts = Array.isArray(node?.facts) ? node.facts : [];
+      for (const fact of facts) {
+        if (fact?.grounded === true && fact?.excerpt) continue;
+        const reason = fact?.grounded === false
+          ? 'činjenica nije potvrđena u izvorniku'
+          : !fact?.excerpt
+            ? 'izvadak nedostaje'
+            : 'provjera izvornika nije zabilježena';
+        add(fact?.sourceId, fact?.fileName, reason);
+      }
+      for (const summary of node?.summary || []) {
+        for (const sourceId of summary?.sourceDocumentIds || []) {
+          add(sourceId, null, 'izvedeni sažetak — provjerite izvor');
+        }
+      }
+      if ((node?.coverage?.gaps || []).length > 0 || node?.status === 'unresolved') {
+        for (const sourceId of node?.sourceDocumentIds || []) {
+          add(sourceId, null, 'praznina ili nerazriješena veza u ovom čvoru');
+        }
+      }
+    }
+  }
+
+  return [...sources.values()].map(({ document, reasons }) => ({
+    document,
+    reason: [...reasons].join(' · '),
+  }));
+}
+
+function SourceReviewNudge({ sources, sourceDocumentsStatus }) {
+  if (sources.length === 0) return null;
+  return (
+    <section
+      aria-labelledby="lab-source-review-heading"
+      className="mt-4 border-l-4 border-[var(--warning)] bg-[var(--surface-muted)] px-4 py-3"
+      data-testid="lab-source-review"
+    >
+      <h3 id="lab-source-review-heading" className="text-sm font-semibold text-[var(--text)]">
+        Provjerite izvor · {sources.length} {sources.length === 1 ? 'dokument' : 'dokumenata'}
+      </h3>
+      <p className="mt-1 text-sm text-[var(--text-muted)]">
+        Ove stavke imaju neprovjeren izvadak, nedostajući dokaz ili izvedeni sažetak.
+        Pregledajte izvornu datoteku prije nego što ih tretirate kao potvrđene.
+      </p>
+      {sourceDocumentsStatus === 'package-changed' ? (
+        <p className="mt-1 text-xs font-medium text-[var(--warning)]">Izvorni paket više ne odgovara snimci ovog eksperimenta.</p>
+      ) : null}
+      <ul className="mt-2 space-y-2">
+        {sources.slice(0, 12).map(({ document, reason }, index) => (
+          <li key={document.analysisId || document.fileName || index} className="flex flex-col gap-0.5">
+            <SourceDocumentLink document={document} />
+            <span className="text-xs text-[var(--text-muted)]">{reason}</span>
+          </li>
+        ))}
+        {sources.length > 12 ? (
+          <li className="text-xs text-[var(--text-muted)]">Još {sources.length - 12} izvora imaju otvorene provjere.</li>
+        ) : null}
+      </ul>
+    </section>
+  );
+}
+
+function sourceDocumentFor(sourceDocumentsById, sourceId, fileName) {
+  return sourceDocumentsById.get(sourceId) || {
+    analysisId: sourceId || null,
+    fileName: fileName || null,
+    url: null,
+  };
+}
+
+
+function NodeDetail({ node, fragment, outcome, dagSelections, sourceDocumentsById }) {
   const selectionReasons = useMemo(() => {
     if (!Array.isArray(dagSelections)) return [];
     return dagSelections.filter((entry) => entry?.nodeId === node?.nodeId);
@@ -67,6 +205,11 @@ function NodeDetail({ node, fragment, outcome, dagSelections }) {
                   <p className="whitespace-pre-wrap text-[var(--text)]">{statement.text || 'Tekst sažetka nije dostupan.'}</p>
                   <p className="mt-1 text-xs text-[var(--text-muted)]">Uzemljenje: nije dokazano; izvorni dokumenti i citati su navedeni samo radi provjere.</p>
                   <div className="mt-1"><span className="text-xs text-[var(--text-muted)]">Izvori: </span>{idList(statement.sourceDocumentIds)}</div>
+                  {statement.sourceDocumentIds?.map((sourceId) => (
+                    <div key={`${node.nodeId}-${sourceId}`} className="mt-1">
+                      <SourceDocumentLink document={sourceDocumentFor(sourceDocumentsById, sourceId)} compact />
+                    </div>
+                  ))}
                   <div className="mt-1"><span className="text-xs text-[var(--text-muted)]">Činjenice: </span>{idList(statement.factIds)}</div>
                   <div className="mt-1"><span className="text-xs text-[var(--text-muted)]">Citati: </span>{idList(statement.citationIds)}</div>
                 </li>
@@ -83,6 +226,10 @@ function NodeDetail({ node, fragment, outcome, dagSelections }) {
                   <p className="font-mono text-xs text-[var(--text-muted)]">{fact.factId} · {fact.fileName || fact.sourceId || 'izvor nije dostupan'}{fact.date ? ` · ${fact.date}` : ''}</p>
                   <p className="mt-1 whitespace-pre-wrap text-[var(--text)]">{fact.excerpt || 'Izvadak nije dostupan.'}</p>
                   <p className="mt-1 text-xs text-[var(--text-muted)]">Uzemljenje: {fact.grounded === true ? 'potvrđeno' : 'nepotvrđeno'}</p>
+                  <SourceDocumentLink
+                    document={sourceDocumentFor(sourceDocumentsById, fact.sourceId, fact.fileName)}
+                    compact
+                  />
                   {fact.citationIds?.length > 0 && <div className="mt-1">Citati: {idList(fact.citationIds)}</div>}
                 </li>
               ))}
@@ -122,7 +269,7 @@ function NodeDetail({ node, fragment, outcome, dagSelections }) {
   );
 }
 
-function FlatClaimDetail({ claim }) {
+function FlatClaimDetail({ claim, sourceDocumentsById }) {
   if (!claim) return <p className="text-sm text-[var(--text-muted)]">Odaberite tvrdnju s popisa.</p>;
   return (
     <div>
@@ -138,6 +285,10 @@ function FlatClaimDetail({ claim }) {
                 <p className="font-mono text-xs text-[var(--text-muted)]">{entry.fileName || entry.sourceId || 'izvor nije dostupan'}</p>
                 <p className="mt-1 whitespace-pre-wrap text-sm text-[var(--text)]">{entry.text || 'Izvadak nije dostupan.'}</p>
                 <p className="mt-1 text-xs text-[var(--text-muted)]">Uzemljenje: {entry.grounded === true ? 'potvrđeno' : entry.grounded === false ? 'nepotvrđeno' : 'nije zabilježeno'}</p>
+                <SourceDocumentLink
+                  document={sourceDocumentFor(sourceDocumentsById, entry.sourceId, entry.fileName)}
+                  compact
+                />
                 {entry.citationIds?.length > 0 && <div className="mt-1">Citati: {idList(entry.citationIds)}</div>}
               </li>
             ))}
@@ -148,7 +299,7 @@ function FlatClaimDetail({ claim }) {
   );
 }
 
-export default function LabFragmentsPane({ variants, activeProfile, onProfileChange }) {
+export default function LabFragmentsPane({ variants, activeProfile, onProfileChange, sourceDocuments, sourceDocumentsStatus }) {
   const order = LAB_PROFILE_ORDER.filter((profileId) => variants?.[profileId]);
   const [selectedNodeId, setSelectedNodeId] = useState(null);
   const [selectedFlatClaimId, setSelectedFlatClaimId] = useState(null);
@@ -177,6 +328,11 @@ export default function LabFragmentsPane({ variants, activeProfile, onProfileCha
   const contextFragmentByNode = useMemo(() => new Map(contextNodes.map((node) => [node.nodeId, node])), [contextNodes]);
   const usage = active?.usage && typeof active.usage === 'object' ? active.usage : null;
   const snapshot = active?.profileSnapshot && typeof active.profileSnapshot === 'object' ? active.profileSnapshot : null;
+  const sourceDocumentsById = useMemo(() => indexSourceDocuments(sourceDocuments), [sourceDocuments]);
+  const reviewSources = useMemo(
+    () => collectDoubtfulSources(trace, isFlat, sourceDocumentsById),
+    [trace, isFlat, sourceDocumentsById]
+  );
 
   const selectProfile = (profileId) => {
     setSelectedNodeId(null);
@@ -203,6 +359,7 @@ export default function LabFragmentsPane({ variants, activeProfile, onProfileCha
           </button>
         ))}
       </div>
+      <SourceReviewNudge sources={reviewSources} sourceDocumentsStatus={sourceDocumentsStatus} />
 
       {!active || active.status === 'error' ? (
         <div role="alert" className="mt-4 rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-800">
@@ -275,9 +432,9 @@ export default function LabFragmentsPane({ variants, activeProfile, onProfileCha
 
           <article aria-label="Detalj fragmenta" aria-live="polite" className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4">
             {isFlat ? (
-              <FlatClaimDetail claim={selectedFlatClaim} />
+              <FlatClaimDetail claim={selectedFlatClaim} sourceDocumentsById={sourceDocumentsById} />
             ) : (
-              <NodeDetail node={selectedNode} fragment={selectedNode ? contextFragmentByNode.get(selectedNode.nodeId) : null} outcome={selectedNode ? outcomeByNode.get(selectedNode.nodeId) : null} dagSelections={trace?.dag?.selections} />
+              <NodeDetail node={selectedNode} fragment={selectedNode ? contextFragmentByNode.get(selectedNode.nodeId) : null} outcome={selectedNode ? outcomeByNode.get(selectedNode.nodeId) : null} dagSelections={trace?.dag?.selections} sourceDocumentsById={sourceDocumentsById} />
             )}
           </article>
 
