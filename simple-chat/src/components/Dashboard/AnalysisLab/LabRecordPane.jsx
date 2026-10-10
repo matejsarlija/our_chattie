@@ -1,4 +1,4 @@
-import { shortHash } from './labMeta';
+import { shortHash, profileLabel, formatLabDeltas } from './labMeta';
 
 const row = (label, value) => (
   <div className="flex flex-col gap-0.5 sm:flex-row sm:justify-between">
@@ -24,7 +24,7 @@ export default function LabRecordPane({ experiment, comparison }) {
           {row('ulaz', experiment.evidencePackageRef)}
           {row('hash paketa', shortHash(experiment.evidencePackageHash))}
           {row('hash odgovara', comparison?.inputHashMatches === true ? 'da' : comparison?.inputHashMatches === false ? 'ne' : '?')}
-          {row('profili', (experiment.profiles || []).join(' · '))}
+          {row('profili', (experiment.profiles || []).map(profileLabel).join(' · '))}
           {row('stvoreno', experiment.createdAt || '?')}
           {row('dovršeno', experiment.completedAt || '—')}
         </dl>
@@ -37,14 +37,19 @@ export default function LabRecordPane({ experiment, comparison }) {
         <div className="border-l-2 border-[var(--border)] px-4 py-3 text-sm leading-relaxed text-[var(--text)]">
           <p><strong>Ovo nije automatsko ocjenjivanje.</strong></p>
           <p className="mt-2 text-[var(--text-muted)]">
-            Pregledajte izvještaje, zatim otvorite fragmente ondje gdje se mijenja zaključak. Kartica provjere služi
-            da pokaže cijenu, pokrivenost i nerazriješene veze — ne da odluči koji je izvještaj „bolji“.
+            Pregledajte izvještaje pa otvorite izvorne odlomke ondje gdje se razlikuju nalazi.
+            Mjere prikazuju koliko je izvora povezano, što nije moglo biti grupirano i koji su dijelovi nepotpuni.
+            Ne određuju koji je izvještaj „bolji“.
           </p>
           {Array.isArray(comparison?.flatToDag?.deltas) && comparison.flatToDag.deltas.length > 0 && (
-            <p className="mt-2 text-[var(--text-muted)]">Ravni → DAG: {comparison.flatToDag.deltas.join('; ')}</p>
+            <p className="mt-2 text-[var(--text-muted)]">
+              Bez grupiranja → Tematske grupe: {formatLabDeltas(comparison.flatToDag.deltas, '')}
+            </p>
           )}
           {Array.isArray(comparison?.dagToSummarized?.deltas) && comparison.dagToSummarized.deltas.length > 0 && (
-            <p className="mt-1 text-[var(--text-muted)]">DAG → sažeci: {comparison.dagToSummarized.deltas.join('; ')}</p>
+            <p className="mt-1 text-[var(--text-muted)]">
+              Tematske grupe → Grupe sa sažecima: {formatLabDeltas(comparison.dagToSummarized.deltas, '')}
+            </p>
           )}
         </div>
       </section>

@@ -11,7 +11,7 @@ import { LAB_PROFILE_ORDER } from './labMeta';
 
 const TABS = [
   { id: 'compare', label: 'Usporedi izvještaje' },
-  { id: 'fragments', label: 'Fragmenti i dokazi' },
+  { id: 'fragments', label: 'Izvori i tematske grupe' },
   { id: 'record', label: 'Zapis eksperimenta' },
 ];
 

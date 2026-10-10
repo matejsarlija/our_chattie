@@ -138,22 +138,45 @@ describe('LabExperimentDetailPage (LU-1)', () => {
     expect(banner).toHaveTextContent('hash odgovara');
     expect(await screen.findByText('3 poziva · 300 tokena')).toBeInTheDocument();
 
+    expect(document.body).toHaveTextContent('2 činjenice ostavljene odvojeno');
+    expect(document.body).not.toHaveTextContent(/unresolved branches|partial nodes/);
     // All three profiles carry visible text labels — never hidden order.
     for (const label of ['Ravni kontekst', 'DAG · bez sažetaka', 'DAG · sa sažecima']) {
       expect(screen.getAllByText(label, { exact: false }).length).toBeGreaterThanOrEqual(1);
     }
-    for (const tag of ['baseline-flat-v1', 'context-tree-v1', 'context-tree-summarized-v1']) {
-      expect(screen.getByText(tag)).toBeInTheDocument();
-    }
+    expect(screen.getAllByText('Tehnički ID profila')).toHaveLength(3);
   });
 
-  test('report panes render narrative, findings, and fragment buttons', async () => {
+  test('report panes keep full report content available behind a disclosure', async () => {
     renderDetail();
 
     const pane = await screen.findByLabelText('Izvještaj profila Ravni kontekst');
+    expect(pane).toHaveTextContent('2 od 2 nalaza navodi izvorni dokument');
+    fireEvent.click(within(pane).getByText('Otvori puni izvještaj'));
     expect(within(pane).getByText('Nalaz 1 (baseline-flat-v1).')).toBeInTheDocument();
     expect(within(pane).getByText('Otvoreno pitanje.')).toBeInTheDocument();
-    expect(within(pane).getByRole('button', { name: /fragment/i })).toBeInTheDocument();
+    expect(within(pane).getByRole('button', { name: /pregledaj izvore/i })).toBeInTheDocument();
+  });
+
+  test('findings without a source reference say so instead of implying citation coverage', async () => {
+    const response = fullResponse();
+    response.experiment.variants['baseline-flat-v1'].report.findings[0].citations = [];
+    response.experiment.variants['baseline-flat-v1'].deterministicScorecard.sourceSupport.reportFindingsWithValidCitations = 1;
+    renderDetail(response);
+
+    const pane = await screen.findByLabelText('Izvještaj profila Ravni kontekst');
+    fireEvent.click(within(pane).getByText('Otvori puni izvještaj'));
+    expect(within(pane).getByText('Ovaj nalaz nema poveznicu na izvorni dokument.')).toBeInTheDocument();
+  });
+
+  test('unknown citation counts stay unknown rather than implying every finding is cited', async () => {
+    const response = fullResponse();
+    response.experiment.variants['baseline-flat-v1'].deterministicScorecard.sourceSupport.reportFindingsWithValidCitations = 'unknown';
+    renderDetail(response);
+
+    const pane = await screen.findByLabelText('Izvještaj profila Ravni kontekst');
+    expect(pane).toHaveTextContent('Broj nalaza s navedenim izvorom nije dostupan');
+    expect(pane).not.toHaveTextContent('2 od 2 nalaza navodi izvorni dokument');
   });
 
   test('malformed markdown cannot crash the detail page', async () => {
@@ -162,6 +185,7 @@ describe('LabExperimentDetailPage (LU-1)', () => {
     renderDetail(response);
 
     const pane = await screen.findByLabelText('Izvještaj profila Ravni kontekst');
+    fireEvent.click(within(pane).getByText('Otvori puni izvještaj'));
     expect(pane).toBeInTheDocument();
     // Page chrome survives even if the narrative renderer degrades.
     expect(screen.getByLabelText('Zajednički zamrznuti ulaz')).toBeInTheDocument();
@@ -175,30 +199,49 @@ describe('LabExperimentDetailPage (LU-1)', () => {
     expect(pane.querySelector('img[src^="javascript:"]')).toBeNull();
   });
 
+
   test('scorecard renders n/a as N/P and unknown as ?', async () => {
     const response = fullResponse();
     response.experiment.variants['context-tree-v1'].deterministicScorecard.shape.dagNodeCount = 'unknown';
     renderDetail(response);
 
     const table = await screen.findByRole('table');
-    const unresolvedRow = within(table).getByText('Nerazriješene veze').closest('tr');
-    expect(within(unresolvedRow).getByLabelText(/Ravni kontekst: N\/P/)).toBeInTheDocument();
+    const unresolvedRow = within(table).getByText('Činjenice ostavljene odvojeno').closest('tr');
+    expect(within(unresolvedRow).getByLabelText(/Ravni kontekst: Nije primjenjivo/)).toHaveAttribute('title', 'Ova varijanta ne grupira činjenice po temama');
     expect(within(unresolvedRow).getByLabelText(/DAG · bez sažetaka: 1/)).toBeInTheDocument();
   });
 
   test('fragment inspector expands nodes and shows omission reasons', async () => {
     renderDetail();
 
-    fireEvent.click(await screen.findByRole('tab', { name: 'Fragmenti i dokazi' }));
+    fireEvent.click(await screen.findByRole('tab', { name: 'Izvori i tematske grupe' }));
 
-    const nodeList = await screen.findByLabelText('Kontekstni čvorovi');
-    fireEvent.click(within(nodeList).getByRole('button', { name: /cn-unresolved-1/ }));
+    const nodeList = await screen.findByLabelText('Teme i odvojene činjenice');
+    fireEvent.click(within(nodeList).getByRole('button', { name: /Činjenica ostavljena odvojeno/ }));
 
     const detail = screen.getByLabelText('Detalj fragmenta');
+    expect(detail).toHaveTextContent('ova činjenica ostavljena odvojeno');
+    expect(within(detail).getByText('cn-unresolved-1').closest('details')).not.toHaveAttribute('open');
+    fireEvent.click(within(detail).getByText('Tehnički podaci i identifikatori'));
     expect(within(detail).getByText('cn-unresolved-1')).toBeInTheDocument();
 
-    const side = screen.getByLabelText('Trag, potrošnja i snimka profila');
+    const side = screen.getByLabelText('Detalji obrade');
+    expect(within(side).getByText(/Tema nije uključena jer/)).toBeInTheDocument();
+    fireEvent.click(within(side).getByText('Tehnički zapisi (1)'));
     expect(within(side).getByText(/context-node-budget-exhausted/)).toBeInTheDocument();
+  });
+
+  test('failed shared-input documents expose available details', async () => {
+    const response = fullResponse();
+    for (const profileId of ['baseline-flat-v1', 'context-tree-v1', 'context-tree-summarized-v1']) {
+      response.experiment.variants[profileId].deterministicScorecard.coverage.failedFiles = ['Prilog-neuspjelo.pdf'];
+    }
+    renderDetail(response);
+
+    const table = await screen.findByRole('table');
+    const failedRow = within(table).getByText('Dokumenti koji nisu uspješno analizirani').closest('tr');
+    fireEvent.click(within(failedRow).getByText('Pojedinosti o neuspjesima (1)'));
+    expect(within(failedRow).getByText('Prilog-neuspjelo.pdf')).toBeInTheDocument();
   });
 
   test('partial experiments stay readable with a neutral alert', async () => {

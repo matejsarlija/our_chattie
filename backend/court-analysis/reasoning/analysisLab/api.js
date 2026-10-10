@@ -37,6 +37,7 @@ const { buildComparisonViewModel } = require('./scorecard');
 const { boundExperimentForResponse } = require('./traceBounds');
 const { buildInputSummary } = require('./runExperiment');
 const { parsePagination } = require('../../../helpers/pagination');
+const { collectContextFacts } = require('../caseContextBuilder');
 
 const DEFAULT_FIXTURES_DIR = path.join(__dirname, '..', '..', '..', 'tests', 'fixtures', 'replays', 'analysis-lab');
 
@@ -260,6 +261,38 @@ function createAnalysisLabRouter(options = {}) {
             });
     }
 
+    function addUngroundedFactDetails(experiment, evidencePackage) {
+        const factsById = new Map(collectContextFacts(evidencePackage).map((fact) => [fact.factId, fact]));
+        const variants = experiment?.variants && typeof experiment.variants === 'object'
+            ? experiment.variants
+            : {};
+        for (const variant of Object.values(variants)) {
+            const fragments = variant?.trace?.fragments?.contextNodes;
+            if (!Array.isArray(fragments)) continue;
+            for (const fragment of fragments) {
+                const gaps = Array.isArray(fragment?.coverage?.gaps) ? fragment.coverage.gaps : [];
+                const factIds = [...new Set(gaps
+                    .filter((gap) => typeof gap === 'string' && gap.startsWith('ungrounded:'))
+                    .map((gap) => gap.slice('ungrounded:'.length)))];
+                const ungroundedFacts = factIds.slice(0, 12).flatMap((factId) => {
+                    const fact = factsById.get(factId);
+                    if (!fact) return [];
+                    const quote = typeof fact.quote === 'string' && fact.quote.trim() ? fact.quote : null;
+                    return [{
+                        factId,
+                        sourceId: fact.analysisId || null,
+                        fileName: fact.fileName || null,
+                        quoteProvided: Boolean(quote),
+                        excerpt: String(quote || fact.description || '').slice(0, 600),
+                    }];
+                });
+                fragment.ungroundedFactCount = factIds.length;
+                fragment.ungroundedFacts = ungroundedFacts;
+                fragment.ungroundedFactDetailsOmittedCount = Math.max(0, factIds.length - ungroundedFacts.length);
+            }
+        }
+    }
+
 
     // List eligible frozen packages: built-in fixtures + completed analysis
     // runs that persisted a `clusterEvidencePackage`. Summary-only.
@@ -363,6 +396,7 @@ function createAnalysisLabRouter(options = {}) {
             try {
                 const frozen = await resolveFrozenPackage(experiment.evidencePackageRef);
                 if (evidencePackageDigest(frozen.evidencePackage) === experiment.evidencePackageHash) {
+                    addUngroundedFactDetails(bounded, frozen.evidencePackage);
                     sourceDocuments = buildSourceDocuments(frozen.evidencePackage);
                     sourceDocumentsStatus = sourceDocuments.some((document) => document.url)
                         ? 'available'
