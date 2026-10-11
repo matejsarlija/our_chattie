@@ -329,7 +329,7 @@ export default function AnalysisRunDetailPage() {
           </div>
         ) : (
           <>
-          <nav aria-label="Sadržaj analize" className="mb-4 flex gap-1 overflow-x-auto rounded-lg border border-line bg-surface px-2 py-1.5 text-sm">
+          <nav aria-label="Sadržaj analize" className="sticky top-0 z-30 mb-4 flex gap-1 overflow-x-auto rounded-lg bg-surface/95 px-2 py-1.5 text-sm shadow-sm backdrop-blur">
             {[
               ['case-brief', 'Sažetak'],
               ['analysis-coverage', 'Pokrivenost'],

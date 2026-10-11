@@ -13,8 +13,8 @@ const ROWS = [
     if (cited === 'unknown' || total === 'unknown' || cited == null || total == null) return 'unknown';
     return `${cited} / ${total}`;
   } },
-  { key: 'failed', label: 'Dokumenti koji nisu uspješno analizirani', note: 'Ovi dokumenti nisu prošli analizu; neuspjeh je u zajedničkom ulazu pa se ponavlja za sve varijante.', get: (scorecard) => scorecard?.coverage?.criticalFailedDocuments ?? 'unknown' },
-  { key: 'unresolved', label: 'Činjenice ostavljene odvojeno', note: 'Nedostaje broj prijave ili oznaka podneska za sigurno povezivanje; analiza ih ne spaja nagađanjem.', get: (scorecard) => scorecard?.shape?.unresolvedNodes ?? 'unknown' },
+  { key: 'failed', label: 'Dokumenti bez uspješne analize', note: 'Za ove dokumente nema uspješne analize u ulaznim podacima ove usporedbe. Sve varijante koriste iste ulazne podatke, pa nasljeđuju isti nedostatak. To nije pogreška tematskog grupiranja ni sažetaka.', get: (scorecard) => scorecard?.coverage?.criticalFailedDocuments ?? 'unknown' },
+  { key: 'unresolved', label: 'Činjenice ostavljene odvojeno', note: 'Za ove činjenice nije pronađen ni redni broj tražbine ni poslovni broj podneska koji bi ih pouzdano povezao u istu grupu. Zato ih prikazujemo odvojeno, umjesto nagađanja.', get: (scorecard) => scorecard?.shape?.unresolvedNodes ?? 'unknown' },
   { key: 'currency', label: 'Uočena valutna odstupanja', note: 'Razlike u iznosima navedenima u više valuta.', get: (scorecard) => scorecard?.reconciliation?.currencyConflicts ?? 'unknown' },
   { key: 'calls', label: 'Pozivi AI modelu', note: 'Ukupno za ovu varijantu.', get: (scorecard) => scorecard?.cost?.calls ?? 'unknown' },
   { key: 'partial', label: 'Teme s nepotpunom provjerom', note: 'Tema se broji jednom ako joj je izvorna činjenica nepotvrđena ili sažetak nije uspio. Ravni profil ne stvara tematske grupe.', get: (scorecard) => {
@@ -43,7 +43,7 @@ function FailedFilesNote({ variants, note }) {
       {fileNames.length > 0 ? (
         <details className="mt-1">
           <summary className="cursor-pointer font-medium text-[var(--text)] focus-visible:outline-2 focus-visible:outline-offset-2">
-            Pojedinosti o neuspjesima ({fileNames.length})
+            Dokumenti bez uspješne analize ({fileNames.length})
           </summary>
           <ul className="mt-1 list-disc space-y-0.5 pl-4">
             {fileNames.map((fileName, index) => <li key={`${fileName}-${index}`}>{fileName}</li>)}

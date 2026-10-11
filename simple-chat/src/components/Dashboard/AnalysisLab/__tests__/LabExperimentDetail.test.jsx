@@ -231,7 +231,7 @@ describe('LabExperimentDetailPage (LU-1)', () => {
     expect(within(side).getByText(/context-node-budget-exhausted/)).toBeInTheDocument();
   });
 
-  test('failed shared-input documents expose available details', async () => {
+  test('failed source documents expose available details', async () => {
     const response = fullResponse();
     for (const profileId of ['baseline-flat-v1', 'context-tree-v1', 'context-tree-summarized-v1']) {
       response.experiment.variants[profileId].deterministicScorecard.coverage.failedFiles = ['Prilog-neuspjelo.pdf'];
@@ -239,8 +239,8 @@ describe('LabExperimentDetailPage (LU-1)', () => {
     renderDetail(response);
 
     const table = await screen.findByRole('table');
-    const failedRow = within(table).getByText('Dokumenti koji nisu uspješno analizirani').closest('tr');
-    fireEvent.click(within(failedRow).getByText('Pojedinosti o neuspjesima (1)'));
+    const failedRow = within(table).getByText('Dokumenti bez uspješne analize').closest('tr');
+    fireEvent.click(within(failedRow).getByText('Dokumenti bez uspješne analize (1)'));
     expect(within(failedRow).getByText('Prilog-neuspjelo.pdf')).toBeInTheDocument();
   });
 

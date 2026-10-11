@@ -22,7 +22,7 @@ export default function AnalysisCaseBrief({
   return (
     <section
       id="case-brief"
-      className="card border-t-2 border-t-ink-muted p-5 sm:p-6"
+      className="card scroll-mt-20 border-t-2 border-t-ink-muted p-5 sm:p-6"
       aria-labelledby="case-brief-heading"
       data-testid="analysis-case-brief"
     >
