@@ -14,6 +14,7 @@ import CaseTimeline from "./CaseTimeline";
 import AnalysisReasoningTelemetry from "./AnalysisReasoningTelemetry";
 import AnalysisCoverageBanner from "./AnalysisCoverageBanner";
 import AnalysisScopeCard from "./AnalysisScopeCard";
+import AnalysisDocumentParties from "./AnalysisDocumentParties";
 import AnalysisFlowsSection from "./AnalysisFlowsSection";
 import AnalysisUsageSummary from "./AnalysisUsageSummary";
 import SecondaryClustersSection from "./SecondaryClustersSection";
@@ -375,6 +376,10 @@ export default function AnalysisRunDetailPage() {
               <AnalysisCoverageBanner coverage={coverage} status={run.status} />
 
               <AnalysisScopeCard scope={scope} />
+              <AnalysisDocumentParties
+                analyses={parsedResult?.clusterEvidencePackage?.analyses || []}
+                sourceDocuments={sourceDocuments}
+              />
 
               <AnalysisFlowsSection
                 moneyFlow={flows.moneyFlow}
