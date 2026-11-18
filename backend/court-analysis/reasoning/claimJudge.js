@@ -178,7 +178,7 @@ function buildClaimJudgePrompt(pair) {
 }
 
 function parseClaimVerdict(content) {
-    const parsed = extractJsonBlock(typeof content === 'string' ? content : '');
+    const parsed = extractJsonBlock(content);
     const verdict = parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : null;
     if (verdict && ['same', 'different', 'uncertain'].includes(verdict.verdict)) {
         return {

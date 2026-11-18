@@ -1,4 +1,8 @@
-const { attachAnalysesToEvidencePackage, validateClusterEvidencePackage } = require('../../court-analysis/reasoning/evidencePackage');
+const {
+    buildClusterEvidencePackage,
+    attachAnalysesToEvidencePackage,
+    validateClusterEvidencePackage,
+} = require('../../court-analysis/reasoning/evidencePackage');
 
 const basePackage = () => ({
     packageType: 'ClusterEvidencePackage',
@@ -86,6 +90,7 @@ describe('attachAnalysesToEvidencePackage — ground-truth chunk branch (Phase 0
                     aiResult: {
                         caseNumber: 'St-1/2024',
                         summary: 'Djelomičan sažetak.',
+                        documentParties: [{ name: 'ADRIA RIJEKA d.o.o.', oib: '08697489827', quote: 'OIB: 08697489827', grounded: true }],
                         amounts: [],
                         propertyFlow: [],
                     },
@@ -97,6 +102,12 @@ describe('attachAnalysesToEvidencePackage — ground-truth chunk branch (Phase 0
             extraction: expect.objectContaining({ method: 'ocr', pages: 20, truncated: true }),
             truncated: true,
         }));
+        expect(pkg.analyses[0].documentParties).toEqual([{
+            name: 'ADRIA RIJEKA d.o.o.',
+            oib: '08697489827',
+            quote: 'OIB: 08697489827',
+            grounded: true,
+        }]);
         expect(pkg.coverage).toEqual(expect.objectContaining({
             analyzed: 1,
             failed: 0,
@@ -178,6 +189,36 @@ describe('attachAnalysesToEvidencePackage — ground-truth chunk branch (Phase 0
         ]));
     });
 });
+    test('metadata procedural stubs cover every discovered entry without analyzed files', () => {
+        const pkg = buildClusterEvidencePackage({
+            cluster: {
+                clusterId: 'St-2/2013',
+                caseNumber: 'St-2/2013',
+                entries: [
+                    {
+                        caseNumber: 'St-2/2013',
+                        caseInfo: { title: 'Žalba od 02.06.2026.', court: 'Trgovački sud u Splitu' },
+                        documentLinks: [{ text: 'Žalba.pdf P227P' }],
+                    },
+                    {
+                        caseNumber: 'St-2/2013',
+                        caseInfo: { title: 'Rješenje VTS RH broj Pž-188/2026-3 od 11.3.2026.' },
+                        documentLinks: [{
+                            text: 'Rješenje - odbijena žalba kao neosnovana - potvrđeno rješenje.pdf P558P',
+                        }],
+                    },
+                ],
+            },
+            clusterSummary: { primaryCaseNumber: 'St-2/2013' },
+            discoverySummary: {},
+        });
+        const attached = attachAnalysesToEvidencePackage(pkg, [], null);
+        expect(attached.analyses).toHaveLength(0);
+        expect(attached.entries).toHaveLength(2);
+        expect(attached.coverage.proceduralMetadataEventCount).toBeGreaterThanOrEqual(2);
+        expect(attached.proceduralFlow.coverage.metadataStubCount).toBe(attached.coverage.proceduralMetadataEventCount);
+        expect(attached.proceduralFlow.chains.some((chain) => chain.status === 'upheld')).toBe(true);
+    });
 
 describe('attachAnalysesToEvidencePackage — TL-1 content-hash passthrough', () => {
     test('analysis records carry the document hash when the tool provides one', () => {

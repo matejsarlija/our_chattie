@@ -87,9 +87,13 @@ function collectSources(evidencePackage) {
             .map((item) => `${item.value ?? ''} ${item.currency || ''} ${item.description || ''} ${item.transferor || ''} ${item.transferee || ''}`.trim())
             .filter(Boolean)
             .join(' ');
+        const documentPartyText = (Array.isArray(analysis.documentParties) ? analysis.documentParties : [])
+            .map((party) => `${party.name || ''} ${party.oib || ''} ${party.role || ''}`.trim())
+            .filter(Boolean)
+            .join(' ');
         const source = createSource(
             analysis.id || analysis.filePath || analysis.fileName,
-            [analysis.summary, analysis.fileName, analysis.caseNumber, analysis.decisionDate, amountText, propertyText]
+            [analysis.summary, analysis.fileName, analysis.caseNumber, analysis.decisionDate, amountText, propertyText, documentPartyText]
                 .filter(Boolean)
                 .join(' '),
             {

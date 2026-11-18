@@ -37,6 +37,34 @@ describe('reasoning citationGraph (L-02)', () => {
         ]));
     });
 
+    test('procedural-only and metadata-only documents own filing references', () => {
+        const graph = buildCitationGraph([
+            {
+                id: 'decision',
+                fileName: 'decision.pdf',
+                amounts: [],
+                propertyFlow: [],
+                proceduralEvents: [{ filingReference: 'Pž-188/2026-3' }],
+                citedFilingReferences: [],
+            },
+            {
+                id: 'appeal',
+                fileName: 'appeal.pdf',
+                amounts: [],
+                propertyFlow: [],
+                proceduralEvents: [{ filingReference: 'St-2/2013-1217', referencedFilingReferences: ['Pž-188/2026-3'] }],
+                citedFilingReferences: [],
+            },
+        ], [
+            { index: 3, title: 'Unanalyzed ruling', proceduralEvents: [{ filingReference: 'Gž-1234/2024-2' }] },
+        ]);
+        expect(graph.nodes.find((node) => node.id === 'decision').filingReferences).toContain('Pž-188/2026-3');
+        expect(graph.nodes.find((node) => node.id === 'entry-3').filingReferences).toContain('Gž-1234/2024-2');
+        expect(graph.edges).toEqual(expect.arrayContaining([
+            expect.objectContaining({ from: 'appeal', to: 'decision', via: 'Pž-188/2026-3', resolved: true }),
+        ]));
+    });
+
     test('findCitationLinkedPairs joins entries whose docs cite each other', () => {
         const analyses = [
             makeAnalysis('a-1', 'prijava.pdf', ['St-2/2013-1196-1'], []),

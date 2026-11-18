@@ -18,7 +18,7 @@
 // modules (they ride along in the flat meta, untouched).
 //
 // The adapter never mutates the supplied evidence package.
-
+const { boundTrace } = require('./analysisLab/traceBounds');
 const { buildSynthesisInput, appendContextClaims } = require('./synthesisInputBuilder');
 const { buildCaseContext, collectContextFacts } = require('./caseContextBuilder');
 const { getProfile } = require('./analysisLab/profiles');
@@ -286,7 +286,7 @@ async function buildProfileReportInput({
     if (profile.contextStrategy !== 'case-context') {
         return {
             input: flat,
-            trace: {
+            trace: boundTrace({
                 profileId,
                 strategy: profile.contextStrategy,
                 baseline: true,
@@ -297,7 +297,7 @@ async function buildProfileReportInput({
                     contextNodes: [],
                 },
                 truncated: false,
-            },
+            }).trace,
         };
     }
 
@@ -361,7 +361,7 @@ async function buildProfileReportInput({
     const summariesEnabled = profile.nodeSummaries === 'on';
     return {
         input,
-        trace: {
+        trace: boundTrace({
             profileId,
             strategy: profile.contextStrategy,
             baseline: false,
@@ -389,7 +389,7 @@ async function buildProfileReportInput({
             },
             claims: { flat: flat.claims.length, branch: branchClaims.length, derived: derivedClaims.length },
             truncated: false,
-        },
+        }).trace,
     };
 }
 

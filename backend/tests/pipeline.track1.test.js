@@ -160,6 +160,7 @@ describe('Track 1: evidence enrichment (1c)', () => {
       partial: 0,
       partialFiles: [],
       gaps: [],
+      proceduralMetadataEventCount: 0,
     });
 
   });
@@ -211,6 +212,7 @@ describe('Track 1: evidence enrichment (1c)', () => {
       partial: 0,
       partialFiles: [],
       gaps: [],
+      proceduralMetadataEventCount: 0,
     });
   });
 

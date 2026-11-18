@@ -598,9 +598,9 @@ describe('reasoning reconcilePropertyFlows', () => {
 
     test('analysis role cap leaves headroom for J-era schema on dense documents', () => {        const { GEMINI_ROLE_CONFIG } = require('../../helpers/geminiConfig');
         expect(GEMINI_ROLE_CONFIG.analysis.maxOutputTokens).toBeGreaterThanOrEqual(16384);
-        // Dense synthetic document: 30 amounts with verbatim quotes + J
-        // identity/direction fields + 10 property entries + citation refs.
-        // At ~4 chars/token, the cap must hold this with margin.
+        // Dense synthetic document: 30 amounts with verbatim quotes + identity
+        // fields + 10 property entries + 12 procedural events with full quotes.
+        // At ~4 chars/token, the analysis cap must hold this with margin.
         const dense = {
             caseNumber: 'Stč-2150/2022',
             decisionDate: '2023-02-10',
@@ -628,6 +628,17 @@ describe('reasoning reconcilePropertyFlows', () => {
                 claimRegistryNumber: `${100 + i}`,
                 filingReference: `St-2/2013-${1196 + i}-1`,
                 quote: 'Q'.repeat(160),
+            })),
+            proceduralEvents: Array.from({ length: 12 }, (_, i) => ({
+                eventType: 'appellate-decision',
+                instance: 'VTS RH',
+                outcome: 'unknown',
+                finalityStated: 'unknown',
+                date: `2026-06-${String(i + 1).padStart(2, '0')}`,
+                filingReference: `St-2/2013-${1200 + i}`,
+                targetFilingReference: `St-2/2013-${1100 + i}`,
+                description: `Rješenje u žalbenom postupku broj ${i + 1}`,
+                quote: 'Q'.repeat(240),
             })),
             citedFilingReferences: ['St-2/2013-1214', 'St-2/2013-1215'],
         };

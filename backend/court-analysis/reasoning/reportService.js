@@ -12,6 +12,7 @@ const { runQueryPlanner, mergeRetrievalQueries } = require('./queryPlanner');
 const { buildSynthesisInput } = require('./synthesisInputBuilder');
 const { buildProfileReportInput } = require('./contextReportAdapter');
 const { createGeminiClient } = require('../../helpers/geminiConfig');
+const { modelContentToText } = require('../../helpers/jsonExtract');
 const { withGeminiRetry, withGeminiTimeout } = require('../../helpers/geminiRetry');
 const { trackGeminiInvoke } = require('../../helpers/geminiUsage');
 const { resolveReasoningPlanner, resolveReasoningFollowUp, resolveReasoningClaimJudge, resolveReasoningSignificance } = require('../../helpers/reasoningSettings');
@@ -99,7 +100,7 @@ async function generateClusterReport(clusterEvidencePackage, options = {}) {
                     const response = await withGeminiRetry(() => withGeminiTimeout(
                         (signal) => trackGeminiInvoke(getPlannerGemini(), prompt, { signal, tracker: options.tracker, onUsage: options.onUsage })
                     ));
-                    return response.content;
+                    return modelContentToText(response.content);
                 },
                 tracker: options.tracker,
                 onUsage: options.onUsage
@@ -256,10 +257,12 @@ async function generateClusterReport(clusterEvidencePackage, options = {}) {
         tracker: options.tracker,
         onUsage: options.onUsage,
     });
-    logger.info('reportService.verify', 'Report verified', {
+    logger.info('reportService.verify', 'Report verification result', {
         runId,
         findings: Array.isArray(verifiedReport?.findings) ? verifiedReport.findings.length : 0,
-        verified: Array.isArray(verifiedReport?.verifiedFindings) ? verifiedReport.verifiedFindings.length : 0,
+        status: verifiedReport?.meta?.verification?.status || 'unknown',
+        verified: verifiedReport?.meta?.verification?.verifiedCount ?? 0,
+        failed: verifiedReport?.meta?.verification?.failedCount ?? 0,
         openQuestions: Array.isArray(verifiedReport?.openQuestions) ? verifiedReport.openQuestions.length : 0,
         conflicts: Array.isArray(verifiedReport?.conflicts) ? verifiedReport.conflicts.length : 0,
     });
@@ -278,7 +281,7 @@ async function generateClusterReport(clusterEvidencePackage, options = {}) {
                     const response = await withGeminiRetry(() => withGeminiTimeout(
                         (signal) => trackGeminiInvoke(getFollowUpGemini(), prompt, { signal, tracker: options.tracker, onUsage: options.onUsage })
                     ));
-                    return response.content;
+                    return modelContentToText(response.content);
                 },
                 tracker: options.tracker,
                 onUsage: options.onUsage,

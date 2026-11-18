@@ -94,6 +94,29 @@ describe('contextReportAdapter context profiles (LC-3)', () => {
         expect(input.timeline).toEqual(buildSynthesisInput(pkg, null, null).timeline);
         expect(input.meta.reconciliation).toBeDefined();
     });
+    test('bounds the quadratic DAG relation trace before it enters report metadata', async () => {
+        const pkg = fixturePackage();
+        pkg.analyses.push(...Array.from({ length: 400 }, (_, index) => ({
+            id: `analysis-overflow-${index}`,
+            fileName: `overflow-${index}.pdf`,
+            summary: 'Minimal procedural evidence.',
+            amounts: [{
+                amount: index + 1,
+                currency: 'EUR',
+                description: 'Same identified claim',
+                filingReference: 'St-2/2013-9999',
+            }],
+        })));
+
+        const { trace } = await buildProfileReportInput({
+            evidencePackage: pkg,
+            profileId: 'context-tree-v1',
+        });
+
+        expect(trace.dag.links).toHaveLength(200);
+        expect(trace.responseBounds).toMatchObject({ truncated: true });
+        expect(trace.responseBounds.reasons.some((reason) => reason.startsWith('DAG links: kept 200 of '))).toBe(true);
+    });
 
     test('candidate trace carries graph, source references, and selection', async () => {
         const pkg = fixturePackage();
