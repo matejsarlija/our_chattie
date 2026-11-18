@@ -76,8 +76,12 @@ function collectProceduralEvents(analyses, metadataEntries = []) {
                 targetFilingReference: typeof extractedEvent.targetFilingReference === 'string'
                     ? extractedEvent.targetFilingReference.trim() || null
                     : null,
-                outcome: extractedEvent.outcome || metadataStub?.outcome || 'unknown',
-                finalityStated: extractedEvent.finalityStated || metadataStub?.finalityStated || 'unknown',
+                outcome: extractedEvent.outcome && extractedEvent.outcome !== 'unknown'
+                    ? extractedEvent.outcome
+                    : metadataStub?.outcome || extractedEvent.outcome || 'unknown',
+                finalityStated: extractedEvent.finalityStated && extractedEvent.finalityStated !== 'unknown'
+                    ? extractedEvent.finalityStated
+                    : metadataStub?.finalityStated || extractedEvent.finalityStated || 'unknown',
                 grounded: extractedEvent.grounded === true,
                 source: metadataStub ? 'metadata+extraction' : 'extraction',
                 citedFilingReferences: [

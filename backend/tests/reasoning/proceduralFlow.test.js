@@ -121,6 +121,33 @@ describe('proceduralFlow', () => {
             outcome: 'modified', grounded: true, source: 'metadata+extraction',
         }));
     });
+    test('preserves known metadata outcomes and finality when extraction is unknown', () => {
+        const flow = collectProceduralEvents([{
+            ...analysis('doc-a', [{
+                eventType: 'appellate-decision',
+                filingReference: 'St-2/2013-1217',
+                outcome: 'unknown',
+                finalityStated: 'unknown',
+                grounded: true,
+            }]),
+            sourceEntryIndex: 0,
+        }], [{
+            index: 0,
+            proceduralEvents: [{
+                eventType: 'appellate-decision',
+                filingReference: 'St-2_2013-1217',
+                statedOutcome: 'remanded',
+                finalityStated: 'final',
+            }],
+        }]);
+        expect(flow.events).toHaveLength(1);
+        expect(flow.events[0]).toEqual(expect.objectContaining({
+            outcome: 'remanded',
+            finalityStated: 'final',
+            source: 'metadata+extraction',
+        }));
+        expect(reconcileProceduralEvents(flow).events[0].status).toBe('remanded');
+    });
 
     test('identifier links take precedence over disagreeing descriptions', () => {
         const flow = collectProceduralEvents([
