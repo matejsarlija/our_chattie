@@ -2,9 +2,8 @@
 //
 // LQ-2 — trace-size, redaction, and failure-mode guards (unit lane).
 //
-// Persisted records stay complete; only API responses are bounded. Every
-// cut records a truncation reason, failure text stays capped, and no stack
-// or provider payload travels in a partial/error record.
+// API responses and Lab report construction both use the bounded trace form.
+// This prevents relation-level DAG telemetry from dominating immutable reports.
 
 const {
     TRACE_BOUNDS,
@@ -72,6 +71,28 @@ describe('boundTrace (LQ-2)', () => {
         expect(trace.claims).toMatchObject({ flat: 9, branch: 300, derived: 5 });
         expect(trace.responseBounds).toMatchObject({ truncated: true });
         expect(trace.responseBounds.reasons.length).toBeGreaterThan(0);
+    });
+
+    test('caps quadratic DAG-link telemetry with an explicit loss record', () => {
+        const oversized = {
+            dag: {
+                links: Array.from({ length: 10000 }, (_, index) => ({
+                    factIds: [`fact-${index}`, `fact-${index + 1}`],
+                    basis: 'same-registry',
+                    united: true,
+                })),
+                stats: { facts: 10001 },
+            },
+        };
+
+        const bounded = boundTrace(oversized);
+
+        expect(bounded.trace.dag.links).toHaveLength(TRACE_BOUNDS.maxDagLinks);
+        expect(bounded.trace.responseBounds).toMatchObject({ truncated: true });
+        expect(bounded.trace.responseBounds.reasons).toContain(
+            `DAG links: kept ${TRACE_BOUNDS.maxDagLinks} of 10000`,
+        );
+        expect(oversized.dag.links).toHaveLength(10000);
     });
 
     test('small traces pass through untouched with truncated=false', () => {

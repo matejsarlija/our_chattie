@@ -164,9 +164,15 @@ function computeVariantScorecard({
     ));
     const reportErrors = countOrUnknown(asArray(report?.errors).length);
     const verifierErrors = countOrUnknown(pickFirst(
+        Number.isInteger(reportMeta.verification?.failedCount) ? reportMeta.verification.failedCount : undefined,
         Number.isInteger(reportMeta.verifierErrors) ? reportMeta.verifierErrors : undefined,
         0
     ));
+    const verificationStatus = reportMeta.verification?.status || UNKNOWN;
+    const synthesisBounds = reportMeta.synthesisOutputBounds;
+    const synthesisOutputOmissions = synthesisBounds && typeof synthesisBounds === 'object'
+        ? Object.values(synthesisBounds).reduce((sum, value) => sum + (Number.isInteger(value) && value > 0 ? value : 0), 0)
+        : UNKNOWN;
     const fallbackUsed = reportMeta.fallbackUsed === true || trace?.fallbackUsed === true;
 
     // --- Cost and time (§6 row 7) ---
@@ -236,6 +242,8 @@ function computeVariantScorecard({
             reportErrors,
             verifierErrors,
             fallbackUsed,
+            synthesisOutputOmissions,
+            verificationStatus,
         },
         cost: {
             calls,

@@ -17,7 +17,7 @@
 // summary. There is no model-directed child discovery or recursion: the
 // caller selects nodes, the model only summarizes the packet it is given.
 
-const { extractJsonBlock } = require('../../../helpers/jsonExtract');
+const { extractJsonBlock, extractJsonArrayAtKey, modelContentToText } = require('../../../helpers/jsonExtract');
 const {
     createGeminiClient,
     outputCapWarning,
@@ -157,15 +157,35 @@ function buildContextNodeSummaryPrompt(packet) {
  * (`grounded: false` — membership is not grounding). Statements with any
  * unknown id are rejected; a response with no usable statements is malformed.
  *
- * @returns {{ ok, statements, accepted, rejected, reason }}
+ * @returns {{ ok, statements, accepted, rejected, reason, truncated }}
  */
 function parseNodeSummaryResponse(content, node) {
-    const none = (reason) => ({ ok: false, statements: [], accepted: 0, rejected: 0, reason });
+    const none = (reason) => ({ ok: false, statements: [], accepted: 0, rejected: 0, reason, truncated: false });
     let parsed = null;
+    let truncated = false;
     try {
-        parsed = extractJsonBlock(typeof content === 'string' ? content : '');
+        parsed = extractJsonBlock(content);
     } catch (err) {
         return none(`unparseable response: ${err.message}`);
+    }
+    // Tolerate a bare statements array and a doubly-encoded statements
+    // string; both are common small-model deviations from the requested
+    // object shape and neither weakens citation validation below.
+    if (Array.isArray(parsed)) parsed = { statements: parsed };
+    if (parsed && typeof parsed === 'object' && typeof parsed.statements === 'string') {
+        const nested = extractJsonBlock(parsed.statements);
+        if (Array.isArray(nested)) parsed = { statements: nested };
+    }
+    // A completion cut off by the output cap loses its closing braces but
+    // usually finished several statements first; keep those rather than
+    // discarding a usable summary. Every recovered statement still goes
+    // through the same citation validation.
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed) || !Array.isArray(parsed.statements)) {
+        const recovered = extractJsonArrayAtKey(content, 'statements');
+        if (recovered) {
+            parsed = { statements: recovered.items };
+            truncated = recovered.truncated;
+        }
     }
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
         return none('response is not a JSON object');
@@ -203,9 +223,9 @@ function parseNodeSummaryResponse(content, node) {
         });
     }
     if (statements.length === 0) {
-        return { ok: false, statements: [], accepted: 0, rejected, reason: 'no statement with valid evidence references' };
+        return { ok: false, statements: [], accepted: 0, rejected, reason: 'no statement with valid evidence references', truncated };
     }
-    return { ok: true, statements, accepted: statements.length, rejected, reason: null };
+    return { ok: true, statements, accepted: statements.length, rejected, reason: null, truncated };
 }
 
 /**
@@ -225,11 +245,12 @@ function createContextNodeLlm({ tracker = null } = {}) {
         const response = await withGeminiRetry(() => withGeminiTimeout(
             (signal) => trackGeminiInvoke(getGemini(), prompt, { signal, tracker, onUsage: null })
         ));
-        if (typeof response?.content !== 'string' || !response.content.trim()) {
+        const content = modelContentToText(response?.content);
+        if (!content.trim()) {
             agentLog.warn(outputCapWarning('contextNode'));
             throw new Error('Empty contextNode completion.');
         }
-        return response.content;
+        return content;
     };
 }
 
@@ -261,8 +282,8 @@ function fireUsage(onUsage, payload) {
  * transport error, timeout, malformed output, invalid citations) returns
  * the raw node with a `partial` outcome + gap metadata.
  *
- * @returns {Promise<{ node, outcome }>} `node` gains `summary` only on
- *   success; `outcome` is `{ nodeId, status: 'complete'|'partial', reason,
+ * @returns {Promise<{ node, outcome }>} `node` gains `summary` when usable
+ *   statements survive; `outcome` is `{ nodeId, status: 'complete'|'partial', reason,
  *   accepted, rejected, calls, promptVersion }`.
  */
 async function summarizeContextNode(node, facts = [], options = {}) {
@@ -315,8 +336,12 @@ async function summarizeContextNode(node, facts = [], options = {}) {
 
     const parsed = parseNodeSummaryResponse(content, node);
     if (!parsed.ok) {
-        agentLog.warn(`[ContextNodeSummary] Node ${nodeId} summary rejected (${parsed.reason}); retaining raw node`);
-        return partial('invalid-summary', { calls, rejected: parsed.rejected, detail: parsed.reason });
+        // Show both ends of the response: a head-only preview cannot
+        // distinguish "wrapped in prose" from "cut off by the output cap".
+        const text = String(content || '').replace(/\s+/g, ' ').trim();
+        const preview = text.length <= 400 ? text : `${text.slice(0, 200)} … ${text.slice(-200)}`;
+        agentLog.warn(`[ContextNodeSummary] Node ${nodeId} summary rejected (${parsed.reason}); retaining raw node. ${text.length} chars: ${preview}`);
+        return partial('invalid-summary', { calls, rejected: parsed.rejected, detail: parsed.reason, responseChars: text.length });
     }
     return {
         node: {
@@ -325,11 +350,13 @@ async function summarizeContextNode(node, facts = [], options = {}) {
             status: node.status === 'complete' ? 'complete' : node.status,
         },
         outcome: {
-            nodeId, status: 'complete', reason: null,
+            nodeId, status: parsed.truncated ? 'partial' : 'complete',
+            reason: parsed.truncated ? 'truncated-summary' : null,
             accepted: parsed.accepted, rejected: parsed.rejected,
             calls, promptVersion: CONTEXT_NODE_PROMPT_VERSION,
             packetTruncated: packet.truncated,
-            gap: null,
+            responseTruncated: parsed.truncated,
+            gap: parsed.truncated ? 'node-summary:truncated-summary' : null,
         },
     };
 }

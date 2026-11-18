@@ -10,6 +10,11 @@ const os = require('os');
 const path = require('path');
 const request = require('supertest');
 const express = require('express');
+function persistedRecordPath(dataDir, id) {
+    const crypto = require('crypto');
+    const idHash = crypto.createHash('sha256').update(String(id)).digest('hex');
+    return path.join(dataDir, 'experiments', `${idHash}.json`);
+}
 
 const { createAnalysisLabRouter } = require('../court-analysis/reasoning/analysisLab/api');
 const { createAnalysisLabStore } = require('../services/analysisLabStore');
@@ -157,7 +162,7 @@ describe('analysis lab persistence hygiene (LQ-2)', () => {
             deterministicScorecard: null,
         });
 
-        const raw = fs.readFileSync(path.join(dataDir, 'experiments.json'), 'utf8');
+        const raw = fs.readFileSync(persistedRecordPath(dataDir, created.id), 'utf8');
         expect(raw).not.toContain('sk-live-123');
         expect(raw).not.toContain('sk-live-456');
         expect(raw).not.toContain('hunter2');

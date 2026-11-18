@@ -1,10 +1,15 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const crypto = require('crypto');
 const { createAnalysisLabStore } = require('../services/analysisLabStore');
 const { createLocalStore } = require('../services/localStore');
 const { snapshotProfile } = require('../court-analysis/reasoning/analysisLab/profiles');
 
+function persistedRecordPath(dataDir) {
+    const [fileName] = fs.readdirSync(path.join(dataDir, 'experiments'));
+    return path.join(dataDir, 'experiments', fileName);
+}
 function makeStores() {
     const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'analysis-lab-store-'));
     return {
@@ -32,6 +37,20 @@ function variantPayload(profileId) {
         trace: { selectedFacts: 4 },
         usage: { calls: 1, totalTokens: 100 },
         deterministicScorecard: { findingsWithValidCitations: 12 },
+    };
+}
+
+function legacyExperiment(id = 'legacy-experiment') {
+    return {
+        ...experimentInput(),
+        id,
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+        completedAt: null,
+        profiles: ['baseline-flat-v1', 'context-tree-v1', 'context-tree-summarized-v1'],
+        sharedUsage: null,
+        variants: {},
+        status: 'running',
     };
 }
 
@@ -70,6 +89,20 @@ describe('analysisLabStore.createExperiment', () => {
 });
 
 describe('analysisLabStore variant completion (immutability)', () => {
+    test('records a variant as an individual immutable file', async () => {
+        const { lab, dataDir } = makeStores();
+        const experiment = await lab.createExperiment(experimentInput());
+
+        const updated = await lab.completeExperimentVariant({
+            experimentId: experiment.id,
+            ...variantPayload('baseline-flat-v1'),
+        });
+        expect(fs.existsSync(persistedRecordPath(dataDir))).toBe(true);
+        expect(updated.variants['baseline-flat-v1']).toMatchObject({
+            status: 'complete',
+            report: { findings: [{ text: 'finding for baseline-flat-v1' }] },
+        });
+    });
     test('records a variant and rejects a duplicate completion without overwriting', async () => {
         const { lab } = makeStores();
         const experiment = await lab.createExperiment(experimentInput());
@@ -148,7 +181,7 @@ describe('analysisLabStore variant completion (immutability)', () => {
             ...variantPayload('baseline-flat-v1'),
             usage: { calls: 1, apiKey: 'super-secret' },
         });
-        const raw = fs.readFileSync(path.join(dataDir, 'experiments.json'), 'utf8');
+        const raw = fs.readFileSync(persistedRecordPath(dataDir), 'utf8');
         expect(raw).not.toContain('super-secret');
     });
 });
@@ -167,6 +200,63 @@ describe('analysisLabStore listing and isolation', () => {
         expect(tail.data.map((e) => e.id)).toEqual([first.id]);
     });
 
+    test('persists newest-first ordering for tied timestamps across restarts and directory order', async () => {
+        const { lab, dataDir } = makeStores();
+        jest.useFakeTimers({ now: new Date('2026-01-01T00:00:00.000Z') });
+        let directorySpy;
+        try {
+            const first = await lab.createExperiment(experimentInput());
+            const second = await lab.createExperiment(experimentInput());
+            const restarted = createAnalysisLabStore({ dataDir });
+            const third = await restarted.createExperiment(experimentInput());
+            await restarted.completeExperimentVariant({
+                experimentId: first.id,
+                ...variantPayload('baseline-flat-v1'),
+            });
+
+            const newestFirst = [third, second, first];
+            expect(new Set(newestFirst.map((record) => record.createdAt)).size).toBe(1);
+            const filenames = newestFirst.map((record) =>
+                `${crypto.createHash('sha256').update(record.id).digest('hex')}.json`
+            );
+            const readDirectory = fs.readdirSync.bind(fs);
+            directorySpy = jest.spyOn(fs, 'readdirSync').mockImplementation((...args) =>
+                readDirectory(...args).sort((a, b) => filenames.indexOf(a.name) - filenames.indexOf(b.name))
+            );
+
+            const reopened = createAnalysisLabStore({ dataDir });
+            const listed = await reopened.listExperiments();
+            expect(listed.data.map((record) => record.id)).toEqual(newestFirst.map((record) => record.id));
+            const page = await reopened.listExperiments({ limit: 1, offset: 1 });
+            expect(page.data.map((record) => record.id)).toEqual([second.id]);
+        } finally {
+            directorySpy?.mockRestore();
+            jest.useRealTimers();
+        }
+    });
+
+    test('new tied records sort ahead of existing legacy and per-record data without a discriminator', async () => {
+        const { lab, dataDir } = makeStores();
+        const legacy = [legacyExperiment('oldest'), legacyExperiment('later-legacy')];
+        fs.writeFileSync(path.join(dataDir, 'experiments.json'), JSON.stringify(legacy), 'utf8');
+        const recordsDir = path.join(dataDir, 'experiments');
+        fs.mkdirSync(recordsDir);
+        const standalone = legacyExperiment('old-standalone');
+        fs.writeFileSync(path.join(recordsDir, 'old-standalone.json'), JSON.stringify(standalone), 'utf8');
+
+        jest.useFakeTimers({ now: new Date(legacy[0].createdAt) });
+        try {
+            const created = await lab.createExperiment(experimentInput());
+            const restarted = createAnalysisLabStore({ dataDir });
+            const listed = await restarted.listExperiments();
+            expect(listed.data.map((record) => record.id)).toEqual([
+                created.id, standalone.id, legacy[1].id, legacy[0].id,
+            ]);
+        } finally {
+            jest.useRealTimers();
+        }
+    });
+
     test('experiment writes leave the source analysis-run record byte-equivalent', async () => {
         const { lab, runs, dataDir } = makeStores();
         const run = await runs.createAnalysisRun({ oib: 'St-2/2013', queryType: 'case_number', queryValue: 'St-2/2013' });
@@ -179,7 +269,7 @@ describe('analysisLabStore listing and isolation', () => {
         await lab.completeExperiment({ experimentId: experiment.id });
 
         expect(fs.readFileSync(path.join(dataDir, 'runs.json'), 'utf8')).toBe(runsBefore);
-        expect(fs.existsSync(path.join(dataDir, 'experiments.json'))).toBe(true);
+        expect(fs.existsSync(persistedRecordPath(dataDir))).toBe(true);
 
         const reloaded = await runs.getAnalysisRun({ id: run.id });
         expect(reloaded.result_text).toBe('original');
@@ -219,5 +309,59 @@ describe('analysisLabStore listing and isolation', () => {
         );
         const reloaded = await lab.getExperiment({ id: experiment.id });
         expect(Object.keys(reloaded.variants)).toHaveLength(3);
+    });
+
+    test('reads legacy array records and writes updates without rewriting the legacy file', async () => {
+        const { lab, dataDir } = makeStores();
+        const legacy = legacyExperiment();
+        const legacyPath = path.join(dataDir, 'experiments.json');
+        fs.writeFileSync(legacyPath, JSON.stringify([legacy]), 'utf8');
+
+        expect((await lab.getExperiment({ id: legacy.id })).id).toBe(legacy.id);
+        await lab.failExperimentVariant({
+            experimentId: legacy.id,
+            profileId: 'baseline-flat-v1',
+            errorMessage: 'offline failure',
+        });
+
+        expect(fs.readFileSync(legacyPath, 'utf8')).toBe(JSON.stringify([legacy]));
+        const reloaded = await lab.getExperiment({ id: legacy.id });
+        expect(reloaded.variants['baseline-flat-v1']).toMatchObject({ status: 'error', errorMessage: 'offline failure' });
+    });
+
+    test.each([
+        ['successful variant', (lab, id) => lab.completeExperimentVariant({
+            experimentId: id,
+            ...variantPayload('baseline-flat-v1'),
+        }), { variants: { 'baseline-flat-v1': { status: 'complete' } } }],
+        ['failed variant', (lab, id) => lab.failExperimentVariant({
+            experimentId: id,
+            profileId: 'baseline-flat-v1',
+        }), { variants: { 'baseline-flat-v1': { status: 'error' } } }],
+        ['finalization', (lab, id) => lab.completeExperiment({ experimentId: id }), { status: 'error' }],
+    ])('failed migration of %s leaves cached legacy data unchanged and can be retried', async (_, mutate, expected) => {
+        const { lab, dataDir } = makeStores();
+        const legacy = legacyExperiment();
+        const legacyPath = path.join(dataDir, 'experiments.json');
+        const original = JSON.stringify([legacy]);
+        fs.writeFileSync(legacyPath, original, 'utf8');
+        await lab.getExperiment({ id: legacy.id });
+
+        const renameSpy = jest.spyOn(fs, 'renameSync').mockImplementationOnce(() => {
+            throw Object.assign(new Error('simulated migration write failure'), { code: 'EACCES' });
+        });
+        try {
+            await expect(mutate(lab, legacy.id)).rejects.toThrow('simulated migration write failure');
+        } finally {
+            renameSpy.mockRestore();
+        }
+
+        expect(await lab.getExperiment({ id: legacy.id })).toEqual(legacy);
+        expect((await lab.listExperiments()).data).toEqual([legacy]);
+        expect(fs.readFileSync(legacyPath, 'utf8')).toBe(original);
+        expect(await mutate(lab, legacy.id)).toMatchObject(expected);
+        const restarted = createAnalysisLabStore({ dataDir });
+        expect(await restarted.getExperiment({ id: legacy.id })).toMatchObject(expected);
+        expect(fs.readFileSync(legacyPath, 'utf8')).toBe(original);
     });
 });
