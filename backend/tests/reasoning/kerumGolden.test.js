@@ -34,6 +34,8 @@ const { collectMoneyFlows } = require('../../court-analysis/reasoning/moneyFlow'
 const { collectPropertyFlows, reconcilePropertyFlows } = require('../../court-analysis/reasoning/propertyFlow');
 const { hrkToEur } = require('../../court-analysis/reasoning/currencyConversion');
 const { buildCitationGraph } = require('../../court-analysis/reasoning/citationGraph');
+const { applyGroundingToAnalysis } = require('../../court-analysis/reasoning/grounding');
+const { collectProceduralEvents, reconcileProceduralEvents } = require('../../court-analysis/reasoning/proceduralFlow');
 
 const ENTRY_DIR = path.resolve(
     __dirname,
@@ -57,6 +59,42 @@ describe('L-03 Kerum golden fixtures: source patterns', () => {
         expect(text).toMatch(/pod rednim brojem 106/);
         expect(text).toMatch(/drugog vi[šs]eg isplatnog reda/);
         expect(text).toMatch(/177\.218,01/);
+    });
+    test('real extracted ruling passage grounds an overturned-procedure replay', () => {
+        const text = fs.readFileSync(path.join(EXTRACTED_DIR, 'prilog-1196-1.txt'), 'utf8');
+        const quote = 'Rješenjem Visokog trgovačkog suda RH poslovni broj 64 Pž -1651/2021-2 od 16. rujna 2021. ukinuto je rješenje Trgovačkog suda u Splitu poslovni broj Povrv -  128/2021 od 4. veljače 2021. i predmet vraćen ovom sudu na ponovan postupak.';
+        expect(text).toContain('Rješenjem Visokog trgovačkog suda RH poslovni broj 64 Pž -1651/2021-2');
+        const appellateAnalysis = {
+            id: 'kerum-prilog-1196-1',
+            fileName: 'Prilog St-2_2013-1196-1.pdf',
+            proceduralEvents: [{
+                eventType: 'appellate-decision',
+                instance: 'VTS RH',
+                outcome: 'overturned',
+                finalityStated: 'unknown',
+                filingReference: 'Pž-1651/2021-2',
+                targetFilingReference: 'Povrv-128/2021',
+                description: 'Ukidanje rješenja i vraćanje na ponovni postupak.',
+                quote,
+            }],
+        };
+        applyGroundingToAnalysis(appellateAnalysis, text);
+        const flow = collectProceduralEvents([
+            {
+                id: 'kerum-first-instance',
+                proceduralEvents: [{
+                    eventType: 'decision',
+                    filingReference: 'Povrv-128/2021',
+                    outcome: 'unknown',
+                    description: 'Rješenje Trgovačkog suda u Splitu.',
+                }],
+            },
+            appellateAnalysis,
+        ]);
+        const result = reconcileProceduralEvents(flow);
+        expect(appellateAnalysis.proceduralEvents[0].grounded).toBe(true);
+        expect(result.chains).toHaveLength(1);
+        expect(result.chains[0].status).toBe('overturned');
     });
 
     test('Troškovnik states the dual-currency amount and the netting arithmetic', () => {
