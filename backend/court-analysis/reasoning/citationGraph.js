@@ -1,11 +1,12 @@
 // backend/court-analysis/reasoning/citationGraph.js
 //
-// L-02 — lightweight filing citation graph. Nodes are analyzed documents;
-// edges run from a citing document to the `poslovni broj` it explicitly
-// references (J-05 `citedFilingReferences`). A document's OWN filing
-// references come from its normalized money/property entries (J-04), so the
-// graph resolves references to real nodes when another analyzed document
-// owns that filing number.
+// L-02 — lightweight filing citation graph. Nodes are documents; edges run
+// from citing documents to the `poslovni broj` they explicitly reference.
+// Own references come from structured facts, procedural events, and discovery
+// metadata so a decision with no money/property facts still has an identity.
+//
+// Consumers: lifecycle reconciliation uses exact references only. Empty
+// input → empty graph, never throws.
 //
 // Consumers: reconcilePropertyFlows treats citation-linked tražbina entries
 // as lifecycle-chain links (same as an explicit `supersedes`), instead of
@@ -13,7 +14,7 @@
 
 function ownFilingReferences(analysis) {
     const refs = new Set();
-    for (const key of ['amounts', 'propertyFlow']) {
+    for (const key of ['amounts', 'propertyFlow', 'proceduralEvents', 'metadataProceduralEvents']) {
         const list = analysis?.[key];
         if (!Array.isArray(list)) continue;
         for (const item of list) {
@@ -26,11 +27,15 @@ function ownFilingReferences(analysis) {
 
 function citedReferences(analysis) {
     const out = new Set();
-    const list = analysis?.citedFilingReferences;
-    if (!Array.isArray(list)) return out;
-    for (const ref of list) {
-        const s = String(ref || '').trim();
-        if (s) out.add(s);
+    for (const ref of Array.isArray(analysis?.citedFilingReferences) ? analysis.citedFilingReferences : []) {
+        const value = String(ref || '').trim();
+        if (value) out.add(value);
+    }
+    for (const event of Array.isArray(analysis?.proceduralEvents) ? analysis.proceduralEvents : []) {
+        for (const ref of Array.isArray(event?.referencedFilingReferences) ? event.referencedFilingReferences : []) {
+            const value = String(ref || '').trim();
+            if (value) out.add(value);
+        }
     }
     return out;
 }
@@ -41,30 +46,58 @@ function citedReferences(analysis) {
  * citedFilingReferences}).
  * @returns {{nodes: Array<{id: string, fileName: string|null, filingReferences: string[]}>, edges: Array<{from: string, to: string, via: string}>}}
  */
-function buildCitationGraph(analyses) {
+function buildCitationGraph(analyses, metadataEntries = []) {
     const nodes = [];
     const refOwners = new Map(); // filingReference -> node id (first owner wins)
+    const sourceEntryNodes = new Map();
     const list = Array.isArray(analyses) ? analyses : [];
 
     for (const analysis of list) {
         const id = analysis?.id || analysis?.fileName || `analysis-${nodes.length + 1}`;
         const refs = [...ownFilingReferences(analysis)];
         nodes.push({ id, fileName: analysis?.fileName || null, filingReferences: refs });
+        if (Number.isInteger(analysis?.sourceEntryIndex)) sourceEntryNodes.set(analysis.sourceEntryIndex, nodes[nodes.length - 1]);
         for (const ref of refs) {
             if (!refOwners.has(ref)) refOwners.set(ref, id);
         }
     }
 
-    const edges = [];
-    for (const analysis of list) {
-        const fromId = analysis?.id || analysis?.fileName;
-        if (!fromId) continue;
-        for (const ref of citedReferences(analysis)) {
-            const toId = refOwners.get(ref) || null;
-            edges.push({ from: fromId, to: toId || ref, via: ref, resolved: toId !== null });
+    for (const entry of Array.isArray(metadataEntries) ? metadataEntries : []) {
+        const entryIndex = entry?.index;
+        let node = Number.isInteger(entryIndex) ? sourceEntryNodes.get(entryIndex) : null;
+        if (!node) {
+            const id = `entry-${entryIndex ?? nodes.length}`;
+            node = { id, fileName: null, filingReferences: [] };
+            nodes.push(node);
+            if (Number.isInteger(entryIndex)) sourceEntryNodes.set(entryIndex, node);
+        }
+        for (const event of Array.isArray(entry?.proceduralEvents) ? entry.proceduralEvents : []) {
+            const own = typeof event?.filingReference === 'string' ? event.filingReference.trim() : '';
+            if (own && !node.filingReferences.includes(own)) node.filingReferences.push(own);
+            if (own && !refOwners.has(own)) refOwners.set(own, node.id);
         }
     }
 
+    const edges = [];
+    const addReferences = (fromId, references) => {
+        for (const ref of references) {
+            const toId = refOwners.get(ref) || null;
+            edges.push({ from: fromId, to: toId || ref, via: ref, resolved: toId !== null });
+        }
+    };
+    for (const analysis of list) {
+        const fromId = analysis?.id || analysis?.fileName;
+        if (fromId) addReferences(fromId, citedReferences(analysis));
+    }
+    for (const entry of Array.isArray(metadataEntries) ? metadataEntries : []) {
+        const entryIndex = entry?.index;
+        const node = Number.isInteger(entryIndex) ? sourceEntryNodes.get(entryIndex) : null;
+        if (!node) continue;
+        const refs = new Set((Array.isArray(entry.proceduralEvents) ? entry.proceduralEvents : [])
+            .flatMap((event) => Array.isArray(event?.referencedFilingReferences) ? event.referencedFilingReferences : [])
+            .map((ref) => String(ref || '').trim()).filter(Boolean));
+        addReferences(node.id, refs);
+    }
     return { nodes, edges };
 }
 

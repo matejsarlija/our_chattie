@@ -254,9 +254,33 @@ describe('AnalyzeDocumentsTool', () => {
             caseInfo: { participants: [] },
         });
         const prompt = String(mockGeminiInvoke.mock.calls[0][0] || '');
-        for (const field of ['direction', 'payerOib', 'recipientOib', 'isplatniRed', 'claimRegistryNumber', 'filingReference', 'citedFilingReferences']) {
+        for (const field of ['documentParties', 'oib', 'role', 'quote', 'direction', 'payerOib', 'recipientOib', 'isplatniRed', 'claimRegistryNumber', 'filingReference', 'citedFilingReferences']) {
             expect(prompt).toContain(field);
         }
+    });
+    it('accepts source party OIBs without requiring an amount or summary', async () => {
+        mockGeminiInvoke.mockResolvedValue({
+            content: JSON.stringify({
+                documentParties: [{
+                    name: 'ADRIA RIJEKA d.o.o.',
+                    oib: '08697489827',
+                    role: 'dužnik',
+                    quote: 'ADRIA RIJEKA d.o.o., OIB: 08697489827',
+                }],
+            }),
+        });
+        const tool = new AnalyzeDocumentsTool();
+        const result = await tool._call({
+            files: [{ filePath: testTxtPath, text: 'Test TXT' }],
+            caseInfo: { participants: [] },
+        });
+
+        expect(mockGeminiInvoke).toHaveBeenCalledTimes(1);
+        expect(result.individualAnalyses[0].aiResult.documentParties).toEqual([
+            expect.objectContaining({ oib: '08697489827', name: 'ADRIA RIJEKA d.o.o.' }),
+        ]);
+        expect(result.individualAnalyses[0].aiResult.amounts).toEqual([]);
+        expect(result.individualAnalyses[0].aiResult.parties).toEqual([]);
     });
 
     it('carries J-05 citedFilingReferences through, defaulting to []', async () => {
@@ -265,6 +289,7 @@ describe('AnalyzeDocumentsTool', () => {
                 caseNumber: 'St-2/2013',
                 decisionDate: '2026-05-19',
                 summary: 'Žalba.',
+                documentParties: [{ name: 'ADRIA', oib: '08697489827', role: 'dužnik', quote: 'OIB: 08697489827' }],
                 amounts: [],
                 propertyFlow: [],
                 citedFilingReferences: ['St-2/2013-1214', ''],
@@ -276,6 +301,15 @@ describe('AnalyzeDocumentsTool', () => {
             caseInfo: { participants: [] },
         });
         expect(result.individualAnalyses[0].aiResult.citedFilingReferences).toEqual(['St-2/2013-1214']);
+        expect(result.individualAnalyses[0].aiResult.documentParties).toEqual([
+            expect.objectContaining({
+                name: 'ADRIA',
+                oib: '08697489827',
+                role: 'dužnik',
+                quote: 'OIB: 08697489827',
+                grounded: false,
+            }),
+        ]);
 
         mockGeminiInvoke.mockResolvedValue({
             content: JSON.stringify({ caseNumber: '1', decisionDate: 'd', summary: 's', amounts: [] }),

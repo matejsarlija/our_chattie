@@ -58,8 +58,29 @@ function isQuoteGrounded(quote, sourceText) {
     return hits / quoteTokens.length >= GROUNDING_TOKEN_OVERLAP_THRESHOLD;
 }
 
+// Party identifiers are identity evidence, not approximate prose. Only spaces
+// and hyphens between digits are formatting separators; never repair digits
+// or discard arbitrary characters to manufacture an OIB match.
+function isDocumentPartyGrounded(entry, sourceText) {
+    if (typeof entry.oib !== 'string' || !/^[\d\s-]+$/.test(entry.oib)) return false;
+    const oib = entry.oib.replace(/[\s-]/g, '');
+    if (!/^\d{11}$/.test(oib)) return false;
+    if (typeof entry.quote !== 'string' || typeof sourceText !== 'string') return false;
+    const normalizeEvidence = (text) => normalizeForGrounding(text)
+        .replace(/(\d)[\s-]+(?=\d)/g, '$1');
+    const quote = normalizeEvidence(entry.quote);
+    const source = normalizeEvidence(sourceText);
+    const identifier = new RegExp(`(^|[^a-z0-9])${oib}(?![a-z0-9])`);
+    if (!identifier.test(quote)) return false;
+    const escapedQuote = quote.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const startBoundary = /^[a-z0-9]/.test(quote) ? '(?<![a-z0-9])' : '';
+    const endBoundary = /[a-z0-9]$/.test(quote) ? '(?![a-z0-9])' : '';
+    return new RegExp(`${startBoundary}${escapedQuote}${endBoundary}`).test(source);
+}
+
 /**
- * Marks every entry in amounts[] + propertyFlow[] with grounded:true/false.
+ * Marks every entry in amounts[] + propertyFlow[] + proceduralEvents[] with
+ * grounded:true/false.
  * Mutates copies, never throws; missing arrays degrade to [].
  * @param {object} aiResult - per-document analysis result.
  * @param {string} sourceText - raw document text.
@@ -67,13 +88,15 @@ function isQuoteGrounded(quote, sourceText) {
  */
 function applyGroundingToAnalysis(aiResult, sourceText) {
     if (!aiResult || typeof aiResult !== 'object') return aiResult;
-    for (const key of ['amounts', 'propertyFlow']) {
+    for (const key of ['documentParties', 'amounts', 'propertyFlow', 'proceduralEvents']) {
         const entries = aiResult[key];
         if (!Array.isArray(entries)) continue;
         for (const entry of entries) {
             if (!entry || typeof entry !== 'object') continue;
             try {
-                entry.grounded = isQuoteGrounded(entry.quote, sourceText);
+                entry.grounded = key === 'documentParties'
+                    ? isDocumentPartyGrounded(entry, sourceText)
+                    : isQuoteGrounded(entry.quote, sourceText);
             } catch {
                 entry.grounded = false;
             }
@@ -83,14 +106,14 @@ function applyGroundingToAnalysis(aiResult, sourceText) {
 }
 
 /**
- * Counts grounded/total claims across amounts[] + propertyFlow[].
- * Entries without a verified quote count toward total but not grounded.
- * @param {Array<object>} analyses - attached analyses (carrying amounts/propertyFlow).
- * @returns {{groundedClaims: number, totalClaims: number}}
+ * Counts grounded/total claims across amounts + propertyFlow, and separately
+ * counts procedural events so existing claim ratios keep their meaning.
  */
 function countGroundedClaims(analyses) {
     let groundedClaims = 0;
     let totalClaims = 0;
+    let groundedProceduralEvents = 0;
+    let totalProceduralEvents = 0;
     for (const analysis of Array.isArray(analyses) ? analyses : []) {
         for (const key of ['amounts', 'propertyFlow']) {
             const entries = analysis?.[key];
@@ -100,8 +123,17 @@ function countGroundedClaims(analyses) {
                 if (entry?.grounded === true) groundedClaims += 1;
             }
         }
+        for (const event of Array.isArray(analysis?.proceduralEvents) ? analysis.proceduralEvents : []) {
+            totalProceduralEvents += 1;
+            if (event?.grounded === true) groundedProceduralEvents += 1;
+        }
     }
-    return { groundedClaims, totalClaims };
+    const counts = { groundedClaims, totalClaims };
+    if (totalProceduralEvents > 0) {
+        counts.groundedProceduralEvents = groundedProceduralEvents;
+        counts.totalProceduralEvents = totalProceduralEvents;
+    }
+    return counts;
 }
 
 module.exports = {

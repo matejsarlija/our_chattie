@@ -47,6 +47,19 @@ describe('indexer', () => {
             'document-link'
         ]);
     });
+    test('document-extracted party identifiers are searchable in analysis sources', () => {
+        const index = buildLexicalIndex({
+            ...evidencePackage,
+            analyses: [{
+                id: 'analysis-party-oib',
+                fileName: 'Podnesak.pdf',
+                documentParties: [{ name: 'ADRIA RIJEKA d.o.o.', oib: '08697489827', role: 'dužnik' }],
+            }],
+        });
+        const source = index.sources.find((item) => item.normalizedText.includes('08697489827'));
+        expect(source).toBeDefined();
+        expect(source.tokens).toContain('08697489827');
+    });
 
     test('tokenizes Croatian legal text into searchable terms', () => {
         expect(tokenize('Rješenje o otvaranju stečaja i trošak')).toEqual([

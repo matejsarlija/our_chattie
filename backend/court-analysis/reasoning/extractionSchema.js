@@ -8,31 +8,41 @@
 //   `{ valid, value, gaps }` where `value` is the sanitized result (all fields
 //   present, invalid entries dropped or nulled — never invented) and `gaps`
 //   names every field that could not be salvaged (`{ field, code, detail }`).
-// - Only `amounts` and `propertyFlow` are repair-worthy: they carry the money
-//   and chain data the pipeline reasons over. Malformed scalars degrade to
-//   null and malformed `citedFilingReferences` to [] without spending a repair
-//   call — low value, bounded loss.
+// - `amounts`, `propertyFlow`, and `proceduralEvents` are repair-worthy:
+//   malformed facts would harm financial or procedural reasoning. Malformed
+//   scalar metadata degrades to null and citation references to [].
 // - Repair always runs against the ORIGINAL source excerpt/page, never an
 //   earlier model summary, and may answer `absent` (source does not state the
 //   field) — which accepts as empty without a gap.
 
-const EXTRACTION_SCHEMA_VERSION = 2;
+const EXTRACTION_SCHEMA_VERSION = 4;
 
 const TOP_LEVEL_FIELDS = [
     'caseNumber',
     'decisionDate',
     'summary',
+    'documentParties',
     'amounts',
     'propertyFlow',
-    'citedFilingReferences'
+    'citedFilingReferences',
+    'proceduralEvents'
 ];
 
-const REPAIRABLE_FIELDS = ['amounts', 'propertyFlow'];
+const REPAIRABLE_FIELDS = ['documentParties', 'amounts', 'propertyFlow', 'proceduralEvents'];
 
 const AMOUNT_DIRECTIONS = ['potraživanje', 'obveza', 'awarded', 'rejected', 'netted'];
 const CURRENCIES = ['EUR', 'HRK'];
 const ASSET_TYPES = ['nekretnina', 'pokretnina', 'tražbina', 'drugo'];
 const EVENT_TYPES = ['prijava', 'ustup', 'namirenje', 'drugo'];
+const PROCEDURAL_EVENT_TYPES = [
+    'decision', 'appeal', 'appeal-response', 'appellate-decision',
+    'correction', 'postponement', 'hearing', 'motion', 'other',
+];
+const PROCEDURAL_OUTCOMES = [
+    'granted', 'dismissed', 'rejected', 'upheld', 'overturned',
+    'modified', 'remanded', 'pending', 'unknown',
+];
+const PROCEDURAL_FINALITY = ['final', 'appealable', 'appealed', 'unknown'];
 // TL-1 ledger roles: amount function in the document (total vs row), what the
 // entry's document DOES to the claim/right, and how a lifecycle link is
 // evidenced. All optional; invalid-but-present values gap (they would
@@ -72,6 +82,43 @@ function asOibOrNull(value) {
     if (typeof value !== 'string') return null;
     const digits = value.replace(/\D/g, '');
     return digits.length === 11 ? digits : null;
+}
+
+function validateDocumentParty(raw, index) {
+    const path = `documentParties[${index}]`;
+    const gaps = [];
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+        return { value: null, gaps: [gap(path, 'schema-mismatch', 'document party is not an object')] };
+    }
+    const oib = asOibOrNull(raw.oib);
+    const quote = asStringOrNull(raw.quote);
+    if (!oib) gaps.push(gap(`${path}.oib`, 'schema-mismatch', 'expected an 11-digit source OIB'));
+    if (!quote) gaps.push(gap(`${path}.quote`, 'schema-mismatch', 'missing source quote'));
+    if (!oib || !quote) return { value: null, gaps };
+    return {
+        value: {
+            name: asStringOrNull(raw.name),
+            oib,
+            role: asStringOrNull(raw.role),
+            quote
+        },
+        gaps
+    };
+}
+
+function validateDocumentParties(raw) {
+    const documentParties = [];
+    const gaps = [];
+    if (raw === undefined || raw === null) return { value: documentParties, gaps };
+    if (!Array.isArray(raw)) {
+        return { value: documentParties, gaps: [gap('documentParties', 'schema-mismatch', 'expected an array')] };
+    }
+    raw.forEach((item, index) => {
+        const result = validateDocumentParty(item, index);
+        gaps.push(...result.gaps);
+        if (result.value) documentParties.push(result.value);
+    });
+    return { value: documentParties, gaps };
 }
 
 function gap(field, code, detail) {
@@ -203,6 +250,48 @@ function validatePropertyItem(raw, index) {
         gaps
     };
 }
+function validateProceduralEvent(raw, index) {
+    const path = `proceduralEvents[${index}]`;
+    const gaps = [];
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+        return { value: null, gaps: [gap(path, 'schema-mismatch', 'procedural event is not an object')] };
+    }
+    const description = asStringOrNull(raw.description);
+    if (!description) {
+        return { value: null, gaps: [gap(path, 'schema-mismatch', 'missing description; event unusable')] };
+    }
+    const eventType = asEnumOrNull(raw.eventType, PROCEDURAL_EVENT_TYPES);
+    const outcome = asEnumOrNull(raw.outcome, PROCEDURAL_OUTCOMES);
+    const finalityStated = raw.finalityStated === undefined || raw.finalityStated === null
+        ? 'unknown'
+        : asEnumOrNull(raw.finalityStated, PROCEDURAL_FINALITY);
+    for (const [field, value, rawValue] of [
+        ['eventType', eventType, raw.eventType],
+        ['outcome', outcome, raw.outcome],
+        ['finalityStated', finalityStated, raw.finalityStated],
+    ]) {
+        if (rawValue !== undefined && rawValue !== null && value === null) {
+            gaps.push(gap(`${path}.${field}`, 'schema-mismatch', `unsupported ${field}: ${String(rawValue).slice(0, 40)}`));
+        } else if ((field === 'eventType' || field === 'outcome') && value === null) {
+            gaps.push(gap(`${path}.${field}`, 'schema-mismatch', `missing ${field}`));
+        }
+    }
+    return {
+        value: {
+            eventType,
+            instance: asStringOrNull(raw.instance),
+            outcome,
+            finalityStated,
+            date: asStringOrNull(raw.date),
+            filingReference: asStringOrNull(raw.filingReference),
+            targetFilingReference: asStringOrNull(raw.targetFilingReference),
+            description,
+            quote: asStringOrNull(raw.quote),
+        },
+        gaps,
+    };
+}
+
 
 function validateStringArray(raw, path) {
     if (raw === undefined || raw === null) return { value: [], gaps: [] };
@@ -226,6 +315,8 @@ function validateExtraction(parsed) {
         return { valid: false, value: null, gaps: [gap('$', 'malformed-json', 'root is not a JSON object')] };
     }
     const gaps = [];
+    const { value: documentParties, gaps: partyGaps } = validateDocumentParties(parsed.documentParties);
+    gaps.push(...partyGaps);
     const amounts = [];
     if (parsed.amounts === undefined || parsed.amounts === null) {
         // absent → empty, no gap (document may genuinely state no amounts)
@@ -250,6 +341,18 @@ function validateExtraction(parsed) {
             if (value) propertyFlow.push(value);
         });
     }
+    const proceduralEvents = [];
+    if (parsed.proceduralEvents === undefined || parsed.proceduralEvents === null) {
+        // Pre-migration analyses omit this optional field.
+    } else if (!Array.isArray(parsed.proceduralEvents)) {
+        gaps.push(gap('proceduralEvents', 'schema-mismatch', 'expected an array'));
+    } else {
+        parsed.proceduralEvents.forEach((raw, index) => {
+            const { value, gaps: itemGaps } = validateProceduralEvent(raw, index);
+            gaps.push(...itemGaps);
+            if (value) proceduralEvents.push(value);
+        });
+    }
     const { value: citedFilingReferences, gaps: refGaps } = validateStringArray(parsed.citedFilingReferences, 'citedFilingReferences');
     gaps.push(...refGaps);
 
@@ -259,9 +362,11 @@ function validateExtraction(parsed) {
             caseNumber: asStringOrNull(parsed.caseNumber),
             decisionDate: asStringOrNull(parsed.decisionDate),
             summary: asStringOrNull(parsed.summary),
+            documentParties,
             amounts,
             propertyFlow,
-            citedFilingReferences
+            citedFilingReferences,
+            proceduralEvents
         },
         gaps
     };
@@ -276,18 +381,22 @@ function validateExtraction(parsed) {
  */
 function parseFieldRepairResponse(content, field) {
     const { extractJsonBlock } = require('../../helpers/jsonExtract');
-    const parsed = extractJsonBlock(typeof content === 'string' ? content : '');
+    const parsed = extractJsonBlock(content);
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
         return { ok: false, reason: 'repair response is not a JSON object' };
     }
     if (parsed.absent === true) {
-        return { ok: true, absent: true, value: field === 'amounts' || field === 'propertyFlow' ? [] : null };
+        return { ok: true, absent: true, value: ['documentParties', 'amounts', 'propertyFlow', 'proceduralEvents'].includes(field) ? [] : null };
     }
-    if (field === 'amounts' || field === 'propertyFlow') {
+    if (['documentParties', 'amounts', 'propertyFlow', 'proceduralEvents'].includes(field)) {
         if (!Array.isArray(parsed.value)) {
             return { ok: false, reason: 'repair value is not an array' };
         }
-        const validate = field === 'amounts' ? validateAmount : validatePropertyItem;
+        const validate = field === 'documentParties'
+            ? validateDocumentParty
+            : field === 'amounts'
+                ? validateAmount
+                : field === 'propertyFlow' ? validatePropertyItem : validateProceduralEvent;
         const values = [];
         const gaps = [];
         parsed.value.forEach((raw, index) => {
@@ -302,8 +411,10 @@ function parseFieldRepairResponse(content, field) {
 }
 
 const FIELD_SPECS = {
+    documentParties: 'a "documentParties" array of source-explicit party identities. Include only an OIB explicitly printed as a party tax identifier in this document, not OIBs inferred from supplied participant/registry context. One item per distinct OIB: {"name" (string or null if the source does not identify it), "oib" (exactly 11 digits), "role" (string or null; only if explicitly stated, otherwise null), "quote" (verbatim source text containing the OIB and enough nearby context to support the association)}. Do not guess roles or join an OIB to a name unless the quoted source makes the association clear; [] when none.',
     amounts: 'an "amounts" array with ONE item per table row — if the document contains an itemized table, register, or list (popis tražbina, diobeni popis, troškovnik, obračun), extract one item per row and never merge rows into a single summary amount; each item: {"description" (Croatian, required), "amount" (number), "currency" ("EUR"|"HRK"), "date", "direction" ("potraživanje"|"obveza"|"awarded"|"rejected"|"netted"), "amountRole" (one of "total"|"line_item"|"principal"|"cost"|"paid"|"fee" — the figure\'s function in the document: "total" for stated sums, "line_item" for table/register rows; omit when unclear), "eventType" ("prijava"|"ustup"|"namirenje"|"drugo", when the amount records a lifecycle event), "legalEffect" (one of "creates"|"modifies"|"supersedes"|"resolves"|"implements"|"unknown" — what this entry\'s document does to the claim/right; omit when unclear), "references" (array of registry/filing identifiers this entry explicitly cites besides its own filingReference; [] when none), "relationshipBasis" (one of "explicit_identifier"|"explicit_text"|"inferred" — how a "supersedes" link is evidenced; omit without supersedes), "payerName", "payerOib" (11 digits), "recipientName", "recipientOib", "amountEur"/"amountHrk" (only when the source states BOTH, verbatim), "isplatniRed", "claimRegistryNumber" ("redni broj"), "filingReference" ("poslovni broj"), "quote" (verbatim 1-2 sentences from the source text below, word-for-word, never paraphrased)}',
-    propertyFlow: 'a "propertyFlow" array with ONE item per table row under the same row rule as amounts; also extract an operative receivable assignment/cession stated in prose ("Ugovor o ustupu", "cesija", assignment/transfer of a "tražbina") as at least one assetType "tražbina", eventType "ustup" entry — it is never absent merely because it has no table; each item: {"description" (Croatian, required), "identifier", "assetType" ("nekretnina"|"pokretnina"|"tražbina"|"drugo"), "transferor", "transferee", "value" (number), "currency" ("EUR"|"HRK"), "date", "quote" (verbatim as above), "legalEffect" and "references" and "relationshipBasis" (same meanings as for amounts); for "tražbina" also "eventType" ("prijava"|"ustup"|"namirenje"|"drugo"), "isplatniRed", "claimRegistryNumber", "filingReference", "supersedes" (short textual reference to the earlier lifecycle entry as cited in the source text)}'
+    propertyFlow: 'a "propertyFlow" array with ONE item per table row under the same row rule as amounts; also extract an operative receivable assignment/cession stated in prose ("Ugovor o ustupu", "cesija", assignment/transfer of a "tražbina") as at least one assetType "tražbina", eventType "ustup" entry — it is never absent merely because it has no table; each item: {"description" (Croatian, required), "identifier", "assetType" ("nekretnina"|"pokretnina"|"tražbina"|"drugo"), "transferor", "transferee", "value" (number), "currency" ("EUR"|"HRK"), "date", "quote" (verbatim as above), "legalEffect" and "references" and "relationshipBasis" (same meanings as for amounts); for "tražbina" also "eventType" ("prijava"|"ustup"|"namirenje"|"drugo"), "isplatniRed", "claimRegistryNumber", "filingReference", "supersedes" (short textual reference to the earlier lifecycle entry as cited in the source text)}',
+    proceduralEvents: 'a "proceduralEvents" array with one explicit court-procedure event per item: {"eventType" ("decision"|"appeal"|"appeal-response"|"appellate-decision"|"correction"|"postponement"|"hearing"|"motion"|"other"), "instance" (court name or "first-instance"|"second-instance" when stated), "outcome" ("granted"|"dismissed"|"rejected"|"upheld"|"overturned"|"modified"|"remanded"|"pending"|"unknown"), "finalityStated" ("final"|"appealable"|"appealed"|"unknown"; assert final/appealable/appealed only when the source explicitly states this legal status, otherwise "unknown"), "date", "filingReference" (this document\'s own poslovni broj, only when explicit), "targetFilingReference" (the earlier filing this decision, appeal, response, or correction concerns, only when explicit), "description" (brief Croatian procedural action, required), and "quote" (verbatim source text supporting this event). Do not infer event, outcome, or finality from case posture or descriptions; [] when none.'
 };
 
 /**
@@ -323,7 +434,7 @@ function buildFieldRepairPrompt({ field, sourceText }) {
  */
 function buildFullRepairPrompt({ sourceText }) {
     const excerpt = String(sourceText || '');
-    return `EXTRACTION REPAIR. A previous extraction of this court document produced no usable JSON. Extract key information from the source text below as a JSON object with keys: "caseNumber", "decisionDate", "summary" (one medium paragraph, Croatian), ${FIELD_SPECS.amounts} (as "amounts"; [] when none), ${FIELD_SPECS.propertyFlow} (as "propertyFlow"; [] when none). ${VALUE_ROLE_GUIDANCE} Also extract "citedFilingReferences" (array of "poslovni broj" values explicitly referenced; [] when none).\n\nProvide ONLY the json object and nothing else. Text:\n\n${excerpt}`;
+    return `EXTRACTION REPAIR. A previous extraction of the court document produced no usable JSON. Extract key information from the source text below as a JSON object with keys: "caseNumber", "decisionDate", "summary" (one medium paragraph, Croatian), ${FIELD_SPECS.documentParties} (as "documentParties"; [] when none), ${FIELD_SPECS.amounts} (as "amounts"; [] when none), ${FIELD_SPECS.propertyFlow} (as "propertyFlow"; [] when none), ${FIELD_SPECS.proceduralEvents} (as "proceduralEvents"; [] when none). ${VALUE_ROLE_GUIDANCE} Also extract "citedFilingReferences" (array of "poslovni broj" values explicitly referenced; [] when none).\n\nProvide ONLY the json object and nothing else. Text:\n\n${excerpt}`;
 }
 
 module.exports = {
@@ -338,6 +449,10 @@ module.exports = {
     ASSET_TYPES,
     VALUE_ROLES,
     EVENT_TYPES,
+    PROCEDURAL_EVENT_TYPES,
+    PROCEDURAL_OUTCOMES,
+    PROCEDURAL_FINALITY,
+    validateProceduralEvent,
     FIELD_SPECS,
     validateExtraction,
     validateAmount,

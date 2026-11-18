@@ -6,6 +6,9 @@ const { countGroundedClaims } = require('./grounding');
 const { classifyFileFailureDetailed } = require('../../helpers/friendlyAnalysisError');
 const { buildFactLedger, dedupeLedgerRows } = require('./factLedger');
 
+const { parseProceduralMetadataEntry } = require('../utils/proceduralMetadata');
+const { collectProceduralEvents, reconcileProceduralEvents } = require('./proceduralFlow');
+
 function normalizeAcquisition(entry) {
     const acquisition = entry?.acquisition || entry?.caseInfo?.acquisition || {};
 
@@ -157,7 +160,13 @@ function mapEntry(entry, entryIndex) {
         entryDisplayId: deriveEntryDisplayId(caseInfo.detailLink),
         participants: Array.isArray(caseInfo.participants) ? caseInfo.participants : [],
         acquisition,
-        documentLinks
+        documentLinks,
+        proceduralEvents: parseProceduralMetadataEntry({
+            title: caseInfo.title,
+            court: caseInfo.court,
+            caseNumber: entry?.caseNumber || caseInfo.caseNumber,
+            documentNames: (Array.isArray(entry?.documentLinks) ? entry.documentLinks : []).map((link) => link?.text),
+        }),
     };
 }
 
@@ -323,7 +332,12 @@ function attachAnalysesToEvidencePackage(pkg, processedCases, clusterId = null) 
             analysisChunks: item.analysisChunks || null,
             summary: item.aiResult.summary || null,
             parties: Array.isArray(item.aiResult.parties) ? item.aiResult.parties : [],
+            documentParties: Array.isArray(item.aiResult.documentParties) ? item.aiResult.documentParties : [],
             amounts: Array.isArray(item.aiResult.amounts) ? item.aiResult.amounts : [],
+            proceduralEvents: Array.isArray(item.aiResult.proceduralEvents) ? item.aiResult.proceduralEvents : [],
+            metadataProceduralEvents: Number.isInteger(sourceEntryIndex)
+                ? (pkg.entries.find((entry) => entry?.index === sourceEntryIndex)?.proceduralEvents || [])
+                : [],
             propertyFlow: Array.isArray(item.aiResult.propertyFlow) ? item.aiResult.propertyFlow : [],
             // J-05 — citation graph seed passthrough (Epic L builds the graph).
             citedFilingReferences: Array.isArray(item.aiResult.citedFilingReferences)
@@ -408,7 +422,9 @@ function attachAnalysesToEvidencePackage(pkg, processedCases, clusterId = null) 
         valueChanges: legacyValueChanges,
     };
     // L-02 — filing citation graph attached for downstream consumers.
-    const citationGraph = buildCitationGraph(analyses);
+    const citationGraph = buildCitationGraph(analyses, pkg.entries);
+    const proceduralFlow = collectProceduralEvents(analyses, pkg.entries);
+    const proceduralReconciliation = reconcileProceduralEvents(proceduralFlow, { analyses, citationGraph });
     const reconciliation = {
         conflicts: [...(moneyReconciliation.conflicts || []), ...(propertyReconciliation.conflicts || [])],
         openQuestions: [...(moneyReconciliation.openQuestions || []), ...(propertyReconciliation.openQuestions || [])],
@@ -453,6 +469,9 @@ function attachAnalysesToEvidencePackage(pkg, processedCases, clusterId = null) 
             : `Djelomično izdvajanje teksta: ${item.fileName}`),
         failedFiles,
         ...countGroundedClaims(analyses),
+        proceduralMetadataEventCount: pkg.entries.reduce((count, entry) => (
+            count + (Array.isArray(entry?.proceduralEvents) ? entry.proceduralEvents.length : 0)
+        ), 0),
     };
 
     return {
@@ -466,7 +485,8 @@ function attachAnalysesToEvidencePackage(pkg, processedCases, clusterId = null) 
         propertyFlow,
         propertyReconciliation,
         citationGraph,
-        reconciliation
+        reconciliation,
+        proceduralFlow: proceduralReconciliation,
     };
 }
 

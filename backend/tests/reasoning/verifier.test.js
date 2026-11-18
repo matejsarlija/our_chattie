@@ -174,11 +174,34 @@ describe('Verifier', () => {
         expect(prompt).not.toContain(mechanicalTwo.text);
     });
 
-    test('handles LLM failure gracefully', async () => {
-        mockInvoke.mockRejectedValue(new Error('LLM error'));
+    test('parses verification results from a LangChain content-block array', async () => {
+        mockInvoke.mockResolvedValue({
+            content: [{
+                type: 'text',
+                text: JSON.stringify([
+                    { index: 1, status: 'supported', reason: 'Potvrđeno u evidenciji.', confidence: 'high' },
+                    { index: 2, status: 'unsupported', reason: 'Nema potvrde.', confidence: 'low' },
+                ]),
+            }],
+        });
+
         const result = await verifyReport(mockReport, mockEvidence);
-        // Should return original report on failure
-        expect(result).toBe(mockReport);
+
+        expect(result.meta.verification).toMatchObject({ status: 'complete', failedCount: 0 });
+        expect(result.findings).toHaveLength(1);
+        expect(result.findings[0].text).toBe('Defendant paid the debt');
+    });
+
+    test('records verification failure as partial without discarding the report', async () => {
+        mockInvoke.mockResolvedValue({ content: '[{"index":1,"status":"supported"' });
+        const result = await verifyReport(mockReport, mockEvidence);
+        expect(result).not.toBe(mockReport);
+        expect(result.findings).toEqual(mockReport.findings);
+        expect(result.meta.verification).toMatchObject({
+            status: 'partial',
+            failedCount: mockReport.findings.length,
+        });
+        expect(result.openQuestions).toContain('Dio nalaza nije mogao biti provjeren; rezultat provjere nije dostupan.');
     });
 });
 
@@ -253,6 +276,71 @@ describe('Verifier evidence diet', () => {
         expect(prompt.split(summary).length - 1).toBe(1);
         // Money-flow claims stay in scope for verification.
         expect(prompt).toContain('Financijski iznos');
+    });
+
+    test('merges repeated claim text without losing distinct attached source passages', async () => {
+        mockInvoke.mockResolvedValue({
+            content: JSON.stringify([{ index: 1, status: 'supported', reason: 'Potvrđeno', confidence: 'high' }]),
+        });
+        await verifyReport(reportWithFindings(), {
+            timeline: [],
+            claims: [
+                { text: summary, evidence: [{ sourceId: 'doc-1', text: 'Prvi zaseban izvorni odlomak.' }] },
+                { text: summary, evidence: [{ sourceId: 'doc-2', text: 'Drugi zaseban izvorni odlomak.' }] },
+            ],
+        });
+        const prompt = mockInvoke.mock.calls[0][0];
+        expect(prompt.split(`[Source Claim] ${summary}`).length - 1).toBe(1);
+        expect(prompt).toContain('[Citation doc-1] Prvi zaseban izvorni odlomak.');
+        expect(prompt).toContain('[Citation doc-2] Drugi zaseban izvorni odlomak.');
+        expect(prompt).not.toContain('[Dokazni materijal je skraćen');
+    });
+
+    test.each(['finding', 'claim'])('keeps attached evidence when a %s citation already contains the claim text', async (citationOrigin) => {
+        mockInvoke.mockResolvedValue({
+            content: JSON.stringify([{ index: 1, status: 'supported', reason: 'Potvrđeno', confidence: 'high' }]),
+        });
+        const echoedClaim = 'Naknadni zahtjev vjerovnika je odbijen.';
+        const report = reportWithFindings();
+        const claims = [{
+            text: echoedClaim,
+            evidence: [{ sourceId: 'decision', text: 'Sud odbija zahtjev zbog nedostatka dokaza.' }],
+        }];
+        if (citationOrigin === 'finding') {
+            report.findings[0].citations = [{ sourceId: 'echo', text: echoedClaim }];
+        } else {
+            claims.unshift({
+                text: 'Postupak je otvoren 2013.',
+                evidence: [{ sourceId: 'echo', text: echoedClaim }],
+            });
+        }
+        await verifyReport(report, { timeline: [], claims });
+        const prompt = mockInvoke.mock.calls[0][0];
+        expect(prompt).toContain(`[Citation echo] ${echoedClaim}`);
+        expect(prompt).toContain('[Citation decision] Sud odbija zahtjev zbog nedostatka dokaza.');
+        expect(prompt).not.toContain('[Dokazni materijal je skraćen');
+    });
+
+    test('retains identical passages from distinct sources but deduplicates the same citation', async () => {
+        mockInvoke.mockResolvedValue({
+            content: JSON.stringify([{ index: 1, status: 'supported', reason: 'Potvrđeno', confidence: 'high' }]),
+        });
+        const report = reportWithFindings();
+        report.findings[0].citations = [
+            { sourceId: 'doc-1', text: 'Zahtjev je povučen.' },
+            { sourceId: 'doc-2', text: 'Zahtjev je povučen.' },
+        ];
+        await verifyReport(report, {
+            timeline: [],
+            claims: [
+                { text: summary, evidence: report.findings[0].citations },
+                { text: 'Zasebna tvrdnja.', evidence: [{ sourceId: 'doc-3', text: 'Zahtjev je povučen.' }] },
+            ],
+        });
+        const prompt = mockInvoke.mock.calls[0][0];
+        for (const sourceId of ['doc-1', 'doc-2', 'doc-3']) {
+            expect(prompt.split(`[Citation ${sourceId}] Zahtjev je povučen.`).length - 1).toBe(1);
+        }
     });
 
     test('skips the model entirely when only mechanical claims exist', async () => {

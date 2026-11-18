@@ -93,6 +93,29 @@ describe('Synthesizer', () => {
         expect(promptText).toContain('Party A');
     });
 
+    test('parses a multi-part Gemini response instead of failing the report', async () => {
+        mockInvoke.mockResolvedValue({
+            content: [
+                { type: 'text', text: '{"narrative": "Radna verzija' },
+                {
+                    type: 'text',
+                    text: JSON.stringify({
+                        narrative: 'Konačni sažetak.',
+                        findings: [{ text: 'Nalaz.', confidence: 'medium', citations: ['C1'] }],
+                        openQuestions: [],
+                        nextSteps: [],
+                    }),
+                },
+            ],
+        });
+
+        const report = await synthesizeReport(mockEvidence);
+
+        expect(report.narrative).toBe('Konačni sažetak.');
+        expect(report.findings).toHaveLength(1);
+        expect(report.findings[0].citations[0]).toMatchObject({ source: 'd1', text: 'quote' });
+    });
+
     test('handles empty evidence gracefully', async () => {
         const mockResponse = {
              content: `\`\`\`json
@@ -388,6 +411,10 @@ describe('Synthesizer', () => {
                 recommendedPrimaryClusterId: 'ST-700/2024',
                 secondaryClusterIds: ['ST-123/2026']
             },
+            proceduralFlow: {
+                events: [{ id: 'event-1', eventType: 'appeal', status: 'remanded' }],
+                chains: [{ eventIds: ['event-1'], status: 'remanded' }]
+            },
             entries: [
                 { caseNumber: 'ST-700/2024', title: 'Rješenje', date: '10.02.2025.' }
             ],
@@ -411,6 +438,10 @@ describe('Synthesizer', () => {
         expect(report.meta.clusterId).toBe('ST-700/2024');
         expect(report.meta.discovery.reasoningClusterId).toBe('ST-700/2024');
         expect(report.meta.discovery.secondaryClusterIds).toEqual(['ST-123/2026']);
+        expect(report.meta.proceduralFlow).toEqual({
+            events: [{ id: 'event-1', eventType: 'appeal', status: 'remanded' }],
+            chains: [{ eventIds: ['event-1'], status: 'remanded' }]
+        });
         expect(report.claims[0].evidence[0].provenance).toEqual({
             acquisitionMode: 'search-window',
             sourceCaseNumber: 'ST-700/2024'
@@ -449,5 +480,94 @@ describe('Synthesizer', () => {
             meta: { caseNumber: 'ST-700/2024', parties: [] },
         });
         expect(mockInvoke.mock.calls[0][0]).toContain('[2023-05-17]');
+    });
+
+    test('bounds model output while retaining the full claim ledger', async () => {
+        mockInvoke.mockResolvedValue({
+            content: JSON.stringify({
+                narrative: 'N'.repeat(2000),
+                findings: Array.from({ length: 20 }, (_, index) => ({
+                    text: `Model finding ${index}. ${'x'.repeat(1300)}`,
+                    confidence: 'medium',
+                    citations: ['C1', 'C2', 'C3', 'C4', 'C5', 'C6', 'C7', 'C8'],
+                })),
+                openQuestions: Array.from({ length: 20 }, (_, index) => `Question ${index}.`),
+                nextSteps: Array.from({ length: 20 }, (_, index) => `Next step ${index}.`),
+            }),
+        });
+        const claims = Array.from({ length: 462 }, (_, index) => ({
+            id: `claim-${index}`,
+            text: `Činjenica ${index}`,
+            confidence: 'medium',
+            evidence: [],
+        }));
+        const report = await synthesizeReport({
+            timeline: Array.from({ length: 30 }, (_, index) => ({ date: `2025-${index}`, description: `Objava ${index}` })),
+            claims,
+            meta: { caseNumber: 'St-2/2013', parties: [] },
+        });
+
+        const promptText = mockInvoke.mock.calls[0][0];
+        expect(promptText).toContain('[C1]');
+        expect(promptText).toContain('at most 12 key findings');
+        expect(promptText).toContain('at most 8 concise open questions');
+        expect(promptText).toContain('at most 8 concise next steps');
+        expect(report.claims).toHaveLength(462);
+        expect(report.findings).toHaveLength(12);
+        expect(report.findings[0].text.length).toBeLessThanOrEqual(1201);
+        expect(report.findings[11].text).toContain('Model finding 19.');
+        expect(report.findings[0].citations).toHaveLength(4);
+        expect(report.findings[0].citations[0]).toMatchObject({ source: 'claim-0', text: 'Činjenica 0' });
+        expect(report.openQuestions).toHaveLength(8);
+        expect(report.nextSteps).toHaveLength(8);
+        expect(report.narrative.length).toBeLessThanOrEqual(1501);
+        expect(report.meta.synthesisOutputBounds).toMatchObject({
+            modelFindingsOmitted: 8,
+            fallbackClaimsOmitted: 0,
+            openQuestionsOmitted: 12,
+            nextStepsOmitted: 12,
+        });
+    });
+
+    test('fallback findings sample the claim chronology instead of taking a prefix', async () => {
+        mockInvoke.mockResolvedValue({
+            content: JSON.stringify({ narrative: 'Sažetak.', findings: [], openQuestions: [], nextSteps: [] }),
+        });
+        const report = await synthesizeReport({
+            timeline: [],
+            claims: Array.from({ length: 24 }, (_, index) => ({
+                id: `claim-${index}`,
+                text: `Claim ${index}`,
+                confidence: 'medium',
+                evidence: [],
+            })),
+            meta: {},
+        });
+
+        expect(report.findings).toHaveLength(12);
+        expect(report.findings[0].text).toContain('Claim 0');
+        expect(report.findings[11].text).toContain('Claim 23');
+        expect(report.meta.synthesisOutputBounds.fallbackClaimsOmitted).toBe(12);
+    });
+
+    test('resolves claim references into structured citations and ignores invented prose', () => {
+        const { resolveFindingCitations } = require('../../court-analysis/reasoning/synthesizer');
+        const claimByRef = new Map([
+            ['C1', {
+                id: 'analysis-1',
+                text: 'Tražbina 100 EUR.',
+                evidence: [{
+                    sourceId: 'file-1',
+                    text: 'Utvrđena tražbina 100 EUR.',
+                    metadata: { fileName: 'Prijava.pdf' },
+                }],
+            }],
+            ['C2', { id: 'analysis-2', text: 'Bez izvora.', evidence: [] }],
+        ]);
+
+        expect(resolveFindingCitations(['C1', 'C2', 'C99', 'model prose that is not a reference'], claimByRef)).toEqual([
+            { source: 'file-1', fileName: 'Prijava.pdf', text: 'Utvrđena tražbina 100 EUR.' },
+            { source: 'analysis-2', text: 'Bez izvora.' },
+        ]);
     });
 });

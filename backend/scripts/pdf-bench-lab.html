@@ -1,0 +1,1009 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="light">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%23191c1e'/%3E%3Cpath d='M16 14h21l11 11v25H16z' fill='%23fcfbf8'/%3E%3Cpath d='M37 14v12h11' fill='none' stroke='%23c2c0b6' stroke-width='3'/%3E%3Cpath d='M22 40h7l4-10 5 14 4-8h3' fill='none' stroke='%232c6349' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+<title>PDF handling benchmark — 66124057408</title>
+<link rel="stylesheet" href="/lab.css">
+</head>
+<body>
+<a class="skip-link" href="#workflow">Skip to benchmark controls</a>
+<div class="shell">
+  <header class="masthead">
+    <div class="brand">
+      <span class="brand-mark">PDF engine benchmark</span>
+      <span class="brand-case">Case 66124057408 · St-2/2013</span>
+    </div>
+    <nav><a href="/gold">Gold facts editor</a><span class="env-tag">Local fixtures</span></nav>
+  </header>
+
+  <section class="intro" aria-labelledby="title">
+    <p class="kicker">Local benchmark · Croatian court filings</p>
+    <h1 id="title">PDF handling benchmark</h1>
+    <p class="lead">Compare parser fidelity and model answers across PDF input paths. Results are descriptive—not proof that an input path alone caused a quality change. Live runs send selected PDFs to OpenRouter only after explicit approval.</p>
+    <p class="scope-note"><strong>Document-quality pilot, not a production load test.</strong> These 16 PDFs come from one case. Choosing an arm here does not switch the app to OpenRouter or prove that 100 entries will complete.</p>
+  </section>
+
+  <section class="metrics" aria-label="Selection summary">
+    <div class="metric"><span class="metric-label">Selected files</span><strong id="selected-count" class="metric-value">16</strong></div>
+    <div class="metric"><span class="metric-label">Selected pages</span><strong id="page-count" class="metric-value">101</strong></div>
+    <div class="metric"><span class="metric-label">Scanned files</span><strong id="image-count" class="metric-value">4 <small>/ 16</small></strong></div>
+    <div class="metric"><span class="metric-label" title="Page-fee allowance only, not total run cost. The preview includes model calls.">OCR fee allowance · 1 model</span><strong id="fee-count" class="metric-value">$0.40</strong></div>
+  </section>
+
+  <main id="workflow" class="workflow">
+    <section class="panel" aria-labelledby="specimen-title">
+      <div class="panel-head">
+        <div>
+          <p class="step">01</p>
+          <h2 id="specimen-title">Documents</h2>
+          <p class="panel-sub">Choose the fixture mix. The smoke trio covers searchable text, scanned pages, and dense tables in one small end-to-end check.</p>
+        </div>
+        <div class="pick-actions">
+          <button id="select-all" class="subtle-button" type="button">Select all</button>
+          <button id="select-images" class="subtle-button" type="button">Image-only</button>
+          <button id="select-smoke" class="subtle-button" type="button">Smoke trio</button>
+        </div>
+      </div>
+      <div id="documents" class="document-list" role="group" aria-label="Fixture documents"></div>
+      <div class="selection-foot"><span>Corpus: 12 text-layer PDFs · 4 scanned PDFs</span><span>Local fixtures · no downloads</span></div>
+    </section>
+
+    <section class="panel" aria-labelledby="run-title">
+      <div class="panel-head">
+        <div>
+          <p class="step">02</p>
+          <h2 id="run-title">Run settings</h2>
+          <p class="panel-sub">Preview the plan first. Live actions upload selected PDFs only after explicit approval.</p>
+        </div>
+      </div>
+      <div class="controls">
+        <label class="field"><span class="control-label">Challenger models · comma-separated IDs</span><input id="models" type="text" value="z-ai/glm-5.3-flash" autocomplete="off" spellcheck="false" aria-describedby="models-hint"><span id="models-hint" class="hint">Up to 3 challengers. Gemini 2.5 Flash is added as the native-PDF baseline unless listed.</span></label>
+        <div class="inline-fields">
+          <label class="field"><span class="control-label">Repeats per cell</span><select id="repeats"><option value="1">1 · quick check</option><option value="2" selected>2 · variance check</option><option value="3">3 · stronger variance</option></select></label>
+          <label class="field"><span class="control-label">Spend cap · USD</span><input id="max-cost" type="number" min="0" step="0.05" value="0.75" aria-describedby="spend-hint"><span id="spend-hint" class="hint">Checked after each provider response; a single call may exceed the remaining cap.</span></label>
+        </div>
+        <label class="field"><span class="control-label">Long-document analysis</span><select id="analysis-mode" aria-describedby="analysis-mode-hint"><option value="bounded" selected>Bounded · segment dense/long documents</option><option value="single">Single · original full-document request</option></select><span id="analysis-mode-hint" class="hint">Bounded analysis segments dense/long documents and merges results deterministically; it does not make a whole-document synthesis call. Cross-segment relationships may differ from a single-shot analysis.</span></label>
+        <label class="field"><span class="control-label">Oversized PDF recovery</span><select id="parser-recovery" aria-describedby="parser-recovery-hint"><option value="auto" selected>Auto · retry oversized parser PDFs</option><option value="off">Off · keep the original behavior</option></select><span id="parser-recovery-hint" class="hint">Only Cloudflare/Mistral parser size rejections are recovered; native PDF is unaffected. Size recovery assembles parser text; analysis follows the bounded/single setting above. Extra calls are billable and the spend cap still applies.</span></label>
+        <div id="fee-estimate" class="fee-estimate"><span>OCR page-fee allowance only · not the total price. Preview the plan for all models and calls.</span><strong>$0.40</strong></div>
+        <label class="field"><span class="control-label">Verified answer key · gold set</span><select id="gold-set" aria-describedby="gold-progress"><option value="">No gold set selected · format checks only</option></select></label>
+        <p id="gold-progress" class="hint" role="status">Choose your existing gold set before comparing answer quality.</p>
+        <details class="run-notes"><summary>Use a gold folder path instead</summary><label class="field"><span class="control-label">Local gold folder</span><input id="gold-dir" type="text" placeholder="data/pdf-engine-bench/…/gold" autocomplete="off" spellcheck="false" aria-describedby="gold-hint"><span id="gold-hint" class="hint">Overrides the gold-set selector. Existing labels are not changed by a run.</span></label></details>
+        <p class="hint"><a id="gold-editor-link" href="/gold">Continue verifying source facts</a>. Mark all six categories reviewed for each document, including categories with no facts.</p>
+        <details class="run-notes"><summary>Comparison setup</summary><p>The incumbent is included as <code>google/gemini-2.5-flash</code> on native PDF. Model hosts are pinned (GLM → Z.AI, Gemini → Google AI Studio); this compares full systems, not input paths in isolation.</p></details>
+        <div class="capability-strip" aria-label="Current model capability state">
+          <span id="native-status" class="status unknown">Native file · not probed</span>
+          <span id="image-status" class="status unknown">Image input · not probed</span>
+        </div>
+        <p id="capability-scope" class="hint">Input support is shown for the first model listed.</p>
+        <div class="actions">
+          <div class="action-group">
+            <p class="action-label">Plan · no provider call</p>
+            <button id="dry-run" class="button primary" type="button">Preview dry run</button>
+          </div>
+          <div class="action-group">
+            <p class="action-label">Probe · approval required</p>
+            <button id="probe" class="button" type="button">Check input support</button>
+          </div>
+          <div class="action-group paid-actions">
+            <p class="action-label">Live PDF runs · approval required</p>
+            <button id="smoke-run" class="button" type="button" disabled>Approve 3-doc smoke</button>
+            <button id="live-run" class="button live" type="button">Approve full pilot</button>
+          </div>
+          <button id="gold" class="button" type="button">Build gold templates</button>
+        </div>
+        <label class="field previous-run-field"><span class="control-label">Previous run report</span>
+          <select id="previous-runs"><option value="">Choose a saved run…</option></select>
+        </label>
+        <p id="mode-hint" class="hint">Pilot mode: 16 documents selected. Review the dry-run plan before approving a live run.</p>
+        <div id="message" class="toast" role="status" aria-live="polite"></div>
+      </div>
+    </section>
+
+    <section id="result-panel" class="panel result-panel" hidden aria-labelledby="result-title">
+      <div class="panel-head"><div><p class="step">03</p><h2 id="result-title">Run status</h2></div></div>
+      <div class="result-body">
+        <div class="result-state"><span id="state-dot" class="state-dot"></span><span id="state-text" aria-live="polite">Waiting</span></div>
+        <pre id="runlog" class="runlog"></pre>
+        <div id="result-links" class="result-links"></div>
+        <button id="review" class="button" type="button" hidden>Build blinded review sheet</button>
+        <div id="review-score" class="review-score" hidden>
+          <label class="field"><span class="control-label">Import review verdicts JSON</span><input id="verdict-file" type="file" accept="application/json,.json"></label>
+          <button id="score-verdicts" class="button" type="button">Score human review</button>
+        </div>
+      </div>
+    </section>
+
+    <section id="report-panel" class="panel report-panel" hidden aria-labelledby="report-title">
+      <div class="panel-head"><div><p class="step">04</p><h2 id="report-title">Results</h2><p class="panel-sub" id="report-scope"></p></div></div>
+      <div id="report-body"></div>
+    </section>
+  </main>
+
+  <section class="panel help-panel" aria-labelledby="help-title">
+    <p class="step">Reference</p>
+    <h3 id="help-title">How to read this report</h3>
+    <div class="help-cols">
+      <div>
+        <p>This lab <strong>compares conditions, not winners</strong>. Each row is a benchmark cell: one document, input path, and model. The baseline model currently appears only on its native-PDF path, while challenger models use the tested paths too. That makes this an end-to-end system comparison—not a causal test of input path alone. Unsupported combinations are marked "skipped," not scored as failures.</p>
+        <p><strong>Parser fidelity (diagnostic)</strong> compares what the OpenRouter file parser returned against the local PDF text layer. Recall = "what fraction of the reference facts survived the parse?"; Precision = "what fraction of the parser output was correct?" It explains a miss — the parser never had the figure — but it is not a ranking key. Scanned pages have no embedded text, so they show recovered characters instead of a reference score. Native PDF input is excluded: the model reads the file itself, so there is no parser transcript to score.</p>
+      </div>
+      <div>
+        <p><strong>Analysis quality</strong> is the answer table. Cloudflare and Mistral PDF arms send the PDF and analysis prompt in one OpenRouter request; the parser transcript and GLM answer come back together, so the per-cell reported cost is combined and cannot be split between them. A Mistral page-fee estimate is shown only when OpenRouter omits cost. The raster path instead OCRs pages in separate requests before analysis, and reports their costs together for the cell. Valid JSON is measured among answered calls. Quote grounding checks claims against parser-returned text and is n/a for native PDF. Gold scores appear only for verified facts; missing gold is not a zero.</p>
+        <details>
+          <summary>What does the judge do?</summary>
+          <p>An optional LLM judge from a different model family compares two answers for the same document pairwise (swapping positions to neutralise order bias), looking at completeness, correctness, and whether the figures survive. It is a triage signal only: it never feeds the benchmark scores and never picks a winner.</p>
+          <p>Calibration compares those judge preferences against your own usable / not-usable verdicts. Agreement shows how much to trust the judge; it does not overrule either the human review or the deterministic metric scores.</p>
+        </details>
+      </div>
+    </div>
+  </section>
+
+  <footer class="footnote"><span>PDF handling benchmark · case 66124057408 (St-2/2013) · local fixtures</span><span>Live provider calls require explicit approval.</span></footer>
+</div>
+<script>
+'use strict';
+const state={documents:[],goldSets:[],jobId:null,reportRunId:null,reviewJobId:null,selected:new Set(),smokeDocIds:[]};
+const $=(id)=>document.getElementById(id);
+const esc=(value)=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+function selectedDocs(){return state.documents.filter(d=>state.selected.has(d.docId))}
+function isSmokeTrio(){const ids=state.smokeDocIds;return ids.length>0&&selectedDocs().length===ids.length&&ids.every(id=>state.selected.has(id))}
+function pages(){return selectedDocs().reduce((sum,d)=>sum+d.pages,0)}
+function refreshTotals(){const docs=selectedDocs();$('selected-count').textContent=docs.length;$('page-count').textContent=pages();$('image-count').innerHTML=docs.filter(d=>d.layer==='image').length+' <small>/ '+docs.length+'</small>';const fee=pages()*(isSmokeTrio()?1:Number($('repeats').value))*0.002;$('fee-count').textContent='$'+fee.toFixed(2);$('fee-estimate').querySelector('strong').textContent='$'+fee.toFixed(3);$('live-run').disabled=docs.length<12||docs.length>20;$('smoke-run').disabled=!isSmokeTrio();$('dry-run').disabled=docs.length<1;const hint=$('mode-hint');if(isSmokeTrio())hint.textContent='Smoke mode: the fixed 3-document trio is selected. Approve the smoke run for a quick end-to-end check with 1 repeat.';else if(docs.length>=12&&docs.length<=20)hint.textContent='Pilot mode: '+docs.length+' documents selected. Review the dry-run plan before approving a live run.';else hint.textContent='Select 12–20 documents for a pilot, or choose “Smoke trio” for the 3-document live check.'}
+function renderDocs(){const root=$('documents');root.textContent='';for(const doc of state.documents){const label=document.createElement('label');label.className='doc-row';label.innerHTML='<input type="checkbox" '+(state.selected.has(doc.docId)?'checked':'')+' aria-label="Include '+esc(doc.role)+' · '+esc(doc.fileName)+'">';const checkbox=label.querySelector('input');checkbox.addEventListener('change',()=>{checkbox.checked?state.selected.add(doc.docId):state.selected.delete(doc.docId);refreshTotals()});const text=document.createElement('div');text.innerHTML='<p class="doc-name">'+esc(doc.role)+'</p><p class="doc-id">'+esc(doc.fileName)+' · '+esc(doc.docId)+'</p><p class="doc-reason">'+esc(doc.evidence)+'</p><div class="doc-tags"><span class="tag '+(doc.layer==='image'?'image':'')+'">'+(doc.layer==='image'?'scan · image-only':'text-layer PDF')+'</span><span class="tag">'+esc(doc.complexity)+' complexity</span>'+(doc.tableLike?'<span class="tag complex">table / numeric density</span>':'')+'</div>';const count=document.createElement('span');count.className='doc-pages';count.textContent=doc.pages+' pp';label.append(text,count);root.append(label)}refreshTotals()}
+function setMessage(text,error=false){$('message').textContent=text;$('message').style.color=error?'var(--red)':'var(--green)'}
+async function api(url,body){const response=await fetch(url,{method:body?'POST':'GET',headers:body?{'Content-Type':'application/json'}:{},body:body?JSON.stringify(body):undefined});const data=await response.json();if(!response.ok)throw new Error(data.error||'Request failed');return data}
+function currentModels(){return $('models').value.split(',').map(x=>x.trim()).filter(Boolean)}
+function runPayload(dryRun,approved=false,smoke=false){return{docIds:selectedDocs().map(d=>d.docId),models:currentModels(),repeats:smoke?1:Number($('repeats').value),maxCost:Number($('max-cost').value),parserRecovery:$('parser-recovery').value,analysisMode:$('analysis-mode').value,goldDir:$('gold-dir').value.trim()||($('gold-set').value?'data/pdf-engine-bench/'+$('gold-set').value+'/gold':null),dryRun,approved,smoke}}
+function refreshGoldProgress(){
+  const set=state.goldSets.find(item=>item.setId===$('gold-set').value);
+  const docs=selectedDocs();
+  const complete=new Set((set?.documents||[]).filter(doc=>doc.summary?.complete).map(doc=>doc.docId));
+  const count=docs.filter(doc=>complete.has(doc.docId)).length;
+  $('gold-progress').textContent=$('gold-dir').value.trim()
+    ?'Custom folder selected. Gold completeness is checked when the run is scored; the gold-set selector does not apply.'
+    :set?count+' of '+docs.length+' selected documents have verified gold. '+(count===docs.length&&docs.length?'Ready for quality scoring.':'Unverified documents will not receive a gold score.')
+    :'No answer key selected. A run can check format and supplied quotes, but cannot measure factual quality.';
+  $('gold-editor-link').href='/gold'+(set?'?set='+encodeURIComponent(set.setId):'');
+}
+async function startAction(kind,body){$('result-panel').hidden=false;$('state-text').textContent='Starting '+kind+'…';$('state-dot').className='state-dot';$('runlog').textContent='';$('result-links').textContent='';$('report-panel').hidden=true;$('report-body').textContent='';$('review').hidden=true;$('review-score').hidden=true;state.reviewJobId=null;setMessage('');try{const result=await api('/api/'+kind,body);state.jobId=result.jobId;$('state-text').textContent='Running '+kind+'…';pollJob(result.jobId)}catch(error){$('state-text').textContent='Could not start';$('state-dot').className='state-dot fail';$('runlog').textContent=error.message;setMessage(error.message,true)}}
+async function pollJob(jobId){
+  try{
+    const job=await api('/api/jobs/'+encodeURIComponent(jobId));
+    $('runlog').textContent=job.output||'';
+    $('runlog').scrollTop=$('runlog').scrollHeight;
+    $('state-text').textContent=job.state==='running'?'Running…':job.state==='done'?'Complete':job.state==='failed'?'Stopped with error':'Queued';
+    if(job.state==='done'){
+      $('state-dot').className='state-dot done';
+      state.reportRunId=job.reportRunId||null;
+      if(job.kind==='review-sheet'){state.reviewJobId=job.id;$('review-score').hidden=false}
+      if(job.reviewUrl){
+        const link=document.createElement('a');link.href=job.reviewUrl;link.target='_blank';link.rel='noopener';link.textContent='Open blinded review sheet';$('result-links').append(link);
+      }
+      if(job.reportUrl){
+        const link=document.createElement('a');link.href=job.reportUrl;link.target='_blank';link.rel='noopener';link.textContent='Open raw run report';$('result-links').append(link);renderReport(job.reportUrl);
+      }
+      if(job.goldDir){
+        $('gold-dir').value=job.goldDir;
+        const note=document.createElement('p');note.textContent='Gold set '+(job.goldSetId||'')+' saved locally under '+job.goldDir;$('result-links').append(note);
+        const edit=document.createElement('a');edit.href='/gold?set='+encodeURIComponent(job.goldSetId||'');edit.textContent='Edit gold facts';$('result-links').append(edit);
+      }
+      $('review').hidden=!job.reportRunId;$('review').dataset.runId=job.reportRunId||'';
+      if(job.summary?.capabilities){updateCapability('native-status',job.summary.capabilities.fileNative,'Native file');updateCapability('image-status',job.summary.capabilities.imageInput,'Image input')}
+      else if(job.summary)setSummary(job.summary);
+    }else if(job.state==='failed')$('state-dot').className='state-dot fail';
+    else setTimeout(()=>pollJob(jobId),900);
+  }catch(error){$('state-text').textContent='Status unavailable';$('runlog').textContent=error.message}
+}
+function setSummary(summary){const block=document.createElement('p');block.className='result-links';const scope=summary.scope==='smoke'?'3-doc smoke':'pilot';const missing=summary.costMissingCalls?' · '+summary.costMissingCalls+' rows without reported cost':'';const parserFee=summary.estimatedParserFee?' · parser-fee estimate: $'+Number(summary.estimatedParserFee).toFixed(4):'';const count=summary.dryRun?'planned cells: '+(summary.plannedCells||0):'cells: '+(summary.cellCount||0);block.textContent=scope+' · '+count+' · skipped cells: '+(summary.skippedCells||0)+' · unsupported capabilities: '+(summary.skipped?.length||0)+' · reported cost: $'+Number(summary.actualCost||0).toFixed(4)+parserFee+missing;$('result-links').prepend(block)}
+function fmtNumber(value,digits=2){return value==null||!Number.isFinite(Number(value))?'—':Number(value).toFixed(digits)}
+function fmtPercent(value){return value==null||!Number.isFinite(Number(value))?'—':Math.round(Number(value)*100)+'%'}
+function fmtMetricPct(val){
+  if(val==null||!Number.isFinite(Number(val)))return '—';
+  const pct=Math.round(Number(val)*100);
+  let cls='cell-good';
+  if(pct<50)cls='cell-bad';
+  else if(pct<80)cls='cell-warn';
+  return '<span class="'+cls+'">'+pct+'%</span>';
+}
+function fmtCost(value){
+  if(value==null||!Number.isFinite(Number(value)))return '—';
+  const n=Number(value);
+  // Sub-cent cells are common; a fixed 5 decimals keeps the column comparable.
+  return n===0?'$0.0000':'$'+n.toFixed(5);
+}
+function fmtLatency(value){
+  if(value==null||!Number.isFinite(Number(value)))return '—';
+  const ms=Math.round(Number(value));
+  return ms>15000?'<span class="cell-warn">'+ms.toLocaleString()+' ms</span>':ms.toLocaleString()+' ms';
+}
+function fmtGold(cell,field){
+  const metric=cell.goldAccuracy?.[field];
+  if(!metric)return '<span class="cell-muted" title="This gold category was not scored for this cell">—</span>';
+  return fmtPercent(metric.precision)+' / '+fmtPercent(metric.recall);
+}
+function reportNote(text){const p=document.createElement('p');p.className='report-note';p.textContent=text;return p}
+const MODEL_LABELS={
+  'z-ai/glm-5.3-flash':'GLM 5.3 Flash',
+  'google/gemini-2.5-flash':'Gemini 2.5 Flash',
+  'google/gemini-2.5-pro':'Gemini 2.5 Pro'
+};
+function prettyModel(model){
+  if(!model)return '';
+  if(MODEL_LABELS[model])return MODEL_LABELS[model];
+  // Unknown model: show the slug, not a guess.
+  return String(model).split('/').pop().replace(/[-_]+/g,' ').replace(/\b[a-z]/g,c=>c.toUpperCase());
+}
+// The arm name says how the document got in; it says nothing about who answered
+// or where the call was pinned. That gap is what made "Native PDF" read as if
+// GLM were reading the PDF, when that cell is the Gemini baseline.
+function renderDestination(model,provider){
+  const name=prettyModel(model);
+  if(!name)return '';
+  return '<span class="engine-dest">'+esc(name)+(provider?' <span class="dest-arrow">→</span> '+esc(provider):'')+'</span>';
+}
+function renderEngineBadge(arm,model,provider){
+  const dest=renderDestination(model,provider);
+  if(arm==='local-text')return '<span class="engine-badge local" title="Reads the PDF\'s embedded text layer with pdfjs and sends that text with the analysis prompt — free, but skipped on image-only documents">Local (pdfjs)</span>'+dest;
+  if(arm==='or-mistral-ocr')return '<span class="engine-badge ocr" title="One request: OpenRouter parses the PDF with Mistral OCR, injects the text plus up to 8 page images, and the pinned model answers — ~$0.002/page">Mistral OCR</span>'+dest;
+  if(arm==='or-cloudflare')return '<span class="engine-badge cloudflare" title="One request: OpenRouter parses the PDF with Cloudflare Workers AI (text only) and the pinned model answers — free parse, lower precision on complex tables">Cloudflare AI</span>'+dest;
+  if(arm==='or-native')return '<span class="engine-badge native" title="One request sends the raw PDF as a native file and the provider\'s own pipeline reads it; the model is not parsing the text itself. Production normally analyzes extracted text and uses native PDF as a scan fallback.">Native PDF</span>'+dest;
+  if(arm==='local-raster')return '<span class="engine-badge raster" title="Production scan path: each page is rendered to an image and transcribed with the production OCR instruction, then the assembled transcript goes through the same analysis prompt — skipped on documents that already have a text layer. Costs one model call per page plus the analysis call.">Raster OCR</span>'+dest;
+  return '<span class="engine-badge">'+esc(arm)+'</span>'+dest;
+}
+// For tables that already have a model column: name + host, with the exact id
+// kept in the tooltip so it stays copyable.
+function renderModelCell(model,provider){
+  return '<span class="model-cell" title="'+esc(model||'')+'"><span class="model-id">'+esc(prettyModel(model)||'—')+'</span>'+(provider?'<span class="engine-dest" style="margin-top:0;">→ '+esc(provider)+'</span>':'')+'</span>';
+}
+function renderScenarioBadge(docType){
+  if(!docType)return '<span class="scenario-badge">—</span>';
+  const norm=String(docType).toLowerCase();
+  if(norm.includes('table-heavy'))return '<span class="scenario-badge" title="'+esc(docType)+'">📊 Dense Table (Troškovnik)'+recoverySuffix(docType)+'</span>';
+  if(norm.includes('scan'))return '<span class="scenario-badge" title="'+esc(docType)+'">🖼️ Scanned Exhibit (Račun)'+recoverySuffix(docType)+'</span>';
+  if(norm.includes('text-layer'))return '<span class="scenario-badge" title="'+esc(docType)+'">📄 Text Filing (Podnesak)'+recoverySuffix(docType)+'</span>';
+  return '<span class="scenario-badge">'+esc(docType)+'</span>';
+}
+function recoverySuffix(docType){
+  const labels={'rewritten-parser':'rewritten parser','chunked-parser':'chunked parser','recovery-failed':'recovery failed','bounded-analysis':'bounded analysis','bounded-analysis-failed':'bounded analysis failed'};
+  return [...String(docType||'').toLowerCase().matchAll(/\/\s*(rewritten-parser|chunked-parser|recovery-failed|bounded-analysis-failed|bounded-analysis)(?=\s*\/|$)/g)].map(match=>' · '+labels[match[1]]).join('');
+}
+function getScenarioKey(docType){
+  if(!docType)return 'all';
+  const norm=String(docType).toLowerCase();
+  if(norm.includes('table-heavy'))return 'table';
+  if(norm.includes('scan'))return 'scan';
+  if(norm.includes('text-layer'))return 'text';
+  return 'other';
+}
+let tableSeq=0;
+function buildTable(caption,headers,rows,wrapId=null){
+  const wrap=document.createElement('div');
+  wrap.className='table-wrap';
+  if(wrapId)wrap.id=wrapId;
+  const table=document.createElement('table');
+  const cap=document.createElement('caption');
+  cap.id='table-cap-'+(++tableSeq);
+  cap.innerHTML=caption;
+  // A wide table scrolls sideways; without this it is unreachable by keyboard.
+  wrap.tabIndex=0;
+  wrap.setAttribute('role','region');
+  wrap.setAttribute('aria-labelledby',cap.id);
+  table.append(cap);
+  const head=document.createElement('thead');
+  const headRow=document.createElement('tr');
+  for(const hdr of headers){
+    const label=hdr[0];
+    const numeric=!!hdr[1];
+    const tooltip=hdr[2]||null;
+    const th=document.createElement('th');
+    th.scope='col';
+    th.textContent=label;
+    if(numeric)th.className='num';
+    if(tooltip){th.title=tooltip;th.tabIndex=0;}
+    headRow.append(th);
+  }
+  head.append(headRow);
+  table.append(head);
+  const body=document.createElement('tbody');
+  for(const rowData of rows){
+    const tr=document.createElement('tr');
+    if(rowData.dataset){
+      for(const [k,v] of Object.entries(rowData.dataset)){
+        tr.dataset[k]=v;
+      }
+    }
+    const cols=Array.isArray(rowData)?rowData:rowData.cols;
+    for(const cell of cols){
+      const td=document.createElement('td');
+      let val=cell;
+      let numeric=false;
+      let className=null;
+      if(Array.isArray(cell)){
+        val=cell[0];
+        numeric=!!cell[1];
+        if(cell[2])className=cell[2];
+      }else if(cell&&typeof cell==='object'&&!(cell instanceof HTMLElement)){
+        val=cell.html!=null?cell.html:cell.text;
+        numeric=!!cell.numeric;
+        className=cell.className;
+      }
+      if(numeric)td.className='num'+(className?' '+className:'');
+      else if(className)td.className=className;
+
+      if(val instanceof HTMLElement){
+        td.append(val);
+      }else if(typeof val==='string'&&(val.includes('<')&&val.includes('>'))){
+        td.innerHTML=val;
+      }else{
+        td.textContent=val??'—';
+      }
+      tr.append(td);
+    }
+    body.append(tr);
+  }
+  table.append(body);
+  wrap.append(table);
+  return wrap;
+}
+function renderRecoveryDetails(row){
+  const recovery=row.parserRecovery;
+  if(!recovery)return null;
+  const details=document.createElement('details');
+  details.className='parser-output-disclosure';
+  const summary=document.createElement('summary');
+  summary.textContent=(row.docId||'PDF')+' · '+recovery.mode+' · '+recovery.status+' · repeat '+(row.repeat||1);
+  details.append(summary);
+  const meta=document.createElement('p');
+  meta.className='parser-output-meta';
+  meta.textContent=[row.docId||'Source document unavailable',[row.arm,row.model].filter(Boolean).join(' · '),recovery.originalBytes==null?'source size unknown':'source '+Number(recovery.originalBytes).toLocaleString()+' bytes',recovery.rewrittenBytes==null?null:'rewrite '+Number(recovery.rewrittenBytes).toLocaleString()+' bytes'].filter(Boolean).join(' · ');
+  details.append(meta);
+  const ranges=recovery.chunks||[];
+  const rangeLine=document.createElement('p');
+  rangeLine.className='parser-output-meta';
+  rangeLine.textContent='Accepted original pages: '+(ranges.length?ranges.map(request=>request.firstPage===request.lastPage?String(request.firstPage):request.firstPage+'–'+request.lastPage).join(', '):'none recorded');
+  details.append(rangeLine);
+  for(const request of recovery.requests||[]){
+    const line=document.createElement('p');
+    line.className='parser-output-meta';
+    const costLabel=request.requestRejection==='pdf-parser-size-limit'?'size rejected; no inference cost reported':request.cost==null?'cost unknown':fmtCost(request.cost);
+    line.textContent=[request.phase==='original'?'Original PDF':request.phase,request.firstPage==null?'':('pages '+request.firstPage+'–'+request.lastPage),request.status==null?'status unknown':'HTTP '+request.status,request.bytes==null?'':Number(request.bytes).toLocaleString()+' bytes',request.latencyMs==null?'':Math.round(request.latencyMs).toLocaleString()+' ms',costLabel,request.error?String(typeof request.error==='string'?request.error:JSON.stringify(request.error)):null,request.requestRejection].filter(Boolean).join(' · ');
+    details.append(line);
+  }
+  if(recovery.error){const error=document.createElement('p');error.className='parser-output-status error';error.textContent=String(recovery.error);details.append(error)}
+  return details;
+}
+function renderRecoveryReport(report){
+  const rows=(report.rows||[]).filter(row=>row.parserRecovery);
+  if(!rows.length)return null;
+  const section=document.createElement('section');
+  section.className='section-intro';
+  const heading=document.createElement('h3');
+  heading.textContent='Parser recovery by source';
+  const note=document.createElement('p');
+  note.textContent='Recovery may involve multiple parser calls assembled into a transcript, then one full-document analysis. Costs and latency aggregate across requests; unknown costs are not zero.';
+  section.append(heading,note);
+  for(const row of rows){
+    const details=renderRecoveryDetails(row);
+    if(details){details.classList.add('recovery-report-row');section.append(details)}
+  }
+  return section;
+}
+function renderInsightsGrid(report){
+  const grid=document.createElement('div');
+  grid.className='insights-grid';
+
+  // Everything here is counted from this report. No card states a preference:
+  // choosing is a human decision made from the tables below.
+  const cells=(report.rows||[]).filter(r=>!r.planned&&r.status!=='SKIPPED');
+  const planned=(report.rows||[]).filter(r=>r.planned).length;
+  const skipped=(report.skippedCells||[]).length;
+  const answered=cells.filter(r=>!r.errors?.length).length;
+  const valid=cells.filter(r=>r.json?.valid).length;
+  const parseCells=cells.filter(r=>r.engine&&r.engine!=='native');
+  const parsedText=parseCells.filter(r=>(r.parserTextLength||0)>0).length;
+  const costs=cells.filter(r=>Number.isFinite(r.cost)&&!r.costIncomplete).map(r=>r.cost);
+  const scored=(report.extractionSummary||[]).filter(c=>c.goldStatus==='scored');
+  const pending=(report.extractionSummary||[]).filter(c=>c.goldStatus==='incomplete');
+  const arms=[...new Set(cells.map(r=>r.arm))];
+  const models=[...new Set(cells.map(r=>r.model).filter(Boolean))];
+
+  const card=(label,title,desc,stat)=>{
+    const el=document.createElement('div');
+    el.className='insight-card';
+    el.innerHTML='<div class="insight-label">'+esc(label)+'</div>'
+      +'<div class="insight-title">'+esc(title)+'</div>'
+      +'<p class="insight-desc">'+esc(desc)+'</p>'
+      +'<div class="insight-stat">'+stat+'</div>';
+    return el;
+  };
+
+  grid.append(card(
+    'Calls',
+    report.dryRun?'Planned, not called':'Measured cells',
+    report.dryRun
+      ?'A dry run only plans the matrix. No document left this machine and no cost was incurred.'
+      :'One cell is a document × model × input path. Raster, recovered parser, and bounded-analysis cells can contain multiple provider requests.',
+    (report.dryRun?planned:cells.length)+' cells · '+answered+' answered · '+skipped+' skipped'+(report.dryRun&&report.estimatedAnalysisRequests?' · '+report.estimatedAnalysisRequests+' estimated analysis requests':'')
+  ));
+
+  grid.append(card(
+    'Input paths',
+    arms.length+' paths across '+models.length+' model'+(models.length===1?'':'s'),
+    'Each path is a different way to get the document into the model. Parser fidelity for the parser paths is in the first table.',
+    esc(arms.join(' · ')||'—')
+  ));
+
+  grid.append(card(
+    'Parser output',
+    parseCells.length?parsedText+' of '+parseCells.length+' parser cells returned text':'No parser path in this run',
+    parseCells.length
+      ?'A parser cell that returned no text cannot be scored for fidelity; that is a parser result, not a model result.'
+      :'Local text and native file input produce no parser transcript to inspect.',
+    parseCells.length?(parseCells.length-parsedText)+' empty':'—'
+  ));
+
+  grid.append(card(
+    'Gold',
+    scored.length?'Scored against verified facts':pending.length?'Gold present, not verified':'No gold facts',
+    scored.length
+      ?'Precision / recall in the decision table uses only documents marked factsComplete.'
+      :'Without verified gold there is no quality score, only format and grounding signals.',
+    scored.length?scored.length+' scored cells':pending.length?'0 scored · '+pending.length+' pending':(valid+' valid JSON only')
+  ));
+
+  grid.append(card(
+    'Cost',
+    report.dryRun?'Estimate':'Provider-reported',
+    'OpenRouter-reported charges are separate from parser-fee estimates for calls without usage.cost.',
+    report.dryRun
+      ?'≈ $'+Number(report.estimatedCost||0).toFixed(4)+' planned'
+      :(costs.length?'$'+Math.min(...costs).toFixed(4)+' – $'+Math.max(...costs).toFixed(4)+' per reported-cost cell · $'+Number(report.actualCost||0).toFixed(4)+' reported total'+(report.estimatedParserFee?' · $'+Number(report.estimatedParserFee).toFixed(4)+' parser-fee estimate':''):(report.estimatedParserFee?'no reported cost · $'+Number(report.estimatedParserFee).toFixed(4)+' parser-fee estimate':'no reported cost'))
+  ));
+
+  return grid;
+}
+function renderFilterBar(report){
+  const docCount=(report.docs||[]).length;
+  const bar=document.createElement('div');
+  bar.className='filter-bar';
+  bar.setAttribute('role','group');
+  bar.setAttribute('aria-label','Result scenario filters');
+  bar.innerHTML=`
+    <span class="filter-bar-label">Show:</span>
+    <button type="button" class="filter-chip active" data-filter="all" title="Show all document scenarios and both stages">All scenarios (${docCount} docs)</button>
+    <button type="button" class="filter-chip" data-filter="text" title="PDFs with an embedded text layer — local pdfjs can read these directly">📄 Text filing</button>
+    <button type="button" class="filter-chip" data-filter="scan" title="Image-only PDFs — requires OCR to extract any content">🖼️ Scanned exhibit</button>
+    <button type="button" class="filter-chip" data-filter="table" title="PDFs with dense tabular data — tests column alignment and numeric fidelity">📊 Dense table</button>
+    <button type="button" class="filter-chip" data-filter="stage-e" title="Scroll to the per-document analysis cards">🧠 Analysis detail</button>
+  `;
+  for(const button of bar.querySelectorAll('button'))button.setAttribute('aria-pressed',String(button.classList.contains('active')));
+  return bar;
+}
+function renderStageEInspector(report){
+  const container=document.createElement('div');
+  container.id='stage-e-section';
+
+  const intro=document.createElement('div');
+  intro.className='section-intro';
+  const baselineHost=(report.rows||[]).find(r=>r.model&&r.model===report.baseline&&r.provider)?.provider||null;
+  intro.innerHTML=`
+    <h3>Per-document analysis detail</h3>
+    <p>Each card is one analysis result. Bounded analysis deterministically merges segment results without whole-document synthesis; cross-segment relationships may differ from single-shot analysis. Standard parser requests combine PDF parsing and analysis; size recovery assembles parser text before the configured analysis mode. The same production analysis prompt and output cap are used for every cell. ${esc(report.baseline ? 'The baseline is '+prettyModel(report.baseline)+(baselineHost?' on '+baselineHost:'')+' reading the raw PDF; the challenger never runs that path.' : 'No baseline model was selected for this run.')}</p>
+  `;
+  container.append(intro);
+
+  const extractionRows=(report.rows||[]).filter(row=>!row.planned&&row.status!=='SKIPPED');
+  if(!extractionRows.length){
+    const empty=document.createElement('p');
+    empty.className='report-note';
+    empty.textContent='No analysis cells available yet. A dry run only plans cells; run live to produce per-document analysis cards.';
+    container.append(empty);
+    return container;
+  }
+
+  for(const row of extractionRows){
+    const card=document.createElement('div');
+    card.className='stage-e-card';
+    card.dataset.scenario=getScenarioKey(row.documentType);
+
+    const parsed=row.parsed;
+    const isValid=!!parsed;
+    const amounts=parsed?.amounts||[];
+    const totalAmount=amounts.reduce((sum,a)=>sum+(Number(a.amount)||0),0);
+    const totalFmt=totalAmount>0?totalAmount.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})+' '+(amounts[0]?.currency||'EUR'):null;
+
+    const engineBadge=renderEngineBadge(row.arm||row.transcriptArm,row.model||row.extractionModel,row.provider);
+    const scenarioBadge=renderScenarioBadge(row.documentType);
+    const statusTag=isValid
+      ?'<span class="badge-tag valid">✅ Valid JSON ('+(Object.keys(parsed).length)+' fields)</span>'
+      :'<span class="badge-tag invalid">⚠️ Truncated / Parse Error</span>';
+
+    const caseNo=parsed?.caseNumber?esc(parsed.caseNumber):'<span class="cell-muted">None detected</span>';
+    const date=parsed?.decisionDate?esc(parsed.decisionDate):'<span class="cell-muted">None detected</span>';
+    const amountsStr=amounts.length>0
+      ?'<strong>'+amounts.length+' item(s)'+(totalFmt?' · Total: '+totalFmt:'')+'</strong>'
+      :'<span class="cell-muted">0 items</span>';
+
+    const summaryHtml=parsed?.summary
+      ?'<p class="stage-e-summary-text">'+esc(parsed.summary)+'</p>'
+      :(row.errors?.length?'<p class="stage-e-summary-text cell-bad">Error: '+esc(row.errors.join('; '))+'</p>':'');
+
+    let jsonDisplay='';
+    if(parsed){
+      jsonDisplay=JSON.stringify(parsed,null,2);
+    }else if(row.json){
+      jsonDisplay=typeof row.json==='string'?row.json:JSON.stringify(row.json,null,2);
+    }else if(row.text){
+      jsonDisplay=row.text;
+    }
+
+    card.innerHTML=`
+      <div class="stage-e-header">
+        <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+          ${engineBadge}
+          ${scenarioBadge}
+          <span style="font-size:11px; color:var(--muted); font-family:var(--mono);">${esc(row.docId)}</span>
+        </div>
+        <div>${statusTag}</div>
+      </div>
+      <div class="stage-e-facts">
+        <div><span style="color:var(--muted);">Case number:</span> <strong>${caseNo}</strong></div>
+        <div><span style="color:var(--muted);">Filing date:</span> <strong>${date}</strong></div>
+        <div><span style="color:var(--muted);">Money amounts:</span> ${amountsStr}</div>
+        ${row.cost?'<div><span style="color:var(--muted);">API cost:</span> <strong>$'+Number(row.cost).toFixed(5)+'</strong></div>':''}
+        ${row.latency?'<div><span style="color:var(--muted);">Round-trip:</span> <strong>'+Math.round(row.latency).toLocaleString()+' ms</strong></div>':''}
+      </div>
+      ${summaryHtml}
+      ${jsonDisplay?`
+        <details class="stage-e-json">
+          <summary>▶ Inspect Extracted Legal JSON</summary>
+          <pre>${esc(jsonDisplay)}</pre>
+        </details>
+      `:''}
+    `;
+
+    container.append(card);
+  }
+
+  return container;
+}
+let parserOutputSequence=0;
+function renderParserOutputInspector(report,metric){
+  const samples=(report.rows||[]).filter(row=>
+    !row.planned&&row.status!=='SKIPPED'&&row.arm===metric.arm&&row.model===metric.model&&row.documentType===metric.documentType
+  );
+  const details=document.createElement('details');
+  details.className='parser-output-disclosure';
+  const summary=document.createElement('summary');
+  summary.textContent='View '+samples.length+' saved sample'+(samples.length===1?'':'s');
+  details.append(summary);
+  const note=document.createElement('p');
+  note.className='parser-output-note';
+  note.textContent='Open a sample to compare parser-returned PDF text with its analysis. Size recovery assembles parser text; bounded analysis may use multiple analysis requests and deterministic merging without whole-document synthesis.';
+  details.append(note);
+  const list=document.createElement('ul');
+  list.className='parser-output-samples';
+  samples.forEach(sample=>{
+    const item=document.createElement('li');
+    const button=document.createElement('button');
+    button.type='button';
+    button.className='parser-output-button';
+    const sampleId=String(sample.docId);
+    const idParts=sampleId.split(':');
+    const filename=idParts.slice(1).join(':')||sampleId;
+    button.textContent=(idParts.length>1?'PDF '+idParts[0]+' · ':'')+filename+' · repeat '+sample.repeat;
+    button.title=sample.docId;
+    button.setAttribute('aria-expanded','false');
+    const output=document.createElement('div');
+    output.className='parser-output-result';
+    output.id='parser-output-'+(++parserOutputSequence);
+    output.setAttribute('role','region');
+    output.setAttribute('aria-label','Saved parser text and model answer');
+    button.setAttribute('aria-controls',output.id);
+    output.hidden=true;
+    button.addEventListener('click',async()=>{
+      if(output.dataset.loaded==='true'){
+        output.hidden=!output.hidden;
+        button.setAttribute('aria-expanded',String(!output.hidden));
+        return;
+      }
+      button.disabled=true;
+      output.hidden=false;
+      const status=document.createElement('p');
+      status.className='parser-output-status';
+      status.setAttribute('role','status');
+      status.textContent='Loading saved response…';
+      output.replaceChildren(status);
+      try{
+        const query=new URLSearchParams({
+          docId:sample.docId,arm:sample.arm,model:sample.model,repeat:String(sample.repeat)
+        });
+        const response=await api('/api/parser-output/'+encodeURIComponent(report.runId)+'?'+query);
+        output.replaceChildren();
+        const costLine=document.createElement('p');
+        costLine.className='parser-output-meta';
+        costLine.textContent=response.parserRecovery
+          ?(response.provider||'Provider not recorded')+' · recovery cost aggregated across requests'+(response.cost==null?' · reported cost unavailable':' '+fmtCost(response.cost))+(response.estimatedParserFee?' · parser fee estimate '+fmtCost(response.estimatedParserFee):'')
+          :(response.provider||'Provider not recorded')+' · '+(response.cost==null?'reported request cost unavailable':'combined parser + analysis request '+fmtCost(response.cost))+(response.estimatedParserFee?' · parser fee estimate '+fmtCost(response.estimatedParserFee):'');
+        output.append(costLine);
+        if(response.parserRecovery){const recoveryDetails=renderRecoveryDetails({...sample,parserRecovery:response.parserRecovery});if(recoveryDetails)output.append(recoveryDetails)}
+        const appendText=(heading,text,emptyLabel)=>{
+          const section=document.createElement('section');
+          section.className='parser-output-section';
+          const title=document.createElement('h4');
+          title.textContent=heading;
+          const value=String(text||'');
+          const count=document.createElement('span');
+          count.className='parser-output-char-count';
+          count.textContent=value.length.toLocaleString()+' chars';
+          title.append(document.createTextNode(' · '),count);
+          if(value){
+            const pre=document.createElement('pre');
+            pre.className='parser-output-text';
+            pre.textContent=value;
+            section.append(title,pre);
+          }else{
+            const empty=document.createElement('p');
+            empty.className='parser-output-empty';
+            empty.textContent=emptyLabel;
+            section.append(title,empty);
+          }
+          output.append(section);
+        };
+        appendText('Parser-returned PDF text',response.parserText,'No parser text was saved for this sample.');
+        appendText(prettyModel(sample.model)+' answer',response.analysisText,'No analysis answer was saved for this sample.');
+        output.dataset.loaded='true';
+      }catch(error){
+        output.replaceChildren();
+        const message=document.createElement('p');
+        message.className='parser-output-status error';
+        message.setAttribute('role','alert');
+        message.textContent=error.message||'Could not load the saved response.';
+        output.append(message);
+      }finally{
+        button.disabled=false;
+        button.setAttribute('aria-expanded','true');
+      }
+    });
+    item.append(button,output);
+    list.append(item);
+  });
+  details.append(list);
+  return details;
+}
+function renderAnalysisSegmentationReport(report){
+  const rows=(report.rows||[]).filter(row=>row.analysisSegmentation);
+  if(!rows.length)return null;
+  const section=document.createElement('section');
+  section.className='section-intro';
+  const heading=document.createElement('h3');
+  heading.textContent='Bounded analysis by source';
+  section.append(heading,reportNote('Each segment uses the selected input path and model. Facts are merged deterministically, without a whole-document synthesis call. Pending segments were not requested; partial costs are not complete costs.'));
+  for(const row of rows){
+    const meta=row.analysisSegmentation;
+    const details=document.createElement('details');
+    details.className='parser-output-disclosure recovery-report-row';
+    const summary=document.createElement('summary');
+    summary.textContent=(row.docId||'Source')+' · '+row.arm+' · '+prettyModel(row.model)+' · '+meta.status+' · repeat '+(row.repeat||1);
+    details.append(summary);
+    const requests=new Map((meta.requests||[]).map(request=>[request.segmentId,request]));
+    const list=document.createElement('ul');
+    for(const [index,segment] of (meta.segments||[]).entries()){
+      const item=document.createElement('li');
+      const request=requests.get(segment.id);
+      const source=(segment.pageNumbers?.length?' · pages '+segment.pageNumbers.join(', '):'')+(segment.startIndex==null?'':' · chars '+segment.startIndex+'–'+segment.endIndex);
+      const error=request?.error?(typeof request.error==='string'?request.error:request.error.message||JSON.stringify(request.error)):null;
+      item.textContent='Segment '+(index+1)+' · '+segment.status+source+(request
+        ?' · '+(request.status==null?'status unavailable':'HTTP '+request.status)+' · '+(request.finishReason||'finish unknown')+' · '+(request.cost==null?'cost unknown':fmtCost(request.cost))+' · '+(request.latencyMs==null?'latency unavailable':Math.round(request.latencyMs).toLocaleString()+' ms')+(error?' · '+error:'')
+        :' · not requested');
+      list.append(item);
+    }
+    details.append(list);
+    if(meta.error){const error=document.createElement('p');error.className='cell-bad';error.textContent=meta.error;details.append(error)}
+    section.append(details);
+  }
+  return section;
+}
+
+async function renderReport(url){
+  const panel=$('report-panel');
+  const body=$('report-body');
+  try{
+    const report=await api(url);
+    panel.hidden=false;
+    body.textContent='';
+    const scope=report.scope==='smoke'?'3-document smoke':'12–20 document pilot';
+    $('report-scope').textContent=scope+' · '+(report.docs?.length||0)+' documents · '+(report.totalPages||0)+' pages · reported cost $'+Number(report.actualCost||0).toFixed(4)+(report.estimatedParserFee?' · parser-fee estimate $'+Number(report.estimatedParserFee).toFixed(4):'')+(report.dryRun?' · dry run (plan only)':'')+' · descriptive comparison only, no winner';
+
+    body.append(renderInsightsGrid(report));
+    if(report.capExceeded){
+      const warning=reportNote('Estimate above spend cap: '+fmtCost(report.estimatedCost)+' estimated against your '+fmtCost(report.maxCost)+' cap. '+(report.dryRun?'Dry run; no paid calls were made. ':'')+(report.ignoreCostEstimate?'Estimate gate bypassed; the runtime spend guard and unknown-cost stop remain active. In-flight calls may overshoot.':'Live execution remains blocked until the plan or cap changes, or the estimate check is explicitly bypassed.'));
+      warning.classList.add('scope-note');
+      warning.setAttribute('role','status');
+      body.prepend(warning);
+    }
+    body.append(renderFilterBar(report));
+    const recoveryReport=renderRecoveryReport(report);
+    if(recoveryReport)body.append(recoveryReport);
+    const segmentationReport=renderAnalysisSegmentationReport(report);
+    if(segmentationReport)body.append(segmentationReport);
+
+    const stageT=report.summary||[];
+    const metrics=report.textMetricSummary||[];
+    const costByCell=new Map(stageT.map(t=>[t.arm+'|'+(t.model||'')+'|'+t.documentType,t]));
+
+    // Where each model was actually sent, read from the run's own rows so a
+    // --pin override shows as it ran instead of as the defaults assume.
+    const providerByModel=new Map();
+    for(const r of (report.rows||[])){
+      if(r.model&&r.provider&&r.provider!=='local-pdfjs'&&!providerByModel.has(r.model))providerByModel.set(r.model,r.provider);
+    }
+    const dest=(model,provider)=>provider||providerByModel.get(model)||null;
+
+    // Parser fidelity only exists for cells where OpenRouter parsed and returned
+    // text. Driving this table from the cost summary instead produced rows with
+    // a blank Model and a fully dashed metric set (local-text, native).
+    const recoveredByCell=new Map();
+    for(const r of (report.rows||[])){
+      if(r.status==='SKIPPED')continue;
+      const key=r.arm+'|'+(r.model||'')+'|'+r.documentType;
+      const effective=r.parserEffectiveChars!=null?r.parserEffectiveChars:(r.parserTextLength||0);
+      recoveredByCell.set(key,Math.max(recoveredByCell.get(key)||0,effective));
+    }
+
+    if(!metrics.length){
+      body.append(reportNote('No parser-fidelity rows: this run had no file-parser arm (Cloudflare or Mistral). Local text and native file input have no parser transcript to score.'));
+    }else{
+      const rows=metrics.map(m=>{
+        const key=m.arm+'|'+(m.model||'')+'|'+m.documentType;
+        const f=m.fields||{};
+        const isScan=String(m.documentType).toLowerCase().includes('scan');
+        const recovered=recoveredByCell.get(key)||0;
+        const allEmpty=m.emptyOutputs!=null&&m.emptyOutputs===m.N;
+
+        let amountsCell;
+        let datesCell;
+        let oibsCell;
+        let filingNoCell;
+        if(isScan){
+          amountsCell=recovered
+            ?'<span class="cell-good" title="Characters the parser recovered from this scan; a scan has no text layer to score against">'+recovered.toLocaleString()+' chars</span>'
+            :'<span class="cell-bad" title="No usable document text survived parser-metadata cleanup; inspect samples to see the raw response.">no usable text</span>';
+          datesCell=oibsCell=filingNoCell='<span class="cell-muted" title="No embedded text layer on a scan, so there is no reference to score against">no ref</span>';
+        }else if(allEmpty){
+          amountsCell='<span class="cell-bad" title="No usable document text survived parser-metadata cleanup; inspect samples to see the raw response.">no usable text</span>';
+          datesCell=oibsCell=filingNoCell='<span class="cell-muted">no text</span>';
+        }else{
+          amountsCell=fmtMetricPct(f.amounts?.recall)+' / '+fmtMetricPct(f.amounts?.precision);
+          datesCell=fmtMetricPct(f.dates?.recall);
+          oibsCell=fmtMetricPct(f.oibs?.recall);
+          filingNoCell=fmtMetricPct(f.filingNumbers?.recall);
+        }
+
+        return {
+          dataset:{scenario:getScenarioKey(m.documentType)},
+          cols:[
+            [renderEngineBadge(m.arm,m.model,dest(m.model))],
+            [renderScenarioBadge(m.documentType)],
+            [String(m.N),true],
+            [amountsCell,true],
+            [datesCell,true],
+            [oibsCell,true],
+            [filingNoCell,true],
+            [m.diacriticFidelity==null?'—':fmtPercent(m.diacriticFidelity),true],
+            renderParserOutputInspector(report,m)
+          ]
+        };
+      });
+
+      body.append(buildTable(
+        'Parser fidelity (diagnostic) · compares parser output with the PDF text layer. Recovery can use multiple parser requests assembled into a transcript, followed by one full-document analysis; costs aggregate across calls.',
+        [['Path · model',false],['Scenario',false],['Samples',true],['Amounts R/P',true],['Dates R',true],['OIBs R',true],['Filing no. R',true],['Diacritics',true],['Samples',false]],
+        rows,
+        'stage-t-wrap'
+      ));
+    }
+    const extraction=report.extractionSummary||[];
+    if(extraction.length){
+      // Gold columns exist only when at least one cell was actually scored.
+      // Four permanently dashed columns would read as "scored zero".
+      const goldScored=extraction.some(c=>c.goldStatus==='scored');
+      const goldPending=extraction.some(c=>c.goldStatus==='incomplete');
+      const goldCell=(c)=>{
+        if(c.goldStatus==='scored'){
+          return [
+            fmtGold(c,'amounts'),
+            fmtGold(c,'dates'),
+            fmtGold(c,'oibs'),
+            fmtGold(c,'filingNumbers')
+          ];
+        }
+        if(c.goldStatus==='incomplete')return '<span class="cell-muted" title="'+esc(c.goldReason||'Gold facts exist but are not verified.')+'">not verified</span>';
+        return '<span class="cell-muted" title="No gold facts for this document">no gold</span>';
+      };
+
+      const extRows=extraction.map(c=>{
+        const key=c.arm+'|'+(c.model||'')+'|'+c.documentType;
+        const t=costByCell.get(key)||{};
+        const validPct=c.validRate!=null?fmtMetricPct(c.validRate):'<span class="cell-muted" title="Every call in this cell failed before answering">—</span>';
+        const grounding=c.arm==='or-native'
+          ?'<span class="cell-muted" title="The model read the PDF itself, so there is no parser transcript to check quotes against">n/a (native)</span>'
+          :c.ownQuotes?fmtPercent(c.ownGroundingRate):'<span class="cell-muted" title="The answer contained no quotes to check">no quotes</span>';
+        const columns=[
+          [renderEngineBadge(c.arm)],
+          {html:renderModelCell(c.model,dest(c.model)),className:'wrap'},
+          [renderScenarioBadge(c.documentType)],
+          [String(c.N),true],
+          [c.errors?'<span class="cell-bad">'+c.errors+'</span>':'0',true],
+          [validPct,true],
+          [grounding,true]
+        ];
+        if(goldScored){
+          const gold=goldCell(c);
+          if(Array.isArray(gold))columns.push(...gold.map(g=>[g,true]));
+          else columns.push(...Array.from({length:4},()=>[gold,true]));
+        }else{
+          columns.push([goldCell(c),true]);
+        }
+        columns.push([fmtCost(t.costPerCell),true]);
+        columns.push([fmtLatency(t.p50Latency),true]);
+        columns.push([fmtLatency(t.p95Latency),true]);
+        return {dataset:{scenario:getScenarioKey(c.documentType)},cols:columns};
+      });
+
+      const headers=[['Path',false,'PDF input path used by this cell.'],['Model · host',false,'Model and pinned provider that produced the answer.'],['Scenario',false,'Document type / extraction challenge represented by this fixture.'],['Cells',true,'Document × model × input-path attempts. Raster cells can contain multiple provider requests.'],['Failed',true,'Cells with provider or input-processing errors, including incomplete OCR.'],['Valid JSON',true,'Share of answered calls whose output parsed as valid JSON. This is format, not factual accuracy.'],['Supplied quotes matched',true,'Share of supplied, nonblank quotes found in the input text. Missing quotes do not lower this rate; it does not prove fact coverage or correct party associations.']];
+      if(goldScored){
+        headers.push(['Gold amounts P/R',true,'Gold precision / recall for extracted amounts. Precision = returned facts that are correct; recall = reference facts recovered.'],['Gold dates P/R',true,'Gold precision / recall for extracted dates.'],['Gold OIBs P/R',true,'Gold precision / recall for extracted OIB identifiers.'],['Gold filing P/R',true,'Gold precision / recall for extracted filing numbers.']);
+      }else{
+        headers.push(['Gold',true]);
+      }
+      headers.push(['$/cell',true,'Average reported cost per cell, including OCR and analysis for raster and combined parser/analysis requests. Missing charges are not zero; inspect cost completeness.'],['p50',true,'Median cell latency, including OCR and analysis where applicable, in milliseconds.'],['p95',true,'Nearest-rank 95th percentile cell latency; needs at least 3 cells. At 3 this is simply the slowest cell, not a stable tail estimate.']);
+
+      body.append(buildTable(
+        'Analysis quality · per-document, input-path, and model cells use the production prompt and output cap. Gold precision / recall measures answer quality; valid JSON only confirms the format. Raster cells may aggregate multiple OCR page calls plus an analysis call, so Calls counts analysis answers, not every provider request.'+(goldScored?'':goldPending?' Gold facts exist for some cells but are not verified, so nothing is scored yet.':' No gold facts are set for these documents, so no quality score is claimed.'),
+        headers,
+        extRows,
+        'stage-e-summary-wrap'
+      ));
+    }
+
+    body.append(renderStageEInspector(report));
+
+    if(report.skippedCells?.length){
+      const reasons=new Map();
+      for(const cell of report.skippedCells){
+        const label=cell.arm+' ('+(cell.reason||'skipped').replace(/^skipped:/,'')+')';
+        reasons.set(label,(reasons.get(label)||0)+1);
+      }
+      body.append(reportNote('Skipped cells: '+[...reasons].map(([label,count])=>count+' × '+label).join('; ')+'. A skipped cell has no result to score; it is not a failure.'));
+    }
+    if(report.skipped?.length)body.append(reportNote('Unsupported capabilities: '+report.skipped.map(s=>(s.model||'')+' · '+s.arm+' ('+s.reason+')').join('; ')));
+    if(report.aborted)body.append(reportNote('Run stopped early: '+report.aborted.message+'. The completed response is included; no later call was started.'));
+    if(report.costMissingCalls)body.append(reportNote(report.costMissingCalls+' cells had incomplete provider-reported cost; cost averages use complete-cost cells only.'));
+    if(!extraction.length&&report.dryRun)body.append(reportNote('Dry run: no calls were made, so metric cells are blank by design; analysis cells are planned, not scored.'));
+
+    // Filter chip wiring
+    const chips=body.querySelectorAll('.filter-chip');
+    chips.forEach(chip=>{
+      chip.addEventListener('click',()=>{
+        chips.forEach(c=>{c.classList.remove('active');c.setAttribute('aria-pressed','false')});
+        chip.classList.add('active');
+        chip.setAttribute('aria-pressed','true');
+        const filter=chip.dataset.filter;
+        body.querySelectorAll('#stage-t-wrap tbody tr').forEach(tr=>{
+          if(filter==='all'||filter==='stage-e'||tr.dataset.scenario===filter){
+            tr.style.display='';
+          }else{
+            tr.style.display='none';
+          }
+        });
+        body.querySelectorAll('#stage-e-summary-wrap tbody tr').forEach(tr=>{
+          if(filter==='all'||filter==='stage-e'||tr.dataset.scenario===filter){
+            tr.style.display='';
+          }else{
+            tr.style.display='none';
+          }
+        });
+        body.querySelectorAll('.stage-e-card').forEach(card=>{
+          if(filter==='all'||filter==='stage-e'||card.dataset.scenario===filter){
+            card.style.display='';
+          }else{
+            card.style.display='none';
+          }
+        });
+        if(filter==='stage-e'){
+          const el=body.querySelector('#stage-e-section');
+          if(el)el.scrollIntoView({behavior:'smooth'});
+        }
+      });
+    });
+
+  }catch(error){
+    panel.hidden=false;
+    body.textContent='';
+    body.append(reportNote('Could not load the run report: '+error.message));
+  }
+}
+$('select-all').addEventListener('click',()=>{state.selected=new Set(state.documents.map(d=>d.docId));renderDocs()});$('select-images').addEventListener('click',()=>{state.selected=new Set(state.documents.filter(d=>d.layer==='image').map(d=>d.docId));renderDocs()});$('select-smoke').addEventListener('click',()=>{state.selected=new Set(state.smokeDocIds.filter(id=>state.documents.some(d=>d.docId===id)));renderDocs()});$('repeats').addEventListener('change',refreshTotals);
+$('dry-run').addEventListener('click',()=>{if(!selectedDocs().length){setMessage('Select at least one local document.',true);return}startAction('run',runPayload(true,false,isSmokeTrio()))});
+$('smoke-run').addEventListener('click',()=>{if(!isSmokeTrio()){setMessage('The smoke run uses the fixed 3-document trio. Choose “Smoke trio” first.',true);return}if(!confirm('This sends the 3 smoke-trio PDFs to OpenRouter and may incur a small charge. Continue?'))return;if(prompt('Type SMOKE to approve this 3-document live check:')!=='SMOKE')return;startAction('run',runPayload(false,true,true))});
+$('live-run').addEventListener('click',()=>{if(selectedDocs().length<12||selectedDocs().length>20){setMessage('Live pilot requires 12–20 selected documents.',true);return}if(!confirm('This sends the selected local PDFs to OpenRouter and may incur charges. Continue?'))return;if(prompt('Type RUN to approve this live benchmark:')!=='RUN')return;startAction('run',runPayload(false,true))});
+$('probe').addEventListener('click',()=>{const models=currentModels();if(!models.length){setMessage('Enter a model slug first.',true);return}if(!confirm('Send the tiny native-PDF and image probes for '+models.length+' model(s) to OpenRouter?'))return;if(prompt('Type PROBE to approve these test requests:')!=='PROBE')return;startAction('probe',{models,approved:true})});
+$('gold').addEventListener('click',()=>{if(selectedDocs().length<1){setMessage('Select documents first.',true);return}startAction('gold',{docIds:selectedDocs().map(d=>d.docId)})});
+$('review').addEventListener('click',()=>{startAction('review',{runId:$('review').dataset.runId,seed:7,sample:3})});
+async function refreshCapabilities(){const model=currentModels()[0];$('capability-scope').textContent=model?'Input support shown for first model: '+model+'.':'Enter a model ID to check its input support.';if(!model){updateCapability('native-status',null,'Native file');updateCapability('image-status',null,'Image input');return}try{const data=await api('/api/capabilities?model='+encodeURIComponent(model));updateCapability('native-status',data.fileNative,'Native file');updateCapability('image-status',data.imageInput,'Image input')}catch{}}
+async function scoreHumanReview(){const file=$('verdict-file').files[0];if(!file||!state.reviewJobId){setMessage('Choose the downloaded review verdict JSON first.',true);return}try{const verdicts=JSON.parse(await file.text());const result=await api('/api/score-review',{reviewJobId:state.reviewJobId,verdicts});$('state-text').textContent='Scoring human review…';$('state-dot').className='state-dot';pollJob(result.jobId)}catch(error){setMessage(error.message,true)}}
+document.getElementById('score-verdicts').addEventListener('click',scoreHumanReview);
+document.getElementById('models').addEventListener('change',refreshCapabilities);
+function openSavedRun(runId){
+  if(!runId)return;
+  $('result-panel').hidden=false;
+  $('state-text').textContent='Saved run · '+runId;
+  $('state-dot').className='state-dot done';
+  $('runlog').textContent='';
+  $('result-links').textContent='';
+  $('review-score').hidden=true;
+  state.reviewJobId=null;
+  state.reportRunId=runId;
+  renderReport('/api/artifact/'+encodeURIComponent(runId)+'/report.json');
+  $('review').hidden=false;
+  $('review').dataset.runId=runId;
+}
+$('previous-runs').addEventListener('change',(e)=>openSavedRun(e.target.value));
+$('gold-set').addEventListener('change',refreshGoldProgress);
+$('gold-dir').addEventListener('input',refreshGoldProgress);
+$('documents').addEventListener('change',refreshGoldProgress);
+for(const id of ['select-all','select-images','select-smoke'])$(id).addEventListener('click',refreshGoldProgress);
+const requestedAnalysisMode=new URLSearchParams(window.location.search).get('analysisMode');
+if(['bounded','single'].includes(requestedAnalysisMode))$('analysis-mode').value=requestedAnalysisMode;
+const analysisModeParam=new URLSearchParams(window.location.search).get('analysisMode');
+if(analysisModeParam)$('analysis-mode').addEventListener('change',()=>{const params=new URLSearchParams(window.location.search);params.set('analysisMode',$('analysis-mode').value);history.replaceState(null,'','?'+params.toString())});
+(async()=>{try{
+  const data=await api('/api/documents');
+  state.documents=data.documents;
+  state.smokeDocIds=Array.isArray(data.smokeDocIds)?data.smokeDocIds:[];
+  state.selected=new Set(data.documents.map(d=>d.docId));
+  renderDocs();
+  await refreshCapabilities();
+  try{
+    const goldData=await api('/api/gold/sets');
+    state.goldSets=goldData.sets||[];
+    for(const set of state.goldSets){
+      const option=document.createElement('option');
+      option.value=set.setId;
+      const complete=set.documents.filter(doc=>doc.summary?.complete).length;
+      option.textContent=set.setId+' · '+complete+'/'+set.documents.length+' verified';
+      $('gold-set').append(option);
+    }
+    const selectedGold=new URLSearchParams(window.location.search).get('goldSet');
+    if(state.goldSets.some(set=>set.setId===selectedGold))$('gold-set').value=selectedGold;
+    refreshGoldProgress();
+  }catch{$('gold-progress').textContent='Could not load saved gold sets. Open the gold editor or enter a local folder path.'}
+  try{
+    const runsData=await api('/api/runs');
+    const select=$('previous-runs');
+    for(const r of runsData.runs||[]){
+      const opt=document.createElement('option');
+      opt.value=r.runId;
+      const scope=r.dryRun?'dry-run':r.scope;
+      const cost=r.dryRun?' · estimate $'+Number(r.estimatedCost||0).toFixed(4):(r.actualCost?' · reported $'+Number(r.actualCost).toFixed(4):'')+(r.estimatedParserFee?' · parser-fee estimate $'+Number(r.estimatedParserFee).toFixed(4):'');
+      opt.textContent=r.runId+' ('+scope+' · '+r.docsCount+' docs'+cost+')';
+      select.append(opt);
+    }
+  }catch{}
+  const targetRun=new URLSearchParams(window.location.search).get('run')||new URLSearchParams(window.location.search).get('runId');
+  if(targetRun){
+    $('previous-runs').value=targetRun;
+    openSavedRun(targetRun);
+  }
+}catch(error){
+  $('documents').textContent='Could not load local fixture manifest: '+error.message;
+  setMessage('Start the local lab server from backend/scripts.',true);
+}})();
+function updateCapability(id,value,label){const el=$(id);el.className='status '+(value===true?'yes':value===false?'no':'unknown');el.textContent=label+' · '+(value===true?'confirmed':value===false?'rejected':'unknown')}
+</script>
+</body>
+</html>

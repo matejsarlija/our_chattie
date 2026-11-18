@@ -50,6 +50,59 @@ describe('reasoning grounding containment check', () => {
         expect(aiResult.propertyFlow[0].grounded).toBe(true);
         expect(aiResult.propertyFlow[1].grounded).toBe(false);
     });
+    test('document party OIBs are grounded against the source quote', () => {
+        const aiResult = {
+            documentParties: [{ name: 'ADRIA', oib: '08697489827', quote: 'ADRIA d.o.o., OIB: 08697489827' }],
+        };
+        applyGroundingToAnalysis(aiResult, 'ADRIA d.o.o., OIB: 08697489827.');
+        expect(aiResult.documentParties[0].grounded).toBe(true);
+    });
+
+    test.each([
+        ['different extracted identifier', '08697489828', 'ADRIA d.o.o., OIB: 08697489827', 'ADRIA d.o.o., OIB: 08697489827.'],
+        ['different source identifier despite high token overlap', '08697489827', 'Dužnik ADRIA d.o.o. sa sjedištem u Rijeci OIB 08697489827', 'Dužnik ADRIA d.o.o. sa sjedištem u Rijeci OIB 08697489828'],
+        ['identifier missing from quote', '08697489827', 'Dužnik ADRIA d.o.o. sa sjedištem u Rijeci', 'Dužnik ADRIA d.o.o. sa sjedištem u Rijeci OIB 08697489827'],
+        ['identifier only elsewhere in source', '08697489827', 'Dužnik ADRIA d.o.o. sa sjedištem u Rijeci OIB 08697489827', 'Dužnik ADRIA d.o.o. sa sjedištem u Rijeci OIB 08697489828. Vjerovnik OIB 08697489827.'],
+        ['longer identifier in source', '08697489827', 'OIB: 08697489827', 'OIB: 086974898279'],
+        ['longer identifier in quote', '08697489827', 'OIB: 108697489827', 'OIB: 108697489827'],
+        ['unsupported source separators', '08697489827', 'OIB: 08697489827', 'OIB: 086/974/89827'],
+        ['OCR letter substitution', '08697489827', 'OIB: 08697489827', 'OIB: O8697489827'],
+        ['unsupported extracted separators', '086/974/89827', 'OIB: 08697489827', 'OIB: 08697489827'],
+        ['missing extracted identifier', undefined, 'OIB: 08697489827', 'OIB: 08697489827'],
+    ])('does not ground a party with %s', (_description, oib, quote, source) => {
+        const aiResult = { documentParties: [{ name: 'ADRIA', oib, quote }] };
+        applyGroundingToAnalysis(aiResult, source);
+        expect(aiResult.documentParties[0].grounded).toBe(false);
+    });
+
+    test.each([
+        ['08697489827', 'ADRIA OIB: 086 974 89827', 'ADRIA OIB: 08697489827.'],
+        ['08697489827', 'ADRIA OIB: 08697489827', 'ADRIA OIB: 086-974-89827.'],
+        ['086-974-89827', 'ADRIA OIB: 08697489827', 'ADRIA OIB: 086\n974\t89827.'],
+    ])('grounds exact party digits with supported separator formatting (%s, %s)', (oib, quote, source) => {
+        const aiResult = { documentParties: [{ name: 'ADRIA', oib, quote }] };
+        applyGroundingToAnalysis(aiResult, source);
+        expect(aiResult.documentParties[0].grounded).toBe(true);
+    });
+    test('procedural events are grounded per document and missing quotes degrade', () => {
+        const aiResult = {
+            amounts: [],
+            propertyFlow: [],
+            proceduralEvents: [
+                { eventType: 'decision', description: 'Odluka.', quote: 'Ovim rješenjem se odlučuje.' },
+                { eventType: 'appeal', description: 'Žalba.', quote: '' },
+            ],
+        };
+        applyGroundingToAnalysis(aiResult, 'Ovim rješenjem se odlučuje. Stranka podnosi žalbu.');
+        expect(aiResult.proceduralEvents.map((event) => event.grounded)).toEqual([true, false]);
+        expect(countGroundedClaims([aiResult])).toEqual({
+            groundedClaims: 0,
+            totalClaims: 0,
+            groundedProceduralEvents: 1,
+            totalProceduralEvents: 2,
+        });
+    });
+
 
     test('pre-migration entries without quote fields degrade gracefully', () => {
         const aiResult = { amounts: [{ description: 'Polog', amount: 1200, currency: 'EUR' }] };

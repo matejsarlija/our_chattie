@@ -52,8 +52,13 @@ const GEMINI_ROLE_CONFIG = {
     // clusters kept truncating mid-JSON (370 claims + timeline exceeded 8192
     // on a real run). gemini-2.5-flash allows up to 65536 output tokens.
     synthesis: { model: DEFAULT_GEMINI_MODEL, temperature: 0.2, maxOutputTokens: 24576 },
-    // Strict verification pass over findings.
-    verify: { model: DEFAULT_GEMINI_MODEL, temperature: 0.1, maxOutputTokens: 2048 },
+    // Findings are verified in compact batches. The cap bounds the JSON array
+    // of verdicts, but Gemini 2.5 spends part of maxOutputTokens on thinking,
+    // and the installed LangChain wrapper exposes no thinking-budget control
+    // (model + temperature + maxOutputTokens only). A batch of 8 verdicts is
+    // only a few hundred visible tokens, so 4096 left the answer truncated on
+    // real runs; partial arrays still degrade safely in verifier.js.
+    verify: { model: DEFAULT_GEMINI_MODEL, temperature: 0.1, maxOutputTokens: 8192 },
     // Listwise evidence reranking: one JSON array of {id, score} over ≤24
     // candidates — a tiny, strictly-bounded output well within the lite
     // model's ability.
@@ -72,8 +77,10 @@ const GEMINI_ROLE_CONFIG = {
     // small and strictly-bounded, same reasoning as rerank.
     planner: { model: LITE_GEMINI_MODEL, temperature: 0.1, maxOutputTokens: 512 },
     // Analysis Lab node summaries (LC-2): compact cited statements over one
-    // ContextNode's evidence. Small, strictly-bounded output like verify.
-    contextNode: { model: DEFAULT_GEMINI_MODEL, temperature: 0.1, maxOutputTokens: 2048 },
+    // ContextNode's evidence. Small, strictly-bounded output like verify, but
+    // subject to the same thinking-token accounting, so the cap reserves room
+    // for 1-4 statements plus ids after the model's thinking.
+    contextNode: { model: DEFAULT_GEMINI_MODEL, temperature: 0.1, maxOutputTokens: 4096 },
 };
 
 // Prompt version for the Lab node-summary prompt. The single source of

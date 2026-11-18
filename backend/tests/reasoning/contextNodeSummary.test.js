@@ -61,6 +61,49 @@ describe('contextNodeSummary packet and parsing (LC-2)', () => {
         expect(parsed.statements[0]).toMatchObject({ status: 'validated-reference', grounded: false });
     });
 
+    test('parses a LangChain content-block array (Gemini multi-part response)', () => {
+        const { nodes } = buildLab();
+        const node = nodes.find((candidate) => candidate.kind === 'property-thread');
+        const parsed = parseNodeSummaryResponse([{
+            type: 'text',
+            text: JSON.stringify({
+                statements: [{
+                    text: 'Ustup s PROKURATORA na COAST.',
+                    sourceDocumentIds: ['lab-doc-02'],
+                    factIds: ['ledger-2'],
+                    citationIds: ['St-2/2013-1155'],
+                }],
+            }),
+        }], node);
+        expect(parsed.ok).toBe(true);
+        expect(parsed.statements).toHaveLength(1);
+    });
+
+    test('accepts a bare statements array from a small-model deviation', () => {
+        const { nodes } = buildLab();
+        const node = nodes.find((candidate) => candidate.kind === 'property-thread');
+        const parsed = parseNodeSummaryResponse(JSON.stringify([{
+            text: 'Ustup s PROKURATORA na COAST.',
+            sourceDocumentIds: ['lab-doc-02'],
+            factIds: ['ledger-2'],
+            citationIds: ['St-2/2013-1155'],
+        }]), node);
+        expect(parsed.ok).toBe(true);
+        expect(parsed.statements).toHaveLength(1);
+    });
+
+    test('recovers finished statements from a response cut off by the output cap', () => {
+        const { nodes } = buildLab();
+        const node = nodes.find((candidate) => candidate.kind === 'property-thread');
+        const truncated = '```json\n{"statements": ['
+            + '{"text":"Ustup s PROKURATORA na COAST.","sourceDocumentIds":["lab-doc-02"],"factIds":["ledger-2"],"citationIds":["St-2/2013-1155"]},'
+            + '{"text":"Nedovršena tvrdnja.","sourceDocumentIds":["lab-doc-02"],"fac';
+        const parsed = parseNodeSummaryResponse(truncated, node);
+        expect(parsed).toMatchObject({ ok: true, truncated: true });
+        expect(parsed.statements).toHaveLength(1);
+        expect(parsed.statements[0].text).toBe('Ustup s PROKURATORA na COAST.');
+    });
+
     test('unknown citation ids reject the statement', () => {
         const { nodes } = buildLab();
         const node = nodes.find((candidate) => candidate.kind === 'property-thread');
@@ -96,6 +139,7 @@ describe('summarizeContextNode (LC-2)', () => {
         }]);
         const { node: summarized, outcome } = await summarizeContextNode(node, facts, { summarizeLlm });
         expect(outcome).toMatchObject({ status: 'complete', accepted: 1, rejected: 0, calls: 1 });
+        expect(outcome).toMatchObject({ reason: null, gap: null, responseTruncated: false });
         expect(summarized.summary).toHaveLength(1);
         expect(summarized.summary[0]).toMatchObject({ status: 'validated-reference', grounded: false });
         expect(summarized.id).toBe(node.id);
@@ -103,6 +147,38 @@ describe('summarizeContextNode (LC-2)', () => {
         // summaries via copies only).
         expect(node.summary).toBeUndefined();
         expect(summarizeLlm).toHaveBeenCalledTimes(1);
+    });
+
+    test('retains recovered statements but marks an output-capped summary partial', async () => {
+        const { nodes, facts } = buildLab();
+        const node = nodes.find((candidate) => candidate.kind === 'property-thread');
+        const statement = {
+            text: 'Ustup s PROKURATORA na COAST.',
+            sourceDocumentIds: ['lab-doc-02'],
+            factIds: ['ledger-2'],
+            citationIds: ['St-2/2013-1155'],
+        };
+        const invalid = { ...statement, sourceDocumentIds: ['ghost-doc'] };
+        const summarizeLlm = jest.fn(async () => '{"statements":['
+            + JSON.stringify(statement) + ',' + JSON.stringify(invalid)
+            + ',{"text":"Nedovršena tvrdnja.","sourceDocumentIds":[');
+        const { node: summarized, outcome } = await summarizeContextNode(node, facts, { summarizeLlm });
+        expect(outcome).toMatchObject({
+            status: 'partial',
+            reason: 'truncated-summary',
+            gap: 'node-summary:truncated-summary',
+            responseTruncated: true,
+            accepted: 1,
+            rejected: 1,
+            calls: 1,
+        });
+        expect(summarized.summary).toEqual([{
+            ...statement,
+            status: 'validated-reference',
+            grounded: false,
+        }]);
+        expect(summarized).toMatchObject({ id: node.id, factIds: node.factIds });
+        expect(node.summary).toBeUndefined();
     });
 
     test('unknown citations degrade to partial and retain the raw node', async () => {

@@ -92,13 +92,28 @@ describe('AnalyzeDocumentsTool chunking integration', () => {
       const index = Number(match?.[1] || 0);
       return {
         content: JSON.stringify({
-          caseNumber: 'St-357/2013',
-          summary: `Segment ${index}.`,
+          documentParties: [{
+            name: `Party ${index}`,
+            oib: `0869748982${index}`,
+            role: 'dužnik',
+            quote: `Party ${index}, OIB: 0869748982${index}`,
+          }],
           amounts: [{
             description: `Amount from segment ${index}`,
             amount: index,
             currency: 'EUR',
             quote: `Quote ${index}`,
+          }],
+          proceduralEvents: [{
+            eventType: 'decision',
+            instance: 'first-instance',
+            outcome: 'unknown',
+            finalityStated: 'unknown',
+            date: `2026-01-0${index}`,
+            filingReference: `St-2/2013-${index}`,
+            targetFilingReference: null,
+            description: `Decision from segment ${index}`,
+            quote: `Evidence marker ${index}`,
           }],
         }),
       };
@@ -120,6 +135,14 @@ describe('AnalyzeDocumentsTool chunking integration', () => {
         .toContain('Evidence marker 8');
       expect(result.individualAnalyses[0].aiResult.amounts.map((item) => item.amount))
         .toEqual(chunks.map((_, index) => index + 1));
+      expect(result.individualAnalyses[0].aiResult.documentParties.map((party) => party.oib))
+        .toEqual(chunks.map((_, index) => `0869748982${index + 1}`));
+      expect(result.individualAnalyses[0].aiResult.proceduralEvents.map((event) => event.eventType))
+        .toEqual(Array(chunks.length).fill('decision'));
+      const allPrompts = mockGeminiInvoke.mock.calls.map(([prompt]) => prompt).join('\n');
+      for (const field of ['eventType', 'instance', 'outcome', 'finalityStated', 'date', 'filingReference', 'targetFilingReference', 'description', 'quote']) {
+        expect(allPrompts).toContain(field);
+      }
     } finally {
       fs.rmSync(tmpDir, { recursive: true, force: true });
     }

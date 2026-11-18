@@ -176,6 +176,7 @@ function summarizeProcessedCases(processedCases) {
                 summary: analysis?.aiResult?.summary || null,
                 decisionDate: analysis?.aiResult?.decisionDate || null,
                 parties: analysis?.aiResult?.parties || [],
+                documentParties: analysis?.aiResult?.documentParties || [],
             })),
         };
     });

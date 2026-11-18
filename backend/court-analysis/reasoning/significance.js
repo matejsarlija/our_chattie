@@ -66,7 +66,7 @@ function buildSignificancePrompt(shortlist) {
 }
 
 function parseSignificanceRanking(content, shortlist) {
-    const parsed = extractJsonBlock(typeof content === 'string' ? content : '');
+    const parsed = extractJsonBlock(content);
     if (!Array.isArray(parsed) || parsed.length === 0) return null;
     const size = Array.isArray(shortlist) ? shortlist.length : 0;
     const ranking = [];

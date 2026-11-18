@@ -253,6 +253,28 @@ describe('computeVariantScorecard (LE-2)', () => {
         expect(withPackageScope.coverage.blockedConclusions).toBe(1);
     });
 
+    test('reports partial verification in the reliability scorecard', () => {
+        const report = {
+            ...variantReport(),
+            meta: {
+                ...variantReport().meta,
+                synthesisOutputBounds: { modelFindingsOmitted: 2, fallbackClaimsOmitted: 0, openQuestionsOmitted: 1, nextStepsOmitted: 0 },
+                verification: { status: 'partial', attemptedCount: 5, verifiedCount: 2, failedCount: 3 },
+            },
+        };
+        const scorecard = computeVariantScorecard({
+            evidencePackage: cloneEvidencePackage(LAB_FIXTURE),
+            report,
+            trace: contextTrace(evidencePackageDigest(LAB_FIXTURE)),
+            usage: { calls: 2, inputTokens: 10, outputTokens: 5, totalTokens: 15, elapsedMs: 20 },
+            profileSnapshot: snapshotProfile('context-tree-v1', { codeRevision: 'test-rev' }),
+            evidencePackageHash: evidencePackageDigest(LAB_FIXTURE),
+        });
+
+        expect(scorecard.reliability).toMatchObject({ verifierErrors: 3, verificationStatus: 'partial' });
+        expect(scorecard.reliability.synthesisOutputOmissions).toBe(3);
+    });
+
     test('changing variant B never alters variant A scorecard', () => {
         const hash = evidencePackageDigest(LAB_FIXTURE);
         const baseArgs = {

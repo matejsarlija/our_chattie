@@ -2,14 +2,9 @@
 //
 // LA-2 — Analysis Lab experiment persistence, separate from analysis runs.
 //
-// Experiments live in their own `experiments.json` namespace under
-// ANALYSIS_DATA_DIR and never touch `runs.json`: Lab comparisons must neither
-// mutate a source analysis run nor be shaped like one. Records are immutable
-// once written — completing a variant can only fill a previously absent slot,
-// never overwrite a recorded variant/report.
-//
-// Same queued-write pattern as `services/localStore.js` so concurrent
-// completions serialize instead of losing writes.
+// The legacy `experiments.json` array remains readable. New/updated records
+// are written separately so one large report/trace cannot force a stringify
+// and rewrite of every historical experiment.
 
 const fs = require('fs');
 const path = require('path');
@@ -49,7 +44,18 @@ function readJson(filePath, fallback) {
 
 function writeJson(filePath, value) {
     ensureDir(path.dirname(filePath));
-    fs.writeFileSync(filePath, JSON.stringify(value, null, 2), 'utf8');
+    const temporaryPath = `${filePath}.${process.pid}.${crypto.randomUUID()}.tmp`;
+    try {
+        fs.writeFileSync(temporaryPath, JSON.stringify(value, null, 2), 'utf8');
+        fs.renameSync(temporaryPath, filePath);
+    } catch (error) {
+        try {
+            fs.rmSync(temporaryPath, { force: true });
+        } catch (_) {
+            // Preserve the write error; temporary-file cleanup is best effort.
+        }
+        throw error;
+    }
 }
 
 function createId() {
@@ -97,6 +103,8 @@ function conflict(message) {
 function createAnalysisLabStore(options = {}) {
     const dataDir = getDataDir(options.dataDir);
     const experimentsFile = path.join(dataDir, 'experiments.json');
+    const experimentRecordsDir = path.join(dataDir, 'experiments');
+    let legacyExperiments = null;
 
     let writeQueue = Promise.resolve();
 
@@ -111,12 +119,24 @@ function createAnalysisLabStore(options = {}) {
     }
 
     function readExperiments() {
-        const parsed = readJson(experimentsFile, []);
-        return Array.isArray(parsed) ? parsed : [];
+        if (!legacyExperiments) {
+            const parsed = readJson(experimentsFile, []);
+            legacyExperiments = Array.isArray(parsed) ? parsed : [];
+        }
+        const records = new Map(legacyExperiments.map((experiment) => [experiment.id, experiment]));
+        if (fs.existsSync(experimentRecordsDir)) {
+            for (const entry of fs.readdirSync(experimentRecordsDir, { withFileTypes: true })) {
+                if (!entry.isFile() || !entry.name.endsWith('.json')) continue;
+                const record = readJson(path.join(experimentRecordsDir, entry.name), null);
+                if (record && typeof record.id === 'string') records.set(record.id, record);
+            }
+        }
+        return [...records.values()];
     }
 
-    function writeExperiments(list) {
-        writeJson(experimentsFile, list);
+    function writeExperiment(experiment) {
+        const idHash = crypto.createHash('sha256').update(String(experiment.id)).digest('hex');
+        writeJson(path.join(experimentRecordsDir, `${idHash}.json`), experiment);
     }
 
     function findExperiment(list, id) {
@@ -169,11 +189,17 @@ function createAnalysisLabStore(options = {}) {
             }
             validateProfiles(profiles);
 
-            const list = readExperiments();
             const now = nowIso();
+            // Persist a tie-breaker: hashed directory names do not retain
+            // insertion order. Older records without one sort before new ones.
+            const creationOrder = readExperiments().reduce(
+                (latest, record) => Math.max(latest, record.creationOrder || 0),
+                0
+            ) + 1;
             const experiment = {
                 id: createId(),
                 createdAt: now,
+                creationOrder,
                 updatedAt: now,
                 completedAt: null,
                 evidencePackageRef,
@@ -186,8 +212,7 @@ function createAnalysisLabStore(options = {}) {
                 variants: {},
                 status: 'running',
             };
-            list.push(experiment);
-            writeExperiments(list);
+            writeExperiment(experiment);
             return deepCopy(experiment);
         });
     }
@@ -211,7 +236,7 @@ function createAnalysisLabStore(options = {}) {
                 throw badRequest(`Unknown analysis-lab profile: ${String(profileId)}.`);
             }
             const list = readExperiments();
-            const experiment = findExperiment(list, experimentId);
+            const experiment = deepCopy(findExperiment(list, experimentId));
             if (experiment.status !== 'running') {
                 throw conflict(`Experiment ${experiment.id} is already ${experiment.status}; recorded variants are immutable.`);
             }
@@ -230,8 +255,7 @@ function createAnalysisLabStore(options = {}) {
                 status: 'complete',
                 completedAt: nowIso(),
             };
-            experiment.updatedAt = nowIso();
-            writeExperiments(list);
+            writeExperiment(experiment);
             return deepCopy(experiment);
         });
     }
@@ -254,7 +278,7 @@ function createAnalysisLabStore(options = {}) {
                 throw badRequest(`Unknown analysis-lab profile: ${String(profileId)}.`);
             }
             const list = readExperiments();
-            const experiment = findExperiment(list, experimentId);
+            const experiment = deepCopy(findExperiment(list, experimentId));
             if (experiment.status !== 'running') {
                 throw conflict(`Experiment ${experiment.id} is already ${experiment.status}; recorded variants are immutable.`);
             }
@@ -275,8 +299,7 @@ function createAnalysisLabStore(options = {}) {
                 errorMessage: String(errorMessage || 'Variant failed.'),
                 completedAt: nowIso(),
             };
-            experiment.updatedAt = nowIso();
-            writeExperiments(list);
+            writeExperiment(experiment);
             return deepCopy(experiment);
         });
     }
@@ -288,7 +311,7 @@ function createAnalysisLabStore(options = {}) {
     async function completeExperiment({ experimentId } = {}) {
         return enqueue(() => {
             const list = readExperiments();
-            const experiment = findExperiment(list, experimentId);
+            const experiment = deepCopy(findExperiment(list, experimentId));
             if (experiment.status !== 'running') {
                 throw conflict(`Experiment ${experiment.id} is already ${experiment.status}.`);
             }
@@ -304,7 +327,7 @@ function createAnalysisLabStore(options = {}) {
             const now = nowIso();
             experiment.completedAt = now;
             experiment.updatedAt = now;
-            writeExperiments(list);
+            writeExperiment(experiment);
             return deepCopy(experiment);
         });
     }
@@ -318,7 +341,10 @@ function createAnalysisLabStore(options = {}) {
         const list = readExperiments();
         const insertionOrder = new Map(list.map((experiment, index) => [experiment.id, index]));
         const sorted = [...list].sort((a, b) => {
-            if (a.createdAt === b.createdAt) return insertionOrder.get(b.id) - insertionOrder.get(a.id);
+            if (a.createdAt === b.createdAt) {
+                return (b.creationOrder || 0) - (a.creationOrder || 0)
+                    || insertionOrder.get(b.id) - insertionOrder.get(a.id);
+            }
             return a.createdAt < b.createdAt ? 1 : -1;
         });
         const page = sorted.slice(offset, offset + limit);
@@ -326,11 +352,14 @@ function createAnalysisLabStore(options = {}) {
     }
 
     function reset() {
-        try {
-            fs.rmSync(experimentsFile, { force: true });
-        } catch (err) {
-            // Best-effort reset.
+        for (const target of [experimentsFile, experimentRecordsDir]) {
+            try {
+                fs.rmSync(target, { recursive: true, force: true });
+            } catch (err) {
+                // Best-effort reset.
+            }
         }
+        legacyExperiments = [];
         return experimentsFile;
     }
 
