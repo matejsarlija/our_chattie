@@ -25,7 +25,7 @@ const logger = require("../../helpers/logger");
 const { GEMINI_MODEL, GEMINI_API_KEY, createGeminiClient, outputCapWarning } = require("../../helpers/geminiConfig");
 const { classifyFileFailure, classifyFileFailureDetailed } = require("../../helpers/friendlyAnalysisError");
 const { buildStageCounterEvent } = require("../../helpers/analysisStage");
-const { extractJsonBlock } = require("../../helpers/jsonExtract");
+const { extractJsonBlock, modelContentToText } = require("../../helpers/jsonExtract");
 const { applyGroundingToAnalysis } = require("../reasoning/grounding");
 const {
     validateExtraction,
@@ -34,6 +34,7 @@ const {
     buildFullRepairPrompt,
     REPAIRABLE_FIELDS,
     EXTRACTION_SCHEMA_VERSION,
+    FIELD_SPECS,
 } = require("../reasoning/extractionSchema");
 const ocrPageStore = require("../../helpers/ocrPageStore");
 const {
@@ -75,7 +76,7 @@ async function invokeRepairGemini(prompt, { file, progressCallback, usageTracker
             },
         },
     );
-    return typeof response?.content === "string" ? response.content : "";
+    return modelContentToText(response?.content);
 }
 
 function repairGapFields(validated) {
@@ -93,9 +94,11 @@ function hasUsableExtraction(value) {
         value.summary ||
         value.caseNumber ||
         value.decisionDate ||
+        (Array.isArray(value.documentParties) && value.documentParties.length > 0) ||
         (Array.isArray(value.amounts) && value.amounts.length > 0) ||
         (Array.isArray(value.propertyFlow) && value.propertyFlow.length > 0) ||
-        (Array.isArray(value.citedFilingReferences) && value.citedFilingReferences.length > 0)
+        (Array.isArray(value.citedFilingReferences) && value.citedFilingReferences.length > 0) ||
+        (Array.isArray(value.proceduralEvents) && value.proceduralEvents.length > 0)
     );
 }
 
@@ -369,13 +372,16 @@ function mergeAnalysisChunkResults(chunkResults, sourceText) {
     const citedFilingReferences = [...new Set(successes.flatMap(({ value }) => (
         Array.isArray(value.citedFilingReferences) ? value.citedFilingReferences : []
     )))];
+    const proceduralEvents = factsFor('proceduralEvents');
 
     return {
         caseNumber: successes.find(({ value }) => value.caseNumber)?.value.caseNumber || null,
         decisionDate: successes.find(({ value }) => value.decisionDate)?.value.decisionDate || null,
         summary: summaries.join('\n\n'),
+        documentParties: factsFor('documentParties'),
         amounts: factsFor('amounts'),
         propertyFlow: factsFor('propertyFlow'),
+        proceduralEvents,
         citedFilingReferences,
         gaps: successes.flatMap(({ segment, gaps }) => (
             (gaps || []).map((gap) => ({ ...gap, chunkId: segment.id }))
@@ -923,7 +929,7 @@ async function extractTextViaOCR(filePath, progressCallback, options = {}) {
 
                 // Segments are aligned to image POSITIONS in the request;
                 // remap each position to its original document page number.
-                const segments = splitBatchedOcrPages(response?.content, pendingPageNumbers.length);
+                const segments = splitBatchedOcrPages(modelContentToText(response?.content), pendingPageNumbers.length);
                 let batchCovered = 0;
                 pendingPageNumbers.forEach((pageNumber, positionIndex) => {
                     const segment = segments[positionIndex];
@@ -992,7 +998,7 @@ async function extractTextViaOCR(filePath, progressCallback, options = {}) {
                         },
                     },
                 );
-                const pageText = String(response?.content || "");
+                const pageText = modelContentToText(response?.content);
                 pageTexts.set(i, pageText);
                 writeCachedOcrPage(`${contentHash}:${i}`, pageText);
             } catch (pageErr) {
@@ -1107,6 +1113,21 @@ function buildExtractionErrorMessage(extraction) {
         ? ` OCR fallback also failed: ${describeExtractionFailure({ error: extraction.fallbackError })}`
         : '';
     return `Could not extract text from file: ${describeExtractionFailure(extraction)}${fallbackFailure}`;
+}
+
+function buildAnalysisPrompt(knownParties, segmentText) {
+    return `The main participants in this case are:\n${knownParties}\n
+                The participants include enriched registry data. Use this to determine if a company is active, in bankruptcy, or has failed to file financial reports (GFI) recently.
+
+                From the court document text below, extract key information as a JSON object with the following keys: "caseNumber", "decisionDate", and "summary" (a medium-sized paragraph, nicely formatted, to be in Croatian please, as that is what our customers speak).
+                Do include any important figures (currency amounts) you find in the summary.
+                Also extract document-sourced party identifiers into a separate "documentParties" array: ${FIELD_SPECS.documentParties} This array must contain only identities evidenced in the document itself; do not copy or infer identifiers from the supplied participant and registry context.
+                Also extract any financial amounts (payments, claims, costs, reservations) into an optional "amounts" array, with ONE item per table row — if the document contains an itemized table, register, or list (popis tražbina, diobeni popis, troškovnik, obračun), extract one item per row and never merge rows into a single summary amount. Each item being a JSON object with: "description" (what the money is for, in Croatian), "amount" (number), "currency" ("EUR" or "HRK"), "date" (if known), "direction" (one of "potraživanje" when the amount is a claim in the debtor's favor, "obveza" when it is a liability against the debtor, or "awarded" | "rejected" | "netted" when a ruling decides it), "amountRole" (one of "total" | "line_item" | "principal" | "cost" | "paid" | "fee" — the figure's function in the document: "total" for stated sums, "line_item" for table/register rows; omit when unclear), "eventType" (one of "prijava" | "ustup" | "namirenje" | "drugo", when the amount records a lifecycle event), "legalEffect" (one of "creates" | "modifies" | "supersedes" | "resolves" | "implements" | "unknown" — what this entry's document does to the claim or right; omit when unclear), "references" (array of registry or filing identifiers this entry explicitly cites besides its own filingReference; empty array when none), "relationshipBasis" (one of "explicit_identifier" | "explicit_text" | "inferred" — how a "supersedes" link is evidenced in the source text; omit when there is no supersedes link), "payerName" and "payerOib" (who pays, OIB is 11 digits, if stated), "recipientName" and "recipientOib" (who receives, if stated), "amountEur" and "amountHrk" (when the source states BOTH currencies for one figure, copy each verbatim; otherwise omit), "isplatniRed" (payment-priority rank such as "drugi viši isplatni red", if stated), "claimRegistryNumber" (the "redni broj" from the claim register, if stated), "filingReference" (this document's "poslovni broj", if stated), and "quote" (a verbatim supporting quote copied exactly from the source text below that proves this amount; copy 1-2 sentences word-for-word, do not paraphrase). If the document contains no amounts, set "amounts" to an empty array.
+                Also extract any property/asset transactions (real estate sales, movable-asset sales, receivable assignments/cessions) into an optional "propertyFlow" array, with ONE item per table row under the same row rule as amounts above, each item being a JSON object with: "description" (what the asset is, in Croatian), "identifier" (cadastral parcel, registration number, or null when absent), "assetType" (one of "nekretnina" | "pokretnina" | "tražbina" | "drugo"), "transferor" (seller/assignor, if known), "transferee" (buyer/assignee, if known), "value" (number, if known), "currency" ("EUR" or "HRK", if known), "date" (if known), "legalEffect" (one of "creates" | "modifies" | "supersedes" | "resolves" | "implements" | "unknown" — what this entry's document does to the asset or right; omit when unclear), "references" (array of registry or filing identifiers this entry explicitly cites besides its own filingReference; empty array when none), "relationshipBasis" (one of "explicit_identifier" | "explicit_text" | "inferred" — how a "supersedes" link is evidenced in the source text; omit when there is no supersedes link), and "quote" (verbatim supporting quote as above). A receivable assignment/cession is ALWAYS a propertyFlow transaction even when it is stated in prose rather than a table: when the source says "Ugovor o ustupu", "cesija", or that a party assigns/transfers a "tražbina", add at least one assetType "tražbina" entry with eventType "ustup"; do not leave propertyFlow empty. For assetType "tražbina" (receivable/claim, e.g. "Ugovor o ustupu tražbina") additionally include "eventType" (one of "prijava" | "ustup" | "namirenje" | "drugo" — the lifecycle stage), "isplatniRed" (payment-priority rank, if stated), "claimRegistryNumber" (the "redni broj", if stated), "filingReference" (the document's "poslovni broj", if stated) and, when this entry continues an earlier lifecycle stage of the SAME receivable described in the analysed documents, "supersedes" (a short textual reference to that earlier entry, e.g. its description, case number, filing date or original creditor as cited in the source text). If the document contains no property transactions, set "propertyFlow" to an empty array.
+                For each non-null propertyFlow.value, also classify valueRole as "claim_balance" only when the source explicitly states the outstanding claim balance; "transfer_consideration" for the assignment price; "payment_amount" for a payment or recovery; "asset_value" for another asset valuation; or "unknown" when unclear. Never treat a payment or assignment price as a remaining claim balance.
+                Also extract "citedFilingReferences": an array of "poslovni broj" values this document explicitly references (e.g. filings it appeals against or decides upon); empty array when none are cited.
+                Also extract every explicit "proceduralEvents" item into an array (empty when none): each item MUST have "eventType" (decision | appeal | appeal-response | appellate-decision | correction | postponement | hearing | motion | other), "instance" (exact court name when stated, otherwise first-instance | second-instance when supported), "outcome" (granted | dismissed | rejected | upheld | overturned | modified | remanded | pending | unknown), "finalityStated" (final | appealable | appealed | unknown; use final/appealable/appealed ONLY when the source explicitly states that legal status, otherwise unknown), "date" when stated, "filingReference" (this document's own poslovni broj, only when explicitly stated), "targetFilingReference" (the specific earlier filing decided on, appealed, answered, or corrected, only when explicit), "description" (brief Croatian action), and "quote" (verbatim source words proving the event). Request all these fields for every event. Never infer finality, outcome, or target from a similar description or general case posture.
+                Provide ONLY the json object and nothing else. Text:\n\n${segmentText}`;
 }
 
 class AnalyzeDocumentsTool extends Tool {
@@ -1306,16 +1327,7 @@ class AnalyzeDocumentsTool extends Tool {
 
                 //console.log(`Analyzing text from file: ${file.filePath}, the text length is: ${text.length}`);
                 // alt prompt: a medium-sized paragraph, two at most, ...
-                const prompt = `The main participants in this case are:\n${knownParties}\n
-                The participants include enriched registry data. Use this to determine if a company is active, in bankruptcy, or has failed to file financial reports (GFI) recently.
-
-                From the court document text below, extract key information as a JSON object with the following keys: "caseNumber", "decisionDate", and "summary" (a medium-sized paragraph, nicely formatted, to be in Croatian please, as that is what our customers speak).
-                Do include any important figures (currency amounts) you find in the summary.
-                Also extract any financial amounts (payments, claims, costs, reservations) into an optional "amounts" array, with ONE item per table row — if the document contains an itemized table, register, or list (popis tražbina, diobeni popis, troškovnik, obračun), extract one item per row and never merge rows into a single summary amount. Each item being a JSON object with: "description" (what the money is for, in Croatian), "amount" (number), "currency" ("EUR" or "HRK"), "date" (if known), "direction" (one of "potraživanje" when the amount is a claim in the debtor's favor, "obveza" when it is a liability against the debtor, or "awarded" | "rejected" | "netted" when a ruling decides it), "amountRole" (one of "total" | "line_item" | "principal" | "cost" | "paid" | "fee" — the figure's function in the document: "total" for stated sums, "line_item" for table/register rows; omit when unclear), "eventType" (one of "prijava" | "ustup" | "namirenje" | "drugo", when the amount records a lifecycle event), "legalEffect" (one of "creates" | "modifies" | "supersedes" | "resolves" | "implements" | "unknown" — what this entry's document does to the claim or right; omit when unclear), "references" (array of registry or filing identifiers this entry explicitly cites besides its own filingReference; empty array when none), "relationshipBasis" (one of "explicit_identifier" | "explicit_text" | "inferred" — how a "supersedes" link is evidenced in the source text; omit when there is no supersedes link), "payerName" and "payerOib" (who pays, OIB is 11 digits, if stated), "recipientName" and "recipientOib" (who receives, if stated), "amountEur" and "amountHrk" (when the source states BOTH currencies for one figure, copy each verbatim; otherwise omit), "isplatniRed" (payment-priority rank such as "drugi viši isplatni red", if stated), "claimRegistryNumber" (the "redni broj" from the claim register, if stated), "filingReference" (this document's "poslovni broj", if stated), and "quote" (a verbatim supporting quote copied exactly from the source text below that proves this amount; copy 1-2 sentences word-for-word, do not paraphrase). If the document contains no amounts, set "amounts" to an empty array.
-                Also extract any property/asset transactions (real estate sales, movable-asset sales, receivable assignments/cessions) into an optional "propertyFlow" array, with ONE item per table row under the same row rule as amounts above, each item being a JSON object with: "description" (what the asset is, in Croatian), "identifier" (cadastral parcel, registration number, or null when absent), "assetType" (one of "nekretnina" | "pokretnina" | "tražbina" | "drugo"), "transferor" (seller/assignor, if known), "transferee" (buyer/assignee, if known), "value" (number, if known), "currency" ("EUR" or "HRK", if known), "date" (if known), "legalEffect" (one of "creates" | "modifies" | "supersedes" | "resolves" | "implements" | "unknown" — what this entry's document does to the asset or right; omit when unclear), "references" (array of registry or filing identifiers this entry explicitly cites besides its own filingReference; empty array when none), "relationshipBasis" (one of "explicit_identifier" | "explicit_text" | "inferred" — how a "supersedes" link is evidenced in the source text; omit when there is no supersedes link), and "quote" (verbatim supporting quote as above). A receivable assignment/cession is ALWAYS a propertyFlow transaction even when it is stated in prose rather than a table: when the source says "Ugovor o ustupu", "cesija", or that a party assigns/transfers a "tražbina", add at least one assetType "tražbina" entry with eventType "ustup"; do not leave propertyFlow empty. For assetType "tražbina" (receivable/claim, e.g. "Ugovor o ustupu tražbina") additionally include "eventType" (one of "prijava" | "ustup" | "namirenje" | "drugo" — the lifecycle stage), "isplatniRed" (payment-priority rank, if stated), "claimRegistryNumber" (the "redni broj", if stated), "filingReference" (the document's "poslovni broj", if stated) and, when this entry continues an earlier lifecycle stage of the SAME receivable described in the analysed documents, "supersedes" (a short textual reference to that earlier entry, e.g. its description, case number, filing date or original creditor as cited in the source text). If the document contains no property transactions, set "propertyFlow" to an empty array.
-                For each non-null propertyFlow.value, also classify valueRole as "claim_balance" only when the source explicitly states the outstanding claim balance; "transfer_consideration" for the assignment price; "payment_amount" for a payment or recovery; "asset_value" for another asset valuation; or "unknown" when unclear. Never treat a payment or assignment price as a remaining claim balance.
-                Also extract "citedFilingReferences": an array of "poslovni broj" values this document explicitly references (e.g. filings it appeals against or decides upon); empty array when none are cited.
-                Provide ONLY the json object and nothing else. Text:\n\n${segment.text}`;
+                const prompt = buildAnalysisPrompt(knownParties, segment.text);
 
                 const response = await withGeminiRetry(
                     () => withGeminiTimeout((signal) => trackGeminiInvoke(gemini, prompt, { signal, tracker: usageTracker, onUsage })),
@@ -1595,5 +1607,9 @@ module.exports = {
     extractTextFromFile,
     extractTextViaNativePdf,
     extractTextViaOCR,
+    renderPageToJpeg,
+    buildOcrBatchInstruction,
+    buildAnalysisPrompt,
+    mergeAnalysisChunkResults,
     resetOcrPageCacheForTests,
 };
