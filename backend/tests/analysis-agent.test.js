@@ -269,9 +269,11 @@ describe('AnalyzeDocumentsTool', () => {
             caseInfo: { participants: [] },
         });
         const prompt = String(mockGeminiInvoke.mock.calls[0][0] || '');
-        for (const field of ['documentParties', 'oib', 'role', 'quote', 'direction', 'payerOib', 'recipientOib', 'isplatniRed', 'claimRegistryNumber', 'filingReference', 'citedFilingReferences']) {
+        for (const field of ['documentParties', 'oib', 'role', 'quote', 'direction', 'payerOib', 'recipientOib', 'isplatniRed', 'claimRegistryNumber', 'filingReference', 'citedFilingReferences', 'decisionOutcome', 'amountRole']) {
             expect(prompt).toContain(field);
         }
+        expect(prompt).toContain('Every individual data row/transaction');
+        expect(prompt).toContain('never mixing payout into amountEur');
     });
     it('accepts source party OIBs without requiring an amount or summary', async () => {
         mockGeminiInvoke.mockResolvedValue({
