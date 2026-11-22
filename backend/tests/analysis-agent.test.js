@@ -274,6 +274,7 @@ describe('AnalyzeDocumentsTool', () => {
         }
         expect(prompt).toContain('Every individual data row/transaction');
         expect(prompt).toContain('never mixing payout into amountEur');
+        expect(prompt).toContain('decisionOutcome MUST be "rejected" (the disposition of the appeal), not "upheld"');
     });
     it('accepts source party OIBs without requiring an amount or summary', async () => {
         mockGeminiInvoke.mockResolvedValue({

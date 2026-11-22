@@ -1,0 +1,2360 @@
+{
+  "runId": "2026-11-22T11-51-51-583Z-e93bc94c",
+  "aborted": null,
+  "actualCost": 0.047851330000000004,
+  "stageTSpend20261121": 0.0927731,
+  "combinedSpend": 0.140624,
+  "costMissingCalls": 0,
+  "overall": {
+    "z-ai/glm-5.3-flash": {
+      "docs": 2,
+      "pages": 11,
+      "coverage": {
+        "full": 2,
+        "partial": 0,
+        "failed": 0
+      },
+      "fields": {
+        "amounts": {
+          "tp": 6,
+          "pred": 6,
+          "ref": 6,
+          "microRecall": 1,
+          "microPrecision": 1,
+          "macroRecall": 1,
+          "macroRecallN": 1,
+          "macroPrecision": 1,
+          "macroPrecisionN": 1
+        },
+        "eur": {
+          "tp": 6,
+          "pred": 6,
+          "ref": 6,
+          "microRecall": 1,
+          "microPrecision": 1,
+          "macroRecall": 1,
+          "macroRecallN": 1,
+          "macroPrecision": 1,
+          "macroPrecisionN": 1
+        },
+        "hrk": {
+          "tp": 0,
+          "pred": 0,
+          "ref": 0,
+          "microRecall": 1,
+          "microPrecision": 1,
+          "macroRecall": null,
+          "macroRecallN": 0,
+          "macroPrecision": null,
+          "macroPrecisionN": 0
+        },
+        "oibs": {
+          "tp": 4,
+          "pred": 4,
+          "ref": 4,
+          "microRecall": 1,
+          "microPrecision": 1,
+          "macroRecall": 1,
+          "macroRecallN": 2,
+          "macroPrecision": 1,
+          "macroPrecisionN": 2
+        },
+        "dates": {
+          "tp": 11,
+          "pred": 11,
+          "ref": 25,
+          "microRecall": 0.44,
+          "microPrecision": 1,
+          "macroRecall": 0.4833333333333333,
+          "macroRecallN": 2,
+          "macroPrecision": 1,
+          "macroPrecisionN": 2
+        },
+        "filingNumbers": {
+          "tp": 9,
+          "pred": 9,
+          "ref": 9,
+          "microRecall": 1,
+          "microPrecision": 1,
+          "macroRecall": 1,
+          "macroRecallN": 2,
+          "macroPrecision": 1,
+          "macroPrecisionN": 2
+        },
+        "decisionOutcome": {
+          "tp": 2,
+          "pred": 2,
+          "ref": 2,
+          "microRecall": 1,
+          "microPrecision": 1,
+          "macroRecall": 1,
+          "macroRecallN": 2,
+          "macroPrecision": 1,
+          "macroPrecisionN": 2
+        },
+        "tableRowCounts": {
+          "tp": 0,
+          "pred": 4,
+          "ref": 0,
+          "microRecall": 0,
+          "microPrecision": 0,
+          "macroRecall": null,
+          "macroRecallN": 0,
+          "macroPrecision": 0,
+          "macroPrecisionN": 1
+        }
+      },
+      "grounding": {
+        "grounded": 35,
+        "total": 35,
+        "rate": 1
+      },
+      "json": {
+        "cellRawParse": 0,
+        "cellStructuredMode": 2,
+        "cellRepaired": 0,
+        "reqCompleted": 11,
+        "reqTotal": 11,
+        "reqTruncated": 0,
+        "reqCached": 0
+      },
+      "latency": {
+        "meanMs": 88001.1319335,
+        "p50Ms": 72343.066849,
+        "sumMs": 176002.263867
+      },
+      "cost": {
+        "sumUsd": 0.011947,
+        "costPer100PagesUsd": 0.1086,
+        "missingCells": 0
+      }
+    },
+    "google/gemini-2.5-flash": {
+      "docs": 2,
+      "pages": 11,
+      "coverage": {
+        "full": 2,
+        "partial": 0,
+        "failed": 0
+      },
+      "fields": {
+        "amounts": {
+          "tp": 6,
+          "pred": 6,
+          "ref": 6,
+          "microRecall": 1,
+          "microPrecision": 1,
+          "macroRecall": 1,
+          "macroRecallN": 1,
+          "macroPrecision": 1,
+          "macroPrecisionN": 1
+        },
+        "eur": {
+          "tp": 6,
+          "pred": 6,
+          "ref": 6,
+          "microRecall": 1,
+          "microPrecision": 1,
+          "macroRecall": 1,
+          "macroRecallN": 1,
+          "macroPrecision": 1,
+          "macroPrecisionN": 1
+        },
+        "hrk": {
+          "tp": 0,
+          "pred": 0,
+          "ref": 0,
+          "microRecall": 1,
+          "microPrecision": 1,
+          "macroRecall": null,
+          "macroRecallN": 0,
+          "macroPrecision": null,
+          "macroPrecisionN": 0
+        },
+        "oibs": {
+          "tp": 4,
+          "pred": 4,
+          "ref": 4,
+          "microRecall": 1,
+          "microPrecision": 1,
+          "macroRecall": 1,
+          "macroRecallN": 2,
+          "macroPrecision": 1,
+          "macroPrecisionN": 2
+        },
+        "dates": {
+          "tp": 12,
+          "pred": 12,
+          "ref": 25,
+          "microRecall": 0.48,
+          "microPrecision": 1,
+          "macroRecall": 0.48333333333333334,
+          "macroRecallN": 2,
+          "macroPrecision": 1,
+          "macroPrecisionN": 2
+        },
+        "filingNumbers": {
+          "tp": 9,
+          "pred": 9,
+          "ref": 9,
+          "microRecall": 1,
+          "microPrecision": 1,
+          "macroRecall": 1,
+          "macroRecallN": 2,
+          "macroPrecision": 1,
+          "macroPrecisionN": 2
+        },
+        "decisionOutcome": {
+          "tp": 2,
+          "pred": 2,
+          "ref": 2,
+          "microRecall": 1,
+          "microPrecision": 1,
+          "macroRecall": 1,
+          "macroRecallN": 2,
+          "macroPrecision": 1,
+          "macroPrecisionN": 2
+        },
+        "tableRowCounts": {
+          "tp": 0,
+          "pred": 3,
+          "ref": 0,
+          "microRecall": 0,
+          "microPrecision": 0,
+          "macroRecall": null,
+          "macroRecallN": 0,
+          "macroPrecision": 0,
+          "macroPrecisionN": 1
+        }
+      },
+      "grounding": {
+        "grounded": 36,
+        "total": 36,
+        "rate": 1
+      },
+      "json": {
+        "cellRawParse": 0,
+        "cellStructuredMode": 2,
+        "cellRepaired": 0,
+        "reqCompleted": 11,
+        "reqTotal": 11,
+        "reqTruncated": 0,
+        "reqCached": 0
+      },
+      "latency": {
+        "meanMs": 31659.446617000016,
+        "p50Ms": 31073.62548400002,
+        "sumMs": 63318.89323400003
+      },
+      "cost": {
+        "sumUsd": 0.035904,
+        "costPer100PagesUsd": 0.3264,
+        "missingCells": 0
+      }
+    }
+  },
+  "buckets": {
+    "layer_text": {
+      "z-ai/glm-5.3-flash": {
+        "docs": 1,
+        "pages": 6,
+        "coverage": {
+          "full": 1,
+          "partial": 0,
+          "failed": 0
+        },
+        "fields": {
+          "amounts": {
+            "tp": 6,
+            "pred": 6,
+            "ref": 6,
+            "microRecall": 1,
+            "microPrecision": 1,
+            "macroRecall": 1,
+            "macroRecallN": 1,
+            "macroPrecision": 1,
+            "macroPrecisionN": 1
+          },
+          "eur": {
+            "tp": 6,
+            "pred": 6,
+            "ref": 6,
+            "microRecall": 1,
+            "microPrecision": 1,
+            "macroRecall": 1,
+            "macroRecallN": 1,
+            "macroPrecision": 1,
+            "macroPrecisionN": 1
+          },
+          "hrk": {
+            "tp": 0,
+            "pred": 0,
+            "ref": 0,
+            "microRecall": 1,
+            "microPrecision": 1,
+            "macroRecall": null,
+            "macroRecallN": 0,
+            "macroPrecision": null,
+            "macroPrecisionN": 0
+          },
+          "oibs": {
+            "tp": 3,
+            "pred": 3,
+            "ref": 3,
+            "microRecall": 1,
+            "microPrecision": 1,
+            "macroRecall": 1,
+            "macroRecallN": 1,
+            "macroPrecision": 1,
+            "macroPrecisionN": 1
+          },
+          "dates": {
+            "tp": 7,
+            "pred": 7,
+            "ref": 10,
+            "microRecall": 0.7,
+            "microPrecision": 1,
+            "macroRecall": 0.7,
+            "macroRecallN": 1,
+            "macroPrecision": 1,
+            "macroPrecisionN": 1
+          },
+          "filingNumbers": {
+            "tp": 4,
+            "pred": 4,
+            "ref": 4,
+            "microRecall": 1,
+            "microPrecision": 1,
+            "macroRecall": 1,
+            "macroRecallN": 1,
+            "macroPrecision": 1,
+            "macroPrecisionN": 1
+          },
+          "decisionOutcome": {
+            "tp": 1,
+            "pred": 1,
+            "ref": 1,
+            "microRecall": 1,
+            "microPrecision": 1,
+            "macroRecall": 1,
+            "macroRecallN": 1,
+            "macroPrecision": 1,
+            "macroPrecisionN": 1
+          },
+          "tableRowCounts": {
+            "tp": 0,
+            "pred": 4,
+            "ref": 0,
+            "microRecall": 0,
+            "microPrecision": 0,
+            "macroRecall": null,
+            "macroRecallN": 0,
+            "macroPrecision": 0,
+            "macroPrecisionN": 1
+          }
+        },
+        "grounding": {
+          "grounded": 24,
+          "total": 24,
+          "rate": 1
+        },
+        "json": {
+          "cellRawParse": 0,
+          "cellStructuredMode": 1,
+          "cellRepaired": 0,
+          "reqCompleted": 5,
+          "reqTotal": 5,
+          "reqTruncated": 0,
+          "reqCached": 0
+        },
+        "latency": {
+          "meanMs": 103659.197018,
+          "p50Ms": 103659.197018,
+          "sumMs": 103659.197018
+        },
+        "cost": {
+          "sumUsd": 0.006376,
+          "costPer100PagesUsd": 0.1063,
+          "missingCells": 0
+        }
+      },
+      "google/gemini-2.5-flash": {
+        "docs": 1,
+        "pages": 6,
+        "coverage": {
+          "full": 1,
+          "partial": 0,
+          "failed": 0
+        },
+        "fields": {
+          "amounts": {
+            "tp": 6,
+            "pred": 6,
+            "ref": 6,
+            "microRecall": 1,
+            "microPrecision": 1,
+            "macroRecall": 1,
+            "macroRecallN": 1,
+            "macroPrecision": 1,
+            "macroPrecisionN": 1
+          },
+          "eur": {
+            "tp": 6,
+            "pred": 6,
+            "ref": 6,
+            "microRecall": 1,
+            "microPrecision": 1,
+            "macroRecall": 1,
+            "macroRecallN": 1,
+            "macroPrecision": 1,
+            "macroPrecisionN": 1
+          },
+          "hrk": {
+            "tp": 0,
+            "pred": 0,
+            "ref": 0,
+            "microRecall": 1,
+            "microPrecision": 1,
+            "macroRecall": null,
+            "macroRecallN": 0,
+            "macroPrecision": null,
+            "macroPrecisionN": 0
+          },
+          "oibs": {
+            "tp": 3,
+            "pred": 3,
+            "ref": 3,
+            "microRecall": 1,
+            "microPrecision": 1,
+            "macroRecall": 1,
+            "macroRecallN": 1,
+            "macroPrecision": 1,
+            "macroPrecisionN": 1
+          },
+          "dates": {
+            "tp": 5,
+            "pred": 5,
+            "ref": 10,
+            "microRecall": 0.5,
+            "microPrecision": 1,
+            "macroRecall": 0.5,
+            "macroRecallN": 1,
+            "macroPrecision": 1,
+            "macroPrecisionN": 1
+          },
+          "filingNumbers": {
+            "tp": 4,
+            "pred": 4,
+            "ref": 4,
+            "microRecall": 1,
+            "microPrecision": 1,
+            "macroRecall": 1,
+            "macroRecallN": 1,
+            "macroPrecision": 1,
+            "macroPrecisionN": 1
+          },
+          "decisionOutcome": {
+            "tp": 1,
+            "pred": 1,
+            "ref": 1,
+            "microRecall": 1,
+            "microPrecision": 1,
+            "macroRecall": 1,
+            "macroRecallN": 1,
+            "macroPrecision": 1,
+            "macroPrecisionN": 1
+          },
+          "tableRowCounts": {
+            "tp": 0,
+            "pred": 3,
+            "ref": 0,
+            "microRecall": 0,
+            "microPrecision": 0,
+            "macroRecall": null,
+            "macroRecallN": 0,
+            "macroPrecision": 0,
+            "macroPrecisionN": 1
+          }
+        },
+        "grounding": {
+          "grounded": 17,
+          "total": 17,
+          "rate": 1
+        },
+        "json": {
+          "cellRawParse": 0,
+          "cellStructuredMode": 1,
+          "cellRepaired": 0,
+          "reqCompleted": 5,
+          "reqTotal": 5,
+          "reqTruncated": 0,
+          "reqCached": 0
+        },
+        "latency": {
+          "meanMs": 32245.267750000014,
+          "p50Ms": 32245.267750000014,
+          "sumMs": 32245.267750000014
+        },
+        "cost": {
+          "sumUsd": 0.017543,
+          "costPer100PagesUsd": 0.2924,
+          "missingCells": 0
+        }
+      }
+    },
+    "layer_image": {
+      "z-ai/glm-5.3-flash": {
+        "docs": 1,
+        "pages": 5,
+        "coverage": {
+          "full": 1,
+          "partial": 0,
+          "failed": 0
+        },
+        "fields": {
+          "amounts": {
+            "tp": 0,
+            "pred": 0,
+            "ref": 0,
+            "microRecall": 1,
+            "microPrecision": 1,
+            "macroRecall": null,
+            "macroRecallN": 0,
+            "macroPrecision": null,
+            "macroPrecisionN": 0
+          },
+          "eur": {
+            "tp": 0,
+            "pred": 0,
+            "ref": 0,
+            "microRecall": 1,
+            "microPrecision": 1,
+            "macroRecall": null,
+            "macroRecallN": 0,
+            "macroPrecision": null,
+            "macroPrecisionN": 0
+          },
+          "hrk": {
+            "tp": 0,
+            "pred": 0,
+            "ref": 0,
+            "microRecall": 1,
+            "microPrecision": 1,
+            "macroRecall": null,
+            "macroRecallN": 0,
+            "macroPrecision": null,
+            "macroPrecisionN": 0
+          },
+          "oibs": {
+            "tp": 1,
+            "pred": 1,
+            "ref": 1,
+            "microRecall": 1,
+            "microPrecision": 1,
+            "macroRecall": 1,
+            "macroRecallN": 1,
+            "macroPrecision": 1,
+            "macroPrecisionN": 1
+          },
+          "dates": {
+            "tp": 4,
+            "pred": 4,
+            "ref": 15,
+            "microRecall": 0.26666666666666666,
+            "microPrecision": 1,
+            "macroRecall": 0.26666666666666666,
+            "macroRecallN": 1,
+            "macroPrecision": 1,
+            "macroPrecisionN": 1
+          },
+          "filingNumbers": {
+            "tp": 5,
+            "pred": 5,
+            "ref": 5,
+            "microRecall": 1,
+            "microPrecision": 1,
+            "macroRecall": 1,
+            "macroRecallN": 1,
+            "macroPrecision": 1,
+            "macroPrecisionN": 1
+          },
+          "decisionOutcome": {
+            "tp": 1,
+            "pred": 1,
+            "ref": 1,
+            "microRecall": 1,
+            "microPrecision": 1,
+            "macroRecall": 1,
+            "macroRecallN": 1,
+            "macroPrecision": 1,
+            "macroPrecisionN": 1
+          },
+          "tableRowCounts": {
+            "tp": 0,
+            "pred": 0,
+            "ref": 0,
+            "microRecall": 1,
+            "microPrecision": 1,
+            "macroRecall": null,
+            "macroRecallN": 0,
+            "macroPrecision": null,
+            "macroPrecisionN": 0
+          }
+        },
+        "grounding": {
+          "grounded": 11,
+          "total": 11,
+          "rate": 1
+        },
+        "json": {
+          "cellRawParse": 0,
+          "cellStructuredMode": 1,
+          "cellRepaired": 0,
+          "reqCompleted": 6,
+          "reqTotal": 6,
+          "reqTruncated": 0,
+          "reqCached": 0
+        },
+        "latency": {
+          "meanMs": 72343.066849,
+          "p50Ms": 72343.066849,
+          "sumMs": 72343.066849
+        },
+        "cost": {
+          "sumUsd": 0.005571,
+          "costPer100PagesUsd": 0.1114,
+          "missingCells": 0
+        }
+      },
+      "google/gemini-2.5-flash": {
+        "docs": 1,
+        "pages": 5,
+        "coverage": {
+          "full": 1,
+          "partial": 0,
+          "failed": 0
+        },
+        "fields": {
+          "amounts": {
+            "tp": 0,
+            "pred": 0,
+            "ref": 0,
+            "microRecall": 1,
+            "microPrecision": 1,
+            "macroRecall": null,
+            "macroRecallN": 0,
+            "macroPrecision": null,
+            "macroPrecisionN": 0
+          },
+          "eur": {
+            "tp": 0,
+            "pred": 0,
+            "ref": 0,
+            "microRecall": 1,
+            "microPrecision": 1,
+            "macroRecall": null,
+            "macroRecallN": 0,
+            "macroPrecision": null,
+            "macroPrecisionN": 0
+          },
+          "hrk": {
+            "tp": 0,
+            "pred": 0,
+            "ref": 0,
+            "microRecall": 1,
+            "microPrecision": 1,
+            "macroRecall": null,
+            "macroRecallN": 0,
+            "macroPrecision": null,
+            "macroPrecisionN": 0
+          },
+          "oibs": {
+            "tp": 1,
+            "pred": 1,
+            "ref": 1,
+            "microRecall": 1,
+            "microPrecision": 1,
+            "macroRecall": 1,
+            "macroRecallN": 1,
+            "macroPrecision": 1,
+            "macroPrecisionN": 1
+          },
+          "dates": {
+            "tp": 7,
+            "pred": 7,
+            "ref": 15,
+            "microRecall": 0.4666666666666667,
+            "microPrecision": 1,
+            "macroRecall": 0.4666666666666667,
+            "macroRecallN": 1,
+            "macroPrecision": 1,
+            "macroPrecisionN": 1
+          },
+          "filingNumbers": {
+            "tp": 5,
+            "pred": 5,
+            "ref": 5,
+            "microRecall": 1,
+            "microPrecision": 1,
+            "macroRecall": 1,
+            "macroRecallN": 1,
+            "macroPrecision": 1,
+            "macroPrecisionN": 1
+          },
+          "decisionOutcome": {
+            "tp": 1,
+            "pred": 1,
+            "ref": 1,
+            "microRecall": 1,
+            "microPrecision": 1,
+            "macroRecall": 1,
+            "macroRecallN": 1,
+            "macroPrecision": 1,
+            "macroPrecisionN": 1
+          },
+          "tableRowCounts": {
+            "tp": 0,
+            "pred": 0,
+            "ref": 0,
+            "microRecall": 1,
+            "microPrecision": 1,
+            "macroRecall": null,
+            "macroRecallN": 0,
+            "macroPrecision": null,
+            "macroPrecisionN": 0
+          }
+        },
+        "grounding": {
+          "grounded": 19,
+          "total": 19,
+          "rate": 1
+        },
+        "json": {
+          "cellRawParse": 0,
+          "cellStructuredMode": 1,
+          "cellRepaired": 0,
+          "reqCompleted": 6,
+          "reqTotal": 6,
+          "reqTruncated": 0,
+          "reqCached": 0
+        },
+        "latency": {
+          "meanMs": 31073.62548400002,
+          "p50Ms": 31073.62548400002,
+          "sumMs": 31073.62548400002
+        },
+        "cost": {
+          "sumUsd": 0.018361,
+          "costPer100PagesUsd": 0.3672,
+          "missingCells": 0
+        }
+      }
+    },
+    "type_ruling": {
+      "z-ai/glm-5.3-flash": {
+        "docs": 2,
+        "pages": 11,
+        "coverage": {
+          "full": 2,
+          "partial": 0,
+          "failed": 0
+        },
+        "fields": {
+          "amounts": {
+            "tp": 6,
+            "pred": 6,
+            "ref": 6,
+            "microRecall": 1,
+            "microPrecision": 1,
+            "macroRecall": 1,
+            "macroRecallN": 1,
+            "macroPrecision": 1,
+            "macroPrecisionN": 1
+          },
+          "eur": {
+            "tp": 6,
+            "pred": 6,
+            "ref": 6,
+            "microRecall": 1,
+            "microPrecision": 1,
+            "macroRecall": 1,
+            "macroRecallN": 1,
+            "macroPrecision": 1,
+            "macroPrecisionN": 1
+          },
+          "hrk": {
+            "tp": 0,
+            "pred": 0,
+            "ref": 0,
+            "microRecall": 1,
+            "microPrecision": 1,
+            "macroRecall": null,
+            "macroRecallN": 0,
+            "macroPrecision": null,
+            "macroPrecisionN": 0
+          },
+          "oibs": {
+            "tp": 4,
+            "pred": 4,
+            "ref": 4,
+            "microRecall": 1,
+            "microPrecision": 1,
+            "macroRecall": 1,
+            "macroRecallN": 2,
+            "macroPrecision": 1,
+            "macroPrecisionN": 2
+          },
+          "dates": {
+            "tp": 11,
+            "pred": 11,
+            "ref": 25,
+            "microRecall": 0.44,
+            "microPrecision": 1,
+            "macroRecall": 0.4833333333333333,
+            "macroRecallN": 2,
+            "macroPrecision": 1,
+            "macroPrecisionN": 2
+          },
+          "filingNumbers": {
+            "tp": 9,
+            "pred": 9,
+            "ref": 9,
+            "microRecall": 1,
+            "microPrecision": 1,
+            "macroRecall": 1,
+            "macroRecallN": 2,
+            "macroPrecision": 1,
+            "macroPrecisionN": 2
+          },
+          "decisionOutcome": {
+            "tp": 2,
+            "pred": 2,
+            "ref": 2,
+            "microRecall": 1,
+            "microPrecision": 1,
+            "macroRecall": 1,
+            "macroRecallN": 2,
+            "macroPrecision": 1,
+            "macroPrecisionN": 2
+          },
+          "tableRowCounts": {
+            "tp": 0,
+            "pred": 4,
+            "ref": 0,
+            "microRecall": 0,
+            "microPrecision": 0,
+            "macroRecall": null,
+            "macroRecallN": 0,
+            "macroPrecision": 0,
+            "macroPrecisionN": 1
+          }
+        },
+        "grounding": {
+          "grounded": 35,
+          "total": 35,
+          "rate": 1
+        },
+        "json": {
+          "cellRawParse": 0,
+          "cellStructuredMode": 2,
+          "cellRepaired": 0,
+          "reqCompleted": 11,
+          "reqTotal": 11,
+          "reqTruncated": 0,
+          "reqCached": 0
+        },
+        "latency": {
+          "meanMs": 88001.1319335,
+          "p50Ms": 72343.066849,
+          "sumMs": 176002.263867
+        },
+        "cost": {
+          "sumUsd": 0.011947,
+          "costPer100PagesUsd": 0.1086,
+          "missingCells": 0
+        }
+      },
+      "google/gemini-2.5-flash": {
+        "docs": 2,
+        "pages": 11,
+        "coverage": {
+          "full": 2,
+          "partial": 0,
+          "failed": 0
+        },
+        "fields": {
+          "amounts": {
+            "tp": 6,
+            "pred": 6,
+            "ref": 6,
+            "microRecall": 1,
+            "microPrecision": 1,
+            "macroRecall": 1,
+            "macroRecallN": 1,
+            "macroPrecision": 1,
+            "macroPrecisionN": 1
+          },
+          "eur": {
+            "tp": 6,
+            "pred": 6,
+            "ref": 6,
+            "microRecall": 1,
+            "microPrecision": 1,
+            "macroRecall": 1,
+            "macroRecallN": 1,
+            "macroPrecision": 1,
+            "macroPrecisionN": 1
+          },
+          "hrk": {
+            "tp": 0,
+            "pred": 0,
+            "ref": 0,
+            "microRecall": 1,
+            "microPrecision": 1,
+            "macroRecall": null,
+            "macroRecallN": 0,
+            "macroPrecision": null,
+            "macroPrecisionN": 0
+          },
+          "oibs": {
+            "tp": 4,
+            "pred": 4,
+            "ref": 4,
+            "microRecall": 1,
+            "microPrecision": 1,
+            "macroRecall": 1,
+            "macroRecallN": 2,
+            "macroPrecision": 1,
+            "macroPrecisionN": 2
+          },
+          "dates": {
+            "tp": 12,
+            "pred": 12,
+            "ref": 25,
+            "microRecall": 0.48,
+            "microPrecision": 1,
+            "macroRecall": 0.48333333333333334,
+            "macroRecallN": 2,
+            "macroPrecision": 1,
+            "macroPrecisionN": 2
+          },
+          "filingNumbers": {
+            "tp": 9,
+            "pred": 9,
+            "ref": 9,
+            "microRecall": 1,
+            "microPrecision": 1,
+            "macroRecall": 1,
+            "macroRecallN": 2,
+            "macroPrecision": 1,
+            "macroPrecisionN": 2
+          },
+          "decisionOutcome": {
+            "tp": 2,
+            "pred": 2,
+            "ref": 2,
+            "microRecall": 1,
+            "microPrecision": 1,
+            "macroRecall": 1,
+            "macroRecallN": 2,
+            "macroPrecision": 1,
+            "macroPrecisionN": 2
+          },
+          "tableRowCounts": {
+            "tp": 0,
+            "pred": 3,
+            "ref": 0,
+            "microRecall": 0,
+            "microPrecision": 0,
+            "macroRecall": null,
+            "macroRecallN": 0,
+            "macroPrecision": 0,
+            "macroPrecisionN": 1
+          }
+        },
+        "grounding": {
+          "grounded": 36,
+          "total": 36,
+          "rate": 1
+        },
+        "json": {
+          "cellRawParse": 0,
+          "cellStructuredMode": 2,
+          "cellRepaired": 0,
+          "reqCompleted": 11,
+          "reqTotal": 11,
+          "reqTruncated": 0,
+          "reqCached": 0
+        },
+        "latency": {
+          "meanMs": 31659.446617000016,
+          "p50Ms": 31073.62548400002,
+          "sumMs": 63318.89323400003
+        },
+        "cost": {
+          "sumUsd": 0.035904,
+          "costPer100PagesUsd": 0.3264,
+          "missingCells": 0
+        }
+      }
+    },
+    "type_table_statement": {
+      "z-ai/glm-5.3-flash": {
+        "docs": 0,
+        "pages": 0,
+        "coverage": {
+          "full": 0,
+          "partial": 0,
+          "failed": 0
+        },
+        "fields": {
+          "amounts": {
+            "tp": 0,
+            "pred": 0,
+            "ref": 0,
+            "microRecall": 1,
+            "microPrecision": 1,
+            "macroRecall": null,
+            "macroRecallN": 0,
+            "macroPrecision": null,
+            "macroPrecisionN": 0
+          },
+          "eur": {
+            "tp": 0,
+            "pred": 0,
+            "ref": 0,
+            "microRecall": 1,
+            "microPrecision": 1,
+            "macroRecall": null,
+            "macroRecallN": 0,
+            "macroPrecision": null,
+            "macroPrecisionN": 0
+          },
+          "hrk": {
+            "tp": 0,
+            "pred": 0,
+            "ref": 0,
+            "microRecall": 1,
+            "microPrecision": 1,
+            "macroRecall": null,
+            "macroRecallN": 0,
+            "macroPrecision": null,
+            "macroPrecisionN": 0
+          },
+          "oibs": {
+            "tp": 0,
+            "pred": 0,
+            "ref": 0,
+            "microRecall": 1,
+            "microPrecision": 1,
+            "macroRecall": null,
+            "macroRecallN": 0,
+            "macroPrecision": null,
+            "macroPrecisionN": 0
+          },
+          "dates": {
+            "tp": 0,
+            "pred": 0,
+            "ref": 0,
+            "microRecall": 1,
+            "microPrecision": 1,
+            "macroRecall": null,
+            "macroRecallN": 0,
+            "macroPrecision": null,
+            "macroPrecisionN": 0
+          },
+          "filingNumbers": {
+            "tp": 0,
+            "pred": 0,
+            "ref": 0,
+            "microRecall": 1,
+            "microPrecision": 1,
+            "macroRecall": null,
+            "macroRecallN": 0,
+            "macroPrecision": null,
+            "macroPrecisionN": 0
+          },
+          "decisionOutcome": {
+            "tp": 0,
+            "pred": 0,
+            "ref": 0,
+            "microRecall": 1,
+            "microPrecision": 1,
+            "macroRecall": null,
+            "macroRecallN": 0,
+            "macroPrecision": null,
+            "macroPrecisionN": 0
+          },
+          "tableRowCounts": {
+            "tp": 0,
+            "pred": 0,
+            "ref": 0,
+            "microRecall": 1,
+            "microPrecision": 1,
+            "macroRecall": null,
+            "macroRecallN": 0,
+            "macroPrecision": null,
+            "macroPrecisionN": 0
+          }
+        },
+        "grounding": {
+          "grounded": 0,
+          "total": 0,
+          "rate": null
+        },
+        "json": {
+          "cellRawParse": 0,
+          "cellStructuredMode": 0,
+          "cellRepaired": 0,
+          "reqCompleted": 0,
+          "reqTotal": 0,
+          "reqTruncated": 0,
+          "reqCached": 0
+        },
+        "latency": {
+          "meanMs": null,
+          "p50Ms": null,
+          "sumMs": 0
+        },
+        "cost": {
+          "sumUsd": 0,
+          "costPer100PagesUsd": null,
+          "missingCells": 0
+        }
+      },
+      "google/gemini-2.5-flash": {
+        "docs": 0,
+        "pages": 0,
+        "coverage": {
+          "full": 0,
+          "partial": 0,
+          "failed": 0
+        },
+        "fields": {
+          "amounts": {
+            "tp": 0,
+            "pred": 0,
+            "ref": 0,
+            "microRecall": 1,
+            "microPrecision": 1,
+            "macroRecall": null,
+            "macroRecallN": 0,
+            "macroPrecision": null,
+            "macroPrecisionN": 0
+          },
+          "eur": {
+            "tp": 0,
+            "pred": 0,
+            "ref": 0,
+            "microRecall": 1,
+            "microPrecision": 1,
+            "macroRecall": null,
+            "macroRecallN": 0,
+            "macroPrecision": null,
+            "macroPrecisionN": 0
+          },
+          "hrk": {
+            "tp": 0,
+            "pred": 0,
+            "ref": 0,
+            "microRecall": 1,
+            "microPrecision": 1,
+            "macroRecall": null,
+            "macroRecallN": 0,
+            "macroPrecision": null,
+            "macroPrecisionN": 0
+          },
+          "oibs": {
+            "tp": 0,
+            "pred": 0,
+            "ref": 0,
+            "microRecall": 1,
+            "microPrecision": 1,
+            "macroRecall": null,
+            "macroRecallN": 0,
+            "macroPrecision": null,
+            "macroPrecisionN": 0
+          },
+          "dates": {
+            "tp": 0,
+            "pred": 0,
+            "ref": 0,
+            "microRecall": 1,
+            "microPrecision": 1,
+            "macroRecall": null,
+            "macroRecallN": 0,
+            "macroPrecision": null,
+            "macroPrecisionN": 0
+          },
+          "filingNumbers": {
+            "tp": 0,
+            "pred": 0,
+            "ref": 0,
+            "microRecall": 1,
+            "microPrecision": 1,
+            "macroRecall": null,
+            "macroRecallN": 0,
+            "macroPrecision": null,
+            "macroPrecisionN": 0
+          },
+          "decisionOutcome": {
+            "tp": 0,
+            "pred": 0,
+            "ref": 0,
+            "microRecall": 1,
+            "microPrecision": 1,
+            "macroRecall": null,
+            "macroRecallN": 0,
+            "macroPrecision": null,
+            "macroPrecisionN": 0
+          },
+          "tableRowCounts": {
+            "tp": 0,
+            "pred": 0,
+            "ref": 0,
+            "microRecall": 1,
+            "microPrecision": 1,
+            "macroRecall": null,
+            "macroRecallN": 0,
+            "macroPrecision": null,
+            "macroPrecisionN": 0
+          }
+        },
+        "grounding": {
+          "grounded": 0,
+          "total": 0,
+          "rate": null
+        },
+        "json": {
+          "cellRawParse": 0,
+          "cellStructuredMode": 0,
+          "cellRepaired": 0,
+          "reqCompleted": 0,
+          "reqTotal": 0,
+          "reqTruncated": 0,
+          "reqCached": 0
+        },
+        "latency": {
+          "meanMs": null,
+          "p50Ms": null,
+          "sumMs": 0
+        },
+        "cost": {
+          "sumUsd": 0,
+          "costPer100PagesUsd": null,
+          "missingCells": 0
+        }
+      }
+    },
+    "type_filing_contract_report": {
+      "z-ai/glm-5.3-flash": {
+        "docs": 0,
+        "pages": 0,
+        "coverage": {
+          "full": 0,
+          "partial": 0,
+          "failed": 0
+        },
+        "fields": {
+          "amounts": {
+            "tp": 0,
+            "pred": 0,
+            "ref": 0,
+            "microRecall": 1,
+            "microPrecision": 1,
+            "macroRecall": null,
+            "macroRecallN": 0,
+            "macroPrecision": null,
+            "macroPrecisionN": 0
+          },
+          "eur": {
+            "tp": 0,
+            "pred": 0,
+            "ref": 0,
+            "microRecall": 1,
+            "microPrecision": 1,
+            "macroRecall": null,
+            "macroRecallN": 0,
+            "macroPrecision": null,
+            "macroPrecisionN": 0
+          },
+          "hrk": {
+            "tp": 0,
+            "pred": 0,
+            "ref": 0,
+            "microRecall": 1,
+            "microPrecision": 1,
+            "macroRecall": null,
+            "macroRecallN": 0,
+            "macroPrecision": null,
+            "macroPrecisionN": 0
+          },
+          "oibs": {
+            "tp": 0,
+            "pred": 0,
+            "ref": 0,
+            "microRecall": 1,
+            "microPrecision": 1,
+            "macroRecall": null,
+            "macroRecallN": 0,
+            "macroPrecision": null,
+            "macroPrecisionN": 0
+          },
+          "dates": {
+            "tp": 0,
+            "pred": 0,
+            "ref": 0,
+            "microRecall": 1,
+            "microPrecision": 1,
+            "macroRecall": null,
+            "macroRecallN": 0,
+            "macroPrecision": null,
+            "macroPrecisionN": 0
+          },
+          "filingNumbers": {
+            "tp": 0,
+            "pred": 0,
+            "ref": 0,
+            "microRecall": 1,
+            "microPrecision": 1,
+            "macroRecall": null,
+            "macroRecallN": 0,
+            "macroPrecision": null,
+            "macroPrecisionN": 0
+          },
+          "decisionOutcome": {
+            "tp": 0,
+            "pred": 0,
+            "ref": 0,
+            "microRecall": 1,
+            "microPrecision": 1,
+            "macroRecall": null,
+            "macroRecallN": 0,
+            "macroPrecision": null,
+            "macroPrecisionN": 0
+          },
+          "tableRowCounts": {
+            "tp": 0,
+            "pred": 0,
+            "ref": 0,
+            "microRecall": 1,
+            "microPrecision": 1,
+            "macroRecall": null,
+            "macroRecallN": 0,
+            "macroPrecision": null,
+            "macroPrecisionN": 0
+          }
+        },
+        "grounding": {
+          "grounded": 0,
+          "total": 0,
+          "rate": null
+        },
+        "json": {
+          "cellRawParse": 0,
+          "cellStructuredMode": 0,
+          "cellRepaired": 0,
+          "reqCompleted": 0,
+          "reqTotal": 0,
+          "reqTruncated": 0,
+          "reqCached": 0
+        },
+        "latency": {
+          "meanMs": null,
+          "p50Ms": null,
+          "sumMs": 0
+        },
+        "cost": {
+          "sumUsd": 0,
+          "costPer100PagesUsd": null,
+          "missingCells": 0
+        }
+      },
+      "google/gemini-2.5-flash": {
+        "docs": 0,
+        "pages": 0,
+        "coverage": {
+          "full": 0,
+          "partial": 0,
+          "failed": 0
+        },
+        "fields": {
+          "amounts": {
+            "tp": 0,
+            "pred": 0,
+            "ref": 0,
+            "microRecall": 1,
+            "microPrecision": 1,
+            "macroRecall": null,
+            "macroRecallN": 0,
+            "macroPrecision": null,
+            "macroPrecisionN": 0
+          },
+          "eur": {
+            "tp": 0,
+            "pred": 0,
+            "ref": 0,
+            "microRecall": 1,
+            "microPrecision": 1,
+            "macroRecall": null,
+            "macroRecallN": 0,
+            "macroPrecision": null,
+            "macroPrecisionN": 0
+          },
+          "hrk": {
+            "tp": 0,
+            "pred": 0,
+            "ref": 0,
+            "microRecall": 1,
+            "microPrecision": 1,
+            "macroRecall": null,
+            "macroRecallN": 0,
+            "macroPrecision": null,
+            "macroPrecisionN": 0
+          },
+          "oibs": {
+            "tp": 0,
+            "pred": 0,
+            "ref": 0,
+            "microRecall": 1,
+            "microPrecision": 1,
+            "macroRecall": null,
+            "macroRecallN": 0,
+            "macroPrecision": null,
+            "macroPrecisionN": 0
+          },
+          "dates": {
+            "tp": 0,
+            "pred": 0,
+            "ref": 0,
+            "microRecall": 1,
+            "microPrecision": 1,
+            "macroRecall": null,
+            "macroRecallN": 0,
+            "macroPrecision": null,
+            "macroPrecisionN": 0
+          },
+          "filingNumbers": {
+            "tp": 0,
+            "pred": 0,
+            "ref": 0,
+            "microRecall": 1,
+            "microPrecision": 1,
+            "macroRecall": null,
+            "macroRecallN": 0,
+            "macroPrecision": null,
+            "macroPrecisionN": 0
+          },
+          "decisionOutcome": {
+            "tp": 0,
+            "pred": 0,
+            "ref": 0,
+            "microRecall": 1,
+            "microPrecision": 1,
+            "macroRecall": null,
+            "macroRecallN": 0,
+            "macroPrecision": null,
+            "macroPrecisionN": 0
+          },
+          "tableRowCounts": {
+            "tp": 0,
+            "pred": 0,
+            "ref": 0,
+            "microRecall": 1,
+            "microPrecision": 1,
+            "macroRecall": null,
+            "macroRecallN": 0,
+            "macroPrecision": null,
+            "macroPrecisionN": 0
+          }
+        },
+        "grounding": {
+          "grounded": 0,
+          "total": 0,
+          "rate": null
+        },
+        "json": {
+          "cellRawParse": 0,
+          "cellStructuredMode": 0,
+          "cellRepaired": 0,
+          "reqCompleted": 0,
+          "reqTotal": 0,
+          "reqTruncated": 0,
+          "reqCached": 0
+        },
+        "latency": {
+          "meanMs": null,
+          "p50Ms": null,
+          "sumMs": 0
+        },
+        "cost": {
+          "sumUsd": 0,
+          "costPer100PagesUsd": null,
+          "missingCells": 0
+        }
+      }
+    },
+    "case_st_2_2013": {
+      "z-ai/glm-5.3-flash": {
+        "docs": 1,
+        "pages": 6,
+        "coverage": {
+          "full": 1,
+          "partial": 0,
+          "failed": 0
+        },
+        "fields": {
+          "amounts": {
+            "tp": 6,
+            "pred": 6,
+            "ref": 6,
+            "microRecall": 1,
+            "microPrecision": 1,
+            "macroRecall": 1,
+            "macroRecallN": 1,
+            "macroPrecision": 1,
+            "macroPrecisionN": 1
+          },
+          "eur": {
+            "tp": 6,
+            "pred": 6,
+            "ref": 6,
+            "microRecall": 1,
+            "microPrecision": 1,
+            "macroRecall": 1,
+            "macroRecallN": 1,
+            "macroPrecision": 1,
+            "macroPrecisionN": 1
+          },
+          "hrk": {
+            "tp": 0,
+            "pred": 0,
+            "ref": 0,
+            "microRecall": 1,
+            "microPrecision": 1,
+            "macroRecall": null,
+            "macroRecallN": 0,
+            "macroPrecision": null,
+            "macroPrecisionN": 0
+          },
+          "oibs": {
+            "tp": 3,
+            "pred": 3,
+            "ref": 3,
+            "microRecall": 1,
+            "microPrecision": 1,
+            "macroRecall": 1,
+            "macroRecallN": 1,
+            "macroPrecision": 1,
+            "macroPrecisionN": 1
+          },
+          "dates": {
+            "tp": 7,
+            "pred": 7,
+            "ref": 10,
+            "microRecall": 0.7,
+            "microPrecision": 1,
+            "macroRecall": 0.7,
+            "macroRecallN": 1,
+            "macroPrecision": 1,
+            "macroPrecisionN": 1
+          },
+          "filingNumbers": {
+            "tp": 4,
+            "pred": 4,
+            "ref": 4,
+            "microRecall": 1,
+            "microPrecision": 1,
+            "macroRecall": 1,
+            "macroRecallN": 1,
+            "macroPrecision": 1,
+            "macroPrecisionN": 1
+          },
+          "decisionOutcome": {
+            "tp": 1,
+            "pred": 1,
+            "ref": 1,
+            "microRecall": 1,
+            "microPrecision": 1,
+            "macroRecall": 1,
+            "macroRecallN": 1,
+            "macroPrecision": 1,
+            "macroPrecisionN": 1
+          },
+          "tableRowCounts": {
+            "tp": 0,
+            "pred": 4,
+            "ref": 0,
+            "microRecall": 0,
+            "microPrecision": 0,
+            "macroRecall": null,
+            "macroRecallN": 0,
+            "macroPrecision": 0,
+            "macroPrecisionN": 1
+          }
+        },
+        "grounding": {
+          "grounded": 24,
+          "total": 24,
+          "rate": 1
+        },
+        "json": {
+          "cellRawParse": 0,
+          "cellStructuredMode": 1,
+          "cellRepaired": 0,
+          "reqCompleted": 5,
+          "reqTotal": 5,
+          "reqTruncated": 0,
+          "reqCached": 0
+        },
+        "latency": {
+          "meanMs": 103659.197018,
+          "p50Ms": 103659.197018,
+          "sumMs": 103659.197018
+        },
+        "cost": {
+          "sumUsd": 0.006376,
+          "costPer100PagesUsd": 0.1063,
+          "missingCells": 0
+        }
+      },
+      "google/gemini-2.5-flash": {
+        "docs": 1,
+        "pages": 6,
+        "coverage": {
+          "full": 1,
+          "partial": 0,
+          "failed": 0
+        },
+        "fields": {
+          "amounts": {
+            "tp": 6,
+            "pred": 6,
+            "ref": 6,
+            "microRecall": 1,
+            "microPrecision": 1,
+            "macroRecall": 1,
+            "macroRecallN": 1,
+            "macroPrecision": 1,
+            "macroPrecisionN": 1
+          },
+          "eur": {
+            "tp": 6,
+            "pred": 6,
+            "ref": 6,
+            "microRecall": 1,
+            "microPrecision": 1,
+            "macroRecall": 1,
+            "macroRecallN": 1,
+            "macroPrecision": 1,
+            "macroPrecisionN": 1
+          },
+          "hrk": {
+            "tp": 0,
+            "pred": 0,
+            "ref": 0,
+            "microRecall": 1,
+            "microPrecision": 1,
+            "macroRecall": null,
+            "macroRecallN": 0,
+            "macroPrecision": null,
+            "macroPrecisionN": 0
+          },
+          "oibs": {
+            "tp": 3,
+            "pred": 3,
+            "ref": 3,
+            "microRecall": 1,
+            "microPrecision": 1,
+            "macroRecall": 1,
+            "macroRecallN": 1,
+            "macroPrecision": 1,
+            "macroPrecisionN": 1
+          },
+          "dates": {
+            "tp": 5,
+            "pred": 5,
+            "ref": 10,
+            "microRecall": 0.5,
+            "microPrecision": 1,
+            "macroRecall": 0.5,
+            "macroRecallN": 1,
+            "macroPrecision": 1,
+            "macroPrecisionN": 1
+          },
+          "filingNumbers": {
+            "tp": 4,
+            "pred": 4,
+            "ref": 4,
+            "microRecall": 1,
+            "microPrecision": 1,
+            "macroRecall": 1,
+            "macroRecallN": 1,
+            "macroPrecision": 1,
+            "macroPrecisionN": 1
+          },
+          "decisionOutcome": {
+            "tp": 1,
+            "pred": 1,
+            "ref": 1,
+            "microRecall": 1,
+            "microPrecision": 1,
+            "macroRecall": 1,
+            "macroRecallN": 1,
+            "macroPrecision": 1,
+            "macroPrecisionN": 1
+          },
+          "tableRowCounts": {
+            "tp": 0,
+            "pred": 3,
+            "ref": 0,
+            "microRecall": 0,
+            "microPrecision": 0,
+            "macroRecall": null,
+            "macroRecallN": 0,
+            "macroPrecision": 0,
+            "macroPrecisionN": 1
+          }
+        },
+        "grounding": {
+          "grounded": 17,
+          "total": 17,
+          "rate": 1
+        },
+        "json": {
+          "cellRawParse": 0,
+          "cellStructuredMode": 1,
+          "cellRepaired": 0,
+          "reqCompleted": 5,
+          "reqTotal": 5,
+          "reqTruncated": 0,
+          "reqCached": 0
+        },
+        "latency": {
+          "meanMs": 32245.267750000014,
+          "p50Ms": 32245.267750000014,
+          "sumMs": 32245.267750000014
+        },
+        "cost": {
+          "sumUsd": 0.017543,
+          "costPer100PagesUsd": 0.2924,
+          "missingCells": 0
+        }
+      }
+    },
+    "case_other": {
+      "z-ai/glm-5.3-flash": {
+        "docs": 1,
+        "pages": 5,
+        "coverage": {
+          "full": 1,
+          "partial": 0,
+          "failed": 0
+        },
+        "fields": {
+          "amounts": {
+            "tp": 0,
+            "pred": 0,
+            "ref": 0,
+            "microRecall": 1,
+            "microPrecision": 1,
+            "macroRecall": null,
+            "macroRecallN": 0,
+            "macroPrecision": null,
+            "macroPrecisionN": 0
+          },
+          "eur": {
+            "tp": 0,
+            "pred": 0,
+            "ref": 0,
+            "microRecall": 1,
+            "microPrecision": 1,
+            "macroRecall": null,
+            "macroRecallN": 0,
+            "macroPrecision": null,
+            "macroPrecisionN": 0
+          },
+          "hrk": {
+            "tp": 0,
+            "pred": 0,
+            "ref": 0,
+            "microRecall": 1,
+            "microPrecision": 1,
+            "macroRecall": null,
+            "macroRecallN": 0,
+            "macroPrecision": null,
+            "macroPrecisionN": 0
+          },
+          "oibs": {
+            "tp": 1,
+            "pred": 1,
+            "ref": 1,
+            "microRecall": 1,
+            "microPrecision": 1,
+            "macroRecall": 1,
+            "macroRecallN": 1,
+            "macroPrecision": 1,
+            "macroPrecisionN": 1
+          },
+          "dates": {
+            "tp": 4,
+            "pred": 4,
+            "ref": 15,
+            "microRecall": 0.26666666666666666,
+            "microPrecision": 1,
+            "macroRecall": 0.26666666666666666,
+            "macroRecallN": 1,
+            "macroPrecision": 1,
+            "macroPrecisionN": 1
+          },
+          "filingNumbers": {
+            "tp": 5,
+            "pred": 5,
+            "ref": 5,
+            "microRecall": 1,
+            "microPrecision": 1,
+            "macroRecall": 1,
+            "macroRecallN": 1,
+            "macroPrecision": 1,
+            "macroPrecisionN": 1
+          },
+          "decisionOutcome": {
+            "tp": 1,
+            "pred": 1,
+            "ref": 1,
+            "microRecall": 1,
+            "microPrecision": 1,
+            "macroRecall": 1,
+            "macroRecallN": 1,
+            "macroPrecision": 1,
+            "macroPrecisionN": 1
+          },
+          "tableRowCounts": {
+            "tp": 0,
+            "pred": 0,
+            "ref": 0,
+            "microRecall": 1,
+            "microPrecision": 1,
+            "macroRecall": null,
+            "macroRecallN": 0,
+            "macroPrecision": null,
+            "macroPrecisionN": 0
+          }
+        },
+        "grounding": {
+          "grounded": 11,
+          "total": 11,
+          "rate": 1
+        },
+        "json": {
+          "cellRawParse": 0,
+          "cellStructuredMode": 1,
+          "cellRepaired": 0,
+          "reqCompleted": 6,
+          "reqTotal": 6,
+          "reqTruncated": 0,
+          "reqCached": 0
+        },
+        "latency": {
+          "meanMs": 72343.066849,
+          "p50Ms": 72343.066849,
+          "sumMs": 72343.066849
+        },
+        "cost": {
+          "sumUsd": 0.005571,
+          "costPer100PagesUsd": 0.1114,
+          "missingCells": 0
+        }
+      },
+      "google/gemini-2.5-flash": {
+        "docs": 1,
+        "pages": 5,
+        "coverage": {
+          "full": 1,
+          "partial": 0,
+          "failed": 0
+        },
+        "fields": {
+          "amounts": {
+            "tp": 0,
+            "pred": 0,
+            "ref": 0,
+            "microRecall": 1,
+            "microPrecision": 1,
+            "macroRecall": null,
+            "macroRecallN": 0,
+            "macroPrecision": null,
+            "macroPrecisionN": 0
+          },
+          "eur": {
+            "tp": 0,
+            "pred": 0,
+            "ref": 0,
+            "microRecall": 1,
+            "microPrecision": 1,
+            "macroRecall": null,
+            "macroRecallN": 0,
+            "macroPrecision": null,
+            "macroPrecisionN": 0
+          },
+          "hrk": {
+            "tp": 0,
+            "pred": 0,
+            "ref": 0,
+            "microRecall": 1,
+            "microPrecision": 1,
+            "macroRecall": null,
+            "macroRecallN": 0,
+            "macroPrecision": null,
+            "macroPrecisionN": 0
+          },
+          "oibs": {
+            "tp": 1,
+            "pred": 1,
+            "ref": 1,
+            "microRecall": 1,
+            "microPrecision": 1,
+            "macroRecall": 1,
+            "macroRecallN": 1,
+            "macroPrecision": 1,
+            "macroPrecisionN": 1
+          },
+          "dates": {
+            "tp": 7,
+            "pred": 7,
+            "ref": 15,
+            "microRecall": 0.4666666666666667,
+            "microPrecision": 1,
+            "macroRecall": 0.4666666666666667,
+            "macroRecallN": 1,
+            "macroPrecision": 1,
+            "macroPrecisionN": 1
+          },
+          "filingNumbers": {
+            "tp": 5,
+            "pred": 5,
+            "ref": 5,
+            "microRecall": 1,
+            "microPrecision": 1,
+            "macroRecall": 1,
+            "macroRecallN": 1,
+            "macroPrecision": 1,
+            "macroPrecisionN": 1
+          },
+          "decisionOutcome": {
+            "tp": 1,
+            "pred": 1,
+            "ref": 1,
+            "microRecall": 1,
+            "microPrecision": 1,
+            "macroRecall": 1,
+            "macroRecallN": 1,
+            "macroPrecision": 1,
+            "macroPrecisionN": 1
+          },
+          "tableRowCounts": {
+            "tp": 0,
+            "pred": 0,
+            "ref": 0,
+            "microRecall": 1,
+            "microPrecision": 1,
+            "macroRecall": null,
+            "macroRecallN": 0,
+            "macroPrecision": null,
+            "macroPrecisionN": 0
+          }
+        },
+        "grounding": {
+          "grounded": 19,
+          "total": 19,
+          "rate": 1
+        },
+        "json": {
+          "cellRawParse": 0,
+          "cellStructuredMode": 1,
+          "cellRepaired": 0,
+          "reqCompleted": 6,
+          "reqTotal": 6,
+          "reqTruncated": 0,
+          "reqCached": 0
+        },
+        "latency": {
+          "meanMs": 31073.62548400002,
+          "p50Ms": 31073.62548400002,
+          "sumMs": 31073.62548400002
+        },
+        "cost": {
+          "sumUsd": 0.018361,
+          "costPer100PagesUsd": 0.3672,
+          "missingCells": 0
+        }
+      }
+    }
+  },
+  "perDocument": [
+    {
+      "docId": "1:Podnesak.pdf",
+      "layer": "text",
+      "pages": 2,
+      "ocrArm": "local-text",
+      "typeBucket": "filing_contract_report",
+      "caseBucket": "st_2_2013",
+      "models": {
+        "z-ai/glm-5.3-flash": null,
+        "google/gemini-2.5-flash": null
+      }
+    },
+    {
+      "docId": "6:Prilog St-2_2013-1208-1 - Račun Adria Rijeka 2-2025 (1).pdf",
+      "layer": "image",
+      "pages": 1,
+      "ocrArm": "or-mistral-ocr",
+      "typeBucket": "filing_contract_report",
+      "caseBucket": "st_2_2013",
+      "models": {
+        "z-ai/glm-5.3-flash": null,
+        "google/gemini-2.5-flash": null
+      }
+    },
+    {
+      "docId": "10:Troškovnik.pdf",
+      "layer": "text",
+      "pages": 2,
+      "ocrArm": "local-text",
+      "typeBucket": "table_statement",
+      "caseBucket": "st_2_2013",
+      "models": {
+        "z-ai/glm-5.3-flash": null,
+        "google/gemini-2.5-flash": null
+      }
+    },
+    {
+      "docId": "2:Žalba.pdf",
+      "layer": "text",
+      "pages": 5,
+      "ocrArm": "local-text",
+      "typeBucket": "filing_contract_report",
+      "caseBucket": "st_2_2013",
+      "models": {
+        "z-ai/glm-5.3-flash": null,
+        "google/gemini-2.5-flash": null
+      }
+    },
+    {
+      "docId": "4:Rješenje - odbijen prigovor na diobeni popis.pdf",
+      "layer": "text",
+      "pages": 7,
+      "ocrArm": "local-text",
+      "typeBucket": "ruling",
+      "caseBucket": "st_2_2013",
+      "models": {
+        "z-ai/glm-5.3-flash": null,
+        "google/gemini-2.5-flash": null
+      }
+    },
+    {
+      "docId": "8:Rješenje - odbijena žalba kao neosnovana - potvrđeno rješenje 1.st..pdf",
+      "layer": "text",
+      "pages": 6,
+      "ocrArm": "local-text",
+      "typeBucket": "ruling",
+      "caseBucket": "st_2_2013",
+      "models": {
+        "z-ai/glm-5.3-flash": {
+          "status": "completed",
+          "reqs": 5,
+          "cachedReqs": 0,
+          "cost": 0.0063758,
+          "latencyMs": 103659.197018,
+          "grounding": "24/24",
+          "oib": "3/3 (3)",
+          "amt": "6/6 (6)",
+          "eur": "6/6 (6)",
+          "hrk": "0/0 (0)",
+          "date": "7/10 (7)",
+          "filing": "4/4 (4)",
+          "outcome": "1/1 (rejected)",
+          "tables": "0/0 (4)",
+          "errors": []
+        },
+        "google/gemini-2.5-flash": {
+          "status": "completed",
+          "reqs": 5,
+          "cachedReqs": 0,
+          "cost": 0.017543319999999998,
+          "latencyMs": 32245.267750000014,
+          "grounding": "17/17",
+          "oib": "3/3 (3)",
+          "amt": "6/6 (6)",
+          "eur": "6/6 (6)",
+          "hrk": "0/0 (0)",
+          "date": "5/10 (5)",
+          "filing": "4/4 (4)",
+          "outcome": "1/1 (rejected)",
+          "tables": "0/0 (3)",
+          "errors": []
+        }
+      }
+    },
+    {
+      "docId": "19:Diobeni popis.pdf",
+      "layer": "text",
+      "pages": 12,
+      "ocrArm": "local-text",
+      "typeBucket": "table_statement",
+      "caseBucket": "st_2_2013",
+      "models": {
+        "z-ai/glm-5.3-flash": null,
+        "google/gemini-2.5-flash": null
+      }
+    },
+    {
+      "docId": "19:Završni račun.pdf",
+      "layer": "text",
+      "pages": 39,
+      "ocrArm": "local-text",
+      "typeBucket": "table_statement",
+      "caseBucket": "st_2_2013",
+      "models": {
+        "z-ai/glm-5.3-flash": null,
+        "google/gemini-2.5-flash": null
+      }
+    },
+    {
+      "docId": "26:Prilog St-2_2013-1159-2 - Prilog 2. - Specifikacija djelomičnog namirenja tražbine B2 KAPITAL d.o.o..pdf",
+      "layer": "image",
+      "pages": 1,
+      "ocrArm": "or-mistral-ocr",
+      "typeBucket": "filing_contract_report",
+      "caseBucket": "st_2_2013",
+      "models": {
+        "z-ai/glm-5.3-flash": null,
+        "google/gemini-2.5-flash": null
+      }
+    },
+    {
+      "docId": "27:Prilog St-2_2013-1155-1 - Ugovor o ustupu tražbina.pdf",
+      "layer": "text",
+      "pages": 11,
+      "ocrArm": "local-text",
+      "typeBucket": "filing_contract_report",
+      "caseBucket": "st_2_2013",
+      "models": {
+        "z-ai/glm-5.3-flash": null,
+        "google/gemini-2.5-flash": null
+      }
+    },
+    {
+      "docId": "372:kerum.pdf",
+      "layer": "image",
+      "pages": 3,
+      "ocrArm": "local-raster",
+      "typeBucket": "filing_contract_report",
+      "caseBucket": "other_cases",
+      "models": {
+        "z-ai/glm-5.3-flash": null,
+        "google/gemini-2.5-flash": null
+      }
+    },
+    {
+      "docId": "374:kerum.pdf",
+      "layer": "image",
+      "pages": 5,
+      "ocrArm": "or-mistral-ocr",
+      "typeBucket": "ruling",
+      "caseBucket": "other_cases",
+      "models": {
+        "z-ai/glm-5.3-flash": {
+          "status": "completed",
+          "reqs": 6,
+          "cachedReqs": 0,
+          "cost": 0.0055713,
+          "latencyMs": 72343.066849,
+          "grounding": "11/11",
+          "oib": "1/1 (1)",
+          "amt": "0/0 (0)",
+          "eur": "0/0 (0)",
+          "hrk": "0/0 (0)",
+          "date": "4/15 (4)",
+          "filing": "5/5 (5)",
+          "outcome": "1/1 (rejected)",
+          "tables": "0/0 (0)",
+          "errors": []
+        },
+        "google/gemini-2.5-flash": {
+          "status": "completed",
+          "reqs": 6,
+          "cachedReqs": 0,
+          "cost": 0.018360910000000005,
+          "latencyMs": 31073.62548400002,
+          "grounding": "19/19",
+          "oib": "1/1 (1)",
+          "amt": "0/0 (0)",
+          "eur": "0/0 (0)",
+          "hrk": "0/0 (0)",
+          "date": "7/15 (7)",
+          "filing": "5/5 (5)",
+          "outcome": "1/1 (rejected)",
+          "tables": "0/0 (0)",
+          "errors": []
+        }
+      }
+    },
+    {
+      "docId": "379:4 Stpn-7-2017.pdf",
+      "layer": "image",
+      "pages": 4,
+      "ocrArm": "or-mistral-ocr",
+      "typeBucket": "ruling",
+      "caseBucket": "other_cases",
+      "models": {
+        "z-ai/glm-5.3-flash": null,
+        "google/gemini-2.5-flash": null
+      }
+    },
+    {
+      "docId": "367:32303648.pdf",
+      "layer": "image",
+      "pages": 2,
+      "ocrArm": "or-mistral-ocr",
+      "typeBucket": "filing_contract_report",
+      "caseBucket": "other_cases",
+      "models": {
+        "z-ai/glm-5.3-flash": null,
+        "google/gemini-2.5-flash": null
+      }
+    },
+    {
+      "docId": "322:KERUM.pdf",
+      "layer": "image",
+      "pages": 4,
+      "ocrArm": "or-mistral-ocr",
+      "typeBucket": "filing_contract_report",
+      "caseBucket": "st_2_2013",
+      "models": {
+        "z-ai/glm-5.3-flash": null,
+        "google/gemini-2.5-flash": null
+      }
+    },
+    {
+      "docId": "40:Prilog St-2_2013-1128-1 - Zapisnik prodaja Stari Grad 31032025.pdf",
+      "layer": "image",
+      "pages": 1,
+      "ocrArm": "local-raster",
+      "typeBucket": "filing_contract_report",
+      "caseBucket": "st_2_2013",
+      "models": {
+        "z-ai/glm-5.3-flash": null,
+        "google/gemini-2.5-flash": null
+      }
+    },
+    {
+      "docId": "38:Prilog St-2_2013-1133-1 - Kerum oglas Sl Dalm 16052025.pdf",
+      "layer": "image",
+      "pages": 1,
+      "ocrArm": "or-mistral-ocr",
+      "typeBucket": "filing_contract_report",
+      "caseBucket": "st_2_2013",
+      "models": {
+        "z-ai/glm-5.3-flash": null,
+        "google/gemini-2.5-flash": null
+      }
+    },
+    {
+      "docId": "38:Prilog St-2_2013-1133-7 - Kerum FINA 19052025 Stari Grad.pdf",
+      "layer": "image",
+      "pages": 1,
+      "ocrArm": "local-raster",
+      "typeBucket": "filing_contract_report",
+      "caseBucket": "st_2_2013",
+      "models": {
+        "z-ai/glm-5.3-flash": null,
+        "google/gemini-2.5-flash": null
+      }
+    },
+    {
+      "docId": "52:Prilog St-2_2013-1099-1 - Kerum izvod 51 241230-2340009-1190027245-051000EUR.pdf",
+      "layer": "text",
+      "pages": 1,
+      "ocrArm": "local-text",
+      "typeBucket": "table_statement",
+      "caseBucket": "st_2_2013",
+      "models": {
+        "z-ai/glm-5.3-flash": null,
+        "google/gemini-2.5-flash": null
+      }
+    },
+    {
+      "docId": "151:Prilog St-2_2013-837-1 - Kerum doo izvod 59 221005-2340009-1190027245-059000HRK.pdf",
+      "layer": "text",
+      "pages": 1,
+      "ocrArm": "local-text",
+      "typeBucket": "table_statement",
+      "caseBucket": "st_2_2013",
+      "models": {
+        "z-ai/glm-5.3-flash": null,
+        "google/gemini-2.5-flash": null
+      }
+    },
+    {
+      "docId": "19:Prilog St-2_2013-1175-2 - Iznosi tražbina i troškova postupka na dan 13.10.2025. u 15_27 sati.pdf",
+      "layer": "text",
+      "pages": 1,
+      "ocrArm": "local-text",
+      "typeBucket": "table_statement",
+      "caseBucket": "st_2_2013",
+      "models": {
+        "z-ai/glm-5.3-flash": null,
+        "google/gemini-2.5-flash": null
+      }
+    },
+    {
+      "docId": "43:Rješenje - prihvaćena žalba - ukinuto 1. st. rješenje.pdf",
+      "layer": "text",
+      "pages": 5,
+      "ocrArm": "local-text",
+      "typeBucket": "ruling",
+      "caseBucket": "st_2_2013",
+      "models": {
+        "z-ai/glm-5.3-flash": null,
+        "google/gemini-2.5-flash": null
+      }
+    },
+    {
+      "docId": "66:Rješenje - o namirenju.pdf",
+      "layer": "text",
+      "pages": 6,
+      "ocrArm": "local-text",
+      "typeBucket": "ruling",
+      "caseBucket": "st_2_2013",
+      "models": {
+        "z-ai/glm-5.3-flash": null,
+        "google/gemini-2.5-flash": null
+      }
+    },
+    {
+      "docId": "73:Rješenje - dosuda.pdf",
+      "layer": "text",
+      "pages": 5,
+      "ocrArm": "local-text",
+      "typeBucket": "ruling",
+      "caseBucket": "st_2_2013",
+      "models": {
+        "z-ai/glm-5.3-flash": null,
+        "google/gemini-2.5-flash": null
+      }
+    },
+    {
+      "docId": "186:Rješenje - utvrđene i osporene tražbine.pdf",
+      "layer": "text",
+      "pages": 4,
+      "ocrArm": "local-text",
+      "typeBucket": "ruling",
+      "caseBucket": "st_2_2013",
+      "models": {
+        "z-ai/glm-5.3-flash": null,
+        "google/gemini-2.5-flash": null
+      }
+    }
+  ]
+}
