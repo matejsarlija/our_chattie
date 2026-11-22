@@ -17,7 +17,22 @@ jest.mock('../helpers/geminiUsage', () => ({
 }));
 
 const mockGeminiInvoke = jest.fn();
-const { AnalyzeDocumentsTool } = require('../court-analysis/agents/analysis-agent');
+const { AnalyzeDocumentsTool, mergeAnalysisChunkResults } = require('../court-analysis/agents/analysis-agent');
+test('mergeAnalysisChunkResults keeps the first concrete top-level decision outcome', () => {
+    const makeResult = (id, decisionOutcome) => ({
+        segment: { id, startIndex: 0, endIndex: 10, pageNumbers: [1] },
+        value: { decisionOutcome },
+        gaps: [],
+    });
+    expect(mergeAnalysisChunkResults([
+        makeResult('segment-1', 'unknown'),
+        makeResult('segment-2', 'rejected'),
+        makeResult('segment-3', 'upheld'),
+    ], 'source').decisionOutcome).toBe('rejected');
+    expect(mergeAnalysisChunkResults([makeResult('segment-1', 'unknown')], 'source').decisionOutcome).toBe('unknown');
+    expect(mergeAnalysisChunkResults([makeResult('segment-1', null)], 'source').decisionOutcome).toBeNull();
+});
+
 
 describe('AnalyzeDocumentsTool', () => {
     const testDocxPath = path.resolve(__dirname, 'test-analysis.docx');

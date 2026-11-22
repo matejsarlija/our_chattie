@@ -1,0 +1,271 @@
+{
+  "outputDir": "/home/oxioxi/proj/our_chattie/backend/data/pdf-engine-bench/2026-11-22T11-02-42-324Z-171326cc",
+  "filePath": "/home/oxioxi/proj/our_chattie/backend/data/pdf-engine-bench/2026-11-22T11-02-42-324Z-171326cc/gold-scores.json",
+  "N": 4,
+  "scores": [
+    {
+      "document": "26:Prilog St-2_2013-1159-2 - Prilog 2. - Specifikacija djelomičnog namirenja tražbine B2 KAPITAL d.o.o..pdf",
+      "arm": "local-text",
+      "model": "z-ai/glm-5.3-flash",
+      "transcriptArm": "local-text",
+      "extractionModel": "z-ai/glm-5.3-flash",
+      "repeat": 1,
+      "documentType": "scan / 1-2 / table-heavy / bounded-analysis",
+      "score": {
+        "complete": true,
+        "amounts": {
+          "precision": 0.6842105263157895,
+          "recall": 0.6842105263157895,
+          "counts": {
+            "truePositive": 13,
+            "predicted": 19,
+            "reference": 19
+          }
+        },
+        "oibs": {
+          "precision": 0,
+          "recall": 0,
+          "counts": {
+            "truePositive": 0,
+            "predicted": 1,
+            "reference": 0
+          }
+        },
+        "dates": {
+          "precision": 1,
+          "recall": 1,
+          "counts": {
+            "truePositive": 8,
+            "predicted": 8,
+            "reference": 8
+          }
+        },
+        "filingNumbers": {
+          "precision": 0.25,
+          "recall": 1,
+          "counts": {
+            "truePositive": 1,
+            "predicted": 4,
+            "reference": 1
+          }
+        },
+        "decisionOutcome": {
+          "precision": 1,
+          "recall": 1,
+          "counts": {
+            "truePositive": 0,
+            "predicted": 0,
+            "reference": 0
+          }
+        },
+        "tableRowCounts": {
+          "precision": 1,
+          "recall": 1,
+          "counts": {
+            "truePositive": 8,
+            "predicted": 8,
+            "reference": 8
+          }
+        }
+      }
+    },
+    {
+      "document": "26:Prilog St-2_2013-1159-2 - Prilog 2. - Specifikacija djelomičnog namirenja tražbine B2 KAPITAL d.o.o..pdf",
+      "arm": "local-text",
+      "model": "google/gemini-2.5-flash",
+      "transcriptArm": "local-text",
+      "extractionModel": "google/gemini-2.5-flash",
+      "repeat": 1,
+      "documentType": "scan / 1-2 / table-heavy / bounded-analysis",
+      "score": {
+        "complete": true,
+        "amounts": {
+          "precision": 0.6842105263157895,
+          "recall": 0.6842105263157895,
+          "counts": {
+            "truePositive": 13,
+            "predicted": 19,
+            "reference": 19
+          }
+        },
+        "oibs": {
+          "precision": 0,
+          "recall": 0,
+          "counts": {
+            "truePositive": 0,
+            "predicted": 1,
+            "reference": 0
+          }
+        },
+        "dates": {
+          "precision": 1,
+          "recall": 1,
+          "counts": {
+            "truePositive": 8,
+            "predicted": 8,
+            "reference": 8
+          }
+        },
+        "filingNumbers": {
+          "precision": 0.25,
+          "recall": 1,
+          "counts": {
+            "truePositive": 1,
+            "predicted": 4,
+            "reference": 1
+          }
+        },
+        "decisionOutcome": {
+          "precision": 1,
+          "recall": 1,
+          "counts": {
+            "truePositive": 0,
+            "predicted": 0,
+            "reference": 0
+          }
+        },
+        "tableRowCounts": {
+          "precision": 0.5333333333333333,
+          "recall": 1,
+          "counts": {
+            "truePositive": 8,
+            "predicted": 15,
+            "reference": 8
+          }
+        }
+      }
+    },
+    {
+      "document": "6:Prilog St-2_2013-1208-1 - Račun Adria Rijeka 2-2025 (1).pdf",
+      "arm": "local-text",
+      "model": "z-ai/glm-5.3-flash",
+      "transcriptArm": "local-text",
+      "extractionModel": "z-ai/glm-5.3-flash",
+      "repeat": 1,
+      "documentType": "scan / 1-2 / other",
+      "score": {
+        "complete": true,
+        "amounts": {
+          "precision": 1,
+          "recall": 1,
+          "counts": {
+            "truePositive": 3,
+            "predicted": 3,
+            "reference": 3
+          }
+        },
+        "oibs": {
+          "precision": 1,
+          "recall": 1,
+          "counts": {
+            "truePositive": 2,
+            "predicted": 2,
+            "reference": 2
+          }
+        },
+        "dates": {
+          "precision": 1,
+          "recall": 1,
+          "counts": {
+            "truePositive": 1,
+            "predicted": 1,
+            "reference": 1
+          }
+        },
+        "filingNumbers": {
+          "precision": 1,
+          "recall": 1,
+          "counts": {
+            "truePositive": 2,
+            "predicted": 2,
+            "reference": 2
+          }
+        },
+        "decisionOutcome": {
+          "precision": 0,
+          "recall": 0,
+          "counts": {
+            "truePositive": 0,
+            "predicted": 1,
+            "reference": 0
+          }
+        },
+        "tableRowCounts": {
+          "precision": 1,
+          "recall": 1,
+          "counts": {
+            "truePositive": 2,
+            "predicted": 2,
+            "reference": 2
+          }
+        }
+      }
+    },
+    {
+      "document": "6:Prilog St-2_2013-1208-1 - Račun Adria Rijeka 2-2025 (1).pdf",
+      "arm": "local-text",
+      "model": "google/gemini-2.5-flash",
+      "transcriptArm": "local-text",
+      "extractionModel": "google/gemini-2.5-flash",
+      "repeat": 1,
+      "documentType": "scan / 1-2 / other",
+      "score": {
+        "complete": true,
+        "amounts": {
+          "precision": 1,
+          "recall": 1,
+          "counts": {
+            "truePositive": 3,
+            "predicted": 3,
+            "reference": 3
+          }
+        },
+        "oibs": {
+          "precision": 1,
+          "recall": 1,
+          "counts": {
+            "truePositive": 2,
+            "predicted": 2,
+            "reference": 2
+          }
+        },
+        "dates": {
+          "precision": 1,
+          "recall": 1,
+          "counts": {
+            "truePositive": 1,
+            "predicted": 1,
+            "reference": 1
+          }
+        },
+        "filingNumbers": {
+          "precision": 1,
+          "recall": 1,
+          "counts": {
+            "truePositive": 2,
+            "predicted": 2,
+            "reference": 2
+          }
+        },
+        "decisionOutcome": {
+          "precision": 1,
+          "recall": 1,
+          "counts": {
+            "truePositive": 0,
+            "predicted": 0,
+            "reference": 0
+          }
+        },
+        "tableRowCounts": {
+          "precision": 1,
+          "recall": 1,
+          "counts": {
+            "truePositive": 2,
+            "predicted": 2,
+            "reference": 2
+          }
+        }
+      }
+    }
+  ]
+}

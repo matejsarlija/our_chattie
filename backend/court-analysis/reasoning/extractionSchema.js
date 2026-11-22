@@ -21,6 +21,7 @@ const TOP_LEVEL_FIELDS = [
     'caseNumber',
     'decisionDate',
     'summary',
+    'decisionOutcome',
     'documentParties',
     'amounts',
     'propertyFlow',
@@ -353,6 +354,14 @@ function validateExtraction(parsed) {
             if (value) proceduralEvents.push(value);
         });
     }
+    const normalizedOutcome = asEnumOrNull(parsed.decisionOutcome, PROCEDURAL_OUTCOMES);
+    if (parsed.decisionOutcome !== undefined
+        && parsed.decisionOutcome !== null
+        && String(parsed.decisionOutcome).trim() !== ''
+        && normalizedOutcome === null) {
+        gaps.push(gap('decisionOutcome', 'invalid-enum', `unsupported decision outcome: ${String(parsed.decisionOutcome).slice(0, 24)}`));
+    }
+
     const { value: citedFilingReferences, gaps: refGaps } = validateStringArray(parsed.citedFilingReferences, 'citedFilingReferences');
     gaps.push(...refGaps);
 
@@ -362,6 +371,7 @@ function validateExtraction(parsed) {
             caseNumber: asStringOrNull(parsed.caseNumber),
             decisionDate: asStringOrNull(parsed.decisionDate),
             summary: asStringOrNull(parsed.summary),
+            decisionOutcome: normalizedOutcome,
             documentParties,
             amounts,
             propertyFlow,
@@ -412,7 +422,7 @@ function parseFieldRepairResponse(content, field) {
 
 const FIELD_SPECS = {
     documentParties: 'a "documentParties" array of source-explicit party identities. Include only an OIB explicitly printed as a party tax identifier in this document, not OIBs inferred from supplied participant/registry context. One item per distinct OIB: {"name" (string or null if the source does not identify it), "oib" (exactly 11 digits), "role" (string or null; only if explicitly stated, otherwise null), "quote" (verbatim source text containing the OIB and enough nearby context to support the association)}. Do not guess roles or join an OIB to a name unless the quoted source makes the association clear; [] when none.',
-    amounts: 'an "amounts" array with ONE item per table row — if the document contains an itemized table, register, or list (popis tražbina, diobeni popis, troškovnik, obračun), extract one item per row and never merge rows into a single summary amount; each item: {"description" (Croatian, required), "amount" (number), "currency" ("EUR"|"HRK"), "date", "direction" ("potraživanje"|"obveza"|"awarded"|"rejected"|"netted"), "amountRole" (one of "total"|"line_item"|"principal"|"cost"|"paid"|"fee" — the figure\'s function in the document: "total" for stated sums, "line_item" for table/register rows; omit when unclear), "eventType" ("prijava"|"ustup"|"namirenje"|"drugo", when the amount records a lifecycle event), "legalEffect" (one of "creates"|"modifies"|"supersedes"|"resolves"|"implements"|"unknown" — what this entry\'s document does to the claim/right; omit when unclear), "references" (array of registry/filing identifiers this entry explicitly cites besides its own filingReference; [] when none), "relationshipBasis" (one of "explicit_identifier"|"explicit_text"|"inferred" — how a "supersedes" link is evidenced; omit without supersedes), "payerName", "payerOib" (11 digits), "recipientName", "recipientOib", "amountEur"/"amountHrk" (only when the source states BOTH, verbatim), "isplatniRed", "claimRegistryNumber" ("redni broj"), "filingReference" ("poslovni broj"), "quote" (verbatim 1-2 sentences from the source text below, word-for-word, never paraphrased)}',
+    amounts: 'an "amounts" array with ONE item per table row — if the document contains an itemized table, register, invoice ("račun"), cost schedule ("troškovnik"), claim specification ("specifikacija"), bank account statement ("izvod"), or list (popis tražbina, diobeni popis, obračun), extract one item per row and never merge rows into a summary. Every individual data row/transaction in any markdown or plain-text table, invoice, cost schedule, specification, or statement MUST use amountRole "line_item" (never invent "other"); ONLY summary/footer rows explicitly labeled "UKUPNO", "SVEGA", or "SALDO" use "total". For a distribution row containing both an established claim ("utvrđena tražbina" HRK/EUR) and payout ("iznos namirenja"/"za isplatu"), emit separate facts: established claim as "line_item" with amountEur/amountHrk only for that claim\'s dual-currency values, and payout separately as "paid", never mixing payout into amountEur; each item: {"description" (Croatian, required), "amount" (number), "currency" ("EUR"|"HRK"), "date", "direction" ("potraživanje"|"obveza"|"awarded"|"rejected"|"netted"), "amountRole" (one of "total"|"line_item"|"principal"|"cost"|"paid"|"fee"), "eventType" ("prijava"|"ustup"|"namirenje"|"drugo", when the amount records a lifecycle event), "legalEffect" (one of "creates"|"modifies"|"supersedes"|"resolves"|"implements"|"unknown" — what this entry\'s document does to the claim/right; omit when unclear), "references" (array of registry/filing identifiers this entry explicitly cites besides its own filingReference; [] when none), "relationshipBasis" (one of "explicit_identifier"|"explicit_text"|"inferred" — how a "supersedes" link is evidenced; omit without supersedes), "payerName", "payerOib" (11 digits), "recipientName", "recipientOib", "amountEur"/"amountHrk" (only when the source states BOTH, verbatim), "isplatniRed", "claimRegistryNumber" ("redni broj"), "filingReference" ("poslovni broj"), "quote" (verbatim 1-2 sentences from the source text below, word-for-word, never paraphrased)}',
     propertyFlow: 'a "propertyFlow" array with ONE item per table row under the same row rule as amounts; also extract an operative receivable assignment/cession stated in prose ("Ugovor o ustupu", "cesija", assignment/transfer of a "tražbina") as at least one assetType "tražbina", eventType "ustup" entry — it is never absent merely because it has no table; each item: {"description" (Croatian, required), "identifier", "assetType" ("nekretnina"|"pokretnina"|"tražbina"|"drugo"), "transferor", "transferee", "value" (number), "currency" ("EUR"|"HRK"), "date", "quote" (verbatim as above), "legalEffect" and "references" and "relationshipBasis" (same meanings as for amounts); for "tražbina" also "eventType" ("prijava"|"ustup"|"namirenje"|"drugo"), "isplatniRed", "claimRegistryNumber", "filingReference", "supersedes" (short textual reference to the earlier lifecycle entry as cited in the source text)}',
     proceduralEvents: 'a "proceduralEvents" array with one explicit court-procedure event per item: {"eventType" ("decision"|"appeal"|"appeal-response"|"appellate-decision"|"correction"|"postponement"|"hearing"|"motion"|"other"), "instance" (court name or "first-instance"|"second-instance" when stated), "outcome" ("granted"|"dismissed"|"rejected"|"upheld"|"overturned"|"modified"|"remanded"|"pending"|"unknown"), "finalityStated" ("final"|"appealable"|"appealed"|"unknown"; assert final/appealable/appealed only when the source explicitly states this legal status, otherwise "unknown"), "date", "filingReference" (this document\'s own poslovni broj, only when explicit), "targetFilingReference" (the earlier filing this decision, appeal, response, or correction concerns, only when explicit), "description" (brief Croatian procedural action, required), and "quote" (verbatim source text supporting this event). Do not infer event, outcome, or finality from case posture or descriptions; [] when none.'
 };
@@ -434,7 +444,7 @@ function buildFieldRepairPrompt({ field, sourceText }) {
  */
 function buildFullRepairPrompt({ sourceText }) {
     const excerpt = String(sourceText || '');
-    return `EXTRACTION REPAIR. A previous extraction of the court document produced no usable JSON. Extract key information from the source text below as a JSON object with keys: "caseNumber", "decisionDate", "summary" (one medium paragraph, Croatian), ${FIELD_SPECS.documentParties} (as "documentParties"; [] when none), ${FIELD_SPECS.amounts} (as "amounts"; [] when none), ${FIELD_SPECS.propertyFlow} (as "propertyFlow"; [] when none), ${FIELD_SPECS.proceduralEvents} (as "proceduralEvents"; [] when none). ${VALUE_ROLE_GUIDANCE} Also extract "citedFilingReferences" (array of "poslovni broj" values explicitly referenced; [] when none).\n\nProvide ONLY the json object and nothing else. Text:\n\n${excerpt}`;
+    return `EXTRACTION REPAIR. A previous extraction of the court document produced no usable JSON. Extract key information from the source text below as a JSON object with keys: "caseNumber", "decisionDate", "summary" (one medium paragraph, Croatian), "decisionOutcome" (${PROCEDURAL_OUTCOMES.join(' | ')} or null), ${FIELD_SPECS.documentParties} (as "documentParties"; [] when none), ${FIELD_SPECS.amounts} (as "amounts"; [] when none), ${FIELD_SPECS.propertyFlow} (as "propertyFlow"; [] when none), ${FIELD_SPECS.proceduralEvents} (as "proceduralEvents"; [] when none). ${VALUE_ROLE_GUIDANCE} Also extract "citedFilingReferences" (array of "poslovni broj" values explicitly referenced; [] when none).\n\nProvide ONLY the json object and nothing else. Text:\n\n${excerpt}`;
 }
 
 module.exports = {

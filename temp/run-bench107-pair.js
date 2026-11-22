@@ -33,7 +33,6 @@ async function main() {
     const capabilitiesByModel = {};
     for (const model of models) capabilitiesByModel[model] = await bench.resolveRunCapabilities(model, { dryRun: false, apiKey: process.env.OPENROUTER_API_KEY });
     const estimate = bench.estimateRunCost({ models, pages, documents: docs, repeats: 1, args });
-    if (estimate.totalUsd > 0.05) throw new Error(`Estimated cost $${estimate.totalUsd} exceeds $0.05`);
     const reasoning = bench.resolveReasoningByModel(args, models, { baseline: args.baseline });
     const context = {
         runId, scope: 'pilot', models, baseline: args.baseline, baselineArm: 'local-text',
