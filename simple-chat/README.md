@@ -1,14 +1,15 @@
 # Court Analysis Dashboard Frontend
 
-This React application is the dashboard for the court-analysis service. It lets users start an analysis, follow its progress, and inspect completed or partially completed reports.
+This React application is the dashboard for the court-analysis service. It lets users start an analysis, follow its progress in real time, inspect completed or partially completed reports, and run offline/controlled extraction benchmarks.
 
-For backend setup, Gemini configuration, and end-to-end QA instructions, see the [root README](../README.md).
+For backend setup, OpenRouter LLM configuration, and end-to-end QA instructions, see the [root README](../README.md) and [Road to 100 Entries Plan](../docs/road-to-100-entries-plan.md).
 
 ## Routes
 
 - `/` redirects to `/dashboard`.
-- `/dashboard` lists analysis runs and opens the new-analysis dialog, which includes a "Dubina pretrage" scan-depth selector (`ScanDepthSelect`): Standardno (newest pages), Uravnoteženo (default; newest pages + 10 oldest entries), Sve dostupne (every page).
-- `/dashboard/runs/:id` shows one run, including its progress events and structured report.
+- `/dashboard` lists analysis runs and opens the new-analysis dialog, which includes a "Dubina pretrage" scan-depth selector (`ScanDepthSelect`): `Uravnoteženo` (default; up to 100 stratified key entries with all attached documents; legacy `Standardno` removed in Phase 0/1) and `Sve` (`Sve dostupne`, full primary-cluster coverage).
+- `/dashboard/runs/:id` shows one run, including its live `runBus` SSE progress stream (with polling fallback), status (`Završeno`, `Djelomično`, `Prekinuto`, `Greška`), financial/property flows, coverage scorecard, and structured report.
+- `/dashboard/bench` (replacing legacy `/dashboard/lab` in `[R100-028]`–`[R100-029]`) hosts the integrated PDF-engine & Stage-2 benchmark launcher, scorecards, and gold fact editor.
 
 ## Development
 
