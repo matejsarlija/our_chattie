@@ -16,22 +16,31 @@
       <span class="brand-mark">PDF engine benchmark</span>
       <span class="brand-case">Case 66124057408 · St-2/2013</span>
     </div>
-    <nav><a href="/gold">Gold facts editor</a><span class="env-tag">Local fixtures</span></nav>
+    <nav>
+      <select id="masthead-runs" class="masthead-run-select" aria-label="Inspect saved run"><option value="">Inspect saved run…</option></select>
+      <a href="/gold">Gold facts editor</a>
+      <span class="env-tag">Local fixtures</span>
+    </nav>
   </header>
 
   <section class="intro" aria-labelledby="title">
     <p class="kicker">Local benchmark · Croatian court filings</p>
     <h1 id="title">PDF handling benchmark</h1>
-    <p class="lead">Compare parser fidelity and model answers across PDF input paths. Results are descriptive—not proof that an input path alone caused a quality change. Live runs send selected PDFs to OpenRouter only after explicit approval.</p>
-    <p class="scope-note"><strong>Document-quality pilot, not a production load test.</strong> These 16 PDFs come from one case. Choosing an arm here does not switch the app to OpenRouter or prove that 100 entries will complete.</p>
+    <p class="lead">Stage T compares ingestion paths on scanned filings and freezes verified transcripts. Stage A analyzes only canonical text. Results are descriptive; live runs send selected PDFs to OpenRouter only after explicit approval.</p>
+    <p class="scope-note"><strong>Document-quality pilot, not a production load test.</strong> Curated fixtures span the primary bankruptcy (<code>St-2/2013</code>) and related cases. Choosing an arm here does not switch the app to OpenRouter or prove that 100 entries will complete.</p>
   </section>
 
   <section class="metrics" aria-label="Selection summary">
-    <div class="metric"><span class="metric-label">Selected files</span><strong id="selected-count" class="metric-value">16</strong></div>
-    <div class="metric"><span class="metric-label">Selected pages</span><strong id="page-count" class="metric-value">101</strong></div>
-    <div class="metric"><span class="metric-label">Scanned files</span><strong id="image-count" class="metric-value">4 <small>/ 16</small></strong></div>
-    <div class="metric"><span class="metric-label" title="Page-fee allowance only, not total run cost. The preview includes model calls.">OCR fee allowance · 1 model</span><strong id="fee-count" class="metric-value">$0.40</strong></div>
+    <div class="metric"><span class="metric-label">Selected files</span><strong id="selected-count" class="metric-value">—</strong></div>
+    <div class="metric"><span class="metric-label">Selected pages</span><strong id="page-count" class="metric-value">—</strong></div>
+    <div class="metric"><span class="metric-label">Scanned files</span><strong id="image-count" class="metric-value">—</strong></div>
+    <div class="metric"><span class="metric-label" title="Page-fee allowance only, not total run cost. The preview includes model calls.">OCR fee allowance · 1 model</span><strong id="fee-count" class="metric-value">$0.00</strong></div>
   </section>
+
+  <div id="setup-bar" class="setup-bar" hidden>
+    <span><strong>Setup collapsed</strong> · <span id="setup-bar-summary">Fixture &amp; run controls hidden while inspecting report</span></span>
+    <button id="toggle-setup" class="subtle-button" type="button">Show configuration</button>
+  </div>
 
   <main id="workflow" class="workflow">
     <section class="panel" aria-labelledby="specimen-title">
@@ -48,7 +57,7 @@
         </div>
       </div>
       <div id="documents" class="document-list" role="group" aria-label="Fixture documents"></div>
-      <div class="selection-foot"><span>Corpus: 12 text-layer PDFs · 4 scanned PDFs</span><span>Local fixtures · no downloads</span></div>
+      <div class="selection-foot"><span id="corpus-foot">Corpus: 12 text-layer PDFs · 4 scanned PDFs</span><span>Local fixtures · no downloads</span></div>
     </section>
 
     <section class="panel" aria-labelledby="run-title">
@@ -60,19 +69,18 @@
         </div>
       </div>
       <div class="controls">
-        <label class="field"><span class="control-label">Challenger models · comma-separated IDs</span><input id="models" type="text" value="z-ai/glm-5.3-flash" autocomplete="off" spellcheck="false" aria-describedby="models-hint"><span id="models-hint" class="hint">Up to 3 challengers. Gemini 2.5 Flash is added as the native-PDF baseline unless listed.</span></label>
+        <label class="field"><span class="control-label">Challenger models · comma-separated IDs</span><input id="models" type="text" value="z-ai/glm-5.3-flash" autocomplete="off" spellcheck="false" aria-describedby="models-hint"><span id="models-hint" class="hint">Up to 3 challengers. Gemini 2.5 Flash is added as a text-analysis baseline unless listed.</span></label>
         <div class="inline-fields">
           <label class="field"><span class="control-label">Repeats per cell</span><select id="repeats"><option value="1">1 · quick check</option><option value="2" selected>2 · variance check</option><option value="3">3 · stronger variance</option></select></label>
           <label class="field"><span class="control-label">Spend cap · USD</span><input id="max-cost" type="number" min="0" step="0.05" value="0.75" aria-describedby="spend-hint"><span id="spend-hint" class="hint">Checked after each provider response; a single call may exceed the remaining cap.</span></label>
         </div>
         <label class="field"><span class="control-label">Long-document analysis</span><select id="analysis-mode" aria-describedby="analysis-mode-hint"><option value="bounded" selected>Bounded · segment dense/long documents</option><option value="single">Single · original full-document request</option></select><span id="analysis-mode-hint" class="hint">Bounded analysis segments dense/long documents and merges results deterministically; it does not make a whole-document synthesis call. Cross-segment relationships may differ from a single-shot analysis.</span></label>
-        <label class="field"><span class="control-label">Oversized PDF recovery</span><select id="parser-recovery" aria-describedby="parser-recovery-hint"><option value="auto" selected>Auto · retry oversized parser PDFs</option><option value="off">Off · keep the original behavior</option></select><span id="parser-recovery-hint" class="hint">Only Cloudflare/Mistral parser size rejections are recovered; native PDF is unaffected. Size recovery assembles parser text; analysis follows the bounded/single setting above. Extra calls are billable and the spend cap still applies.</span></label>
         <div id="fee-estimate" class="fee-estimate"><span>OCR page-fee allowance only · not the total price. Preview the plan for all models and calls.</span><strong>$0.40</strong></div>
         <label class="field"><span class="control-label">Verified answer key · gold set</span><select id="gold-set" aria-describedby="gold-progress"><option value="">No gold set selected · format checks only</option></select></label>
         <p id="gold-progress" class="hint" role="status">Choose your existing gold set before comparing answer quality.</p>
         <details class="run-notes"><summary>Use a gold folder path instead</summary><label class="field"><span class="control-label">Local gold folder</span><input id="gold-dir" type="text" placeholder="data/pdf-engine-bench/…/gold" autocomplete="off" spellcheck="false" aria-describedby="gold-hint"><span id="gold-hint" class="hint">Overrides the gold-set selector. Existing labels are not changed by a run.</span></label></details>
         <p class="hint"><a id="gold-editor-link" href="/gold">Continue verifying source facts</a>. Mark all six categories reviewed for each document, including categories with no facts.</p>
-        <details class="run-notes"><summary>Comparison setup</summary><p>The incumbent is included as <code>google/gemini-2.5-flash</code> on native PDF. Model hosts are pinned (GLM → Z.AI, Gemini → Google AI Studio); this compares full systems, not input paths in isolation.</p></details>
+        <details class="run-notes"><summary>Comparison setup</summary><p>The incumbent is included as <code>google/gemini-2.5-flash</code> on canonical text. Model hosts are pinned (GLM → Z.AI, Gemini → Google AI Studio); ingestion and analysis are separate stages.</p></details>
         <div class="capability-strip" aria-label="Current model capability state">
           <span id="native-status" class="status unknown">Native file · not probed</span>
           <span id="image-status" class="status unknown">Image input · not probed</span>
@@ -127,11 +135,11 @@
     <h3 id="help-title">How to read this report</h3>
     <div class="help-cols">
       <div>
-        <p>This lab <strong>compares conditions, not winners</strong>. Each row is a benchmark cell: one document, input path, and model. The baseline model currently appears only on its native-PDF path, while challenger models use the tested paths too. That makes this an end-to-end system comparison—not a causal test of input path alone. Unsupported combinations are marked "skipped," not scored as failures.</p>
-        <p><strong>Parser fidelity (diagnostic)</strong> compares what the OpenRouter file parser returned against the local PDF text layer. Recall = "what fraction of the reference facts survived the parse?"; Precision = "what fraction of the parser output was correct?" It explains a miss — the parser never had the figure — but it is not a ranking key. Scanned pages have no embedded text, so they show recovered characters instead of a reference score. Native PDF input is excluded: the model reads the file itself, so there is no parser transcript to score.</p>
+        <p>This lab <strong>compares conditions, not winners</strong>. Each row is a Stage A benchmark cell: one document and model analyzed from its frozen canonical transcript. Stage T ingestion is run separately and produces the transcript fixtures; Stage A does not dispatch PDF parser or native-file arms. Unsupported combinations are marked "skipped," not scored as failures.</p>
+        <p><strong>Parser fidelity (diagnostic)</strong> belongs to Stage T and compares a parser transcript with local PDF text when available. Scanned pages have no embedded text layer, so the frozen transcript and page map are the ground-truth artifacts to inspect. Parser failure or a transcript shorter than 100 characters prevents Stage A.</p>
       </div>
       <div>
-        <p><strong>Analysis quality</strong> is the answer table. Cloudflare and Mistral PDF arms send the PDF and analysis prompt in one OpenRouter request; the parser transcript and GLM answer come back together, so the per-cell reported cost is combined and cannot be split between them. A Mistral page-fee estimate is shown only when OpenRouter omits cost. The raster path instead OCRs pages in separate requests before analysis, and reports their costs together for the cell. Valid JSON is measured among answered calls. Quote grounding checks claims against parser-returned text and is n/a for native PDF. Gold scores appear only for verified facts; missing gold is not a zero.</p>
+        <p><strong>Analysis quality</strong> is the answer table. Every Stage A arm receives the same canonical text; valid JSON is measured among answered calls. Quote grounding checks claims against that text. Gold scores appear only for verified facts; missing gold is not a zero.</p>
         <details>
           <summary>What does the judge do?</summary>
           <p>An optional LLM judge from a different model family compares two answers for the same document pairwise (swapping positions to neutralise order bias), looking at completeness, correctness, and whether the figures survive. It is a triage signal only: it never feeds the benchmark scores and never picks a winner.</p>
@@ -145,18 +153,18 @@
 </div>
 <script>
 'use strict';
-const state={documents:[],goldSets:[],jobId:null,reportRunId:null,reviewJobId:null,selected:new Set(),smokeDocIds:[]};
+const state={documents:[],goldSets:[],jobId:null,reportRunId:null,reviewJobId:null,selected:new Set(),smokeDocIds:[],pilotMin:12,pilotMax:30};
 const $=(id)=>document.getElementById(id);
 const esc=(value)=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 function selectedDocs(){return state.documents.filter(d=>state.selected.has(d.docId))}
 function isSmokeTrio(){const ids=state.smokeDocIds;return ids.length>0&&selectedDocs().length===ids.length&&ids.every(id=>state.selected.has(id))}
 function pages(){return selectedDocs().reduce((sum,d)=>sum+d.pages,0)}
-function refreshTotals(){const docs=selectedDocs();$('selected-count').textContent=docs.length;$('page-count').textContent=pages();$('image-count').innerHTML=docs.filter(d=>d.layer==='image').length+' <small>/ '+docs.length+'</small>';const fee=pages()*(isSmokeTrio()?1:Number($('repeats').value))*0.002;$('fee-count').textContent='$'+fee.toFixed(2);$('fee-estimate').querySelector('strong').textContent='$'+fee.toFixed(3);$('live-run').disabled=docs.length<12||docs.length>20;$('smoke-run').disabled=!isSmokeTrio();$('dry-run').disabled=docs.length<1;const hint=$('mode-hint');if(isSmokeTrio())hint.textContent='Smoke mode: the fixed 3-document trio is selected. Approve the smoke run for a quick end-to-end check with 1 repeat.';else if(docs.length>=12&&docs.length<=20)hint.textContent='Pilot mode: '+docs.length+' documents selected. Review the dry-run plan before approving a live run.';else hint.textContent='Select 12–20 documents for a pilot, or choose “Smoke trio” for the 3-document live check.'}
+function refreshTotals(){const docs=selectedDocs();const min=state.pilotMin||12;const max=state.pilotMax||30;$('selected-count').textContent=docs.length;$('page-count').textContent=pages();$('image-count').innerHTML=docs.filter(d=>d.layer==='image').length+' <small>/ '+docs.length+'</small>';const textTotal=state.documents.filter(d=>d.layer!=='image').length;const imageTotal=state.documents.filter(d=>d.layer==='image').length;if($('corpus-foot'))$('corpus-foot').textContent='Corpus: '+textTotal+' text-layer PDFs · '+imageTotal+' scanned PDFs';const fee=pages()*(isSmokeTrio()?1:Number($('repeats').value))*0.002;$('fee-count').textContent='$'+fee.toFixed(2);$('fee-estimate').querySelector('strong').textContent='$'+fee.toFixed(3);$('live-run').disabled=docs.length<min||docs.length>max;$('smoke-run').disabled=!isSmokeTrio();$('dry-run').disabled=docs.length<1;const hint=$('mode-hint');if(isSmokeTrio())hint.textContent='Smoke mode: the fixed 3-document trio is selected. Approve the smoke run for a quick end-to-end check with 1 repeat.';else if(docs.length>=min&&docs.length<=max)hint.textContent='Pilot mode: '+docs.length+' documents selected. Review the dry-run plan before approving a live run.';else hint.textContent='Select '+min+'–'+max+' documents for a pilot, or choose “Smoke trio” for the 3-document live check.'}
 function renderDocs(){const root=$('documents');root.textContent='';for(const doc of state.documents){const label=document.createElement('label');label.className='doc-row';label.innerHTML='<input type="checkbox" '+(state.selected.has(doc.docId)?'checked':'')+' aria-label="Include '+esc(doc.role)+' · '+esc(doc.fileName)+'">';const checkbox=label.querySelector('input');checkbox.addEventListener('change',()=>{checkbox.checked?state.selected.add(doc.docId):state.selected.delete(doc.docId);refreshTotals()});const text=document.createElement('div');text.innerHTML='<p class="doc-name">'+esc(doc.role)+'</p><p class="doc-id">'+esc(doc.fileName)+' · '+esc(doc.docId)+'</p><p class="doc-reason">'+esc(doc.evidence)+'</p><div class="doc-tags"><span class="tag '+(doc.layer==='image'?'image':'')+'">'+(doc.layer==='image'?'scan · image-only':'text-layer PDF')+'</span><span class="tag">'+esc(doc.complexity)+' complexity</span>'+(doc.tableLike?'<span class="tag complex">table / numeric density</span>':'')+'</div>';const count=document.createElement('span');count.className='doc-pages';count.textContent=doc.pages+' pp';label.append(text,count);root.append(label)}refreshTotals()}
 function setMessage(text,error=false){$('message').textContent=text;$('message').style.color=error?'var(--red)':'var(--green)'}
 async function api(url,body){const response=await fetch(url,{method:body?'POST':'GET',headers:body?{'Content-Type':'application/json'}:{},body:body?JSON.stringify(body):undefined});const data=await response.json();if(!response.ok)throw new Error(data.error||'Request failed');return data}
 function currentModels(){return $('models').value.split(',').map(x=>x.trim()).filter(Boolean)}
-function runPayload(dryRun,approved=false,smoke=false){return{docIds:selectedDocs().map(d=>d.docId),models:currentModels(),repeats:smoke?1:Number($('repeats').value),maxCost:Number($('max-cost').value),parserRecovery:$('parser-recovery').value,analysisMode:$('analysis-mode').value,goldDir:$('gold-dir').value.trim()||($('gold-set').value?'data/pdf-engine-bench/'+$('gold-set').value+'/gold':null),dryRun,approved,smoke}}
+function runPayload(dryRun,approved=false,smoke=false){return{docIds:selectedDocs().map(d=>d.docId),models:currentModels(),repeats:smoke?1:Number($('repeats').value),maxCost:Number($('max-cost').value),analysisMode:$('analysis-mode').value,goldDir:$('gold-dir').value.trim()||($('gold-set').value?'data/pdf-engine-bench/'+$('gold-set').value+'/gold':null),dryRun,approved,smoke}}
 function refreshGoldProgress(){
   const set=state.goldSets.find(item=>item.setId===$('gold-set').value);
   const docs=selectedDocs();
@@ -222,7 +230,9 @@ function fmtLatency(value){
 function fmtGold(cell,field){
   const metric=cell.goldAccuracy?.[field];
   if(!metric)return '<span class="cell-muted" title="This gold category was not scored for this cell">—</span>';
-  return fmtPercent(metric.precision)+' / '+fmtPercent(metric.recall);
+  const pr=fmtPercent(metric.precision)+' / '+fmtPercent(metric.recall);
+  const recall=fmtPercent(metric.recall);
+  return '<span class="gold-val" data-pr="'+esc(pr)+'" data-recall="'+esc(recall)+'">'+pr+'</span>';
 }
 function reportNote(text){const p=document.createElement('p');p.className='report-note';p.textContent=text;return p}
 const MODEL_LABELS={
@@ -244,9 +254,78 @@ function renderDestination(model,provider){
   if(!name)return '';
   return '<span class="engine-dest">'+esc(name)+(provider?' <span class="dest-arrow">→</span> '+esc(provider):'')+'</span>';
 }
-function renderEngineBadge(arm,model,provider){
+function formatFrozenSourceLabel(sourceArm,provider){
+  if(!sourceArm)return null;
+  if(sourceArm==='local-text')return 'pdfjs';
+  if(sourceArm==='or-mistral-ocr')return 'Mistral OCR';
+  if(sourceArm==='or-cloudflare')return 'Cloudflare OCR';
+  if(sourceArm==='local-raster'){
+    const prov=String(provider||'').trim();
+    if(/google|gemini/i.test(prov))return 'Gemini Raster';
+    if(prov)return prov+' Raster';
+    return 'Raster OCR';
+  }
+  return String(sourceArm);
+}
+function describeStageASource(meta){
+  if(!meta)return null;
+  const entries=Array.isArray(meta.sources)&&meta.sources.length
+    ?meta.sources
+    :(meta.transcriptSourceArm?[{transcriptSourceArm:meta.transcriptSourceArm,transcriptProvider:meta.transcriptProvider}]:[]);
+  const seen=new Set();
+  const labels=[];
+  const tones=new Set();
+  for(const entry of entries){
+    const label=formatFrozenSourceLabel(entry?.transcriptSourceArm,entry?.transcriptProvider);
+    if(label&&!seen.has(label)){
+      seen.add(label);
+      labels.push(label);
+      if(entry.transcriptSourceArm==='or-mistral-ocr')tones.add('ocr');
+      else if(entry.transcriptSourceArm==='local-raster')tones.add('raster');
+      else if(entry.transcriptSourceArm==='or-cloudflare')tones.add('cloudflare');
+      else tones.add('local');
+    }
+  }
+  if(labels.length===1){
+    const tone=tones.size===1?[...tones][0]:'local';
+    return {
+      label:'Frozen text ('+labels[0]+')',
+      tone,
+      title:'Stage A analyzed the frozen Stage T transcript from '+labels[0]+' (no raw PDF was re-parsed in Stage A).'
+    };
+  }
+  if(labels.length===2){
+    return {
+      label:'Frozen text ('+labels[0]+' + '+labels[1]+')',
+      tone:'local',
+      title:'Stage A analyzed frozen Stage T transcripts from: '+labels.join(', ')+'.'
+    };
+  }
+  if(labels.length>2){
+    return {
+      label:'Frozen text ('+labels.length+' sources)',
+      tone:'local',
+      title:'Stage A analyzed frozen Stage T transcripts from: '+labels.join(', ')+'.'
+    };
+  }
+  if(meta.stage==='A'){
+    return {
+      label:'Frozen text',
+      tone:'local',
+      title:'Stage A ran on a frozen Stage T transcript (OCR source was not recorded in this older report).'
+    };
+  }
+  return null;
+}
+function renderEngineBadge(arm,model,provider,sourceMeta=null){
   const dest=renderDestination(model,provider);
-  if(arm==='local-text')return '<span class="engine-badge local" title="Reads the PDF\'s embedded text layer with pdfjs and sends that text with the analysis prompt — free, but skipped on image-only documents">Local (pdfjs)</span>'+dest;
+  if(arm==='local-text'){
+    const stageASource=describeStageASource(sourceMeta);
+    if(stageASource){
+      return '<span class="engine-badge '+esc(stageASource.tone)+'" title="'+esc(stageASource.title)+'">'+esc(stageASource.label)+'</span>'+dest;
+    }
+    return '<span class="engine-badge local" title="Reads the PDF\'s embedded text layer with pdfjs and sends that text with the analysis prompt — free, but skipped on image-only documents">Local (pdfjs)</span>'+dest;
+  }
   if(arm==='or-mistral-ocr')return '<span class="engine-badge ocr" title="One request: OpenRouter parses the PDF with Mistral OCR, injects the text plus up to 8 page images, and the pinned model answers — ~$0.002/page">Mistral OCR</span>'+dest;
   if(arm==='or-cloudflare')return '<span class="engine-badge cloudflare" title="One request: OpenRouter parses the PDF with Cloudflare Workers AI (text only) and the pinned model answers — free parse, lower precision on complex tables">Cloudflare AI</span>'+dest;
   if(arm==='or-native')return '<span class="engine-badge native" title="One request sends the raw PDF as a native file and the provider\'s own pipeline reads it; the model is not parsing the text itself. Production normally analyzes extracted text and uses native PDF as a scan fallback.">Native PDF</span>'+dest;
@@ -261,9 +340,9 @@ function renderModelCell(model,provider){
 function renderScenarioBadge(docType){
   if(!docType)return '<span class="scenario-badge">—</span>';
   const norm=String(docType).toLowerCase();
-  if(norm.includes('table-heavy'))return '<span class="scenario-badge" title="'+esc(docType)+'">📊 Dense Table (Troškovnik)'+recoverySuffix(docType)+'</span>';
-  if(norm.includes('scan'))return '<span class="scenario-badge" title="'+esc(docType)+'">🖼️ Scanned Exhibit (Račun)'+recoverySuffix(docType)+'</span>';
-  if(norm.includes('text-layer'))return '<span class="scenario-badge" title="'+esc(docType)+'">📄 Text Filing (Podnesak)'+recoverySuffix(docType)+'</span>';
+  if(norm.includes('table-heavy'))return '<span class="scenario-badge" title="'+esc(docType)+'">Dense Table'+recoverySuffix(docType)+'</span>';
+  if(norm.includes('scan'))return '<span class="scenario-badge" title="'+esc(docType)+'">Scanned Exhibit'+recoverySuffix(docType)+'</span>';
+  if(norm.includes('text-layer'))return '<span class="scenario-badge" title="'+esc(docType)+'">Text Filing'+recoverySuffix(docType)+'</span>';
   return '<span class="scenario-badge">'+esc(docType)+'</span>';
 }
 function recoverySuffix(docType){
@@ -310,6 +389,7 @@ function buildTable(caption,headers,rows,wrapId=null){
   const body=document.createElement('tbody');
   for(const rowData of rows){
     const tr=document.createElement('tr');
+    if(rowData.className)tr.className=rowData.className;
     if(rowData.dataset){
       for(const [k,v] of Object.entries(rowData.dataset)){
         tr.dataset[k]=v;
@@ -347,49 +427,6 @@ function buildTable(caption,headers,rows,wrapId=null){
   table.append(body);
   wrap.append(table);
   return wrap;
-}
-function renderRecoveryDetails(row){
-  const recovery=row.parserRecovery;
-  if(!recovery)return null;
-  const details=document.createElement('details');
-  details.className='parser-output-disclosure';
-  const summary=document.createElement('summary');
-  summary.textContent=(row.docId||'PDF')+' · '+recovery.mode+' · '+recovery.status+' · repeat '+(row.repeat||1);
-  details.append(summary);
-  const meta=document.createElement('p');
-  meta.className='parser-output-meta';
-  meta.textContent=[row.docId||'Source document unavailable',[row.arm,row.model].filter(Boolean).join(' · '),recovery.originalBytes==null?'source size unknown':'source '+Number(recovery.originalBytes).toLocaleString()+' bytes',recovery.rewrittenBytes==null?null:'rewrite '+Number(recovery.rewrittenBytes).toLocaleString()+' bytes'].filter(Boolean).join(' · ');
-  details.append(meta);
-  const ranges=recovery.chunks||[];
-  const rangeLine=document.createElement('p');
-  rangeLine.className='parser-output-meta';
-  rangeLine.textContent='Accepted original pages: '+(ranges.length?ranges.map(request=>request.firstPage===request.lastPage?String(request.firstPage):request.firstPage+'–'+request.lastPage).join(', '):'none recorded');
-  details.append(rangeLine);
-  for(const request of recovery.requests||[]){
-    const line=document.createElement('p');
-    line.className='parser-output-meta';
-    const costLabel=request.requestRejection==='pdf-parser-size-limit'?'size rejected; no inference cost reported':request.cost==null?'cost unknown':fmtCost(request.cost);
-    line.textContent=[request.phase==='original'?'Original PDF':request.phase,request.firstPage==null?'':('pages '+request.firstPage+'–'+request.lastPage),request.status==null?'status unknown':'HTTP '+request.status,request.bytes==null?'':Number(request.bytes).toLocaleString()+' bytes',request.latencyMs==null?'':Math.round(request.latencyMs).toLocaleString()+' ms',costLabel,request.error?String(typeof request.error==='string'?request.error:JSON.stringify(request.error)):null,request.requestRejection].filter(Boolean).join(' · ');
-    details.append(line);
-  }
-  if(recovery.error){const error=document.createElement('p');error.className='parser-output-status error';error.textContent=String(recovery.error);details.append(error)}
-  return details;
-}
-function renderRecoveryReport(report){
-  const rows=(report.rows||[]).filter(row=>row.parserRecovery);
-  if(!rows.length)return null;
-  const section=document.createElement('section');
-  section.className='section-intro';
-  const heading=document.createElement('h3');
-  heading.textContent='Parser recovery by source';
-  const note=document.createElement('p');
-  note.textContent='Recovery may involve multiple parser calls assembled into a transcript, then one full-document analysis. Costs and latency aggregate across requests; unknown costs are not zero.';
-  section.append(heading,note);
-  for(const row of rows){
-    const details=renderRecoveryDetails(row);
-    if(details){details.classList.add('recovery-report-row');section.append(details)}
-  }
-  return section;
 }
 function renderInsightsGrid(report){
   const grid=document.createElement('div');
@@ -465,22 +502,114 @@ function renderInsightsGrid(report){
 
   return grid;
 }
+function renderModelScorecard(report){
+  const rows=(report.rows||[]).filter(r=>!r.planned&&r.status!=='SKIPPED');
+  const byModel=new Map();
+  for(const r of rows){
+    const key=r.model||'unknown';
+    if(!byModel.has(key))byModel.set(key,[]);
+    byModel.get(key).push(r);
+  }
+  if(!byModel.size)return null;
+
+  const section=document.createElement('section');
+  section.className='scorecard-section';
+  section.setAttribute('aria-label','Overall model comparison');
+  const head=document.createElement('div');
+  head.className='scorecard-head';
+  head.innerHTML='<h3>Overall model comparison</h3><span class="scorecard-sub">Micro (pooled entity recall) and macro (per-document mean recall) computed from scored cells in this run.</span>';
+  section.append(head);
+
+  const grid=document.createElement('div');
+  grid.className='scorecard-grid';
+
+  const calcField=(modelRows,field)=>{
+    let tp=0,ref=0;
+    const macros=[];
+    for(const r of modelRows){
+      const m=r.goldAccuracy?.[field];
+      if(!m||!m.counts)continue;
+      tp+=Number(m.counts.truePositive||0);
+      ref+=Number(m.counts.reference||0);
+      if(Number(m.counts.reference||0)>0)macros.push(Number(m.recall||0));
+    }
+    if(!ref&&!macros.length)return '—';
+    const micro=ref?Math.round((tp/ref)*100)+'%':'—';
+    const macro=macros.length?Math.round((macros.reduce((a,b)=>a+b,0)/macros.length)*100)+'%':'—';
+    return micro+' <small>('+macro+' macro)</small>';
+  };
+
+  for(const [model,mRows] of byModel.entries()){
+    const full=mRows.filter(r=>{
+      const seg=r.structuredAnalysisSegmentation||r.analysisSegmentation;
+      return !r.failedCall&&!r.errors?.length&&seg?.status!=='partial';
+    }).length;
+    const validJson=mRows.filter(r=>r.json?.valid).length;
+    const gSum=mRows.reduce((s,r)=>s+(r.quoteGroundingOwn?.grounded||0),0);
+    const gTot=mRows.reduce((s,r)=>s+(r.quoteGroundingOwn?.total||0),0);
+    const costSum=mRows.reduce((s,r)=>s+(Number.isFinite(r.cost)&&!r.costIncomplete?r.cost:0),0);
+    const provider=mRows.find(r=>r.provider&&r.provider!=='local-pdfjs')?.provider||'';
+
+    const card=document.createElement('div');
+    card.className='scorecard-card';
+    card.innerHTML=`
+      <div class="scorecard-model">
+        <strong>${esc(prettyModel(model))}</strong>
+        <span>${esc(provider||model)} · ${mRows.length} docs</span>
+      </div>
+      <div class="scorecard-metrics">
+        <div class="scorecard-kv"><span>Full coverage</span><strong>${full}/${mRows.length} <small>docs</small></strong></div>
+        <div class="scorecard-kv"><span>OIB recall</span><strong>${calcField(mRows,'oibs')}</strong></div>
+        <div class="scorecard-kv"><span>Amounts recall</span><strong>${calcField(mRows,'amounts')}</strong></div>
+        <div class="scorecard-kv"><span>Filings recall</span><strong>${calcField(mRows,'filingNumbers')}</strong></div>
+        <div class="scorecard-kv"><span>Dates recall</span><strong>${calcField(mRows,'dates')}</strong></div>
+        <div class="scorecard-kv"><span>Quotes · JSON</span><strong>${gTot?Math.round((gSum/gTot)*100)+'%':'—'} <small>· ${validJson}/${mRows.length}</small></strong></div>
+        <div class="scorecard-kv"><span>Reported cost</span><strong>$${costSum.toFixed(4)}</strong></div>
+      </div>
+    `;
+    grid.append(card);
+  }
+  section.append(grid);
+  return section;
+}
 function renderFilterBar(report){
   const docCount=(report.docs||[]).length;
+  const models=[...new Set((report.rows||[]).filter(r=>!r.planned&&r.model).map(r=>r.model))];
   const bar=document.createElement('div');
   bar.className='filter-bar';
   bar.setAttribute('role','group');
-  bar.setAttribute('aria-label','Result scenario filters');
+  bar.setAttribute('aria-label','Result filters');
   bar.innerHTML=`
-    <span class="filter-bar-label">Show:</span>
-    <button type="button" class="filter-chip active" data-filter="all" title="Show all document scenarios and both stages">All scenarios (${docCount} docs)</button>
-    <button type="button" class="filter-chip" data-filter="text" title="PDFs with an embedded text layer — local pdfjs can read these directly">📄 Text filing</button>
-    <button type="button" class="filter-chip" data-filter="scan" title="Image-only PDFs — requires OCR to extract any content">🖼️ Scanned exhibit</button>
-    <button type="button" class="filter-chip" data-filter="table" title="PDFs with dense tabular data — tests column alignment and numeric fidelity">📊 Dense table</button>
-    <button type="button" class="filter-chip" data-filter="stage-e" title="Scroll to the per-document analysis cards">🧠 Analysis detail</button>
+    <span class="filter-bar-label">Filter:</span>
+    <button type="button" class="filter-chip active" data-filter="all">All (${docCount})</button>
+    <button type="button" class="filter-chip" data-filter="text">Text</button>
+    <button type="button" class="filter-chip" data-filter="scan">Scan</button>
+    <button type="button" class="filter-chip" data-filter="table">Dense table</button>
+    <select id="filter-model" class="filter-select" aria-label="Filter by model">
+      <option value="all">All models</option>
+      ${models.map(m=>`<option value="${esc(m)}">${esc(prettyModel(m))}</option>`).join('')}
+    </select>
+    <button type="button" id="filter-issues" class="filter-chip" data-active="false">Issues / partial only</button>
+    <button type="button" id="filter-pr" class="filter-chip" data-mode="pr" title="Toggle Gold columns between Precision / Recall and Recall only">Gold: P / R</button>
+    <input type="search" id="filter-search" class="filter-search" placeholder="Filter docId or filename…" aria-label="Filter documents by ID or filename">
+    <span id="filter-count" class="filter-count"></span>
   `;
-  for(const button of bar.querySelectorAll('button'))button.setAttribute('aria-pressed',String(button.classList.contains('active')));
+  for(const button of bar.querySelectorAll('.filter-chip'))button.setAttribute('aria-pressed',String(button.classList.contains('active')));
   return bar;
+}
+function formatAmountsByCurrency(amounts){
+  if(!amounts?.length)return '<span class="cell-muted">0 items</span>';
+  const byCur=new Map();
+  for(const a of amounts){
+    const cur=a.currency||'—';
+    const val=Number(a.amount);
+    if(!byCur.has(cur))byCur.set(cur,{count:0,sum:0});
+    const entry=byCur.get(cur);
+    entry.count+=1;
+    if(Number.isFinite(val))entry.sum+=val;
+  }
+  const parts=[...byCur.entries()].map(([cur,info])=>info.count+' '+esc(cur)+' ('+info.sum.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})+')');
+  return '<strong>'+amounts.length+'</strong> <span style="color:var(--muted);">['+parts.join(' · ')+']</span>';
 }
 function renderStageEInspector(report){
   const container=document.createElement('div');
@@ -490,8 +619,8 @@ function renderStageEInspector(report){
   intro.className='section-intro';
   const baselineHost=(report.rows||[]).find(r=>r.model&&r.model===report.baseline&&r.provider)?.provider||null;
   intro.innerHTML=`
-    <h3>Per-document analysis detail</h3>
-    <p>Each card is one analysis result. Bounded analysis deterministically merges segment results without whole-document synthesis; cross-segment relationships may differ from single-shot analysis. Standard parser requests combine PDF parsing and analysis; size recovery assembles parser text before the configured analysis mode. The same production analysis prompt and output cap are used for every cell. ${esc(report.baseline ? 'The baseline is '+prettyModel(report.baseline)+(baselineHost?' on '+baselineHost:'')+' reading the raw PDF; the challenger never runs that path.' : 'No baseline model was selected for this run.')}</p>
+    <h3>Per-document comparison</h3>
+    <p>Grouped by document so models sit side-by-side. Bounded analysis deterministically merges segment results without whole-document synthesis. ${esc(report.baseline ? 'Baseline: '+prettyModel(report.baseline)+(baselineHost?' ('+baselineHost+')':'')+' on the same canonical text.' : 'No baseline model was selected for this run.')}</p>
   `;
   container.append(intro);
 
@@ -504,67 +633,106 @@ function renderStageEInspector(report){
     return container;
   }
 
+  const byDoc=new Map();
   for(const row of extractionRows){
+    if(!byDoc.has(row.docId))byDoc.set(row.docId,[]);
+    byDoc.get(row.docId).push(row);
+  }
+
+  for(const [docId,docRows] of byDoc.entries()){
+    const first=docRows[0];
+    const hasIssue=docRows.some(r=>{
+      const seg=r.structuredAnalysisSegmentation||r.analysisSegmentation;
+      return r.failedCall||!r.parsed||r.errors?.length||seg?.status==='partial';
+    });
     const card=document.createElement('div');
-    card.className='stage-e-card';
-    card.dataset.scenario=getScenarioKey(row.documentType);
+    card.className='doc-compare-card';
+    card.dataset.scenario=getScenarioKey(first.documentType);
+    card.dataset.doc=String(docId).toLowerCase();
+    card.dataset.issue=String(hasIssue);
 
-    const parsed=row.parsed;
-    const isValid=!!parsed;
-    const amounts=parsed?.amounts||[];
-    const totalAmount=amounts.reduce((sum,a)=>sum+(Number(a.amount)||0),0);
-    const totalFmt=totalAmount>0?totalAmount.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})+' '+(amounts[0]?.currency||'EUR'):null;
+    const head=document.createElement('div');
+    head.className='doc-compare-head';
+    head.innerHTML=`
+      <span class="doc-compare-id">${esc(docId)}</span>
+      <span style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+        ${renderScenarioBadge(first.documentType)}
+        <span style="font:500 11px/1 var(--mono);color:var(--muted);">${first.pages||'?'} pp</span>
+      </span>
+    `;
+    card.append(head);
 
-    const engineBadge=renderEngineBadge(row.arm||row.transcriptArm,row.model||row.extractionModel,row.provider);
-    const scenarioBadge=renderScenarioBadge(row.documentType);
-    const statusTag=isValid
-      ?'<span class="badge-tag valid">✅ Valid JSON ('+(Object.keys(parsed).length)+' fields)</span>'
-      :'<span class="badge-tag invalid">⚠️ Truncated / Parse Error</span>';
+    const grid=document.createElement('div');
+    grid.className='doc-compare-grid';
 
-    const caseNo=parsed?.caseNumber?esc(parsed.caseNumber):'<span class="cell-muted">None detected</span>';
-    const date=parsed?.decisionDate?esc(parsed.decisionDate):'<span class="cell-muted">None detected</span>';
-    const amountsStr=amounts.length>0
-      ?'<strong>'+amounts.length+' item(s)'+(totalFmt?' · Total: '+totalFmt:'')+'</strong>'
-      :'<span class="cell-muted">0 items</span>';
+    for(const row of docRows){
+      const col=document.createElement('div');
+      col.className='doc-compare-col';
+      col.dataset.model=row.model||'';
+      const parsed=row.parsed;
+      const isValid=!!parsed;
+      const seg=row.structuredAnalysisSegmentation||row.analysisSegmentation;
+      const isPartial=seg?.status==='partial';
+      const statusTag=isValid&&!isPartial
+        ?'<span class="badge-tag valid">Valid JSON ('+Object.keys(parsed).length+' fields)</span>'
+        :isValid&&isPartial
+        ?'<span class="badge-tag invalid">Partial coverage</span>'
+        :'<span class="badge-tag invalid">Truncated / Parse Error</span>';
 
-    const summaryHtml=parsed?.summary
-      ?'<p class="stage-e-summary-text">'+esc(parsed.summary)+'</p>'
-      :(row.errors?.length?'<p class="stage-e-summary-text cell-bad">Error: '+esc(row.errors.join('; '))+'</p>':'');
+      const caseNo=parsed?.caseNumber?esc(parsed.caseNumber):'<span class="cell-muted">None</span>';
+      const date=parsed?.decisionDate?esc(parsed.decisionDate):'<span class="cell-muted">None</span>';
+      const amountsStr=formatAmountsByCurrency(parsed?.amounts);
+      const summaryHtml=parsed?.summary
+        ?'<p class="stage-e-summary-text">'+esc(parsed.summary)+'</p>'
+        :(row.errors?.length?'<p class="stage-e-summary-text cell-bad">Error: '+esc(row.errors.join('; '))+'</p>':'');
 
-    let jsonDisplay='';
-    if(parsed){
-      jsonDisplay=JSON.stringify(parsed,null,2);
-    }else if(row.json){
-      jsonDisplay=typeof row.json==='string'?row.json:JSON.stringify(row.json,null,2);
-    }else if(row.text){
-      jsonDisplay=row.text;
+      const ga=row.goldAccuracy;
+      const goldStrip=ga?.complete
+        ?'<div class="doc-gold-strip">'
+          +'<span class="doc-gold-pill">OIB '+ga.oibs.counts.truePositive+'/'+ga.oibs.counts.reference+'</span>'
+          +'<span class="doc-gold-pill">Amt '+ga.amounts.counts.truePositive+'/'+ga.amounts.counts.reference+'</span>'
+          +'<span class="doc-gold-pill">Date '+ga.dates.counts.truePositive+'/'+ga.dates.counts.reference+'</span>'
+          +'<span class="doc-gold-pill">Filing '+ga.filingNumbers.counts.truePositive+'/'+ga.filingNumbers.counts.reference+'</span>'
+          +(row.quoteGroundingOwn?'<span class="doc-gold-pill">Quotes '+row.quoteGroundingOwn.grounded+'/'+row.quoteGroundingOwn.total+'</span>':'')
+        +'</div>'
+        :'';
+
+      col.innerHTML=`
+        <div class="doc-compare-col-head">
+          <div>${renderEngineBadge(row.arm||row.transcriptArm,row.model||row.extractionModel,row.provider,{stage:row.stage||'A',transcriptSourceArm:row.transcriptSourceArm,transcriptProvider:row.transcriptProvider})}</div>
+          <div>${statusTag}</div>
+        </div>
+        <div class="stage-e-facts">
+          <div><span>Case:</span> <strong>${caseNo}</strong></div>
+          <div><span>Date:</span> <strong>${date}</strong></div>
+          <div><span>Amounts:</span> ${amountsStr}</div>
+          ${Number.isFinite(row.cost)?'<div><span>Cost:</span> <strong>'+fmtCost(row.cost)+'</strong></div>':''}
+          ${Number.isFinite(row.latency)?'<div><span>Latency:</span> <strong>'+Math.round(row.latency).toLocaleString()+' ms</strong></div>':''}
+        </div>
+        ${goldStrip}
+        ${summaryHtml}
+      `;
+
+      const hasRaw=!!(parsed||row.json||row.text);
+      if(hasRaw){
+        const details=document.createElement('details');
+        details.className='stage-e-json';
+        const sum=document.createElement('summary');
+        sum.textContent='Inspect extracted JSON';
+        const pre=document.createElement('pre');
+        details.append(sum,pre);
+        details.addEventListener('toggle',()=>{
+          if(details.open&&!pre.dataset.rendered){
+            pre.textContent=parsed?JSON.stringify(parsed,null,2):(typeof row.json==='string'?row.json:row.json?JSON.stringify(row.json,null,2):String(row.text||''));
+            pre.dataset.rendered='true';
+          }
+        });
+        col.append(details);
+      }
+      grid.append(col);
     }
 
-    card.innerHTML=`
-      <div class="stage-e-header">
-        <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
-          ${engineBadge}
-          ${scenarioBadge}
-          <span style="font-size:11px; color:var(--muted); font-family:var(--mono);">${esc(row.docId)}</span>
-        </div>
-        <div>${statusTag}</div>
-      </div>
-      <div class="stage-e-facts">
-        <div><span style="color:var(--muted);">Case number:</span> <strong>${caseNo}</strong></div>
-        <div><span style="color:var(--muted);">Filing date:</span> <strong>${date}</strong></div>
-        <div><span style="color:var(--muted);">Money amounts:</span> ${amountsStr}</div>
-        ${row.cost?'<div><span style="color:var(--muted);">API cost:</span> <strong>$'+Number(row.cost).toFixed(5)+'</strong></div>':''}
-        ${row.latency?'<div><span style="color:var(--muted);">Round-trip:</span> <strong>'+Math.round(row.latency).toLocaleString()+' ms</strong></div>':''}
-      </div>
-      ${summaryHtml}
-      ${jsonDisplay?`
-        <details class="stage-e-json">
-          <summary>▶ Inspect Extracted Legal JSON</summary>
-          <pre>${esc(jsonDisplay)}</pre>
-        </details>
-      `:''}
-    `;
-
+    card.append(grid);
     container.append(card);
   }
 
@@ -625,11 +793,8 @@ function renderParserOutputInspector(report,metric){
         output.replaceChildren();
         const costLine=document.createElement('p');
         costLine.className='parser-output-meta';
-        costLine.textContent=response.parserRecovery
-          ?(response.provider||'Provider not recorded')+' · recovery cost aggregated across requests'+(response.cost==null?' · reported cost unavailable':' '+fmtCost(response.cost))+(response.estimatedParserFee?' · parser fee estimate '+fmtCost(response.estimatedParserFee):'')
-          :(response.provider||'Provider not recorded')+' · '+(response.cost==null?'reported request cost unavailable':'combined parser + analysis request '+fmtCost(response.cost))+(response.estimatedParserFee?' · parser fee estimate '+fmtCost(response.estimatedParserFee):'');
+        costLine.textContent=(response.provider||'Provider not recorded')+' · '+(response.cost==null?'reported request cost unavailable':'combined parser + analysis request '+fmtCost(response.cost))+(response.estimatedParserFee?' · parser fee estimate '+fmtCost(response.estimatedParserFee):'');
         output.append(costLine);
-        if(response.parserRecovery){const recoveryDetails=renderRecoveryDetails({...sample,parserRecovery:response.parserRecovery});if(recoveryDetails)output.append(recoveryDetails)}
         const appendText=(heading,text,emptyLabel)=>{
           const section=document.createElement('section');
           section.className='parser-output-section';
@@ -675,19 +840,38 @@ function renderParserOutputInspector(report,metric){
   return details;
 }
 function renderAnalysisSegmentationReport(report){
-  const rows=(report.rows||[]).filter(row=>row.analysisSegmentation);
+  const rows=(report.rows||[]).filter(row=>row.structuredAnalysisSegmentation||row.analysisSegmentation);
   if(!rows.length)return null;
-  const section=document.createElement('section');
-  section.className='section-intro';
-  const heading=document.createElement('h3');
-  heading.textContent='Bounded analysis by source';
-  section.append(heading,reportNote('Each segment uses the selected input path and model. Facts are merged deterministically, without a whole-document synthesis call. Pending segments were not requested; partial costs are not complete costs.'));
+  const detailsWrap=document.createElement('details');
+  detailsWrap.className='diag-disclosure';
+  const summaryTop=document.createElement('summary');
+  summaryTop.textContent='Bounded analysis by source · '+rows.length+' segmented cells';
+  detailsWrap.append(summaryTop);
+
+  const section=document.createElement('div');
+  section.className='diag-disclosure-body';
+  let hasPending=false;
+  let hasPartial=false;
   for(const row of rows){
-    const meta=row.analysisSegmentation;
+    const meta=row.structuredAnalysisSegmentation||row.analysisSegmentation;
+    if(meta.status==='partial'||meta.status==='failed')hasPartial=true;
+    const reqs=new Map((meta.requests||[]).map(request=>[request.segmentId,request]));
+    for(const segment of (meta.segments||[])){
+      if(segment.status==='pending'||!reqs.has(segment.id))hasPending=true;
+    }
+  }
+  let segNote='Each segment uses the selected input path and model. Facts are merged deterministically, without a whole-document synthesis call.';
+  if(hasPending)segNote+=' Pending segments were not requested; partial costs are not complete costs.';
+  else if(hasPartial)segNote+=' Some segmented cells finished with partial coverage (truncated or failed segments).';
+  section.append(reportNote(segNote));
+  for(const row of rows){
+    const meta=row.structuredAnalysisSegmentation||row.analysisSegmentation;
     const details=document.createElement('details');
     details.className='parser-output-disclosure recovery-report-row';
     const summary=document.createElement('summary');
-    summary.textContent=(row.docId||'Source')+' · '+row.arm+' · '+prettyModel(row.model)+' · '+meta.status+' · repeat '+(row.repeat||1);
+    const srcInfo=row.arm==='local-text'?describeStageASource({stage:row.stage,transcriptSourceArm:row.transcriptSourceArm,transcriptProvider:row.transcriptProvider}):null;
+    const pathLabel=srcInfo?srcInfo.label:row.arm;
+    summary.textContent=(row.docId||'Source')+' · '+pathLabel+' · '+prettyModel(row.model)+' · '+meta.status+' · repeat '+(row.repeat||1);
     details.append(summary);
     const requests=new Map((meta.requests||[]).map(request=>[request.segmentId,request]));
     const list=document.createElement('ul');
@@ -705,7 +889,8 @@ function renderAnalysisSegmentationReport(report){
     if(meta.error){const error=document.createElement('p');error.className='cell-bad';error.textContent=meta.error;details.append(error)}
     section.append(details);
   }
-  return section;
+  detailsWrap.append(section);
+  return detailsWrap;
 }
 
 async function renderReport(url){
@@ -715,10 +900,13 @@ async function renderReport(url){
     const report=await api(url);
     panel.hidden=false;
     body.textContent='';
-    const scope=report.scope==='smoke'?'3-document smoke':'12–20 document pilot';
+    const scope=report.scope==='smoke'?'3-document smoke':'12–30 document pilot';
     $('report-scope').textContent=scope+' · '+(report.docs?.length||0)+' documents · '+(report.totalPages||0)+' pages · reported cost $'+Number(report.actualCost||0).toFixed(4)+(report.estimatedParserFee?' · parser-fee estimate $'+Number(report.estimatedParserFee).toFixed(4):'')+(report.dryRun?' · dry run (plan only)':'')+' · descriptive comparison only, no winner';
 
     body.append(renderInsightsGrid(report));
+    const scorecard=renderModelScorecard(report);
+    if(scorecard)body.append(scorecard);
+
     if(report.capExceeded){
       const warning=reportNote('Estimate above spend cap: '+fmtCost(report.estimatedCost)+' estimated against your '+fmtCost(report.maxCost)+' cap. '+(report.dryRun?'Dry run; no paid calls were made. ':'')+(report.ignoreCostEstimate?'Estimate gate bypassed; the runtime spend guard and unknown-cost stop remain active. In-flight calls may overshoot.':'Live execution remains blocked until the plan or cap changes, or the estimate check is explicitly bypassed.'));
       warning.classList.add('scope-note');
@@ -726,10 +914,6 @@ async function renderReport(url){
       body.prepend(warning);
     }
     body.append(renderFilterBar(report));
-    const recoveryReport=renderRecoveryReport(report);
-    if(recoveryReport)body.append(recoveryReport);
-    const segmentationReport=renderAnalysisSegmentationReport(report);
-    if(segmentationReport)body.append(segmentationReport);
 
     const stageT=report.summary||[];
     const metrics=report.textMetricSummary||[];
@@ -743,9 +927,97 @@ async function renderReport(url){
     }
     const dest=(model,provider)=>provider||providerByModel.get(model)||null;
 
-    // Parser fidelity only exists for cells where OpenRouter parsed and returned
-    // text. Driving this table from the cost summary instead produced rows with
-    // a blank Model and a fully dashed metric set (local-text, native).
+    const extraction=[...(report.extractionSummary||[])].sort((a,b)=>String(a.documentType).localeCompare(String(b.documentType))||String(a.model).localeCompare(String(b.model)));
+    if(extraction.length){
+      const goldScored=extraction.some(c=>c.goldStatus==='scored');
+      const goldPending=extraction.some(c=>c.goldStatus==='incomplete');
+      const showP95=extraction.some(c=>Number(c.N||0)>=5);
+      const goldCell=(c)=>{
+        if(c.goldStatus==='scored'){
+          return [
+            fmtGold(c,'oibs'),
+            fmtGold(c,'amounts'),
+            fmtGold(c,'dates'),
+            fmtGold(c,'filingNumbers')
+          ];
+        }
+        if(c.goldStatus==='incomplete')return '<span class="cell-muted" title="'+esc(c.goldReason||'Gold facts exist but are not verified.')+'">not verified</span>';
+        return '<span class="cell-muted" title="No gold facts for this document">no gold</span>';
+      };
+
+      const sourcesByBucket=new Map();
+      const stageByBucket=new Map();
+      let hasStageARows=false;
+      for(const r of (report.rows||[])){
+        if(r.status==='SKIPPED')continue;
+        if(r.stage==='A')hasStageARows=true;
+        const k=r.arm+'|'+(r.model||'')+'|'+r.documentType;
+        if(!sourcesByBucket.has(k))sourcesByBucket.set(k,[]);
+        if(r.transcriptSourceArm)sourcesByBucket.get(k).push({transcriptSourceArm:r.transcriptSourceArm,transcriptProvider:r.transcriptProvider});
+        if(r.stage==='A')stageByBucket.set(k,'A');
+      }
+
+      let prevScenario=null;
+      const extRows=extraction.map(c=>{
+        const key=c.arm+'|'+(c.model||'')+'|'+c.documentType;
+        const t=costByCell.get(key)||{};
+        const validPct=c.validRate!=null?fmtMetricPct(c.validRate):'<span class="cell-muted" title="Every call in this cell failed before answering">—</span>';
+        const grounding=c.arm==='or-native'
+          ?'<span class="cell-muted" title="The model read the PDF itself, so there is no parser transcript to check quotes against">n/a (native)</span>'
+          :c.ownQuotes?fmtPercent(c.ownGroundingRate):'<span class="cell-muted" title="The answer contained no quotes to check">no quotes</span>';
+        const okCount=Math.max(0,Number(c.N||0)-Number(c.errors||0));
+        const okHtml=c.errors?'<span class="cell-bad">'+okCount+'/'+c.N+'</span>':okCount+'/'+c.N;
+        const bucketSourceMeta={stage:stageByBucket.get(key)||(hasStageARows?'A':null),sources:sourcesByBucket.get(key)||[]};
+        const columns=[
+          {html:renderModelCell(c.model,dest(c.model)),className:'wrap'},
+          [renderEngineBadge(c.arm,null,null,bucketSourceMeta)],
+          [renderScenarioBadge(c.documentType)],
+          [okHtml,true],
+          [validPct,true],
+          [grounding,true]
+        ];
+        if(goldScored){
+          const gold=goldCell(c);
+          if(Array.isArray(gold))columns.push(...gold.map(g=>[g,true]));
+          else columns.push(...Array.from({length:4},()=>[gold,true]));
+        }else{
+          columns.push([goldCell(c),true]);
+        }
+        columns.push([fmtCost(t.costPerCell),true]);
+        columns.push([fmtLatency(t.p50Latency),true]);
+        if(showP95)columns.push([fmtLatency(t.p95Latency),true]);
+        const isGroupStart=prevScenario!==null&&prevScenario!==c.documentType;
+        prevScenario=c.documentType;
+        return {
+          className:isGroupStart?'scenario-group-start':'',
+          dataset:{scenario:getScenarioKey(c.documentType),model:c.model||'',issue:String(Boolean(c.errors))},
+          cols:columns
+        };
+      });
+
+      const headers=[['Model · host',false,'Model and pinned provider that produced the answer.'],['Path',false,'PDF or Stage T transcript source used by this cell.'],['Scenario',false,'Document type / extraction challenge represented by this fixture.'],['Ok / Cells',true,'Completed cells out of total cells in this scenario bucket.'],['Valid JSON',true,'Share of answered calls whose output parsed as valid JSON.'],['Quotes',true,'Share of supplied, nonblank quotes found in the canonical input text.']];
+      if(goldScored){
+        headers.push(['Gold OIBs',true,'Gold precision / recall for extracted OIB identifiers.'],['Gold amounts',true,'Gold precision / recall for extracted monetary amounts.'],['Gold dates',true,'Gold precision / recall for extracted dates.'],['Gold filings',true,'Gold precision / recall for extracted filing numbers.']);
+      }else{
+        headers.push(['Gold',true]);
+      }
+      headers.push(['$/cell',true,'Average provider-reported cost per cell.'],['p50',true,'Median cell latency in milliseconds.']);
+      if(showP95)headers.push(['p95',true,'95th percentile cell latency in milliseconds.']);
+
+      body.append(buildTable(
+        'Analysis quality · grouped by scenario so models compare directly. Gold precision / recall measures answer quality; valid JSON only confirms format.'+(goldScored?'':goldPending?' Gold facts exist for some cells but are not verified, so nothing is scored yet.':' No gold facts are set for these documents, so no quality score is claimed.'),
+        headers,
+        extRows,
+        'stage-e-summary-wrap'
+      ));
+    }
+
+    body.append(renderStageEInspector(report));
+
+    // Diagnostics (bounded segment logs & Stage T parser fidelity) collapsed below main results
+    const segmentationReport=renderAnalysisSegmentationReport(report);
+    if(segmentationReport)body.append(segmentationReport);
+
     const recoveredByCell=new Map();
     for(const r of (report.rows||[])){
       if(r.status==='SKIPPED')continue;
@@ -754,9 +1026,7 @@ async function renderReport(url){
       recoveredByCell.set(key,Math.max(recoveredByCell.get(key)||0,effective));
     }
 
-    if(!metrics.length){
-      body.append(reportNote('No parser-fidelity rows: this run had no file-parser arm (Cloudflare or Mistral). Local text and native file input have no parser transcript to score.'));
-    }else{
+    if(metrics.length){
       const rows=metrics.map(m=>{
         const key=m.arm+'|'+(m.model||'')+'|'+m.documentType;
         const f=m.fields||{};
@@ -784,9 +1054,9 @@ async function renderReport(url){
         }
 
         return {
-          dataset:{scenario:getScenarioKey(m.documentType)},
+          dataset:{scenario:getScenarioKey(m.documentType),model:m.model||''},
           cols:[
-            [renderEngineBadge(m.arm,m.model,dest(m.model))],
+            [renderEngineBadge(m.arm,m.model,dest(m.model),{stage:'T'})],
             [renderScenarioBadge(m.documentType)],
             [String(m.N),true],
             [amountsCell,true],
@@ -799,78 +1069,22 @@ async function renderReport(url){
         };
       });
 
-      body.append(buildTable(
-        'Parser fidelity (diagnostic) · compares parser output with the PDF text layer. Recovery can use multiple parser requests assembled into a transcript, followed by one full-document analysis; costs aggregate across calls.',
+      const stageTDetails=document.createElement('details');
+      stageTDetails.className='diag-disclosure';
+      const stageTSummary=document.createElement('summary');
+      stageTSummary.textContent='Parser fidelity (Stage T diagnostic) · '+metrics.length+' buckets';
+      stageTDetails.append(stageTSummary);
+      const stageTBody=document.createElement('div');
+      stageTBody.className='diag-disclosure-body';
+      stageTBody.append(buildTable(
+        'Compares OpenRouter file-parser output with the local PDF text layer.',
         [['Path · model',false],['Scenario',false],['Samples',true],['Amounts R/P',true],['Dates R',true],['OIBs R',true],['Filing no. R',true],['Diacritics',true],['Samples',false]],
         rows,
         'stage-t-wrap'
       ));
+      stageTDetails.append(stageTBody);
+      body.append(stageTDetails);
     }
-    const extraction=report.extractionSummary||[];
-    if(extraction.length){
-      // Gold columns exist only when at least one cell was actually scored.
-      // Four permanently dashed columns would read as "scored zero".
-      const goldScored=extraction.some(c=>c.goldStatus==='scored');
-      const goldPending=extraction.some(c=>c.goldStatus==='incomplete');
-      const goldCell=(c)=>{
-        if(c.goldStatus==='scored'){
-          return [
-            fmtGold(c,'amounts'),
-            fmtGold(c,'dates'),
-            fmtGold(c,'oibs'),
-            fmtGold(c,'filingNumbers')
-          ];
-        }
-        if(c.goldStatus==='incomplete')return '<span class="cell-muted" title="'+esc(c.goldReason||'Gold facts exist but are not verified.')+'">not verified</span>';
-        return '<span class="cell-muted" title="No gold facts for this document">no gold</span>';
-      };
-
-      const extRows=extraction.map(c=>{
-        const key=c.arm+'|'+(c.model||'')+'|'+c.documentType;
-        const t=costByCell.get(key)||{};
-        const validPct=c.validRate!=null?fmtMetricPct(c.validRate):'<span class="cell-muted" title="Every call in this cell failed before answering">—</span>';
-        const grounding=c.arm==='or-native'
-          ?'<span class="cell-muted" title="The model read the PDF itself, so there is no parser transcript to check quotes against">n/a (native)</span>'
-          :c.ownQuotes?fmtPercent(c.ownGroundingRate):'<span class="cell-muted" title="The answer contained no quotes to check">no quotes</span>';
-        const columns=[
-          [renderEngineBadge(c.arm)],
-          {html:renderModelCell(c.model,dest(c.model)),className:'wrap'},
-          [renderScenarioBadge(c.documentType)],
-          [String(c.N),true],
-          [c.errors?'<span class="cell-bad">'+c.errors+'</span>':'0',true],
-          [validPct,true],
-          [grounding,true]
-        ];
-        if(goldScored){
-          const gold=goldCell(c);
-          if(Array.isArray(gold))columns.push(...gold.map(g=>[g,true]));
-          else columns.push(...Array.from({length:4},()=>[gold,true]));
-        }else{
-          columns.push([goldCell(c),true]);
-        }
-        columns.push([fmtCost(t.costPerCell),true]);
-        columns.push([fmtLatency(t.p50Latency),true]);
-        columns.push([fmtLatency(t.p95Latency),true]);
-        return {dataset:{scenario:getScenarioKey(c.documentType)},cols:columns};
-      });
-
-      const headers=[['Path',false,'PDF input path used by this cell.'],['Model · host',false,'Model and pinned provider that produced the answer.'],['Scenario',false,'Document type / extraction challenge represented by this fixture.'],['Cells',true,'Document × model × input-path attempts. Raster cells can contain multiple provider requests.'],['Failed',true,'Cells with provider or input-processing errors, including incomplete OCR.'],['Valid JSON',true,'Share of answered calls whose output parsed as valid JSON. This is format, not factual accuracy.'],['Supplied quotes matched',true,'Share of supplied, nonblank quotes found in the input text. Missing quotes do not lower this rate; it does not prove fact coverage or correct party associations.']];
-      if(goldScored){
-        headers.push(['Gold amounts P/R',true,'Gold precision / recall for extracted amounts. Precision = returned facts that are correct; recall = reference facts recovered.'],['Gold dates P/R',true,'Gold precision / recall for extracted dates.'],['Gold OIBs P/R',true,'Gold precision / recall for extracted OIB identifiers.'],['Gold filing P/R',true,'Gold precision / recall for extracted filing numbers.']);
-      }else{
-        headers.push(['Gold',true]);
-      }
-      headers.push(['$/cell',true,'Average reported cost per cell, including OCR and analysis for raster and combined parser/analysis requests. Missing charges are not zero; inspect cost completeness.'],['p50',true,'Median cell latency, including OCR and analysis where applicable, in milliseconds.'],['p95',true,'Nearest-rank 95th percentile cell latency; needs at least 3 cells. At 3 this is simply the slowest cell, not a stable tail estimate.']);
-
-      body.append(buildTable(
-        'Analysis quality · per-document, input-path, and model cells use the production prompt and output cap. Gold precision / recall measures answer quality; valid JSON only confirms the format. Raster cells may aggregate multiple OCR page calls plus an analysis call, so Calls counts analysis answers, not every provider request.'+(goldScored?'':goldPending?' Gold facts exist for some cells but are not verified, so nothing is scored yet.':' No gold facts are set for these documents, so no quality score is claimed.'),
-        headers,
-        extRows,
-        'stage-e-summary-wrap'
-      ));
-    }
-
-    body.append(renderStageEInspector(report));
 
     if(report.skippedCells?.length){
       const reasons=new Map();
@@ -885,41 +1099,71 @@ async function renderReport(url){
     if(report.costMissingCalls)body.append(reportNote(report.costMissingCalls+' cells had incomplete provider-reported cost; cost averages use complete-cost cells only.'));
     if(!extraction.length&&report.dryRun)body.append(reportNote('Dry run: no calls were made, so metric cells are blank by design; analysis cells are planned, not scored.'));
 
-    // Filter chip wiring
-    const chips=body.querySelectorAll('.filter-chip');
-    chips.forEach(chip=>{
+    // Unified filter wiring (scenario + model + issues + search + P/R toggle)
+    let activeScenario='all';
+    const applyFilters=()=>{
+      const modelFilter=$('filter-model')?.value||'all';
+      const issuesOnly=$('filter-issues')?.dataset.active==='true';
+      const query=($('filter-search')?.value||'').trim().toLowerCase();
+
+      body.querySelectorAll('#stage-t-wrap tbody tr, #stage-e-summary-wrap tbody tr').forEach(tr=>{
+        const okScenario=activeScenario==='all'||tr.dataset.scenario===activeScenario;
+        const okModel=modelFilter==='all'||!tr.dataset.model||tr.dataset.model===modelFilter;
+        const okIssue=!issuesOnly||tr.dataset.issue==='true';
+        tr.style.display=(okScenario&&okModel&&okIssue)?'':'none';
+      });
+
+      let visibleDocs=0;
+      const allCards=body.querySelectorAll('.doc-compare-card');
+      allCards.forEach(card=>{
+        const okScenario=activeScenario==='all'||card.dataset.scenario===activeScenario;
+        const okIssue=!issuesOnly||card.dataset.issue==='true';
+        const okSearch=!query||(card.dataset.doc||'').includes(query);
+        let anyCol=false;
+        card.querySelectorAll('.doc-compare-col').forEach(col=>{
+          const showCol=modelFilter==='all'||col.dataset.model===modelFilter;
+          col.style.display=showCol?'':'none';
+          if(showCol)anyCol=true;
+        });
+        const showCard=okScenario&&okIssue&&okSearch&&anyCol;
+        card.style.display=showCard?'':'none';
+        if(showCard)visibleDocs+=1;
+      });
+      const countEl=$('filter-count');
+      if(countEl)countEl.textContent=visibleDocs+' / '+allCards.length+' docs shown';
+    };
+
+    body.querySelectorAll('.filter-chip[data-filter]').forEach(chip=>{
       chip.addEventListener('click',()=>{
-        chips.forEach(c=>{c.classList.remove('active');c.setAttribute('aria-pressed','false')});
+        body.querySelectorAll('.filter-chip[data-filter]').forEach(c=>{c.classList.remove('active');c.setAttribute('aria-pressed','false')});
         chip.classList.add('active');
         chip.setAttribute('aria-pressed','true');
-        const filter=chip.dataset.filter;
-        body.querySelectorAll('#stage-t-wrap tbody tr').forEach(tr=>{
-          if(filter==='all'||filter==='stage-e'||tr.dataset.scenario===filter){
-            tr.style.display='';
-          }else{
-            tr.style.display='none';
-          }
-        });
-        body.querySelectorAll('#stage-e-summary-wrap tbody tr').forEach(tr=>{
-          if(filter==='all'||filter==='stage-e'||tr.dataset.scenario===filter){
-            tr.style.display='';
-          }else{
-            tr.style.display='none';
-          }
-        });
-        body.querySelectorAll('.stage-e-card').forEach(card=>{
-          if(filter==='all'||filter==='stage-e'||card.dataset.scenario===filter){
-            card.style.display='';
-          }else{
-            card.style.display='none';
-          }
-        });
-        if(filter==='stage-e'){
-          const el=body.querySelector('#stage-e-section');
-          if(el)el.scrollIntoView({behavior:'smooth'});
-        }
+        activeScenario=chip.dataset.filter;
+        applyFilters();
       });
     });
+    $('filter-model')?.addEventListener('change',applyFilters);
+    $('filter-search')?.addEventListener('input',applyFilters);
+    $('filter-issues')?.addEventListener('click',e=>{
+      const btn=e.currentTarget;
+      const next=btn.dataset.active!=='true';
+      btn.dataset.active=String(next);
+      btn.classList.toggle('active',next);
+      btn.setAttribute('aria-pressed',String(next));
+      applyFilters();
+    });
+    $('filter-pr')?.addEventListener('click',e=>{
+      const btn=e.currentTarget;
+      const nextMode=btn.dataset.mode==='pr'?'recall':'pr';
+      btn.dataset.mode=nextMode;
+      btn.textContent=nextMode==='pr'?'Gold: P / R':'Gold: Recall';
+      btn.classList.toggle('active',nextMode==='recall');
+      btn.setAttribute('aria-pressed',String(nextMode==='recall'));
+      body.querySelectorAll('.gold-val').forEach(span=>{
+        span.textContent=nextMode==='pr'?span.dataset.pr:span.dataset.recall;
+      });
+    });
+    applyFilters();
 
   }catch(error){
     panel.hidden=false;
@@ -930,7 +1174,7 @@ async function renderReport(url){
 $('select-all').addEventListener('click',()=>{state.selected=new Set(state.documents.map(d=>d.docId));renderDocs()});$('select-images').addEventListener('click',()=>{state.selected=new Set(state.documents.filter(d=>d.layer==='image').map(d=>d.docId));renderDocs()});$('select-smoke').addEventListener('click',()=>{state.selected=new Set(state.smokeDocIds.filter(id=>state.documents.some(d=>d.docId===id)));renderDocs()});$('repeats').addEventListener('change',refreshTotals);
 $('dry-run').addEventListener('click',()=>{if(!selectedDocs().length){setMessage('Select at least one local document.',true);return}startAction('run',runPayload(true,false,isSmokeTrio()))});
 $('smoke-run').addEventListener('click',()=>{if(!isSmokeTrio()){setMessage('The smoke run uses the fixed 3-document trio. Choose “Smoke trio” first.',true);return}if(!confirm('This sends the 3 smoke-trio PDFs to OpenRouter and may incur a small charge. Continue?'))return;if(prompt('Type SMOKE to approve this 3-document live check:')!=='SMOKE')return;startAction('run',runPayload(false,true,true))});
-$('live-run').addEventListener('click',()=>{if(selectedDocs().length<12||selectedDocs().length>20){setMessage('Live pilot requires 12–20 selected documents.',true);return}if(!confirm('This sends the selected local PDFs to OpenRouter and may incur charges. Continue?'))return;if(prompt('Type RUN to approve this live benchmark:')!=='RUN')return;startAction('run',runPayload(false,true))});
+$('live-run').addEventListener('click',()=>{const min=state.pilotMin||12;const max=state.pilotMax||30;if(selectedDocs().length<min||selectedDocs().length>max){setMessage('Live pilot requires '+min+'–'+max+' selected documents.',true);return}if(!confirm('This sends the selected local PDFs to OpenRouter and may incur charges. Continue?'))return;if(prompt('Type RUN to approve this live benchmark:')!=='RUN')return;startAction('run',runPayload(false,true))});
 $('probe').addEventListener('click',()=>{const models=currentModels();if(!models.length){setMessage('Enter a model slug first.',true);return}if(!confirm('Send the tiny native-PDF and image probes for '+models.length+' model(s) to OpenRouter?'))return;if(prompt('Type PROBE to approve these test requests:')!=='PROBE')return;startAction('probe',{models,approved:true})});
 $('gold').addEventListener('click',()=>{if(selectedDocs().length<1){setMessage('Select documents first.',true);return}startAction('gold',{docIds:selectedDocs().map(d=>d.docId)})});
 $('review').addEventListener('click',()=>{startAction('review',{runId:$('review').dataset.runId,seed:7,sample:3})});
@@ -938,8 +1182,20 @@ async function refreshCapabilities(){const model=currentModels()[0];$('capabilit
 async function scoreHumanReview(){const file=$('verdict-file').files[0];if(!file||!state.reviewJobId){setMessage('Choose the downloaded review verdict JSON first.',true);return}try{const verdicts=JSON.parse(await file.text());const result=await api('/api/score-review',{reviewJobId:state.reviewJobId,verdicts});$('state-text').textContent='Scoring human review…';$('state-dot').className='state-dot';pollJob(result.jobId)}catch(error){setMessage(error.message,true)}}
 document.getElementById('score-verdicts').addEventListener('click',scoreHumanReview);
 document.getElementById('models').addEventListener('change',refreshCapabilities);
+function setSetupCollapsed(collapsed){
+  $('workflow').classList.toggle('setup-collapsed',collapsed);
+  $('setup-bar').hidden=!collapsed;
+  if(collapsed)$('setup-bar-summary').textContent=selectedDocs().length+' docs · '+pages()+' pp · '+currentModels().map(prettyModel).join(', ');
+}
+$('toggle-setup').addEventListener('click',()=>setSetupCollapsed(false));
 function openSavedRun(runId){
   if(!runId)return;
+  $('previous-runs').value=runId;
+  $('masthead-runs').value=runId;
+  const params=new URLSearchParams(window.location.search);
+  params.set('run',runId);
+  history.replaceState(null,'','?'+params.toString());
+  setSetupCollapsed(true);
   $('result-panel').hidden=false;
   $('state-text').textContent='Saved run · '+runId;
   $('state-dot').className='state-dot done';
@@ -953,6 +1209,7 @@ function openSavedRun(runId){
   $('review').dataset.runId=runId;
 }
 $('previous-runs').addEventListener('change',(e)=>openSavedRun(e.target.value));
+$('masthead-runs').addEventListener('change',(e)=>openSavedRun(e.target.value));
 $('gold-set').addEventListener('change',refreshGoldProgress);
 $('gold-dir').addEventListener('input',refreshGoldProgress);
 $('documents').addEventListener('change',refreshGoldProgress);
@@ -965,6 +1222,7 @@ if(analysisModeParam)$('analysis-mode').addEventListener('change',()=>{const par
   const data=await api('/api/documents');
   state.documents=data.documents;
   state.smokeDocIds=Array.isArray(data.smokeDocIds)?data.smokeDocIds:[];
+  if(data.pilotRange){state.pilotMin=data.pilotRange.min||12;state.pilotMax=data.pilotRange.max||30;}
   state.selected=new Set(data.documents.map(d=>d.docId));
   renderDocs();
   await refreshCapabilities();
@@ -985,6 +1243,7 @@ if(analysisModeParam)$('analysis-mode').addEventListener('change',()=>{const par
   try{
     const runsData=await api('/api/runs');
     const select=$('previous-runs');
+    const mastheadSelect=$('masthead-runs');
     for(const r of runsData.runs||[]){
       const opt=document.createElement('option');
       opt.value=r.runId;
@@ -992,6 +1251,7 @@ if(analysisModeParam)$('analysis-mode').addEventListener('change',()=>{const par
       const cost=r.dryRun?' · estimate $'+Number(r.estimatedCost||0).toFixed(4):(r.actualCost?' · reported $'+Number(r.actualCost).toFixed(4):'')+(r.estimatedParserFee?' · parser-fee estimate $'+Number(r.estimatedParserFee).toFixed(4):'');
       opt.textContent=r.runId+' ('+scope+' · '+r.docsCount+' docs'+cost+')';
       select.append(opt);
+      mastheadSelect.append(opt.cloneNode(true));
     }
   }catch{}
   const targetRun=new URLSearchParams(window.location.search).get('run')||new URLSearchParams(window.location.search).get('runId');

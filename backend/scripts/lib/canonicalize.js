@@ -159,9 +159,9 @@ function canonicalOib(value) {
 // by digits" so ordinary prose is never mistaken for a filing number. Sorted
 // longest-first so `Povrv` wins over `P` and `R1` over `R`.
 const FILING_REGISTERS = [
-    'Povrv', 'Povpr', 'Pžm', 'Pž', 'Pp', 'Pr', 'Ps', 'Pz', 'P', 'Stv', 'St',
+    'Povrv', 'Povpr', 'Pžm', 'Pž', 'Pp', 'Pr', 'Ps', 'Pz', 'P', 'Stpn', 'Sts', 'Stv', 'St',
     'Gžm', 'Gž', 'Revr', 'Rev', 'Ovrv', 'Ovr', 'Kir', 'Kžm', 'Kž', 'K',
-    'Sp', 'Su', 'Isp', 'Ik', 'Im', 'In', 'Ip', 'Is', 'Us', 'U', 'Žs', 'Ž', 'R1', 'R',
+    'Sp', 'Su', 'Tt', 'Isp', 'Ik', 'Im', 'In', 'Ip', 'Is', 'Us', 'U', 'Žs', 'Ž', 'R1', 'R',
 ].sort((a, b) => b.length - a.length);
 
 // A dash between the register and the number is typography, not identity, so

@@ -17,7 +17,22 @@ jest.mock('../helpers/geminiUsage', () => ({
 }));
 
 const mockGeminiInvoke = jest.fn();
-const { AnalyzeDocumentsTool } = require('../court-analysis/agents/analysis-agent');
+const { AnalyzeDocumentsTool, mergeAnalysisChunkResults } = require('../court-analysis/agents/analysis-agent');
+test('mergeAnalysisChunkResults keeps the first concrete top-level decision outcome', () => {
+    const makeResult = (id, decisionOutcome) => ({
+        segment: { id, startIndex: 0, endIndex: 10, pageNumbers: [1] },
+        value: { decisionOutcome },
+        gaps: [],
+    });
+    expect(mergeAnalysisChunkResults([
+        makeResult('segment-1', 'unknown'),
+        makeResult('segment-2', 'rejected'),
+        makeResult('segment-3', 'upheld'),
+    ], 'source').decisionOutcome).toBe('rejected');
+    expect(mergeAnalysisChunkResults([makeResult('segment-1', 'unknown')], 'source').decisionOutcome).toBe('unknown');
+    expect(mergeAnalysisChunkResults([makeResult('segment-1', null)], 'source').decisionOutcome).toBeNull();
+});
+
 
 describe('AnalyzeDocumentsTool', () => {
     const testDocxPath = path.resolve(__dirname, 'test-analysis.docx');
@@ -254,9 +269,12 @@ describe('AnalyzeDocumentsTool', () => {
             caseInfo: { participants: [] },
         });
         const prompt = String(mockGeminiInvoke.mock.calls[0][0] || '');
-        for (const field of ['documentParties', 'oib', 'role', 'quote', 'direction', 'payerOib', 'recipientOib', 'isplatniRed', 'claimRegistryNumber', 'filingReference', 'citedFilingReferences']) {
+        for (const field of ['documentParties', 'oib', 'role', 'quote', 'direction', 'payerOib', 'recipientOib', 'isplatniRed', 'claimRegistryNumber', 'filingReference', 'citedFilingReferences', 'decisionOutcome', 'amountRole']) {
             expect(prompt).toContain(field);
         }
+        expect(prompt).toContain('Every individual data row/transaction');
+        expect(prompt).toContain('never mixing payout into amountEur');
+        expect(prompt).toContain('decisionOutcome MUST be "rejected" (the disposition of the appeal), not "upheld"');
     });
     it('accepts source party OIBs without requiring an amount or summary', async () => {
         mockGeminiInvoke.mockResolvedValue({

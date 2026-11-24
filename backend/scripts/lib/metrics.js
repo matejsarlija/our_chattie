@@ -95,6 +95,45 @@ function jsonValidity(text) {
     return { valid, truncated: /(?:unexpected end|unterminated|end of json input)/i.test(errorText) };
 }
 
+function scoreJsonConditions(text, { structuredMode = false } = {}) {
+    const rawText = String(text || '');
+    let rawParsed = false;
+    try { JSON.parse(rawText); rawParsed = true; } catch { /* measure strict raw adherence */ }
+    const started = require('node:perf_hooks').performance.now();
+    let repaired = false;
+    if (!rawParsed) {
+        const candidate = rawText.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
+        try {
+            JSON.parse(candidate);
+            repaired = candidate !== rawText;
+        } catch { /* no JSON repair beyond trimming and fence removal */ }
+    }
+    const repairOverheadMs = rawParsed ? 0 : require('node:perf_hooks').performance.now() - started;
+    return {
+        raw_parse: rawParsed,
+        structured_mode: Boolean(structuredMode && rawParsed),
+        repaired: Boolean(!rawParsed && repaired),
+        rawFailed: !rawParsed,
+        repairOverheadMs,
+        repairOverheadCost: 0,
+    };
+}
+
+function scoreJsonRequestConditions(requests, { structuredMode = false } = {}) {
+    const scored = requests.map((request) => scoreJsonConditions(request.rawText, { structuredMode }));
+    const successful = requests.every((request) => request.status === 'completed' || request.checkpoint === 'hit');
+    const rawParse = scored.every((score) => score.raw_parse);
+    const repaired = !rawParse && successful && scored.every((score) => score.raw_parse || score.repaired);
+    return {
+        raw_parse: rawParse,
+        structured_mode: Boolean(structuredMode && rawParse),
+        repaired,
+        rawFailed: !rawParse,
+        repairOverheadMs: scored.reduce((sum, score) => sum + score.repairOverheadMs, 0),
+        repairOverheadCost: 0,
+    };
+}
+
 // A parser can "succeed" while returning nothing a model could read. Cloudflare
 // Workers AI does exactly that on some scans: a `<file>` envelope, a metadata
 // dump, an empty `## Contents` — 883 characters that contain no document text.
@@ -201,6 +240,6 @@ function summarizeTextMetrics(rows) {
 module.exports = {
     normalizeNumberToken, normalizeCurrency, extractAmounts, extractOibs, extractDates,
     extractFilingNumbers, canonicalFilingNumber, foldCroatian, mojibakeScore, diacriticFidelity,
-    pageCompleteness, jsonValidity, computeTextMetrics, scoreGold, setMetrics, summarizeTextMetrics,
+    pageCompleteness, jsonValidity, scoreJsonConditions, scoreJsonRequestConditions, computeTextMetrics, scoreGold, setMetrics, summarizeTextMetrics,
     stripParserScaffolding, effectiveContentChars, isEffectivelyEmpty,
 };

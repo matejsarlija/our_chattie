@@ -65,7 +65,12 @@ function scoreGold(goldDocument, extraction) {
     const dateExpected = unique((gold.dates || []).map((item) => canonicalDate(typeof item === 'string' ? item : item.value || '')).filter(Boolean));
     const filingExpected = unique((gold.filingNumbers || []).flatMap((item) => extractFilingNumbers(String(typeof item === 'string' ? item : item.value || ''))));
     const outcomeExpected = gold.decisionOutcome ? [canonicalDecisionOutcome(gold.decisionOutcome)].filter(Boolean) : [];
-    const outcomePredicted = unique([parsed.decisionOutcome, ...(parsed.proceduralEvents || []).map((item) => item.outcome)].map(canonicalDecisionOutcome).filter(Boolean));
+    const hasTopLevelOutcomeKey = parsed
+        && Object.prototype.hasOwnProperty.call(parsed, 'decisionOutcome')
+        && parsed.decisionOutcome !== undefined;
+    const outcomePredicted = hasTopLevelOutcomeKey
+        ? (parsed.decisionOutcome ? [canonicalDecisionOutcome(parsed.decisionOutcome)].filter(Boolean) : [])
+        : unique((parsed.proceduralEvents || []).map((item) => canonicalDecisionOutcome(item.outcome)).filter(Boolean));
     const expectedRows = (gold.tables || []).reduce((sum, table) => sum + Number(table.rowCount || 0), 0);
     const predictedRows = (parsed.amounts || []).filter((fact) => fact.amountRole === 'line_item').length;
     const tableRowCounts = expectedRows === 0 && predictedRows === 0

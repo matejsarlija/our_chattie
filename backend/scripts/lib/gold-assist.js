@@ -7,6 +7,11 @@ const { extractJsonBlock } = require('../../helpers/jsonExtract');
 const { normalizeGoldFacts, GOLD_CATEGORIES, GOLD_OUTCOMES } = require('./gold-editor');
 
 const DEFAULT_GOLD_MODEL = 'google/gemini-3.7-flash';
+const ALLOWED_GOLD_MODELS = new Set([
+    DEFAULT_GOLD_MODEL,
+    'google/gemini-2.5-flash',
+    'google/gemini-2.5-pro',
+]);
 const GOLD_PROVIDER = { order: ['Google AI Studio'], allow_fallbacks: false, data_collection: 'deny' };
 const MAX_GOLD_PAGES = 12;
 const MAX_OUTPUT_TOKENS = 4096;
@@ -46,10 +51,10 @@ function normalizeEvidence(input, pages) {
     return { evidence, invalid };
 }
 
-async function suggestGoldFacts({ filePath, filename, pages, model = DEFAULT_GOLD_MODEL, apiKey, metadata, metadataLookup = fetchModelMetadata, chat = requestChat } = {}) {
-    if (model !== DEFAULT_GOLD_MODEL) throw new Error(`Gold suggestions are currently limited to ${DEFAULT_GOLD_MODEL}.`);
+async function suggestGoldFacts({ filePath, filename, pages, model = DEFAULT_GOLD_MODEL, maxPages = MAX_GOLD_PAGES, apiKey, metadata, metadataLookup = fetchModelMetadata, chat = requestChat } = {}) {
+    if (!ALLOWED_GOLD_MODELS.has(model)) throw new Error(`Gold suggestions are currently limited to ${[...ALLOWED_GOLD_MODELS].join(', ')}.`);
     if (!Number.isInteger(pages) || pages < 1) throw new Error('Document page count is required.');
-    if (pages > MAX_GOLD_PAGES) throw new Error(`Gold suggestions are limited to ${MAX_GOLD_PAGES} pages per request.`);
+    if (pages > maxPages) throw new Error(`Gold suggestions are limited to ${maxPages} pages per request.`);
     if (!filePath || !fs.existsSync(filePath)) throw new Error('The local PDF is not available.');
 
     const modelInfo = metadata || await metadataLookup(model, { apiKey });
@@ -88,4 +93,4 @@ async function suggestGoldFacts({ filePath, filename, pages, model = DEFAULT_GOL
     };
 }
 
-module.exports = { DEFAULT_GOLD_MODEL, GOLD_PROVIDER, MAX_GOLD_PAGES, MAX_OUTPUT_TOKENS, buildGoldPrompt, normalizeEvidence, suggestGoldFacts };
+module.exports = { DEFAULT_GOLD_MODEL, ALLOWED_GOLD_MODELS, GOLD_PROVIDER, MAX_GOLD_PAGES, MAX_OUTPUT_TOKENS, buildGoldPrompt, normalizeEvidence, suggestGoldFacts };

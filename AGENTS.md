@@ -4,24 +4,25 @@ This repository is a full-stack monorepo for an AI-powered legal assistant that 
 
 ## What This App Actually Is
 
-Despite the repo name (`our_chattie`) and some legacy naming in the backend
-(`server.js`, historical references to a "chat" concept), **there is no chat
-surface in this app anymore.** The original conversational/TipTap-editor chat
-feature (`ChatContext`, `useStreamingAPI`, `MessageList.jsx`,
-`backend/chatAgent.js`, `backend/db.js`, a `cron/` scheduler) was removed
-entirely. The product today is a single-purpose **court-analysis dashboard**:
-a user submits an OIB/case-number/text query, the backend pipeline
-(`backend/court-analysis/`) discovers and analyzes Croatian court filings via
-Gemini, and the frontend (`simple-chat/`, name unchanged from the chat era)
-renders the run list and a detailed run report. If you find a reference to
-chat-specific code elsewhere in this file or the codebase, treat it as stale
-and flag it for removal rather than assuming it's still live.
+Despite the repo name (`our_chattie`) and some legacy naming in the backend (`server.js`, historical references to a "chat" concept), **there is no chat surface in this app anymore.** The original conversational/TipTap-editor chat feature (`ChatContext`, `useStreamingAPI`, `MessageList.jsx`, `backend/chatAgent.js`, `backend/db.js`, a `cron/` scheduler) was removed entirely. The product today is a single-purpose **court-analysis dashboard**: a user submits an OIB/case-number/text query, the backend pipeline (`backend/court-analysis/`) discovers and analyzes Croatian court filings via OpenRouter LLMs/OCR (`z-ai/glm-5.3-flash`, `or-mistral-ocr`, `google/gemma-4-31b-it`, `google/gemini-2.5-flash` — migrating off legacy direct Gemini/LangChain SDKs in `[R100-002]`), and the frontend (`simple-chat/`, name unchanged from the chat era) renders the run list, detailed run reports, and the integrated PDF-engine benchmark workspace. If you find a reference to chat-specific code elsewhere in the codebase, treat it as stale and flag it for removal rather than assuming it is still live.
+
+## Active Roadmap & Migration Authority
+
+This repository is actively executing the **Road to 100 Court Entries** architecture & hardening migration (`[R100-001]`–`[R100-030]`):
+- **Master Blueprint:** [docs/road-to-100-entries-plan.md](file:///home/oxioxi/proj/our_chattie/docs/road-to-100-entries-plan.md)
+- **Ticket Breakdown:** [docs/road-to-100-entries-ticket-breakdown.md](file:///home/oxioxi/proj/our_chattie/docs/road-to-100-entries-ticket-breakdown.md)
+
+Key directional invariants binding all work:
+1. **100% OpenRouter (`OPENROUTER_API_KEY` only):** Phase 0 (`[R100-002]`) removes `@google/genai`, `@langchain/google-genai`, `@langchain/core`, and `GOOGLE_API_KEY` fallbacks. Do not reintroduce direct Google SDKs or LangChain `Tool`/`HumanMessage` wrappers.
+2. **Unified Persistence (`better-sqlite3` + FTS5 + `llm_traces`):** Phase 2 (`[R100-011]`) consolidates `localStore.js`, `ocrPageStore.js`, `change-detection/store.js`, and extraction checkpoints/traces into `backend/data/analysis/analysis.db` (WAL mode, `PRAGMA foreign_keys = ON`, `run_chunks_fts` sync triggers).
+3. **100-Entry `ScanDepthPolicy` & Worker Offload:** `Uravnoteženo` budgets `100` court entries (keeping 100% of attached documents) and `Sve` covers the full primary pool (`'standard'` is retired); `Stage T0` (`pdf.js`), `adm-zip`, and JPEG rasterization run in `node:worker_threads`.
+4. **Authorized Phase 0–5 Deletions vs. Do-Not-Delete Traps:** Agents executing tickets `[R100-001]`–`[R100-030]` are explicitly authorized to delete retired modules, legacy adapters, and obsolete tests specified in the ticket breakdown (`moneyFlow.js`, `prop-N` shims, 5 pruned reasoning LLM micro-passes, `'standard'` scan depth, `runs.json` store, Analysis Lab). **Two explicit do-not-delete traps:**
+   - **Keep `contextNode.js`:** [caseContextBuilder.js#L22](file:///home/oxioxi/proj/our_chattie/backend/court-analysis/reasoning/caseContextBuilder.js#L22) directly imports `createContextNode` and `validateContextGraph`. Remove only its unused `L15` `analysisLab/evidenceIdentity` import.
+   - **Keep `propertyFlow.js#L58–391` lifecycle engine:** [reconciliation.js#L26](file:///home/oxioxi/proj/our_chattie/backend/court-analysis/reasoning/reconciliation.js#L26) directly imports `reconcileTrazbinaLifecycle` and `formatValue`. Delete only `moneyFlow.js` and the two legacy wrapper functions (`collectPropertyFlows`, `reconcilePropertyFlows`) + `prop-N` shims.
 
 ## Architectural Ethos
 
-The frontend is a court-analysis dashboard (no chat surface — that was removed;
-see "What This App Actually Is" section for background). Standards that
-actually hold today:
+The frontend is a court-analysis dashboard (no chat surface — that was removed; see "What This App Actually Is" section for background). Standards that actually hold today:
 
 1.  **Custom hooks over prop drilling**: run/event state lives in focused
     hooks (`useAnalysisRunDetail`, `useAnalysisEvents`, `useAnalysisRuns`),
@@ -33,7 +34,7 @@ actually hold today:
     but falls back to backoff-with-jitter polling on stream error/tab
     hidden/stream disabled — a run's status must always be recoverable even
     if the stream never connects.
-3.  **Defensive UI**: wrap unpredictable rendered content (the Gemini-authored
+3.  **Defensive UI**: wrap unpredictable rendered content (the LLM-authored
     markdown narrative) in `ErrorBoundary` — see `AnalysisRunDetailPage.jsx`.
     A single malformed AI response should never crash the run detail page.
 4.  **Infrastructure Agnosticism**: maintain compatibility with modern build
@@ -55,44 +56,41 @@ Apply these durable findings from the UI audit and shipped redesign; treat old s
 
 ## Project Structure
 
+*(Reflects the active Phase 0–5 target layout; during early tickets some files still sit under legacy `helpers/`, `agents/`, and `reasoning/` before their Phase 0/1/3 moves.)*
+
 ```
 our_chattie/
 ├── backend/          # Node.js/Express API server (CommonJS)
-│   ├── server.js              # Main server entry point
+│   ├── server.js              # Express/lifecycle bootstrapper (shrinking to ~100 LOC in Phase 0)
+│   ├── routes/                # Express routers (courtAnalysis, analysisRuns, bench, changeDetection)
+│   ├── http/                  # SSE, runBus, analysisStreamHandler, rateLimiter, pagination, validation
+│   ├── llm/                   # OpenRouter client, taskRouter, providerPool, tokenBudgetPolicy, retry, usage
+│   ├── bench/                 # Shared programmatic PDF/Stage-2 bench services (used by /api/bench & CLI)
 │   ├── court-analysis/        # Analysis pipeline
-│   │   ├── pipeline.js
-│   │   ├── agents/             # analysis-agent, download-agent (Gemini extraction, downloads)
-│   │   ├── reasoning/          # moneyFlow, propertyFlow, reconciliation, grounding,
-│   │   │   │                  # currencyConversion, citationGraph, findingProvenance,
-│   │   │   │                  # retriever/reranker/verifier, reportService (orchestrator)
-│   │   │   └── eval/           # offline reasoning-quality eval lane
-│   │   └── utils/               # scanDepth, entryDisplayId, queryClassifier, ...
-│   ├── scraper/               # Web scraping logic (Puppeteer + CSV export discovery)
-│   ├── services/              # External service integrations (incl. localStore.js — run persistence)
-│   ├── helpers/               # Utility functions (geminiConfig, geminiRetry, analysisStage, ...)
-│   └── tests/                 # Jest test suite
-├── simple-chat/      # React frontend application (ES6) — court-analysis
-│   │                  # dashboard only; the chat surface was removed.
+│   │   ├── pipeline.js        # State -> StageReducer -> NextState orchestrator
+│   │   ├── acquisition/       # downloader, archiveExtractor, downloadCache (from agents/)
+│   │   ├── extraction/        # workerPool, pdfPreflight (T0), adminFastPath (T0.5), ocrRouter (T),
+│   │   │                      # prompts (EXTRACTION_SIGNATURE_V5), chunkMerge, documentAnalyzer (A)
+│   │   ├── reasoning/         # Organized into schema/, ledger/ (factLedger, partyRegistry, flow,
+│   │   │   │                  # propertyFlow lifecycle, reconciliation, grounding, currencyConversion,
+│   │   │   │                  # citationGraph, caseContextBuilder, contextNode, scopeContract, runScorecard),
+│   │   │   │                  # retrieval/ (chunker, indexer, retriever, findingProvenance),
+│   │   │   │                  # synthesis/ (synthesisInputBuilder, synthesizer, verifier, reportService, fallbackReportBuilder),
+│   │   │   │                  # and eval/ (offline reasoning-quality eval lane)
+│   │   └── utils/             # scanDepth, stratify, entryDisplayId, queryClassifier, runSummary, ...
+│   ├── scraper/               # Web scraping logic (CSV export discovery primary + Puppeteer pool fallback)
+│   ├── services/              # sqliteStore.js (WAL + FTS5 + traces, replacing localStore.js), canonicalJson.js, logger.js
+│   └── tests/                 # Jest test suite (unit, reasoning/, replays/, change-detection/, resilience/)
+├── simple-chat/      # React frontend application (ES6) — court-analysis dashboard + integrated Bench
 │   ├── src/
 │   │   ├── components/
-│   │   │   ├── Dashboard/      # Court-analysis run list + detail UI (the entire app)
-│   │   │   │   ├── AnalysisRunDetailPage.jsx    # Run detail: narrative, flows, telemetry
-│   │   │   │   ├── AnalysisReportAnnex.jsx      # Structured findings/conflicts/open questions
-│   │   │   │   ├── AnalysisFlowsSection.jsx     # Money/property flow + value-change timelines
-│   │   │   │   ├── AnalysisReasoningTelemetry.jsx # Retrieval/rerank provenance (query→match detail)
-│   │   │   │   ├── AnalysisCitationList.jsx     # Per-finding citations + retrievedBy links
-│   │   │   │   ├── RunsTable.jsx / RunsCardList.jsx / NewAnalysisModal.jsx
-│   │   │   │   └── ...
+│   │   │   ├── Dashboard/     # Run list + detail UI (AnalysisRunDetailPage, AnalysisReportAnnex,
+│   │   │   │                  # AnalysisFlowsSection, AnalysisCitationList, RunsTable, NewAnalysisModal, ...)
+│   │   │   ├── Bench/         # Integrated Bench UI (/dashboard/bench replacing Laboratorij in Phase 5)
 │   │   │   ├── ErrorBoundary.jsx
-│   │   │   ├── MermaidDiagram.jsx    # Renders mermaid code blocks in report markdown
 │   │   │   └── AboutUs.jsx / PrivacyPolicy.jsx   # Static pages
-│   │   ├── hooks/
-│   │   │   ├── useAnalysisRunDetail.js   # SSE-with-polling-fallback run/event state
-│   │   │   ├── useAnalysisRunStream.js   # Raw SSE connection
-│   │   │   ├── useCourtAnalysisStream.js # Submits a new analysis request
-│   │   │   ├── useAnalysisRuns.js        # Run list (dashboard)
-│   │   │   └── useSettings.js
-│   │   └── lib/                # apiClient, env
+│   │   ├── hooks/             # useAnalysisRunDetail, useAnalysisRunStream, useCourtAnalysisStream, useAnalysisRuns, useSettings
+│   │   └── lib/               # apiClient, env
 ```
 
 ## Build/Lint/Test Commands
@@ -103,7 +101,7 @@ our_chattie/
 - **Testing**: `npm test` (Jest, 60s timeout for Puppeteer tests)
 - **Test lanes**: `npm run test:unit` (default, no live services),
   `npm run test:integration` / `npm run test:e2e:smoke` (Puppeteer-gated),
-  `npm run test:nightly-live` (hits live e-Oglasna + Gemini — never run
+  `npm run test:nightly-live` (hits live e-Oglasna + OpenRouter — never run
   casually, CI-nightly only)
 
 ### Frontend (run from `simple-chat/` directory)
@@ -113,267 +111,191 @@ our_chattie/
 
 ## Key Integration Points
 
-- **Google Generative AI**: role-based models via LangChain, centralized in
-  `backend/helpers/geminiConfig.js` (`GEMINI_ROLE_CONFIG`). Document-reading
-  roles default to the configured full model; bounded JSON tasks use the lite
-  model where appropriate. `GEMINI_MODEL` overrides role defaults. Provider
-  limits, token pricing, and wrapper support are version-sensitive: verify them
-  against the installed client and current provider documentation rather than
-  relying on an old guide.
-- **SSE Streaming**: `backend/helpers/sse.js` builds events; must use
-  `data: {...}\n\n` format exactly for the frontend parser
-  (`useAnalysisRunStream.js`) to detect message boundaries. Used for live
-  analysis run progress, with a polling fallback (see Architectural Ethos).
-- **Generated diagrams**: Mermaid and the visualizer role were removed. Do
-  not reintroduce model-authored diagrams or graph libraries without explicit
-  product approval and a grounded, accessible data contract.
+- **LLM & OCR Provider Routing (100% OpenRouter):** All models and roles route through OpenRouter (`OPENROUTER_API_KEY` only) — migrating off legacy `geminiConfig.js` / `@langchain/google-genai` in Phase 0 (`[R100-002]`) to `backend/llm/` (`openrouterClient.js`, `taskRouter.js`, `providerPool.js`, `tokenBudgetPolicy.js`). Primary model assignments: `z-ai/glm-5.3-flash` (Stage A extraction), `or-mistral-ocr` → `google/gemma-4-31b-it` raster → `google/gemini-2.5-flash` (Stage T OCR), `google/gemini-2.5-flash` (Stage 2 synthesis), and deterministic `$0` pre-verification → `google/gemma-4-31b-it` / `google/gemini-2.5-flash` (verify). Always use 2–3 vetted providers per model with quantization guards (`['bf16', 'fp16', 'fp8']`), `stream: true` + `60s` idle watchdogs, and graceful `HTTP 402` degradation.
+- **SSE Streaming:** `backend/http/sse.js` (migrated from `helpers/sse.js`) builds events; must use `data: {...}\n\n` format cleanly for the frontend parser (`useAnalysisRunStream.js`). Phase 2 (`[R100-014]`) moves `GET /api/analysis/runs/:id/stream` from 1.5s DB polling onto lightweight in-process `runBus` SSE deltas with a single REST snapshot fetch on terminal/reconnect, while keeping client backoff polling fallback (`useAnalysisRunDetail.js`).
+- **Generated diagrams:** Mermaid and the visualizer role were removed. Do not reintroduce model-authored diagrams or graph libraries without explicit product approval and a grounded, accessible data contract.
 
 ## Court-Analysis Pipeline Notes
 
-The sub-sections below are carried forward from a series of deleted specs
-(each shipped its own spec/ticket-breakdown doc, deleted once implemented
-and shipped on the branch) covering the discovery/change-detection,
-grounding/property-flow, identity/currency/provenance, and original
-reasoning-engine work. These are the generalizable lessons worth keeping
-visible for future work in `backend/scraper/` and
-`backend/court-analysis/`.
+The sub-sections below preserve hard-won architectural lessons from shipped phases and the Road-to-100 consolidation so future changes in `backend/scraper/`, `backend/court-analysis/`, and `backend/llm/` never reintroduce solved bugs.
 
 ### Discovery & Data-Integrity
 
 1. **"Never fail a run" is a load-bearing project-wide philosophy, not a
    one-off choice.** Every acquisition layer (download cache, OCR cache, CSV
-   export, change-detection snapshots) follows the same shape: on a transient
-   failure, log the reason, degrade to a fallback or a friendly Croatian error,
-   and never let one flaky external call abort an entire run when a partial or
-   cached result could still serve the user. Any new acquisition/integration
-   point should default to this pattern unless there's a specific reason not
-   to.
+   export, change-detection snapshots, `HTTP 402` credit-exhaustion latch)
+   follows the same shape: on a transient or quota failure, log the reason,
+   degrade to a fallback or a friendly Croatian error/`$0` deterministic
+   report (`status: 'partial'`), and never abort an entire run when partial or
+   cached results can still serve the user.
 2. **Discovery completeness must never silently become unbounded analysis
-   depth.** A discovery source can (and increasingly does, via the CSV export)
-   return far more raw entries than should ever be downloaded/analyzed in one
-   run. Always bound *analysis scope* (documents actually downloaded, OCR'd,
-   and sent to Gemini) independently of *discovery scope* (how much was found
-   / how accurate the grouping and totals are) — conflating the two either
-   starves cluster-identification accuracy or silently explodes quota spend.
-   See `backend/court-analysis/utils/scanDepth.js` for the current
-   entry-count-based embodiment of this principle.
+   depth.** A discovery source (especially CSV export) can return far more raw
+   entries than should be downloaded/analyzed in one run. Always bound
+   *analysis scope* independently of *discovery scope* via declarative
+   `SCAN_DEPTH_POLICIES` (`scanDepth.js`: `Uravnoteženo` = `100` entries keeping
+   100% of attached documents via unified `stratifyClusterEntries`, `Sve` =
+   `allocation: 'all'` across the primary pool). Both CSV and Puppeteer
+   fallback must feed `stratifyClusterEntries` identically.
 3. **Raw timestamps from external sources are a classic silent-corruption
    trap.** The e-Oglasna CSV export emits Croatian local wall-clock time with
-   no timezone designator (`dd.mm.yyyy. HH:mm:ss`). Naively parsing the full
-   datetime and letting `Date.parse`/`new Date()` interpret it in the host's
-   timezone can shift the calendar day for early-morning timestamps depending
-   on where the code runs. The fix is to normalize to a **date-only** ISO 8601
-   string (discarding the time component) before it touches any date-span,
-   recency, or ordering logic — date-only ISO parses as UTC midnight per spec,
-   so the source day survives regardless of host timezone. Treat any new
-   external timestamp source with the same suspicion until proven otherwise.
+   no timezone designator (`dd.mm.yyyy. HH:mm:ss`). Normalize to a
+   **date-only** ISO 8601 string before any date-span, recency, or ordering
+   logic — date-only ISO parses as UTC midnight per spec, so the source day
+   survives regardless of host timezone.
 4. **Identifiers that look similar are not always the same identity.**
    Croatian case numbers can carry a register prefix (`4 St-2/2013` vs
    `St-2/2013`) that must be preserved as a *distinct* grouping key, not
-   normalized away. When adding any new identity/dedup/grouping logic, verify
-   against real, messy identifiers before assuming a simple string-equality or
-   fuzzy-match rule is safe.
+   normalized away. Conversely, bare root case numbers (`st-2/2013`) must
+   never collapse unrelated facts or generate Cartesian edges in
+   `caseContextBuilder.js` / `citationGraph.js`.
 5. **A cheap metadata-only change signal is a real tradeoff, not a free
-   lunch.** Change detection deliberately compares filenames + page counts
-   instead of document content, specifically to avoid downloading anything.
-   This is fragile against generic, frequently-repeated filenames (real
-   e-Oglasna data has many literal `Podnesak.pdf`/`Prilog.pdf` entries) — a
-   real content change that happens to keep the same filename and page count
-   is invisible to this signal. Accepted deliberately for now; if this proves
-   insufficient in practice, the next lever is byte-level hashing, which
-   requires downloading and should not be reached for reflexively.
+   lunch.** Change detection compares filenames + page counts instead of
+   document content to avoid downloading anything. Accepted deliberately for
+   now; if insufficient in practice, the next lever is byte-level hashing.
 6. **A discovery/acquisition source's own completeness can outstrip what
-   downstream code was ever tested against.** When a new acquisition path
-   returns dramatically more data than the old one did by construction (CSV's
-   "everything in one GET" vs. Puppeteer's slow page-by-page crawl), audit
-   every downstream consumer's bounding/truncation assumptions explicitly —
-   don't assume old caps translate correctly to the new scale.
+   downstream code was ever tested against.** Audit every downstream
+   consumer's bounding/truncation assumptions explicitly at 100-entry scale
+   (200–300+ documents, ~150+ creditors).
 
 ### Grounding & Property-Flow Extraction
 
 1. **Verify extraction against source text deterministically, at extraction
-   time.** `backend/court-analysis/reasoning/grounding.js`
-   (`isQuoteGrounded`/`applyGroundingToAnalysis`) checks each claim's verbatim
-   `quote` against its own document's raw text via `normalizeText` +
-   whitespace-collapse containment — no LLM judge. It runs in
-   `analysis-agent.js` immediately after each per-document `analysis` call.
-   Empty/missing quotes mean "pre-migration," never a crash: they mark
-   `grounded: false`. Ungrounded claims degrade (digest synthesis tier,
-   UI-visible marker), never fail a run.
-2. **Money-flow-shaped problems deserve money-flow-shaped modules.** Property
-   extraction (`propertyFlow.js`: `collectPropertyFlows` /
-   `reconcilePropertyFlows`) deliberately mirrors `moneyFlow.js` /
-   `reconcileMoneyFlows` grouping + conflict shape, so reconciliation output
-   merges into the single `pkg.reconciliation → meta → report.conflicts`
-   ownership chain. When adding a third structured surface, copy this pattern
-   instead of inventing a new one.
+   time.** `grounding.js` (`isQuoteGrounded`/`applyGroundingToAnalysis`) checks
+   each claim's verbatim `quote` against its own document's raw text via
+   `normalizeText` + whitespace-collapse containment — no LLM judge.
+   Empty/missing quotes mark `grounded: false` and degrade cleanly without
+   failing a run.
+2. **One canonical `factLedger → flows → reconciliation` pipeline.**
+   The legacy triple adapter chain (`moneyFlow.js`, `collectPropertyFlows`,
+   `reconcilePropertyFlows`, `prop-N` ID shims) is retired in Phase 0
+   (`[R100-004]`). New structured facts expand `factLedger.js` (`amount |
+   property | party | procedural_outcome`) and flow straight into `flows.js`
+   and `reconciliation.js` (preserving the active `tražbina` lifecycle engine
+   in `propertyFlow.js#L58–391`), merging into `pkg.reconciliation → meta →
+   report.conflicts`.
 3. **Lifecycle chains are not conflicts — but only when the link is explicit.**
    `tražbina` entries carry `eventType` (`prijava | ustup | namirenje |
-   drugo`) and a model-populated `supersedes` reference. Resolution tries the
-   stable per-run id (`prop-N`) first, then the real registry/filing
-   identifiers (see "Identity, Currency & Provenance" below), then
-   normalized-description containment last; unresolvable references degrade
-   to standalone, never an error. Only entries joined by a resolving chain
-   become a value-change timeline; unlinked competing claims on the same
-   receivable are genuine conflicts.
-4. **Schema growth costs output tokens — budget for it.** The `quote` +
-   `propertyFlow` extension raised the `analysis` role cap to
-   `maxOutputTokens: 12288` (`backend/helpers/geminiConfig.js`); a dense-doc
-   headroom test in `propertyFlow.test.js` guards the truncation failure mode
-   previously seen on the `synthesis` role. Any future per-document schema
-   addition must re-check this cap the same way.
+   drugo`) and `supersedes`. Resolution uses deterministic `factLedger` `row.id`
+   and real registry/filing identifiers (`claimRegistryNumber`,
+   `filingReference`) first, falling back to normalized-description containment
+   last; unresolvable references degrade to standalone.
+4. **Budget output tokens for reasoning-vs-answer headroom and dense tables.**
+   Do not rely on static `maxOutputTokens` integers alone: use
+   `TokenBudgetPolicy` (separating `answerTokens` from model
+   `reasoningHeadroom`), `tableRows[]` compact extraction (~70% smaller output
+   on creditor schedules), and recursive UTF-8 bisection (`depth <= 2`, floor
+   `800` chars) on `finish_reason === 'length'`. Any schema addition must
+   re-verify dense-table output expansion.
 5. **Coverage signals belong in both coverage objects and in the UI.**
-   `groundedClaims`/`totalClaims` are computed in both the analysis-agent
-   batch coverage and the evidence-package cluster coverage, and surfaced via
-   `AnalysisCoverageBanner` ("X/Y navoda potvrđeno u izvornom tekstu") +
-   `AnalysisFlowsSection` ("Tijek novca" / "Tijek imovine" / value-change
-   timelines, each hidden when empty, with inline "⚠ nepotvrđeno" markers).
-   Internal-only metadata rots; if a signal matters, render it.
-6. **Grounding is forward-only.** There is deliberately no backfill machinery
-   and no retroactive re-verification of cached/frozen analyses.
-7. **Preserve local extraction across long documents.** The 25,000-character
-   threshold in `analysis-agent.js` triggers chunking; it is not a text cutoff.
-   Analyze every extracted chunk, and retain each fact's chunk ID, source
-   offsets, and page numbers. Only collapse an exact repeated fact when its
-   verbatim quote falls inside the actual overlap between chunks. OCR page
-   limits remain explicit truncation; extraction truncation and failed chunks
-   must set partial coverage and appear in `AnalysisCoverageBanner`. Do not
-   silently sample extracted text to fit a prompt; bound provider concurrency
-   separately from text coverage.
-8. **Spread fixed report claim budgets across time.** The chronological
-   synthesis claim list must not be cut to a positional prefix: distribute
-   full-cited claim slots across the chronology so later filings retain a
-   chance to inform the report.
+   `groundedClaims`/`totalClaims` and `runScorecard` metrics belong in
+   `AnalysisCoverageBanner` + `AnalysisFlowsSection` (with calm inline
+   "⚠ nepotvrđeno" markers, never silent deletion of `unverified` findings).
+6. **Grounding is forward-only.** No retroactive backfill of legacy cached
+   analyses.
+7. **Preserve local extraction across long documents and multi-page scans.**
+   Production chunks any document `> 4,000` chars OR `> 2` pages OR
+   `table_dense` into `~2,200–3,500`-char segments (with recursive bisection,
+   retaining `sourceChunkId`, offsets, and `sourcePages`). Overlap dedup
+   matches normalized quotes strictly within the segment's overlap span.
+   `Stage T` OCR uses `15`-page `pdf-lib` batch windows across up to `60`
+   pages (`40p` head + `20p` tail with explicit partial coverage beyond `60p`).
+8. **Spread fixed report claim budgets across time.** Chronological claim
+   slots in `synthesisInputBuilder.js` must spread evenly across case years
+   (`spreadItems`), never truncating to an earliest-only positional prefix.
 
 ### Identity, Currency & Provenance
 
 1. **Extract the identifiers the source documents already give you before
-   inventing fuzzy matching.** Croatian court filings carry stable
-   identifiers as a matter of course: a `poslovni broj` per filing, a `redni
-   broj` in the claim register, explicit party OIBs tagged with explicit
-   legal roles, and an explicit `isplatni red` (payment-priority rank).
-   `resolveSupersedesTarget` (`propertyFlow.js`) tries these real identifiers
-   (`claimRegistryNumber`, `filingReference`) first and only falls back to
-   normalized-description containment when no identifier is present. Any
-   future lifecycle/identity resolution should default to this order, not
-   the reverse.
+   inventing fuzzy matching.** Use `poslovni broj`, `redni broj`, explicit
+   party OIBs (resolved via `partyRegistry.js`), and `isplatni red` first;
+   `flowGroupKey` in `reconciliation.js` must be identity-scoped so 168
+   creditors never collide under generic labels.
 2. **Currency conversion is a fixed-rate deterministic computation, never a
-   model-guessed one.** Croatia's HRK→EUR conversion was a fixed legal rate
-   (1 EUR = 7.53450 HRK), not floating — `currencyConversion.js` does this in
-   code. When a source states both currencies for the same figure, the
-   EUR-stated figure wins outright for all downstream math; a mismatch
-   beyond tolerance (relative + absolute floor, to avoid flagging normal
-   filing rounding) is surfaced as its own reconciliation question, never
-   silently averaged. All arithmetic in `reconciliation.js` runs on the
-   EUR-consolidated field, never on raw mixed-currency values — mixing
-   HRK/EUR sums directly caused a real production bug (billion-scale
-   nonsense totals) before this was fixed.
-3. **A citation/reference field is only useful if something asks for it.**
-   `moneyFlow.js`'s `from`/`to` fields existed in the normalization code for
-   a full cycle before the extraction prompt ever asked the model for
-   payer/recipient identity — the plumbing was silently dead the whole time.
-   When adding a new structured field to a reconciliation/flow module, verify
-   the extraction prompt actually requests it in the same change, not as a
-   "later" follow-up.
-4. **Provenance has two ends, and they're both worth keeping.** Grounding
-   (`grounding.js`) proves a claim matches its own source document; retrieval
-   telemetry (`findingProvenance.js`'s `annotateFindingsWithRetrieval`) proves
-   *why that document was in scope* for the report in the first place (which
-   query, what score, what reasons). Persisting only the aggregate counts and
-   discarding the per-match detail (`reasons`, snippet, score) makes the
-   pipeline unauditable after the fact — `reportService.js`'s
-   `stripRetrievalText` now keeps a trimmed-but-real record per match
-   (bounded snippet length) specifically so this stays inspectable.
+   model-guessed one.** Fixed legal rate `1 EUR = 7.53450 HRK`
+   (`currencyConversion.js`); EUR-stated figures win outright when both are
+   present, mismatches beyond tolerance become reconciliation questions, and
+   all arithmetic runs on EUR-consolidated fields (`asFiniteNumberOrNull` must
+   parse Croatian thousands separators like `"1.200.000,00"` cleanly).
+3. **A prompt/schema/repair contract must compile from one source of truth.**
+   Every structured field and enum (including `decisionOutcome` in
+   `REPAIRABLE_FIELDS`, `tableRows[]`, and appellate tie-breakers) must be
+   compiled from `EXTRACTION_SIGNATURE_V5` (`extraction/prompts.js`) and
+   verified by automated prompt–schema–repair–scorer lockstep tests.
+4. **Provenance has two ends, and they are both worth keeping.**
+   `grounding.js` proves a claim matches its document; `findingProvenance.js`
+   (anchored on `docId`/`sourceEntryIndex`, never bare `fileName`) proves why
+   the document was in scope via FTS5 BM25; `llm_traces` preserves raw model
+   completions before `JSON.parse` for forensic inspection.
 5. **Golden fixture tests against real, hand-verified source text catch more
-   than synthetic fixtures.** `tests/reasoning/kerumGolden.test.js` freezes
-   real `pdfjs` extraction output from real case documents
-   (`tests/fixtures/real-documents/.../extracted/`, with a documented
-   regeneration command) and asserts against ground truth read directly from
-   the PDFs (a specific OIB pair, a specific `redni broj`, a specific
-   dual-currency amount). This caught schema/shape issues a synthetic
-   `{amount: 100, currency: 'EUR'}` fixture never would have exercised.
+   than synthetic fixtures.** Maintain `tests/reasoning/kerumGolden.test.js`
+   and `pdf-benchmark-*.test.js` against frozen `pdf.js`/OCR fixtures.
 6. **A single duplicated rendering surface is worse than a missing one.**
-   Findings were briefly rendered twice — once baked into free-text narrative
-   prose, once in the structured findings annex — before `composeOverviewMarkdown`
-   was changed to omit findings entirely and leave the structured annex
-   (`AnalysisReportAnnex`) as the single canonical findings surface. When a
-   structured and a prose surface exist for the same data, pick exactly one
-   owner; don't let both render it.
+   `AnalysisReportAnnex` is the single canonical owner of structured findings;
+   `composeOverviewMarkdown` must not duplicate findings in narrative prose.
 7. **A disappointing production run becomes a deterministic replay test.**
-   Capture only the minimal, non-sensitive metadata and normalized extracted
-   facts needed to reproduce the failure in `tests/fixtures/replays/`, then
-   add a `tests/replays/<case>Replay.test.js` that runs the real normalizer /
-   reconciliation / report boundary. Do not commit court PDFs, raw full-run
-   dumps, or credentials. `kerum-66124057408` is the reference replay for
-   incomplete coverage, degraded reranking, and source-currency-preserving
-   reconciliation output; run it with `npx jest tests/replays/kerumReplay.test.js --runInBand`.
+   Capture minimal non-sensitive metadata and normalized facts in
+   `tests/fixtures/replays/` (and `bench_candidates`), keeping
+   `kerumReplay.test.js` green without live scraping or LLM calls.
 
 ### Reasoning Engine Conventions
 
-Durable rules from the original reasoning-engine spec (deleted after Epics
-A–F shipped) that still bind future work.
-
 1. **Test-first with fixtures, in the right lane.** Every behavior change
-   starts with a failing fixture-backed (or deterministic-input) test —
-   discovery changes need frozen fixtures, reasoning changes need
-   cluster-scoped regression checks — and CI/local regression must never
-   depend on live scraping. Run `test:unit` by default; `test:nightly-live`
-   is CI-nightly only.
-2. **Compatibility is an adapter, not a quality target.** Preserve persisted
-   report/UI contracts and tolerate older extraction shapes at system
-   boundaries, but do not make legacy fixture parity the definition of a
-   correct legal analysis. New reasoning should use the canonical structured
-   fact ledger, filing-level provenance, and explicit coverage signals;
-   legacy `moneyFlow`/`propertyFlow` shapes are output adapters during the
-   migration. Golden/replay assertions must prefer source-grounded facts,
-   raw value/currency, row counts, lifecycle links, and named coverage gaps
-   over reproducing a historically poor narrative or finding list.
-3. **The backend owns query-type truth.** `backend/court-analysis/utils/queryClassifier.js`
-   (`oib | case_number | text`) is the single authority. The frontend regex in
-   `useCourtAnalysisStream.js` is a request hint only — display labels, stream
-   handling, and run history must use the backend-resolved/persisted
-   `query.type` (`Predmet`/`OIB`/`Tekst`), never re-classify client-side.
-4. **Don't split the scraper for purity.** `courtSearchPuppeteer.js` stays the
-   browser/session adapter; harvest discovery/expansion logic out into a
-   dedicated module only when keeping it inline would further couple browser
-   control with acquisition metadata/provenance. (The CSV era —
-   `discoveryClient.js` + `csvExportClient.js` as primary path — changed the
-   landscape but not the rule.)
-5. **Discovery order and presentation order are separate concerns, and both
-   are now deliberate.** Discovery/download budgeting (`csvExportClient.js`,
-   `scanDepth.js`) stays newest-first-with-an-oldest-tail on purpose, so a
-   bounded scan-depth quota favors current case state. But what actually
-   reaches the model in `synthesizer.js` (`timeline`, and the merged
-   `claims` built in `createReasoningEvidenceFromPackage`) is deliberately
-   re-sorted chronologically (oldest-first, via `sortClaimsChronologically`/
-   `buildTimeline`) so the narrative builds understanding forward in time
-   instead of starting mid-story — this matters most on partial-data runs
-   (truncated scan depth, missing documents). One known side effect to watch
-   in real runs: `synthesisInputBuilder.js`'s `FULL_CLAIM_LIMIT` (12) caps
-   "full-cited" claims by array position, which now structurally favors the
-   *earliest*-dated cited claims over the most recent ones whenever a
-   cluster has more than 12. Not a bug — a natural consequence of
-   chronological ordering — but if real runs show recent, load-bearing
-   claims getting dropped by this cap, the fix is to make the cap
-   date-aware (e.g. spread the keep-set across the timeline) rather than a
-   positional prefix.
-6. **The Analysis Lab is an evaluation lane, not production authority.** Run
-   experiments only from frozen evidence packages or fixtures; compare variants
-   only when their evidence-package hash and shared upstream inputs match. Keep
-   per-variant configuration snapshots, traces, failures, and usage separate;
-   an experiment is immutable and reruns create a new record. Scorecards describe
-   measurable differences and never declare an automatic winner or mutate
-   production defaults.
+   starts with a failing fixture-backed or offline chaos test (`test:unit` /
+   `backend/tests/resilience/`). Never depend on live scraping or live LLMs in
+   `test:unit`; `test:nightly-live` is CI-nightly only.
+2. **Compatibility is an adapter, not a quality target — and single-user
+   internal debt gets deleted.** Preserve external UI/report readability, but
+   drop legacy shims (`moneyFlow.js`, `prop-N` IDs, `runs.json`, Analysis Lab)
+   on schedule rather than maintaining double formats indefinitely.
+3. **The backend owns query-type truth.** `queryClassifier.js`
+   (`oib | case_number | text`) is the single authority; frontend regexes are
+   request hints only.
+4. **Don't split the scraper for purity.** `courtSearchPuppeteer.js` remains
+   the browser/session fallback adapter (harvesting an HTML pool directly into
+   `stratifyClusterEntries` without multi-pass `clusterExpansion`).
+5. **Discovery order and Stage-2 presentation are deliberately engineered.**
+   Discovery/download budgeting prioritizes current state + vital ledgers +
+   origin/middle witnesses (`stratify.js`); Stage-2 synthesis receives a
+   compact RLM Symbolic Case Environment (chronological Markdown Pipe Tables,
+   Tagged `[C<N>]` Excerpt Blocks, upfront `reconciliation.conflicts`, and a
+   **25% protected FTS5 BM25 floor** that flow rows can never evict).
+6. **Programmatic Bench (`/dashboard/bench`) supersedes Analysis Lab.**
+   Analysis Lab (`analysisLab/` / `AnalysisLab/`) is being sunset (`[R100-029]`).
+   All future extraction, OCR, and Stage-2 report benchmarking runs inside
+   `backend/bench/` + `/dashboard/bench` (plus `bench_candidates` anomaly
+   harvesting) on frozen fixtures/snapshots, behind explicit `approved: true`
+   and `maxCost > 0` caps, and never auto-mutates production defaults.
+
+### Model Evaluation & Ingestion Guardrails (Preventing Escalation Spirals)
+
+1. **Capture the raw payload before inventing a mitigation (The Crime Scene Rule).**
+   Persist raw completions in `llm_traces` (and Bench artifacts) *before*
+   `JSON.parse`, alongside parse offset and `finish_reason`.
+2. **Decouple document ingestion (ETL) from model reasoning (Inference).**
+   Never upload digital PDFs across the wire to extract text (`pdf.js` extracts
+   locally for `$0`); benchmark OCR (`Stage T`) independently into frozen
+   transcripts; benchmark Stage A extraction models on identical canonical text.
+3. **Never apply an All-or-Nothing failure policy to multi-segment tasks.**
+   Use bounded chunking, `SegmentCheckpoint` persistence, recursive bisection,
+   and per-segment fallback so partial/cached work is never thrown away.
+4. **Structured output parameters before infrastructure workarounds.**
+   Always use `response_format: { type: "json_object" }` +
+   `provider: { require_parameters: true }` + quantization guards.
+5. **Benchmarks measure; they do not re-architect.**
+   Benchmark evaluation cells (`backend/bench/`) must record honest pass/fail
+   data without dynamic PDF slicing or multi-step repair heuristics inside a
+   scored arm; conversely, production `Stage T0`/`Stage T` (`extraction/`)
+   uses deterministic `pdf-lib` slicing for `hybrid_mixed` PDFs and `15`-page
+   OCR batch windows as designed.
+6. **Disambiguate client deadlines from upstream provider limits.**
+   Check `60s` SSE idle watchdogs, `240s` total timeouts, `max_tokens`
+   reasoning starvation, and `5 MB` worker caps before blaming a model.
 
 ## Feature Delivery & Design Docs
 
-Keep durable cross-cutting UI and accessibility guidance in this file. Add a
-feature-specific spec or task breakdown only when the scope needs a lasting
-contract beyond the implementation and tests, and keep it concise and current.
-Do not create standalone HTML design documents or prototypes unless explicitly
-requested.
+Keep durable cross-cutting UI and accessibility guidance in this file. Active migration scope lives in [docs/road-to-100-entries-plan.md](file:///home/oxioxi/proj/our_chattie/docs/road-to-100-entries-plan.md) and [docs/road-to-100-entries-ticket-breakdown.md](file:///home/oxioxi/proj/our_chattie/docs/road-to-100-entries-ticket-breakdown.md). Do not create standalone HTML design documents or prototypes unless explicitly requested.
 
-## Knowledge Base & Historical Search (New)
+## Knowledge Base & Historical Search
 
 This project uses a project-scoped SQLite knowledge base to store and index historical chat sessions and code changes.
 

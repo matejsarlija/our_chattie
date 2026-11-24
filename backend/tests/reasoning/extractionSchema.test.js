@@ -60,6 +60,26 @@ describe('validateExtraction', () => {
             quote: 'Ukida se prvostupanjska odluka.',
         })]);
     });
+    test('decisionOutcome accepts enum values, treats absence as null, and gaps invalid enums', () => {
+        const valid = validateExtraction({ decisionOutcome: 'rejected' });
+        expect(valid.valid).toBe(true);
+        expect(valid.value.decisionOutcome).toBe('rejected');
+
+        for (const input of [{ decisionOutcome: null }, {}]) {
+            const absent = validateExtraction(input);
+            expect(absent.value.decisionOutcome).toBeNull();
+            expect(absent.gaps).toEqual([]);
+        }
+
+        const invalid = validateExtraction({ decisionOutcome: 'maybe' });
+        expect(invalid.valid).toBe(false);
+        expect(invalid.value.decisionOutcome).toBeNull();
+        expect(invalid.gaps).toEqual([expect.objectContaining({
+            field: 'decisionOutcome',
+            code: 'invalid-enum',
+        })]);
+    });
+
     test('document party identities require an exact 11-digit OIB and source quote', () => {
         const valid = validateExtraction({
             documentParties: [{
@@ -328,6 +348,10 @@ describe('parseFieldRepairResponse', () => {
         expect(buildFieldRepairPrompt({ field: 'documentParties', sourceText: 'OIB: 08697489827' })).toContain('source-explicit party identities');
         expect(buildFullRepairPrompt({ sourceText: 'OIB: 08697489827' })).toContain('"documentParties"');
         expect(buildFullRepairPrompt({ sourceText: 'IZVORNI TEKST' })).toContain('proceduralEvents');
+        const fullRepair = buildFullRepairPrompt({ sourceText: 'ODLUKA IZVOR' });
+        expect(fullRepair).toContain('"decisionOutcome"');
+        expect(fullRepair).toContain('Every individual data row/transaction');
+        expect(fullRepair).toContain('never mixing payout into amountEur');
     });
 
     test('dense documents leave output-token headroom for procedural events', () => {

@@ -25,7 +25,6 @@ test('parser output retrieval returns both parts of the same saved response and 
             cost: 0.0123,
             estimatedParserFee: 0,
             costIncomplete: false,
-            parserRecovery: null,
             analysisSegmentation: null,
         });
     } finally {

@@ -4,7 +4,8 @@ const path = require('path');
 const fs = require('fs');
 const vm = require('vm');
 const { normalizeGoldFacts, summarizeGold, factCount, resolveGoldTarget } = require('../scripts/lib/gold-editor');
-const { createGoldSetId } = require('../scripts/build-gold-template');
+const { createGoldSetId, extractDraftGoldFactsFromText, loadExistingGoldByDocId } = require('../scripts/build-gold-template');
+const { selectCsvEntriesByRowNumbers } = require('../scripts/fetch-real-document-fixtures');
 
 const valid = {
     amounts: [
@@ -80,6 +81,36 @@ test('gold paths are confined to the benchmark data folder', () => {
 
 test('gold template builder creates a goldSetId-shaped identifier', () => {
     expect(createGoldSetId()).toMatch(/^[0-9TZ-]+-[a-f0-9]{8}$/);
+});
+
+test('extractDraftGoldFactsFromText extracts normalized draft amounts, OIBs, dates, and filing numbers', () => {
+    const sampleText = [
+        'TRGOVAČKI SUD U SPLITU Poslovni broj: 4 Stpn-7/2017-16 i Pž-7788/2016.',
+        'Stečajni dužnik KERUM d.o.o. OIB: 66124057408, vjerovnik OIB 89406825003.',
+        'Dana 14.10.2025. i 22. travnja 2022. utvrđena je tražbina od 1.327.228,08 EUR (10.000.000,00 kn).',
+    ].join('\n');
+    const draft = extractDraftGoldFactsFromText(sampleText);
+    expect(draft.amounts).toEqual([
+        { rawValue: '1.327.228,08', currency: 'EUR' },
+        { rawValue: '10.000.000,00', currency: 'HRK' },
+    ]);
+    expect(draft.oibs).toEqual([
+        { value: '66124057408' },
+        { value: '89406825003' },
+    ]);
+    expect(draft.dates).toEqual(expect.arrayContaining(['14.10.2025.', '22. travnja 2022.']));
+    expect(draft.filingNumbers).toEqual(expect.arrayContaining(['4 Stpn-7/2017-16', 'Pž-7788/2016']));
+});
+
+test('selectCsvEntriesByRowNumbers maps 1-based data rows from oib-66124057408.csv', () => {
+    const csvPath = path.resolve(__dirname, 'fixtures/csv-export/oib-66124057408.csv');
+    const csvText = fs.readFileSync(csvPath, 'utf8');
+    const rows = selectCsvEntriesByRowNumbers(csvText, [1, 19, 372, 379]);
+    expect(rows.map((r) => r.index)).toEqual([1, 19, 372, 379]);
+    expect(rows[0].caseNumber).toBe('St-2/2013');
+    expect(rows[2].caseNumber).toBe('St-357/2013');
+    expect(rows[3].caseNumber).toBe('Stpn-7/2017');
+    expect(rows[3].documentDownloadLink).toContain('8f9e6070-21e4-4cff-ac63-ed012e89112c');
 });
 
 // Exercise the page's actual async handlers without a browser or paid requests.

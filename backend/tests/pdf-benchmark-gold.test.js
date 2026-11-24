@@ -115,3 +115,23 @@ test('outcome matching preserves the merits/admissibility distinction and does n
     gold.facts.decisionOutcome = 'odgođeno';
     expect(scoreGold(gold, { parsed: { decisionOutcome: 'odgođeno' } }).decisionOutcome.recall).toBe(1);
 });
+
+test('explicit top-level decision outcomes exclude historical procedural outcomes', () => {
+    const rulingGold = { factsComplete: true, reviewedCategories, facts: { decisionOutcome: 'upheld' } };
+    const ruling = scoreGold(rulingGold, {
+        parsed: {
+            decisionOutcome: 'upheld',
+            proceduralEvents: [{ outcome: 'rejected' }, { outcome: 'overturned' }],
+        },
+    });
+    expect(ruling.decisionOutcome.counts).toEqual({ truePositive: 1, predicted: 1, reference: 1 });
+    expect(ruling.decisionOutcome.precision).toBe(1);
+    expect(ruling.decisionOutcome.recall).toBe(1);
+
+    const nonRulingGold = { factsComplete: true, reviewedCategories, facts: { amounts: [], oibs: [], dates: [], filingNumbers: [], tables: [] } };
+    const nonRuling = scoreGold(nonRulingGold, {
+        parsed: { decisionOutcome: null, proceduralEvents: [{ outcome: 'rejected' }] },
+    });
+    expect(nonRuling.decisionOutcome.counts).toEqual({ truePositive: 0, predicted: 0, reference: 0 });
+    expect(nonRuling.decisionOutcome.precision).toBe(1);
+});

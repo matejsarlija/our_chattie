@@ -1,14 +1,14 @@
 'use strict';
 
+const crypto = require('node:crypto');
 const fs = require('fs');
 const path = require('path');
 const { extractTextFromFile, extractTextViaOCR, renderPageToJpeg, buildOcrBatchInstruction, buildAnalysisPrompt } = require('../../court-analysis/agents/analysis-agent');
 const { buildPdfMessage, buildImageMessage, requestChat, extractAssistantText, extractParsedFileText, ANALYSIS_MAX_TOKENS } = require('./openrouter-client');
-const { jsonValidity } = require('./metrics');
+const { jsonValidity, scoreJsonConditions, scoreJsonRequestConditions } = require('./metrics');
 const { buildNativePdfTranscriptInstruction } = require('../../helpers/nativePdfDocument');
 const { createUsageTracker } = require('../../helpers/geminiUsage');
-const { recoverPdfAnalysis } = require('./pdf-parser-recovery');
-const { shouldBoundAnalysis, runBoundedAnalysis } = require('./bounded-analysis');
+const { shouldBoundAnalysis, runBoundedAnalysis, checkpointKey, DEFAULT_CHECKPOINT_DIR, persistRawRequest } = require('./bounded-analysis');
 
 const ARMS = [
     { id: 'local-text', requires: 'nothing', stage: 'T' },
@@ -18,37 +18,16 @@ const ARMS = [
     { id: 'or-native-transcribe', requires: 'fileNative', stage: 'T' },
 ];
 
-// The decision lane. Each arm is one production-shaped analysis request: the
-// document goes in, the analysis JSON comes out of the same call. `local-text`
-// stays text-only on purpose (pdf.js text + the same analysis prompt), because
-// it is the free control on documents that already have a text layer.
-// `local-raster` is the page-image path: production renders each page and
-// transcribes it, so the bench does the same and then analyzes the transcript.
+// Stage A consumes only the frozen canonical transcript produced by Stage T.
 const ANALYSIS_ARMS = [
     { id: 'local-text', requires: 'nothing', stage: 'A', kind: 'text', engine: null },
-    { id: 'local-raster', requires: 'imageInput', stage: 'A', kind: 'image', engine: null },
-    { id: 'or-cloudflare', requires: 'nothing', stage: 'A', kind: 'pdf', engine: 'cloudflare-ai' },
-    { id: 'or-mistral-ocr', requires: 'nothing', stage: 'A', kind: 'pdf', engine: 'mistral-ocr' },
-    { id: 'or-native', requires: 'fileNative', stage: 'A', kind: 'pdf', engine: 'native' },
 ];
 
-// `buildAnalysisPrompt` ends with "Text:\n\n<segment>". In the one-shot PDF path
-// there is no segment to inline — the file parser injects the document into the
-// same message — so only that trailing payload is swapped. The schema is not
-// forked.
-const PDF_ANALYSIS_PLACEHOLDER = 'Text: the attached PDF, as parsed by the pinned file-parser engine.';
 const DEFAULT_KNOWN_PARTIES = 'Participant information was not available from the source page.';
 
-function buildPdfAnalysisPrompt(knownParties) {
-    return buildAnalysisPrompt(knownParties || DEFAULT_KNOWN_PARTIES, '').replace(/Text:\s*$/, PDF_ANALYSIS_PLACEHOLDER);
-}
-
-// Which arms a model is asked to run. The baseline model is the incumbent and
-// only needs its production-shaped arm; the challenger runs every input path.
-function analysisArmsForModel(model, { baselineModel = null, baselineArm = 'or-native' } = {}) {
-    if (baselineModel && model === baselineModel) return ANALYSIS_ARMS.filter((arm) => arm.id === baselineArm);
-    if (!baselineModel) return ANALYSIS_ARMS;
-    return ANALYSIS_ARMS.filter((arm) => arm.id !== baselineArm);
+// Every Stage A model receives the same frozen canonical text.
+function analysisArmsForModel() {
+    return ANALYSIS_ARMS;
 }
 
 function capabilityAvailable(capabilities, requirement) {
@@ -135,7 +114,7 @@ function makeArmRegistry() {
     return {
         'local-text': async (_model, doc) => {
             const extraction = await extractTextFromFile(doc.filePath);
-            return { text: extraction.text || '', usage: null, cost: 0, latency: extraction.elapsedMs || null, provider: 'local-pdfjs', errors: extraction.error ? [extraction.error] : [], pages: extraction.pages };
+            return { text: extraction.text || '', usage: null, cost: 0, latency: extraction.elapsedMs || null, provider: 'local-pdfjs', errors: extraction.error ? [extraction.error] : [], pages: extraction.pages, pageRanges: extraction.pageRanges || [] };
         },
         'local-raster': async (model, doc, context) => {
             const { images, totalPages } = await renderPdfPages(doc.filePath, context.maxPages);
@@ -174,9 +153,15 @@ function makeArmRegistry() {
                 if (Number.isFinite(result.cost)) { cost += result.cost; hasCost = true; }
                 else costIncomplete = true;
                 retries += result.retries || 0;
+                const keepGoing = context.recordRequest ? context.recordRequest(result, 0) : true;
+                if (!keepGoing) {
+                    costIncomplete = true;
+                    errors.push('Raster transcription stopped before all pages were complete.');
+                }
+                if (!Number.isFinite(result.cost) || !keepGoing) break;
             }
             if (!outputs.length && !errors.length) errors.push('Raster produced no usable transcription');
-            return { text: outputs.join('\n\n'), usage: hasUsage ? usage : null, cost: hasCost ? cost : null, costIncomplete: costIncomplete || !hasCost, latency: Date.now() - started, retries, provider: [...providers], errors, pages: totalPages };
+            return { text: outputs.join('\n\n'), usage: hasUsage ? usage : null, cost: hasCost ? cost : null, costIncomplete: costIncomplete || !hasCost, costAccounted: Boolean(context.recordRequest), latency: Date.now() - started, retries, provider: [...providers], errors, pages: totalPages };
         },
         'or-cloudflare': async (model, doc, context) => parseEngine('cloudflare-ai', model, doc, context),
         'or-mistral-ocr': async (model, doc, context) => parseEngine('mistral-ocr', model, doc, context),
@@ -241,16 +226,26 @@ function stripCodeFence(text) {
 
 // Shared post-processing for every analysis arm so Cloudflare, Mistral, native
 // and the local text control are scored by exactly the same rules.
-function finalizeAnalysisResult({ result, doc, groundingText = '', parserText = '', parserFeeEstimateUsd = 0 }) {
+function finalizeAnalysisResult({ result, doc, groundingText = '', parserText = '', parserFeeEstimateUsd = 0, structuredMode = false }) {
     const text = result.error ? '' : extractAssistantText(result.response);
     let parsed = null;
     try { parsed = JSON.parse(stripCodeFence(text)); } catch { /* invalid JSON or truncation */ }
     const reportedCost = Number.isFinite(result.cost) ? result.cost : null;
+    const requests = result.analysisSegmentation?.requests || [];
+    const jsonConditions = result.jsonConditions || (requests.length
+        ? scoreJsonRequestConditions(requests, { structuredMode })
+        : scoreJsonConditions(result.rawText ?? text, { structuredMode }));
     return {
         text,
         parsed,
         parserText,
         json: result.error ? { valid: false, truncated: result.finish_reason === 'length' } : jsonValidity(text),
+        jsonConditions,
+        repairOverhead: result.repairOverhead || {
+            latencyMs: jsonConditions.repairOverheadMs,
+            cost: jsonConditions.repairOverheadCost,
+        },
+        conditionResults: result.conditionResults ?? null,
         groundingText,
         usage: result.usage,
         cost: reportedCost,
@@ -266,122 +261,273 @@ function finalizeAnalysisResult({ result, doc, groundingText = '', parserText = 
         httpStatus: result.status ?? null,
         diagnostics: result.diagnostics ?? null,
         analysisSegmentation: result.analysisSegmentation ?? null,
+        structuredAnalysisSegmentation: result.structuredAnalysisSegmentation ?? null,
+        requestMetadata: result.requestMetadata ?? null,
         costAccounted: result.costAccounted === true,
         errors: result.error ? [result.error] : parsed ? [] : ['Invalid JSON or truncation'],
-        // `errors` carries a message for both a provider failure and a model
-        // that answered with unusable JSON. Only the former means no answer.
         failedCall: Boolean(result.error),
         pages: doc.pages || null,
     };
 }
 
+function addUsageTotals(target, usage) {
+    for (const [key, value] of Object.entries(usage || {})) {
+        if (Number.isFinite(value)) target[key] = (target[key] || 0) + value;
+        else if (value && typeof value === 'object' && !Array.isArray(value)) {
+            if (!target[key]) target[key] = {};
+            addUsageTotals(target[key], value);
+        }
+    }
+}
+
+async function runSingleCondition({ model, sourceText, doc, context, promptHash, requestParameters, requestText, condition }) {
+    let result;
+    try {
+        result = await requestText(sourceText);
+    } catch (failure) {
+        result = {
+            ...failure.rawResult,
+            error: failure.rawResult?.error || String(failure.message || failure),
+            cost: failure.rawResult?.cost ?? null,
+            status: failure.rawResult?.status ?? null,
+        };
+    }
+    const rawText = extractAssistantText(result.response);
+    const segment = {
+        id: `${doc.docId || 'document'}:1`,
+        text: sourceText,
+        startIndex: 0,
+        endIndex: sourceText.length,
+        pageNumbers: [],
+    };
+    const key = checkpointKey(segment, model, promptHash, requestParameters);
+    const request = {
+        segmentId: segment.id,
+        startIndex: segment.startIndex,
+        endIndex: segment.endIndex,
+        pageNumbers: segment.pageNumbers,
+        condition,
+        status: 'received',
+        httpStatus: result.status ?? null,
+        cost: Number.isFinite(result.cost) ? result.cost : null,
+        latencyMs: result.latencyMs ?? null,
+        finishReason: result.finish_reason ?? null,
+        rawText,
+        parseDiagnostics: null,
+        diagnostics: result.diagnostics ?? null,
+        rawPersistedBeforeParse: false,
+    };
+    let rawArtifactPath = null;
+    request.rawPersistedBeforeParse = true;
+    try {
+        rawArtifactPath = persistRawRequest(context.checkpointDir || DEFAULT_CHECKPOINT_DIR, key, request);
+    } catch (failure) {
+        request.rawPersistedBeforeParse = false;
+        request.rawPersistenceError = String(failure.message || failure);
+    }
+    const requestMetadata = {
+        mode: 'single',
+        status: 'in-progress',
+        segments: [{ id: segment.id, startIndex: segment.startIndex, endIndex: segment.endIndex, pageNumbers: [], status: 'pending' }],
+        requests: [request],
+    };
+    context.onRequestProgress?.(requestMetadata, condition);
+    const shouldContinue = result.costAccounted
+        ? context.beforeRequest ? context.beforeRequest() : true
+        : context.recordRequest ? context.recordRequest(result, 0) : true;
+    if (!request.rawPersistedBeforeParse) {
+        request.status = 'failed';
+        request.error = `Unable to persist raw response before parsing: ${request.rawPersistenceError}`;
+        request.parseDiagnostics = { name: 'RawPersistenceError', message: request.error };
+        requestMetadata.segments[0].status = 'failed';
+        requestMetadata.status = 'failed';
+        context.onRequestProgress?.(requestMetadata, condition);
+        return {
+            ...result,
+            error: request.error,
+            rawText,
+            requestMetadata,
+            shouldContinue: false,
+            costAccounted: result.costAccounted === true || Boolean(context.recordRequest),
+        };
+    }
+    try {
+        if (result.error) throw new Error(typeof result.error === 'string' ? result.error : JSON.stringify(result.error));
+        if (result.finish_reason === 'length') throw new Error('Output was truncated (finish reason: length)');
+        JSON.parse(stripCodeFence(rawText));
+        request.status = 'completed';
+    } catch (failure) {
+        request.status = 'failed';
+        request.error = String(failure.message || failure);
+        request.parseDiagnostics = { name: failure.name || 'Error', message: request.error };
+    }
+    try {
+        persistRawRequest(context.checkpointDir || DEFAULT_CHECKPOINT_DIR, key, request, rawArtifactPath);
+    } catch (failure) {
+        request.rawPersistenceError = String(failure.message || failure);
+    }
+    requestMetadata.segments[0].status = request.status;
+    requestMetadata.status = request.status === 'completed' ? 'completed' : 'failed';
+    context.onRequestProgress?.(requestMetadata, condition);
+    return {
+        ...result,
+        rawText,
+        requestMetadata,
+        shouldContinue,
+        costAccounted: result.costAccounted === true || Boolean(context.recordRequest),
+    };
+}
+
 async function analyzeTextResult(model, sourceText, doc, context, pageRanges = []) {
-    const requestText = (text, segment = null) => requestChat({
-        model,
-        messages: [{ role: 'user', content: buildAnalysisPrompt(context.knownParties || DEFAULT_KNOWN_PARTIES, text) }],
+    const knownParties = context.knownParties || DEFAULT_KNOWN_PARTIES;
+    const promptHash = crypto.createHash('sha256').update(buildAnalysisPrompt(knownParties, '')).digest('hex');
+    const baseParameters = {
         max_tokens: context.analysisMaxTokens || ANALYSIS_MAX_TOKENS,
-        stream: false,
         ...(context.provider ? { provider: context.provider } : {}),
         ...(context.reasoning ? { reasoning: context.reasoning } : {}),
-    }, {
-        ...context.requestOptions, capabilities: context.capabilitiesByModel?.[model],
-        label: `${context.label || model}${segment ? ` · chars ${segment.startIndex}-${segment.endIndex}${segment.pageNumbers.length ? ` · pages ${segment.pageNumbers.join(',')}` : ''}` : ''}`,
-    });
-    return shouldBoundAnalysis(doc, context, sourceText)
-        ? runBoundedAnalysis({ model, doc, context, sourceText, pageRanges, requestText })
-        : requestText(sourceText);
-}
-
-// Normal condition: PDF + analysis in one call. A confirmed parser-size
-// rejection can recover without changing the parser or reducing image quality.
-async function runPdfAnalysis(engine, model, doc, context) {
-    const bytes = fs.readFileSync(doc.filePath);
-    const requestPdf = (payload, { phase = 'original', firstPage = null, lastPage = null, transcribe = false } = {}) => requestChat(buildPdfMessage({
-        model,
-        filename: path.basename(doc.filePath),
-        bytes: payload,
-        prompt: transcribe ? 'Acknowledge receipt with OK. The file-parser annotations supply the document transcript.' : buildPdfAnalysisPrompt(context.knownParties),
-        engine,
-        maxTokens: transcribe ? 1 : context.analysisMaxTokens || ANALYSIS_MAX_TOKENS,
-        provider: context.provider,
-        reasoning: transcribe ? { enabled: false } : context.reasoning,
-    }), {
-        ...context.requestOptions, capabilities: context.capabilitiesByModel?.[model],
-        label: `${context.label || model}${phase === 'original' ? '' : ` · ${phase}${firstPage ? ` pages ${firstPage}-${lastPage}` : ''}`}`,
-    });
-    const canRecover = (result) => engine !== 'native' && result.requestRejection === 'pdf-parser-size-limit' && context.parserRecovery !== 'off';
-    const recoverRejected = async (payload, initial, sourcePages = null) => {
-        const recoveryDoc = sourcePages ? { ...doc, pages: 1 } : doc;
-        const recoveryContext = sourcePages ? { ...context, label: `${context.label || model} · recovery for original page ${sourcePages[0]}` } : context;
-        const originalPageText = (text) => sourcePages
-            ? text.replace(/^\[Original pages 1-1\]\n/, `[Original pages ${sourcePages[0]}-${sourcePages[0]}]\n`) : text;
-        const recovered = await recoverPdfAnalysis({
-            engine, model, doc: recoveryDoc, context: recoveryContext, originalBytes: payload,
-            requestPdf: (bytes, options) => requestPdf(bytes, sourcePages
-                ? { ...options, firstPage: sourcePages[0], lastPage: sourcePages[0] } : options),
-            requestAnalysis: (transcript) => analyzeTextResult(model, originalPageText(transcript), recoveryDoc, recoveryContext),
-        });
-        recovered.recovery.requests.unshift({
-            phase: 'original', firstPage: sourcePages?.[0] || 1, lastPage: sourcePages?.[0] || doc.pages || null, bytes: payload.length,
-            status: initial.status ?? null, cost: initial.cost ?? null, latencyMs: initial.latencyMs ?? null,
-            error: initial.error, requestRejection: initial.requestRejection,
-        });
-        if (sourcePages) {
-            recovered.recovery.sourcePages = sourcePages;
-            for (const request of recovered.recovery.requests) {
-                if (request.firstPage != null) request.firstPage = sourcePages[0];
-                if (request.lastPage != null) request.lastPage = sourcePages[0];
-            }
-            for (const chunk of recovered.recovery.chunks) {
-                chunk.firstPage = sourcePages[0];
-                chunk.lastPage = sourcePages[0];
-            }
-            if (recovered.result.error) {
-                recovered.result.error = `Original PDF page ${sourcePages[0]} (recovery-local page 1): ${recovered.result.error}`;
-                recovered.recovery.error = recovered.result.error;
-            }
-        }
-        return {
-            ...recovered.result, latencyMs: recovered.result.latencyMs + (initial.latencyMs || 0),
-            parserText: originalPageText(recovered.parserText), parserRecovery: recovered.recovery,
-            estimatedParserFee: recovered.estimatedParserFee, costAccounted: recovered.costAccounted,
-        };
     };
-    if ((doc.pages || 0) > 1 && shouldBoundAnalysis(doc, context)) {
-        const segmented = await runBoundedAnalysis({
-            model, doc, context, pdfBytes: bytes, engine,
-            requestPdf: async (payload, segment) => {
-                const initial = await requestPdf(payload, {
-                    phase: 'bounded analysis', firstPage: segment.pageNumbers[0],
-                    lastPage: segment.pageNumbers[segment.pageNumbers.length - 1],
-                });
-                return canRecover(initial) ? recoverRejected(payload, initial, segment.pageNumbers) : initial;
-            },
+    const makeRequestText = (requestParameters) => (text, segment = null) => {
+        const chat = context.requestChat || requestChat;
+        return chat({
+            model,
+            messages: [{ role: 'user', content: buildAnalysisPrompt(knownParties, text) }],
+            stream: false,
+            ...requestParameters,
+        }, {
+            ...context.requestOptions, capabilities: context.capabilitiesByModel?.[model],
+            label: `${context.label || model}${segment ? ` · chars ${segment.startIndex}-${segment.endIndex}${segment.pageNumbers.length ? ` · pages ${segment.pageNumbers.join(',')}` : ''}` : ''}`,
         });
-        return finalizeAnalysisResult({
-            result: segmented, doc, parserText: segmented.parserText || '',
-            groundingText: segmented.groundingText || '',
-        });
-    }
-    const result = await requestPdf(bytes);
-    if (canRecover(result)) {
-        const recovered = await recoverRejected(bytes, result);
-        return {
-            ...finalizeAnalysisResult({
-                result: recovered, doc, parserText: recovered.parserText,
-                groundingText: recovered.parserText, parserFeeEstimateUsd: recovered.estimatedParserFee,
-            }),
-            parserRecovery: recovered.parserRecovery,
+    };
+    const runCondition = async (condition, responseFormat = null) => {
+        const requestParameters = {
+            ...baseParameters,
+            ...(responseFormat ? { response_format: responseFormat } : {}),
         };
+        const requestText = makeRequestText(requestParameters);
+        if (!shouldBoundAnalysis(doc, context, sourceText)) {
+            return runSingleCondition({
+                model, sourceText, doc, context, promptHash, requestParameters, requestText, condition,
+            });
+        }
+        return runBoundedAnalysis({
+            model,
+            doc,
+            context: {
+                ...context,
+                promptHash,
+                checkpointOptions: requestParameters,
+                analysisCondition: condition,
+            },
+            sourceText,
+            pageRanges,
+            requestText,
+        });
+    };
+
+    const onlyStructuredMode = context.analysisConditionOnly === 'structured_mode';
+    const rawResult = onlyStructuredMode
+        ? { notRequested: true, rawText: '', cost: 0, latencyMs: 0, usage: null, costAccounted: true }
+        : await runCondition('raw_parse');
+    let structuredResult = null;
+    if (onlyStructuredMode) {
+        structuredResult = await runCondition('structured_mode', { type: 'json_object' });
+    } else if (!rawResult.shouldContinue && rawResult.shouldContinue !== undefined) {
+        structuredResult = null;
+    } else if (context.beforeRequest && !context.beforeRequest()) {
+        structuredResult = null;
+    } else {
+        structuredResult = await runCondition('structured_mode', { type: 'json_object' });
     }
-    const parserText = extractParsedFileText(result.response || {});
-    const parserFeeEstimateUsd = engine === 'mistral-ocr' && result.requestRejection !== 'pdf-parser-size-limit'
-        ? (context.mistralPageRate || 2) * (doc.pages || 0) / 1000 : 0;
-    return finalizeAnalysisResult({ result, doc, groundingText: parserText, parserText, parserFeeEstimateUsd });
+    const rawRequests = rawResult.analysisSegmentation?.requests || rawResult.requestMetadata?.requests || [];
+    const structuredRequests = structuredResult?.analysisSegmentation?.requests || structuredResult?.requestMetadata?.requests || [];
+    const rawPersistenceFailed = rawRequests.some((request) => request.rawPersistedBeforeParse === false);
+    const structuredPersistenceFailed = structuredRequests.some((request) => request.rawPersistedBeforeParse === false);
+    const unpersistedScore = {
+        raw_parse: false,
+        structured_mode: false,
+        repaired: false,
+        rawFailed: true,
+        repairOverheadMs: 0,
+        repairOverheadCost: 0,
+    };
+    const rawScores = rawResult.notRequested ? null : rawPersistenceFailed
+        ? unpersistedScore
+        : rawRequests.length
+            ? scoreJsonRequestConditions(rawRequests)
+            : scoreJsonConditions(rawResult.rawText || '');
+    const structuredScores = structuredResult
+        ? structuredPersistenceFailed
+            ? unpersistedScore
+            : structuredRequests.length
+                ? scoreJsonRequestConditions(structuredRequests)
+                : scoreJsonConditions(structuredResult.rawText || '')
+        : null;
+    const selectedScores = onlyStructuredMode ? structuredScores : rawScores;
+    const rawUsable = Boolean(rawScores && (rawScores.raw_parse || rawScores.repaired));
+    const structuredUsable = Boolean(structuredScores && (structuredScores.raw_parse || structuredScores.repaired));
+    const responseResult = (onlyStructuredMode || (!rawUsable && structuredUsable))
+        ? structuredResult
+        : rawResult;
+    const rawCostKnown = rawResult.notRequested || Number.isFinite(rawResult.cost);
+    const structuredCostKnown = !structuredResult || Number.isFinite(structuredResult.cost);
+    const knownCost = (!rawResult.notRequested && rawCostKnown ? rawResult.cost : 0)
+        + (structuredResult && structuredCostKnown ? structuredResult.cost : 0);
+    const usage = {};
+    if (!rawResult.notRequested) addUsageTotals(usage, rawResult.usage);
+    if (structuredResult) addUsageTotals(usage, structuredResult.usage);
+    const providers = [...new Set([rawResult.provider, structuredResult?.provider].filter(Boolean))];
+    const conditionResults = {
+        raw_parse: {
+            requested: !rawResult.notRequested,
+            passed: rawScores ? rawScores.raw_parse : null,
+            cost: rawResult.notRequested ? null : rawResult.cost ?? null,
+            latencyMs: rawResult.notRequested ? null : rawResult.latencyMs ?? null,
+            requests: rawRequests,
+        },
+        structured_mode: {
+            requested: Boolean(structuredResult),
+            passed: structuredScores ? structuredScores.raw_parse : null,
+            cost: structuredResult?.cost ?? null,
+            latencyMs: structuredResult?.latencyMs ?? null,
+            requests: structuredRequests,
+        },
+        repaired: {
+            rawFailed: selectedScores.rawFailed,
+            passed: selectedScores.repaired,
+            latencyMs: selectedScores.repairOverheadMs,
+            cost: selectedScores.repairOverheadCost,
+        },
+    };
+    return {
+        ...responseResult,
+        rawText: responseResult.rawText || null,
+        cost: rawCostKnown && structuredCostKnown ? knownCost : knownCost || null,
+        costIncomplete: Boolean((!rawResult.notRequested && rawResult.costIncomplete) || structuredResult?.costIncomplete || !rawCostKnown || !structuredCostKnown),
+        usage: Object.keys(usage).length ? usage : null,
+        latencyMs: (rawResult.notRequested ? 0 : rawResult.latencyMs || 0) + (structuredResult?.latencyMs || 0),
+        retries: (rawResult.notRequested ? 0 : rawResult.retries || 0) + (structuredResult?.retries || 0),
+        provider: providers.join(', ') || null,
+        costAccounted: Boolean(context.recordRequest) || Boolean((rawResult.notRequested || rawResult.costAccounted) && structuredResult?.costAccounted),
+        structuredAnalysisSegmentation: structuredResult?.analysisSegmentation ?? null,
+        conditionResults,
+        jsonConditions: {
+            raw_parse: rawScores ? rawScores.raw_parse : null,
+            structured_mode: structuredResult ? structuredScores.raw_parse : null,
+            repaired: selectedScores.repaired,
+            rawFailed: selectedScores.rawFailed,
+            repairOverheadMs: selectedScores.repairOverheadMs,
+            repairOverheadCost: selectedScores.repairOverheadCost,
+        },
+        repairOverhead: {
+            latencyMs: selectedScores.repairOverheadMs,
+            cost: selectedScores.repairOverheadCost,
+        },
+        structuredMode: Boolean(structuredResult),
+    };
 }
 
-// Free control: pdf.js text into a text-only analysis call. An image-only
-// document has no text layer, so the arm is skipped rather than scored on "".
+// Stage A analyzes canonical text for every model. Stage T freezes source text
+// separately; a missing digital text layer must not trigger a PDF fallback.
 async function runTextAnalysis(model, doc, context) {
     const extraction = doc.benchExtraction || await extractTextFromFile(doc.filePath);
     const sourceText = String(extraction.text || '');
@@ -393,113 +539,12 @@ async function runTextAnalysis(model, doc, context) {
         };
     }
     const result = await analyzeTextResult(model, sourceText, doc, context, extraction.pageRanges || []);
-    return finalizeAnalysisResult({ result, doc, groundingText: sourceText });
-}
-
-/**
- * Page-image analysis: render each page, transcribe it with the production OCR
- * instruction, then analyze the assembled transcript with the same analysis
- * prompt every other arm uses.
- *
- * Two things this deliberately does NOT do:
- *  - it does not re-emit the model's own `=== STRANICA N ===` header; the model
- *    only ever sees one image per request, so its header can only say 1.
- *    `pageBody` strips it and the wrapper stamps the real page position once.
- *  - it does not invent a page for a failed or empty transcription. A short
- *    transcript must stay short.
- */
-async function runRasterAnalysis(model, doc, context) {
-    const maxPages = Number(context.rasterMaxPages) > 0 ? Number(context.rasterMaxPages) : Infinity;
-    const { images, totalPages } = await renderPdfPages(doc.filePath, maxPages);
-    const sections = [];
-    const usage = {};
-    let hasUsage = false;
-    let ocrCost = 0;
-    let hasCost = false;
-    let costIncomplete = false;
-    let retries = 0;
-    let latencyMs = 0;
-    const providers = new Set();
-    const errors = [];
-
-    for (let index = 0; index < images.length; index += 1) {
-        if (context.beforeRequest && !context.beforeRequest()) {
-            errors.push('Raster stopped before all pages were transcribed.');
-            break;
-        }
-        const result = await requestChat(buildImageMessage({
-            model,
-            prompt: buildOcrBatchInstruction(),
-            imageDataUrl: `data:image/jpeg;base64,${images[index].toString('base64')}`,
-            maxTokens: context.transcriptionMaxTokens || 2048,
-            provider: context.provider,
-            reasoning: context.reasoning,
-        }), { ...context.requestOptions, capabilities: context.capabilitiesByModel?.[model], label: `${context.label || model} · page ${index + 1}/${images.length}` });
-        if (result.error) errors.push(result.error);
-        else {
-            const body = pageBody(extractAssistantText(result.response));
-            if (body) sections.push(`=== STRANICA ${index + 1} ===\n${body}`);
-            else errors.push(`Page ${index + 1}: empty OCR transcription`);
-        }
-        if (result.provider) providers.add(result.provider);
-        if (result.usage) {
-            hasUsage = true;
-            addUsage(usage, result.usage);
-        }
-        if (Number.isFinite(result.cost)) { ocrCost += result.cost; hasCost = true; }
-        else costIncomplete = true;
-        retries += result.retries || 0;
-        latencyMs += result.latencyMs || 0;
-        const keepGoing = context.recordRequest ? context.recordRequest(result, 0) : true;
-        if (!Number.isFinite(result.cost) || !keepGoing) break;
-    }
-
-    const transcript = sections.join('\n\n');
-    if (!transcript.trim() || costIncomplete || (context.beforeRequest && !context.beforeRequest())) {
-        return {
-            failedCall: true, text: '', parsed: null, parserText: '', groundingText: '',
-            errors: [...errors, 'Raster transcription incomplete; analysis was not started.'],
-            cost: hasCost ? ocrCost : null, costIncomplete: costIncomplete || !hasCost, latency: latencyMs,
-            retries, provider: [...providers].join(', ') || null, usage: hasUsage ? usage : null, pages: totalPages,
-            costAccounted: Boolean(context.recordRequest),
-        };
-    }
-
-    const result = await analyzeTextResult(model, transcript, doc, context);
-    if (context.recordRequest && !result.costAccounted) context.recordRequest(result, 0);
-
-    if (result.provider) providers.add(result.provider);
-    if (result.usage) {
-        hasUsage = true;
-        addUsage(usage, result.usage);
-    }
-    // Preserve the known subtotal, but never label missing call costs as zero.
-    if (Number.isFinite(result.cost)) { ocrCost += result.cost; hasCost = true; }
-    else costIncomplete = true;
-    const merged = {
-        ...result,
-        cost: hasCost ? ocrCost : null,
-        latencyMs: latencyMs + (result.latencyMs || 0),
-        retries: retries + (result.retries || 0),
-        usage: hasUsage ? usage : null,
-        costAccounted: Boolean(context.recordRequest) || result.costAccounted === true,
-    };
-    const finalized = finalizeAnalysisResult({ result: merged, doc, groundingText: transcript });
-    return {
-        ...finalized,
-        errors: [...errors, ...finalized.errors],
-        costIncomplete: costIncomplete || !hasCost,
-        provider: [...providers].join(', ') || result.provider || null,
-    };
+    return finalizeAnalysisResult({ result, doc, groundingText: sourceText, structuredMode: result.structuredMode });
 }
 
 function makeAnalysisRegistry() {
     return {
         'local-text': (model, doc, context) => runTextAnalysis(model, doc, context),
-        'local-raster': (model, doc, context) => runRasterAnalysis(model, doc, context),
-        'or-cloudflare': (model, doc, context) => runPdfAnalysis('cloudflare-ai', model, doc, context),
-        'or-mistral-ocr': (model, doc, context) => runPdfAnalysis('mistral-ocr', model, doc, context),
-        'or-native': (model, doc, context) => runPdfAnalysis('native', model, doc, context),
     };
 }
 
@@ -511,5 +556,5 @@ function buildArmDefinitions() {
 module.exports = {
     ARMS, ANALYSIS_ARMS, capabilityAvailable, buildArmMatrix, resolveFixturePath,
     renderPdfPages, renderPdfPage, makeArmRegistry, buildArmDefinitions, referenceArm, parseEngine, pageBody,
-    buildPdfAnalysisPrompt, analysisArmsForModel, makeAnalysisRegistry, runPdfAnalysis, runTextAnalysis, runRasterAnalysis,
+    analysisArmsForModel, makeAnalysisRegistry, runTextAnalysis,
 };

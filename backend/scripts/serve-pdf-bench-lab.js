@@ -6,8 +6,8 @@ const crypto = require('crypto');
 const http = require('http');
 const path = require('path');
 const { spawn } = require('child_process');
-const { OIB_CASE_DOCS, SMOKE_DOC_IDS, assertRunScope } = require('./lib/lab-documents');
-const { loadDocuments, inspectPdfPages } = require('./benchmark-pdf-engines');
+const { OIB_CASE_DOCS, SMOKE_DOC_IDS, FULL_PILOT_MIN, FULL_PILOT_MAX, assertRunScope } = require('./lib/lab-documents');
+const { loadDocuments, inspectPdfPages, extractTranscriptProvider } = require('./benchmark-pdf-engines');
 const { readCache } = require('./lib/capabilities');
 const { renderPdfPage } = require('./lib/arms');
 const { DEFAULT_GOLD_MODEL, suggestGoldFacts } = require('./lib/gold-assist');
@@ -65,7 +65,8 @@ function readBody(req) {
 }
 
 function getSelectedDocs(ids) {
-    if (!Array.isArray(ids) || ids.length < 1 || ids.length > 20) throw new Error('Select between 1 and 20 fixture documents.');
+    const maxDocs = Math.max(FULL_PILOT_MAX, OIB_CASE_DOCS.length);
+    if (!Array.isArray(ids) || ids.length < 1 || ids.length > maxDocs) throw new Error(`Select between 1 and ${maxDocs} fixture documents.`);
     const allowed = new Set(OIB_CASE_DOCS.map((doc) => doc.docId));
     if (ids.some((id) => !allowed.has(id)) || new Set(ids).size !== ids.length) throw new Error('Document selection contains an unknown or duplicate fixture ID.');
     return ids.map((id) => OIB_CASE_DOCS.find((doc) => doc.docId === id));
@@ -156,13 +157,16 @@ const PAGE_CACHE = new Map();
 const PAGE_CACHE_LIMIT = 80;
 let corpusById = null;
 
-function corpusDocuments() {
-    if (corpusById) return corpusById;
-    corpusById = new Map();
-    for (const { docId } of OIB_CASE_DOCS) {
+function corpusDocuments(docId = null) {
+    if (!corpusById) corpusById = new Map();
+    if (docId && corpusById.has(docId)) return corpusById;
+    const targets = docId && !corpusById.has(docId)
+        ? [{ docId }]
+        : OIB_CASE_DOCS.filter((doc) => !corpusById.has(doc.docId));
+    for (const target of targets) {
         try {
-            const [doc] = loadDocuments({ 'doc-id': [docId] });
-            if (doc) corpusById.set(docId, doc);
+            const [doc] = loadDocuments({ 'doc-id': [target.docId] });
+            if (doc) corpusById.set(target.docId, doc);
         } catch { /* A missing fixture only hides its page images, never the editor. */ }
     }
     return corpusById;
@@ -236,6 +240,45 @@ function listRuns() {
 }
 
 
+function enrichReportWithTranscriptSources(report, dataRoot = DATA_ROOT) {
+    if (!report || !Array.isArray(report.rows)) return report;
+    const cache = new Map();
+    const readMeta = (docId) => {
+        if (cache.has(docId)) return cache.get(docId);
+        let meta = null;
+        try {
+            const txPath = path.join(dataRoot, 'fixtures', 'transcripts', `${docId}.json`);
+            if (fs.existsSync(txPath)) {
+                const fixture = JSON.parse(fs.readFileSync(txPath, 'utf8'));
+                const sourceArm = fixture?.canonicalTranscript?.sourceArm || null;
+                if (sourceArm) {
+                    meta = {
+                        transcriptSourceArm: sourceArm,
+                        transcriptProvider: extractTranscriptProvider(fixture, sourceArm),
+                    };
+                }
+            }
+        } catch { /* Historical enrichment is best-effort; skip unreadable fixtures. */ }
+        cache.set(docId, meta);
+        return meta;
+    };
+    let changed = false;
+    const rows = report.rows.map((row) => {
+        if (!row || (row.stage !== 'A' && row.arm !== 'local-text') || row.transcriptSourceArm || !row.docId) {
+            return row;
+        }
+        const meta = readMeta(row.docId);
+        if (!meta) return row;
+        changed = true;
+        return {
+            ...row,
+            transcriptSourceArm: meta.transcriptSourceArm,
+            transcriptProvider: row.transcriptProvider ?? meta.transcriptProvider ?? null,
+        };
+    });
+    return changed ? { ...report, rows } : report;
+}
+
 function readParserOutput(runId, { docId, arm, model, repeat }, dataRoot = DATA_ROOT) {
     if (!ALLOWED_RUNS.test(String(runId || ''))) throw new Error('Unknown benchmark run ID.');
     if (!['or-cloudflare', 'or-mistral-ocr'].includes(arm)) throw new Error('Unknown parser arm.');
@@ -264,7 +307,6 @@ function readParserOutput(runId, { docId, arm, model, repeat }, dataRoot = DATA_
         cost: Number.isFinite(row.cost) ? row.cost : (Number.isFinite(artifact.cost) ? artifact.cost : null),
         estimatedParserFee: Number.isFinite(row.estimatedParserFee) ? row.estimatedParserFee : 0,
         costIncomplete: row.costIncomplete === true,
-        parserRecovery: artifact.parserRecovery || row.parserRecovery || null,
         analysisSegmentation: artifact.analysisSegmentation || row.analysisSegmentation || null,
     };
 }
@@ -290,10 +332,10 @@ async function route(req, res) {
         try {
             const local = loadDocuments({ 'doc-id': OIB_CASE_DOCS.map((doc) => doc.docId) });
             const actualIds = new Set(local.map((doc) => doc.docId));
-            const documents = OIB_CASE_DOCS.filter((doc) => actualIds.has(doc.docId)).map((doc) => ({ ...doc, fileName: doc.docId.slice(doc.docId.indexOf(':') + 1), tableLike: /schedule|account|specification|claim totals|statement|troškovnik|distribution/i.test(`${doc.role} ${doc.evidence}`) }));
+            const documents = OIB_CASE_DOCS.filter((doc) => actualIds.has(doc.docId)).map((doc) => ({ ...doc, fileName: doc.docId.slice(doc.docId.indexOf(':') + 1), tableLike: /schedule|account|specification|claim totals|statement|troškovnik|distribution|table|izvod/i.test(`${doc.role} ${doc.evidence}`) }));
             const model = String(url.searchParams.get('model') || 'z-ai/glm-5.3-flash');
             const cached = readCache().models?.[model]?.capabilities || {};
-            return respond(res, 200, { documents, smokeDocIds: SMOKE_DOC_IDS, capabilities: { fileNative: cached.fileNative ?? null, imageInput: cached.imageInput ?? null } });
+            return respond(res, 200, { documents, smokeDocIds: SMOKE_DOC_IDS, pilotRange: { min: FULL_PILOT_MIN, max: FULL_PILOT_MAX }, capabilities: { fileNative: cached.fileNative ?? null, imageInput: cached.imageInput ?? null } });
         } catch (error) { return respond(res, 500, { error: error.message }); }
     }
     if (req.method === 'GET' && url.pathname === '/api/gold/sets') {
@@ -329,7 +371,7 @@ async function route(req, res) {
             if (!fs.existsSync(filePath)) throw new Error('Unknown gold template.');
             const template = JSON.parse(fs.readFileSync(filePath, 'utf8'));
             const docId = template.document?.docId;
-            const doc = corpusDocuments().get(docId);
+            const doc = corpusDocuments(docId).get(docId);
             if (!doc) throw new Error('No local PDF is available for this template.');
             const page = Number(url.searchParams.get('page'));
             if (!Number.isInteger(page) || page < 1 || page > 200) throw new Error('Page must be a whole number between 1 and 200.');
@@ -348,6 +390,14 @@ async function route(req, res) {
         const filePath = path.join(DATA_ROOT, artifactMatch[1], artifactMatch[2]);
         if (!fs.existsSync(filePath)) return respond(res, 404, { error: 'Artifact not found.' });
         const type = artifactMatch[2].endsWith('.html') ? 'text/html; charset=utf-8' : 'application/json; charset=utf-8';
+        if (artifactMatch[2] === 'report.json') {
+            try {
+                const enriched = enrichReportWithTranscriptSources(JSON.parse(fs.readFileSync(filePath, 'utf8')), DATA_ROOT);
+                return respond(res, 200, enriched, type);
+            } catch {
+                return respond(res, 200, fs.readFileSync(filePath), type);
+            }
+        }
         return respond(res, 200, fs.readFileSync(filePath), type);
     }
     if (req.method !== 'POST') return respond(res, 404, { error: 'Not found.' });
@@ -425,8 +475,6 @@ async function route(req, res) {
                     models.push(baseline);
                 }
             }
-            const parserRecovery = body.parserRecovery === undefined ? 'auto' : body.parserRecovery;
-            if (!['auto', 'off'].includes(parserRecovery)) throw new Error('Parser recovery must be auto or off.');
             const analysisMode = body.analysisMode === undefined ? 'bounded' : body.analysisMode;
             if (!['bounded', 'single'].includes(analysisMode)) throw new Error('Analysis mode must be bounded or single.');
             const maxCost = Number(body.maxCost);
@@ -437,10 +485,12 @@ async function route(req, res) {
             if (goldDir && (!goldDir.startsWith(`${DATA_ROOT}${path.sep}`) || !fs.existsSync(goldDir) || !fs.statSync(goldDir).isDirectory())) throw new Error('Gold facts must be a local folder under backend/data/pdf-engine-bench.');
             const args = [`--models=${models.join(',')}`, ...docs.map((doc) => `--doc-id=${doc.docId}`), `--max-docs=${docs.length}`, `--max-pages=${docs.reduce((sum, doc) => sum + doc.pages, 0)}`, `--max-cost=${maxCost}`, `--repeats=${Math.max(1, Math.min(5, Number(body.repeats) || 1))}`, `--scope=${smokeRun ? 'smoke' : 'pilot'}`];
             if (baseline) args.push(`--baseline=${baseline}`);
-            args.push(`--parser-recovery=${parserRecovery}`);
             args.push(`--analysis-mode=${analysisMode}`);
+            if (body.analysisCondition && ['both', 'structured_mode'].includes(body.analysisCondition)) {
+                args.push(`--analysis-condition=${body.analysisCondition}`);
+            }
             if (goldDir) args.push(`--gold-dir=${goldDir}`);
-            if (body.reference === true) throw new Error('The Gemini reference arm is gone: the incumbent is measured as the pinned native-PDF baseline (google/gemini-2.5-flash), not as a separate OCR arm.');
+            if (body.reference === true) throw new Error('Stage A reads canonical frozen text only; no separate reference arm is available.');
             if (body.approved === true && !dryRun) args.push('--approved');
             const job = launch(dryRun ? 'dry-run' : 'benchmark', 'benchmark-pdf-engines.js', args);
             return respond(res, 202, { jobId: job.id });
@@ -448,6 +498,14 @@ async function route(req, res) {
         if (url.pathname === '/api/gold') {
             const docs = getSelectedDocs(body.docIds);
             const args = [...docs.map((doc) => `--doc-id=${doc.docId}`), `--max-docs=${docs.length}`];
+            if (body.carryFrom && ALLOWED_RUNS.test(String(body.carryFrom))) {
+                args.push(`--carry-from=${body.carryFrom}`);
+            } else if (body.carryLatest !== false) {
+                args.push('--carry-latest');
+            }
+            if (body.prefillDrafts !== false) {
+                args.push('--prefill-drafts');
+            }
             const job = launch('gold-template', 'build-gold-template.js', args);
             return respond(res, 202, { jobId: job.id });
         }
@@ -480,4 +538,4 @@ const server = http.createServer((req, res) => { route(req, res).catch((error) =
 if (require.main === module) server.listen(PORT, HOST, () => console.log(`Court PDF Benchmark Lab: http://${HOST}:${PORT}`));
 server.on('error', (error) => { console.error(`[pdf-bench-lab] ${error.message}`); process.exitCode = 1; });
 
-module.exports = { route, getSelectedDocs, createJob, listRuns, readParserOutput };
+module.exports = { route, getSelectedDocs, createJob, listRuns, readParserOutput, enrichReportWithTranscriptSources };

@@ -1,6 +1,6 @@
 'use strict';
 
-const { extractAmounts, extractDates, extractOibs, extractFilingNumbers, diacriticFidelity, pageCompleteness, jsonValidity, setMetrics, computeTextMetrics } = require('../scripts/lib/metrics');
+const { extractAmounts, extractDates, extractOibs, extractFilingNumbers, diacriticFidelity, pageCompleteness, jsonValidity, scoreJsonConditions, scoreJsonRequestConditions, setMetrics, computeTextMetrics } = require('../scripts/lib/metrics');
 const { buildArmMatrix, ARMS } = require('../scripts/lib/arms');
 const { probeModel } = require('../scripts/lib/capabilities');
 
@@ -43,6 +43,36 @@ test('raw diacritic and page-marker metrics distinguish fidelity from ASCII loss
     expect(pageCompleteness('=== STRANICA 1 ===\na', 2).complete).toBe(false);
     expect(jsonValidity('{"ok":true}').valid).toBe(true);
     expect(jsonValidity('{"ok":').truncated).toBe(true);
+});
+
+test('JSON condition scores separate strict parsing, structured mode, and fence repair', () => {
+    expect(scoreJsonConditions('{"ok":true}', { structuredMode: true })).toMatchObject({
+        raw_parse: true, structured_mode: true, repaired: false, rawFailed: false, repairOverheadCost: 0,
+    });
+    const fenced = scoreJsonConditions('```json\n{"ok":true}\n```', { structuredMode: true });
+    expect(fenced).toMatchObject({ raw_parse: false, structured_mode: false, repaired: true, rawFailed: true, repairOverheadCost: 0 });
+    expect(fenced.repairOverheadMs).toBeGreaterThanOrEqual(0);
+    expect(scoreJsonConditions('```json\n{bad}\n```')).toMatchObject({
+        raw_parse: false, structured_mode: false, repaired: false, rawFailed: true,
+    });
+});
+
+test('bounded condition scoring aggregates raw failures and successful fence repair', () => {
+    const result = scoreJsonRequestConditions([
+        { status: 'completed', rawText: '{"a":1}' },
+        { status: 'completed', rawText: '```json\n{"b":2}\n```' },
+    ], { structuredMode: true });
+    expect(result).toMatchObject({
+        raw_parse: false,
+        structured_mode: false,
+        repaired: true,
+        rawFailed: true,
+        repairOverheadCost: 0,
+    });
+    expect(scoreJsonRequestConditions([
+        { status: 'completed', rawText: '{"a":1}' },
+        { status: 'failed', rawText: '{bad}' },
+    ])).toMatchObject({ raw_parse: false, repaired: false, rawFailed: true });
 });
 
 test('no text-layer reference yields unscored null metrics rather than false success', () => {
