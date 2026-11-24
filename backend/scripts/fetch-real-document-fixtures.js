@@ -44,14 +44,56 @@ const DEFAULT_LIMIT = 30;
 const DISCOVERY_MAX_PAGES = 10;
 
 function parseArgs(argv) {
-    const args = { oib: DEFAULT_OIB, limit: DEFAULT_LIMIT, verifyOnly: false, reportOut: null };
+    const args = { oib: DEFAULT_OIB, limit: DEFAULT_LIMIT, verifyOnly: false, reportOut: null, rows: [], csvPath: null };
     for (const raw of argv) {
         if (raw.startsWith('--oib=')) args.oib = raw.slice('--oib='.length).trim();
         else if (raw.startsWith('--limit=')) args.limit = Number.parseInt(raw.slice('--limit='.length), 10) || DEFAULT_LIMIT;
         else if (raw === '--verify-only') args.verifyOnly = true;
         else if (raw.startsWith('--report-out=')) args.reportOut = raw.slice('--report-out='.length).trim();
+        else if (raw.startsWith('--rows=')) {
+            const parsed = raw.slice('--rows='.length)
+                .split(',')
+                .map((token) => Number.parseInt(token.trim(), 10))
+                .filter((num) => Number.isInteger(num) && num >= 1);
+            args.rows.push(...parsed);
+        } else if (raw.startsWith('--csv=')) {
+            args.csvPath = raw.slice('--csv='.length).trim();
+        }
     }
+    args.rows = [...new Set(args.rows)];
     return args;
+}
+
+function defaultCsvFixturePath(oib) {
+    return path.resolve(__dirname, `../tests/fixtures/csv-export/oib-${oib}.csv`);
+}
+
+function selectCsvEntriesByRowNumbers(csvText, rowNumbers) {
+    const { parseCsvExport } = require('../scraper/csvExportParser');
+    const { mapCsvRowToEntry } = require('../court-analysis/utils/csvFieldMapping');
+    const parsed = parseCsvExport(csvText);
+    if (!parsed.ok) {
+        throw new Error(`CSV export parse failed (${parsed.reason}): ${(parsed.missingColumns || []).join(', ')}`);
+    }
+    const selected = [];
+    for (const rowNumber of rowNumbers) {
+        if (rowNumber < 1 || rowNumber > parsed.rows.length) {
+            throw new Error(`Requested CSV row ${rowNumber} is out of bounds (1..${parsed.rows.length}).`);
+        }
+        const rawRow = parsed.rows[rowNumber - 1];
+        const mapped = mapCsvRowToEntry(rawRow);
+        selected.push({
+            index: rowNumber,
+            title: mapped.caseInfo.title,
+            caseNumber: rawRow['Oznaka spisa']?.trim() || mapped.caseInfo.caseNumber,
+            court: mapped.caseInfo.court,
+            date: mapped.caseInfo.datePublished || mapped.caseInfo.date,
+            detailLink: mapped.caseInfo.detailLink,
+            documentDownloadLink: mapped.caseInfo.documentDownloadLink,
+            documentFiles: mapped.caseInfo.documentFiles || [],
+        });
+    }
+    return selected;
 }
 
 function fixturesDirFor(oib) {
@@ -116,6 +158,7 @@ async function extractAndProbe(manifest) {
             fileCounter += 1;
             const startedAt = Date.now();
             const result = await extractTextFromFile(file.filePath);
+            const nonWhitespaceChars = (result.text || '').replace(/\s+/g, '').length;
             file.extraction = {
                 method: result.method,
                 pages: result.pages,
@@ -124,7 +167,7 @@ async function extractAndProbe(manifest) {
                 error: result.error,
                 ms: Date.now() - startedAt,
                 textLayer:
-                    result.method === 'pdf-text' && (result.text || '').trim().length > 0 ? 'embedded'
+                    result.method === 'pdf-text' && nonWhitespaceChars >= 50 ? 'embedded'
                         : result.method === 'pdf-text' ? 'empty'
                             : result.error ? 'error'
                                 : 'none',
@@ -302,74 +345,142 @@ async function fetchFixtures({ oib, limit }) {
     for (let i = 0; i < selected.length; i++) {
         const result = selected[i];
         const index = i + 1;
-        const slug = `${index}-${slugify(result.caseNumber || result.title)}`;
-
-        agentLog.log(`[Fixtures] Downloading ${index}/${selected.length}: ${result.documentDownloadLink}`);
-        // Same extension-resolution order as DownloadDocumentsTool:
-        // Content-Disposition filename -> Content-Type -> '.bin'.
-        const response = await axios({
-            url: result.documentDownloadLink,
-            method: 'GET',
-            responseType: 'stream',
-            timeout: 120000,
-        });
-        const disposition = response.headers['content-disposition'] || '';
-        const dispositionMatch = disposition.match(/filename\*?=(?:UTF-8'')?"?([^";]+)"?/);
-        const serverName = dispositionMatch ? decodeURIComponent(dispositionMatch[1]) : null;
-        const mimeExt = require('mime-types').extension(response.headers['content-type']);
-        const ext = path.extname(serverName || '') ||
-            (mimeExt && mimeExt !== 'bin' ? `.${mimeExt}` : '.bin');
-        const downloadPath = path.join(zipsDir, `${slug}${ext}`);
-        await new Promise((resolve, reject) => {
-            const writer = fs.createWriteStream(downloadPath);
-            response.data.pipe(writer);
-            writer.on('finish', resolve);
-            writer.on('error', reject);
-            response.data.on('error', reject);
-        });
-
-        let extractedFiles;
-        if (ext.toLowerCase() === '.zip') {
-            const entryDir = path.join(entriesDir, slug);
-            fs.mkdirSync(entryDir, { recursive: true });
-            extractedFiles = extractZipSafely(downloadPath, entryDir);
-        } else {
-            // Row-level /preuzimanje links often serve the document itself.
-            extractedFiles = [{
-                entryName: serverName || path.basename(downloadPath),
-                filePath: downloadPath,
-            }];
-        }
-
-        const files = [];
-        for (const extracted of extractedFiles) {
-            files.push({
-                entryName: extracted.entryName,
-                filePath: extracted.filePath,
-                bytes: fs.statSync(extracted.filePath).size,
-                sha256: await sha256File(extracted.filePath),
-            });
-        }
-
-        manifest.entries.push({
-            index,
-            title: result.title,
-            caseNumber: result.caseNumber,
-            court: result.court,
-            date: result.date,
-            detailLink: result.detailLink,
-            documentDownloadLink: result.documentDownloadLink,
-            archivePath: downloadPath,
-            archiveType: ext.toLowerCase() === '.zip' ? 'zip' : 'single-file',
-            archiveSha256: await sha256File(downloadPath),
-            files,
-        });
-        agentLog.log(
-            `[Fixtures] Entry ${index}: "${result.title}" (${ext}) -> ${files.length} file(s).`,
-        );
+        const entryRecord = await downloadEntryArchive({ result, index, zipsDir, entriesDir });
+        manifest.entries.push(entryRecord);
     }
     manifest.timings.downloadMs = Date.now() - downloadStartedAt;
 
+    return manifest;
+}
+
+async function downloadEntryArchive({ result, index, zipsDir, entriesDir }) {
+    const slug = `${index}-${slugify(result.caseNumber || result.title)}`;
+    agentLog.log(`[Fixtures] Downloading entry ${index}: ${result.documentDownloadLink}`);
+    const response = await axios({
+        url: result.documentDownloadLink,
+        method: 'GET',
+        responseType: 'stream',
+        timeout: 120000,
+    });
+    const disposition = response.headers['content-disposition'] || '';
+    const dispositionMatch = disposition.match(/filename\*?=(?:UTF-8'')?"?([^";]+)"?/);
+    let serverName = null;
+    if (dispositionMatch && dispositionMatch[1]) {
+        try {
+            serverName = decodeURIComponent(dispositionMatch[1].replace(/"/g, ''));
+        } catch {
+            serverName = dispositionMatch[1].replace(/"/g, '');
+        }
+    }
+    const mimeExt = require('mime-types').extension(response.headers['content-type']);
+    const ext = path.extname(serverName || '') ||
+        (mimeExt && mimeExt !== 'bin' ? `.${mimeExt}` : '.bin');
+    const downloadPath = path.join(zipsDir, `${slug}${ext}`);
+    await new Promise((resolve, reject) => {
+        const writer = fs.createWriteStream(downloadPath);
+        response.data.pipe(writer);
+        writer.on('finish', resolve);
+        writer.on('error', reject);
+        response.data.on('error', reject);
+    });
+
+    let extractedFiles;
+    if (ext.toLowerCase() === '.zip') {
+        const entryDir = path.join(entriesDir, slug);
+        fs.mkdirSync(entryDir, { recursive: true });
+        extractedFiles = extractZipSafely(downloadPath, entryDir);
+    } else {
+        extractedFiles = [{
+            entryName: serverName || path.basename(downloadPath),
+            filePath: downloadPath,
+        }];
+    }
+
+    const files = [];
+    for (const extracted of extractedFiles) {
+        files.push({
+            entryName: extracted.entryName,
+            filePath: extracted.filePath,
+            bytes: fs.statSync(extracted.filePath).size,
+            sha256: await sha256File(extracted.filePath),
+        });
+    }
+
+    const entryRecord = {
+        index,
+        title: result.title,
+        caseNumber: result.caseNumber,
+        court: result.court,
+        date: result.date,
+        detailLink: result.detailLink,
+        documentDownloadLink: result.documentDownloadLink,
+        archivePath: downloadPath,
+        archiveType: ext.toLowerCase() === '.zip' ? 'zip' : 'single-file',
+        archiveSha256: await sha256File(downloadPath),
+        files,
+    };
+    agentLog.log(
+        `[Fixtures] Entry ${index}: "${result.title}" (${ext}) -> ${files.length} file(s).`,
+    );
+    return entryRecord;
+}
+
+async function fetchCsvRowFixtures({ oib, rows, csvPath }) {
+    const resolvedCsv = csvPath ? path.resolve(csvPath) : defaultCsvFixturePath(oib);
+    if (!fs.existsSync(resolvedCsv)) {
+        throw new Error(`CSV fixture not found at ${resolvedCsv}`);
+    }
+    const selected = selectCsvEntriesByRowNumbers(fs.readFileSync(resolvedCsv, 'utf8'), rows);
+    const outDir = fixturesDirFor(oib);
+    const zipsDir = path.join(outDir, 'zips');
+    const entriesDir = path.join(outDir, 'entries');
+    const manifestPath = path.join(outDir, 'manifest.json');
+    fs.mkdirSync(zipsDir, { recursive: true });
+    fs.mkdirSync(entriesDir, { recursive: true });
+
+    const existingManifest = fs.existsSync(manifestPath)
+        ? JSON.parse(fs.readFileSync(manifestPath, 'utf8'))
+        : {
+            query: { type: 'text', value: oib },
+            source: 'https://e-oglasna.pravosudje.hr',
+            fetchedAt: new Date().toISOString(),
+            generator: 'backend/scripts/fetch-real-document-fixtures.js',
+            selection: `additive CSV rows from ${path.basename(resolvedCsv)}`,
+            entries: [],
+        };
+
+    const byIndex = new Map((existingManifest.entries || []).map((entry) => [entry.index, entry]));
+    const downloadStartedAt = Date.now();
+    const newlyFetchedEntries = [];
+
+    for (const result of selected) {
+        if (!result.documentDownloadLink) {
+            agentLog.warn(`[Fixtures] Row ${result.index} has no documentDownloadLink; skipping.`);
+            continue;
+        }
+        const entryRecord = await downloadEntryArchive({
+            result,
+            index: result.index,
+            zipsDir,
+            entriesDir,
+        });
+        byIndex.set(result.index, entryRecord);
+        newlyFetchedEntries.push(entryRecord);
+    }
+
+    await extractAndProbe({ entries: newlyFetchedEntries });
+
+    const mergedEntries = [...byIndex.values()].sort((a, b) => Number(a.index) - Number(b.index));
+    const manifest = {
+        ...existingManifest,
+        fetchedAt: new Date().toISOString(),
+        coverage: coverageSpan(mergedEntries),
+        timings: {
+            ...(existingManifest.timings || {}),
+            downloadMs: Date.now() - downloadStartedAt,
+        },
+        entries: mergedEntries,
+    };
     return manifest;
 }
 
@@ -437,6 +548,8 @@ async function main() {
     const extractionStartedAt = Date.now();
     if (args.verifyOnly) {
         manifest = await verifyOnly(args.oib);
+    } else if (args.rows && args.rows.length > 0) {
+        manifest = await fetchCsvRowFixtures(args);
     } else {
         manifest = await fetchFixtures(args);
         await extractAndProbe(manifest);
@@ -515,7 +628,11 @@ async function main() {
     process.exit(allFiles.length > 0 && (!manifest.renderProbe || manifest.renderProbe.ok !== false) ? 0 : 1);
 }
 
-main().catch((err) => {
-    agentLog.error('[Fixtures] Failed:', err.message);
-    process.exit(1);
-});
+if (require.main === module) {
+    main().catch((err) => {
+        agentLog.error('[Fixtures] Failed:', err.message);
+        process.exit(1);
+    });
+}
+
+module.exports = { parseArgs, selectCsvEntriesByRowNumbers, extractZipSafely, coverageSpan };

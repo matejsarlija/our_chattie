@@ -5,7 +5,7 @@ const os = require('os');
 const path = require('path');
 const { parseEngine } = require('../scripts/lib/arms');
 const { buildImageMessage } = require('../scripts/lib/openrouter-client');
-const { runExtraction, summarizeExtractionRows, execute, parseReasoningArg, estimateRunCost, createBenchLogger } = require('../scripts/benchmark-pdf-engines');
+const { runExtraction, summarizeExtractionRows, execute, parseArgs, parseReasoningArg, estimateRunCost, createBenchLogger, registerPartialReportHandlers } = require('../scripts/benchmark-pdf-engines');
 const { aggregateReviews } = require('../scripts/score-review');
 
 const transcript = {
@@ -41,6 +41,50 @@ test('buildExtractionBody generates a valid user content payload', () => {
     const body3 = buildExtractionBody('model', 'text', 'prompt');
     expect(body3.messages[0]).toEqual({ role: 'user', content: 'prompt' });
 });
+test('CLI parses a separated max-cost value instead of treating it as boolean true', () => {
+    const { parseArgs } = require('../scripts/benchmark-pdf-engines');
+    expect(parseArgs(['--stage-t', '--approved', '--max-cost', '0.50'])).toMatchObject({
+        'stage-t': true,
+        approved: true,
+        'max-cost': '0.50',
+    });
+});
+
+test('CLI exposes explicit checkpoint bypass flags', () => {
+    expect(parseArgs(['--no-cache', '--force-rerun'])).toMatchObject({
+        'no-cache': true,
+        'force-rerun': true,
+    });
+});
+
+test('SIGINT and SIGTERM synchronously flush completed cells before exit', () => {
+    const { EventEmitter } = require('node:events');
+    const outputDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pdf-bench-partial-'));
+    const processObject = new EventEmitter();
+    processObject.exit = jest.fn();
+    const rows = [{ docId: 'done', status: 'completed' }];
+    const hooks = registerPartialReportHandlers({ outputDir, getRows: () => rows, processObject });
+    processObject.emit('SIGINT');
+    expect(JSON.parse(fs.readFileSync(path.join(outputDir, 'report-partial.json'), 'utf8'))).toMatchObject({
+        status: 'interrupted', signal: 'SIGINT', rows,
+    });
+    expect(processObject.exit).toHaveBeenLastCalledWith(130);
+    rows.push({ docId: 'second', status: 'completed' });
+    processObject.emit('SIGTERM');
+    expect(JSON.parse(fs.readFileSync(path.join(outputDir, 'report-partial.json'), 'utf8'))).toMatchObject({
+        status: 'interrupted', signal: 'SIGTERM', rows,
+    });
+    expect(processObject.exit).toHaveBeenLastCalledWith(143);
+    hooks.dispose();
+    fs.rmSync(outputDir, { recursive: true, force: true });
+});
+
+test('live cap validation rejects a missing value instead of reading boolean true as a dollar', () => {
+    const { parseArgs, assertLiveCaps } = require('../scripts/benchmark-pdf-engines');
+    const args = parseArgs(['--max-docs', '1', '--max-pages', '1', '--max-cost']);
+    expect(() => assertLiveCaps(args, false)).toThrow(/finite --max-cost cap/);
+});
+
 
 test('live input inspection refuses unknown page counts instead of bypassing page caps', async () => {
     const { inspectPdfPages } = require('../scripts/benchmark-pdf-engines');
@@ -110,43 +154,28 @@ test('gold status distinguishes no gold, unverified gold, and scored gold', () =
     expect(scored.goldStatus).toBe('scored');
     expect(scored.goldAccuracy.amounts).toMatchObject({ precision: 1, recall: 1 });
 });
-
-test('parser fidelity is recorded per model, and never for the native arm', async () => {
-    const outputDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pdf-parser-'));
-    const { loadDocuments } = require('../scripts/benchmark-pdf-engines');
-    const [doc] = loadDocuments({ 'doc-id': ['1:Podnesak.pdf'] });
-    doc.pages = 2;
-    const shape = (parserText) => ({
-        text: JSON.stringify(extractionJson), parsed: extractionJson, json: { valid: true, truncated: false },
-        parserText, groundingText: parserText, cost: 0.01, latency: 10, provider: 'mock',
-        retries: 0, errors: [], pages: 2, costIncomplete: false,
+test('Stage A parses fenced JSON after defensive code-fence stripping', async () => {
+    const { runTextAnalysis } = require('../scripts/lib/arms');
+    const fetchImpl = jest.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        text: async () => JSON.stringify({
+            provider: 'mock',
+            usage: { cost: 0.01 },
+            choices: [{ message: { content: '```json\n{"summary":"kept"}\n```' }, finish_reason: 'stop' }],
+        }),
     });
-    const registry = {
-        'local-text': async () => shape(''),
-        'or-cloudflare': async () => shape('parsed by cloudflare 1.234,56 EUR'),
-        'or-mistral-ocr': async () => shape(''),
-        'or-native': async () => shape(''),
-    };
-    try {
-        const report = await execute({
-            args: { 'max-cost': 1, repeats: 1, 'engines-on-text-layer': true },
-            documents: [doc],
-            models: ['x/y'],
-            capabilitiesByModel: { 'x/y': { fileNative: true, imageInput: true } },
-            outputDir,
-            dryRun: false,
-            registry,
-        });
-        expect(report.parserMetrics.map((row) => row.arm).sort()).toEqual(['or-cloudflare', 'or-mistral-ocr']);
-        expect(report.parserMetrics.every((row) => row.model === 'x/y')).toBe(true);
-        const mistral = report.textMetricSummary.find((row) => row.arm === 'or-mistral-ocr');
-        expect(mistral.emptyOutputs).toBe(1);
-        const cloudflare = report.textMetricSummary.find((row) => row.arm === 'or-cloudflare');
-        expect(cloudflare.emptyOutputs).toBe(0);
-    } finally {
-        fs.rmSync(outputDir, { recursive: true, force: true });
-    }
+    const result = await runTextAnalysis('x/y', {
+        docId: 'fenced',
+        pages: 1,
+        benchExtraction: { text: 'The frozen source text. '.repeat(10), pageRanges: [] },
+    }, { requestOptions: { apiKey: 'mock', fetchImpl, maxRetries: 0 } });
+
+    expect(result.json.valid).toBe(true);
+    expect(result.parsed).toEqual({ summary: 'kept' });
 });
+
+
 
 test('repeats apply to smoke too, so percentiles have samples', async () => {
     const outputDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pdf-smoke-repeat-'));
@@ -154,18 +183,15 @@ test('repeats apply to smoke too, so percentiles have samples', async () => {
     try {
         const report = await execute({
             args: { scope: 'smoke', 'max-cost': 10, repeats: 3 },
-            documents: [{ docId: 'd1', title: 'Doc', filePath: '/tmp/x.pdf', pages: 1, textLayer: true, pageBucket: '1-2', tableHeavy: false }],
+            documents: [{ docId: 'd1', title: 'Doc', filePath: '/tmp/x.pdf', pages: 1, textLayer: true, canonicalTranscript: { text: 'Frozen source text. '.repeat(10), pageMap: [], verified: true } }],
             models: ['x/y'],
             capabilitiesByModel: { 'x/y': { fileNative: true, imageInput: true } },
             outputDir,
             dryRun: false,
-            registry: { 'local-text': arm, 'local-raster': arm, 'or-cloudflare': arm, 'or-mistral-ocr': arm, 'or-native': arm },
+            registry: { 'local-text': arm },
         });
-        // Four arms apply on a text-layer document (the page-image arm is
-        // skipped), and every one of them runs three times.
-        expect(arm).toHaveBeenCalledTimes(12);
-        expect(report.rows.filter((row) => row.status !== 'SKIPPED')).toHaveLength(12);
-        expect(report.rows.find((row) => row.arm === 'local-raster').reason).toBe('skipped:not-a-scan');
+        expect(arm).toHaveBeenCalledTimes(3);
+        expect(report.rows.filter((row) => row.status !== 'SKIPPED')).toHaveLength(3);
     } finally {
         fs.rmSync(outputDir, { recursive: true, force: true });
     }
@@ -273,7 +299,7 @@ test('a free concurrency slot refills before a slow cell finishes, preserving re
         active -= 1;
         return { text: doc.docId, cost: 0.01, latency: 10, provider: 'mock', errors: [], pages: 1, parsed: null, json: { valid: false, truncated: false } };
     };
-    const documents = ['d1', 'd2', 'd3'].map((docId) => ({ docId, title: docId, filePath: `/tmp/${docId}.pdf`, pages: 1, textLayer: true, pageBucket: '1-2', tableHeavy: false }));
+    const documents = ['d1', 'd2', 'd3'].map((docId) => ({ docId, title: docId, filePath: `/tmp/${docId}.pdf`, pages: 1, textLayer: true, canonicalTranscript: { text: 'Frozen source text. '.repeat(10), pageMap: [], verified: true } }));
     try {
         const report = await execute({
             args: { scope: 'smoke', arms: ['local-text'], concurrency: 2 },
@@ -291,7 +317,7 @@ test('a free concurrency slot refills before a slow cell finishes, preserving re
 });
 
 
-test('concurrent cells may finish past the cost cap but no new cell starts after a breach', async () => {
+test('concurrent canonical-text cells may finish past the cost cap but do not schedule another cell', async () => {
     const outputDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pdf-concurrent-cap-'));
     const calls = [];
     const arm = async () => {
@@ -300,11 +326,18 @@ test('concurrent cells may finish past the cost cap but no new cell starts after
         return { text: 'text', cost: 0.5, latency: 10, provider: 'mock', errors: [], pages: 1, parsed: null, json: { valid: false, truncated: false } };
     };
     try {
+        const documents = ['d1', 'd2', 'd3'].map((docId) => ({
+            docId, title: docId, filePath: `/tmp/${docId}.pdf`, pages: 1, textLayer: true,
+            canonicalTranscript: { text: 'Frozen source text. '.repeat(10), pageMap: [], verified: true },
+        }));
         const report = await execute({
-            args: { scope: 'smoke', arms: ['local-text', 'or-cloudflare', 'or-mistral-ocr'], concurrency: 2, 'max-cost': 0.25 },
-            documents: [{ docId: 'd1', title: 'Doc', filePath: '/tmp/x.pdf', pages: 1, textLayer: true, pageBucket: '1-2', tableHeavy: false }],
-            models: ['x/y'], capabilitiesByModel: { 'x/y': { fileNative: false, imageInput: false } },
-            outputDir, dryRun: false, registry: { 'local-text': arm, 'or-cloudflare': arm, 'or-mistral-ocr': arm },
+            args: { scope: 'smoke', arms: ['local-text'], concurrency: 2, 'max-cost': 0.25 },
+            documents,
+            models: ['x/y'],
+            capabilitiesByModel: { 'x/y': {} },
+            outputDir,
+            dryRun: false,
+            registry: { 'local-text': arm },
         });
         expect(calls).toHaveLength(2);
         expect(report.rows).toHaveLength(2);
@@ -315,56 +348,27 @@ test('concurrent cells may finish past the cost cap but no new cell starts after
     }
 });
 
-test('a cost-cap breach keeps the paid-for rows instead of discarding the run', async () => {
+test('a cost-cap breach keeps paid-for canonical-text rows instead of discarding the run', async () => {
     const outputDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pdf-cap-'));
-    const arm = async () => ({ text: 'text', usage: null, cost: 0.5, latency: 5, provider: 'mock', retries: 0, errors: [], pages: 1, parsed: null, json: { valid: false, truncated: false }, groundingText: '' });
-    const registry = { 'local-text': arm, 'or-cloudflare': arm, 'or-mistral-ocr': arm, 'or-native': arm };
+    const arm = async () => ({ text: 'answer', cost: 0.5, latency: 5, provider: 'mock', errors: [], pages: 1, parsed: extractionJson, json: { valid: true, truncated: false }, groundingText: '' });
     try {
         const report = await execute({
-            args: { 'max-cost': 0.75, repeats: 1, 'engines-on-text-layer': true },
-            documents: [{ docId: 'd1', title: 'Doc', filePath: '/tmp/x.pdf', pages: 1, textLayer: true, pageBucket: '1-2', tableHeavy: false }],
+            args: { 'max-cost': 0.75, repeats: 3 },
+            documents: [{ docId: 'd1', title: 'Doc', filePath: '/tmp/x.pdf', pages: 1, textLayer: true, canonicalTranscript: { text: 'Frozen source text. '.repeat(10), pageMap: [], verified: true } }],
             models: ['x/y'],
-            capabilitiesByModel: { 'x/y': { fileNative: false, imageInput: false } },
+            capabilitiesByModel: { 'x/y': {} },
             outputDir,
             dryRun: false,
-            registry,
+            registry: { 'local-text': arm },
         });
         expect(report.aborted).toMatchObject({ reason: 'cost-cap' });
         expect(report.aborted.message).toMatch(/0\.75/);
-        // The unavailable page-image arm is reported as skipped, not paid for.
-        const answered = report.rows.filter((row) => row.status !== 'SKIPPED');
-        expect(answered).toHaveLength(2);
-        expect(answered[0].arm).toBe('local-text');
-        expect(answered[1].arm).toBe('or-cloudflare');
-        expect(report.summary).toHaveLength(2);
-        expect(report.extractionSummary).toHaveLength(2);
+        expect(report.rows.filter((row) => row.status !== 'SKIPPED')).toHaveLength(2);
+        expect(report.rows.every((row) => row.arm === 'local-text')).toBe(true);
+        expect(report.summary).toHaveLength(1);
+        expect(report.extractionSummary).toHaveLength(1);
         expect(report.actualCost).toBeCloseTo(1);
-        expect(report.estimatedParserFee).toBe(0);
         expect(report.spendTotal).toBeCloseTo(1);
-    } finally {
-        fs.rmSync(outputDir, { recursive: true, force: true });
-    }
-});
-
-test('parser-fee estimates enter the cap basis without being reported as actual spend', async () => {
-    const outputDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pdf-estimated-cap-'));
-    const arm = async () => ({ text: 'text', cost: null, estimatedParserFee: 0.004, costIncomplete: true, latency: 5, provider: 'mock', errors: [], pages: 2, parsed: null, json: { valid: false, truncated: false } });
-    try {
-        const report = await execute({
-            args: { 'max-cost': 0.003 },
-            documents: [{ docId: 'd1', title: 'Doc', filePath: '/tmp/x.pdf', pages: 2, textLayer: true, pageBucket: '1-2', tableHeavy: false }],
-            models: ['x/y'],
-            capabilitiesByModel: { 'x/y': { fileNative: false, imageInput: false } },
-            outputDir,
-            dryRun: false,
-            registry: { 'local-text': arm, 'or-cloudflare': arm, 'or-mistral-ocr': arm, 'or-native': arm },
-        });
-        expect(report.aborted).toMatchObject({ reason: 'cost-cap' });
-        expect(report.rows.filter((row) => row.status !== 'SKIPPED')).toHaveLength(1);
-        expect(report.rows[0]).toMatchObject({ cost: null, estimatedParserFee: 0.004, costIncomplete: true });
-        expect(report.actualCost).toBe(0);
-        expect(report.estimatedParserFee).toBeCloseTo(0.004);
-        expect(report.spendTotal).toBeCloseTo(0.004);
     } finally {
         fs.rmSync(outputDir, { recursive: true, force: true });
     }
@@ -376,13 +380,13 @@ test('a live run retains the response but stops when provider cost is unknown', 
     const next = jest.fn();
     try {
         const report = await execute({
-            args: { 'max-cost': 1 },
-            documents: [{ docId: 'd1', title: 'Doc', filePath: '/tmp/x.pdf', pages: 1, textLayer: true, pageBucket: '1-2', tableHeavy: false }],
+            args: { 'max-cost': 1, repeats: 2 },
+            documents: [{ docId: 'd1', title: 'Doc', filePath: '/tmp/x.pdf', pages: 1, textLayer: true, canonicalTranscript: { text: 'Frozen source text. '.repeat(10), pageMap: [], verified: true } }],
             models: ['x/y'],
             capabilitiesByModel: { 'x/y': { fileNative: false, imageInput: false } },
             outputDir,
             dryRun: false,
-            registry: { 'local-text': first, 'or-cloudflare': next, 'or-mistral-ocr': next, 'or-native': next },
+            registry: { 'local-text': first },
         });
         expect(report.aborted).toMatchObject({ reason: 'cost-unknown' });
         expect(report.rows.filter((row) => row.status !== 'SKIPPED')).toHaveLength(1);
@@ -395,180 +399,16 @@ test('a live run retains the response but stops when provider cost is unknown', 
     }
 });
 
-test('a definitive file-parser rejection is retained and the benchmark continues to later cells', async () => {
-    const outputDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pdf-parser-rejection-'));
-    const arm = jest.fn()
-        .mockResolvedValueOnce({
-            text: '', parserText: '', groundingText: '', cost: null, costIncomplete: true,
-            requestRejection: 'pdf-parser-size-limit', httpStatus: 400, failedCall: true,
-            errors: ['The file exceeds the maximum size supported by the file parser.'],
-            pages: 1, parsed: null, json: { valid: false, truncated: false },
-        })
-        .mockResolvedValueOnce({
-            text: 'answer', parserText: '', groundingText: '', cost: 0.02, costIncomplete: false,
-            errors: [], pages: 1, parsed: extractionJson, json: { valid: true, truncated: false },
-        });
-    try {
-        const report = await execute({
-            args: { scope: 'smoke', arms: ['local-text'], repeats: 2, concurrency: 1, 'max-cost': 1 },
-            documents: [{ docId: 'd1', title: 'Doc', filePath: '/tmp/x.pdf', pages: 1, textLayer: true, pageBucket: '1-2', tableHeavy: false }],
-            models: ['x/y'],
-            capabilitiesByModel: { 'x/y': { fileNative: false, imageInput: false } },
-            outputDir,
-            dryRun: false,
-            registry: { 'local-text': arm },
-        });
-        expect(arm).toHaveBeenCalledTimes(2);
-        expect(report.aborted).toBeNull();
-        expect(report.rows.filter((row) => row.status !== 'SKIPPED')).toHaveLength(2);
-        expect(report.rows[0]).toMatchObject({
-            requestRejection: 'pdf-parser-size-limit',
-            httpStatus: 400,
-            failedCall: true,
-            cost: null,
-            costIncomplete: true,
-        });
-        expect(report.costMissingCalls).toBe(1);
-        expect(report.actualCost).toBeCloseTo(0.02);
-    } finally {
-        fs.rmSync(outputDir, { recursive: true, force: true });
-    }
-});
 
-test('a parser size rejection runs the classified local fallback without merging it into parser results', async () => {
-    const outputDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pdf-parser-fallback-'));
-    const rejected = jest.fn().mockResolvedValue({
-        text: '', parserText: '', groundingText: '', cost: null, costIncomplete: true,
-        requestRejection: 'pdf-parser-size-limit', httpStatus: 400, failedCall: true,
-        errors: ['The file exceeds the maximum size supported by the file parser.'],
-        pages: 1, parsed: null, json: { valid: false, truncated: false },
-    });
-    const localTextFallback = jest.fn().mockResolvedValue({
-        text: 'local text answer', parserText: '', groundingText: 'source text',
-        cost: 0.02, costIncomplete: false, latency: 7, provider: 'mock',
-        errors: [], pages: 1, parsed: extractionJson, json: { valid: true, truncated: false },
-    });
-    try {
-        const report = await execute({
-            args: { scope: 'smoke', arms: ['or-cloudflare'], 'max-cost': 1, 'parser-recovery': 'off' },
-            documents: [{ docId: 'd1', title: 'Doc', filePath: '/tmp/x.pdf', pages: 1, textLayer: true, pageBucket: '1-2', tableHeavy: false }],
-            models: ['x/y'],
-            capabilitiesByModel: { 'x/y': { fileNative: false, imageInput: false } },
-            outputDir,
-            dryRun: false,
-            registry: { 'or-cloudflare': rejected, 'local-text': localTextFallback },
-        });
-
-        expect(localTextFallback).toHaveBeenCalledTimes(1);
-        expect(localTextFallback.mock.calls[0][2].label).toMatch(/fallback local-text/);
-        expect(report.rows).toHaveLength(1);
-        expect(report.rows[0]).toMatchObject({ arm: 'or-cloudflare', failedCall: true, requestRejection: 'pdf-parser-size-limit', parsed: null });
-        expect(report.fallbacks).toEqual([expect.objectContaining({
-            sourceArm: 'or-cloudflare', arm: 'local-text', status: 'completed',
-            cost: 0.02, parsed: extractionJson, json: { valid: true, truncated: false },
-        })]);
-        expect(report.summary.map((row) => row.arm)).toEqual(['or-cloudflare']);
-        expect(report.parserMetrics[0]).toMatchObject({ arm: 'or-cloudflare', empty: true });
-        expect(report.actualCost).toBeCloseTo(0.02);
-        expect(report.costMissingCalls).toBe(1);
-        expect(report.aborted).toBeNull();
-    } finally {
-        fs.rmSync(outputDir, { recursive: true, force: true });
-    }
-});
-
-test('a rejected Mistral file-parser request does not accrue an estimated OCR page fee', async () => {
-    const { runPdfAnalysis } = require('../scripts/lib/arms');
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pdf-parser-rejection-fee-'));
-    const filePath = path.join(dir, 'doc.pdf');
-    fs.writeFileSync(filePath, '%PDF-1.4 stub');
-    const fetchImpl = jest.fn().mockResolvedValue({
-        ok: false,
-        status: 400,
-        text: async () => JSON.stringify({
-            error: { message: 'Failed to parse the file: The file exceeds the maximum size supported by the file parser.' },
-        }),
-    });
-    try {
-        const result = await runPdfAnalysis('mistral-ocr', 'x/y', { filePath, pages: 11 }, {
-            requestOptions: { apiKey: 'mock', fetchImpl },
-            mistralPageRate: 2,
-            parserRecovery: 'off',
-            analysisMode: 'single',
-        });
-        expect(result).toMatchObject({
-            requestRejection: 'pdf-parser-size-limit',
-            httpStatus: 400,
-            cost: null,
-            costIncomplete: true,
-            estimatedParserFee: 0,
-            parserFeeEstimateUsd: 0,
-            failedCall: true,
-        });
-        expect(summarizeExtractionRows([{ ...result, arm: 'or-mistral-ocr', model: 'x/y', documentType: 'text-layer' }])[0].answered).toBe(0);
-    } finally {
-        fs.rmSync(dir, { recursive: true, force: true });
-    }
-});
-
-test('the OpenRouter arm is one request: PDF + analysis prompt + pinned engine + production output cap', async () => {
-    const { runPdfAnalysis } = require('../scripts/lib/arms');
-    const fetchImpl = jest.fn().mockResolvedValue({
-        ok: true,
-        status: 200,
-        text: async () => JSON.stringify({
-            provider: 'Cloudflare',
-            choices: [{
-                message: {
-                    content: JSON.stringify(extractionJson),
-                    annotations: [{ type: 'file', file: { content: [{ type: 'text', text: 'parsed body from the engine' }] } }],
-                },
-            }],
-            usage: { cost: 0.02, prompt_tokens: 100 },
-        }),
-    });
-    const temp = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'pdf-oneshot-')), 'doc.pdf');
-    fs.writeFileSync(temp, '%PDF-1.4 stub');
-    try {
-        const result = await runPdfAnalysis('cloudflare-ai', 'z-ai/glm-5.3-flash', { filePath: temp, pages: 2 }, {
-            requestOptions: { apiKey: 'mock', fetchImpl },
-            provider: { allow_fallbacks: false },
-            mistralPageRate: 2,
-        });
-        const body = JSON.parse(fetchImpl.mock.calls[0][1].body);
-        expect(body.plugins).toEqual([{ id: 'file-parser', pdf: { engine: 'cloudflare-ai' } }]);
-        expect(body.max_tokens).toBe(16384);
-        expect(body.messages[0].content[0].text).toMatch(/extract key information as a JSON object/i);
-        expect(body.messages[0].content[1].type).toBe('file');
-        expect(result.parsed.caseNumber).toBe('St-2/2013');
-        expect(result.parserText).toBe('parsed body from the engine');
-        expect(result.groundingText).toBe('parsed body from the engine');
-        expect(result.cost).toBe(0.02);
-        expect(result.json.valid).toBe(true);
-    } finally {
-        fs.rmSync(path.dirname(temp), { recursive: true, force: true });
-    }
-});
-
-test('the free pdf.js control is skipped, never scored, on an image-only document', async () => {
-    const { runTextAnalysis } = require('../scripts/lib/arms');
-    const { loadDocuments } = require('../scripts/benchmark-pdf-engines');
-    const [doc] = loadDocuments({ 'doc-id': ['6:Prilog St-2_2013-1208-1 - Račun Adria Rijeka 2-2025 (1).pdf'] });
-    const fetchImpl = jest.fn();
-    const result = await runTextAnalysis('x/y', doc, { requestOptions: { apiKey: 'mock', fetchImpl } });
-    expect(result.skipped).toBe('no-text-layer');
-    expect(fetchImpl).not.toHaveBeenCalled();
-});
-
-test('the baseline model runs only its production arm; the challenger runs every input path', () => {
+test('baseline and challenger both use the canonical frozen text arm', () => {
     const { analysisArmsForModel } = require('../scripts/lib/arms');
     const baseline = analysisArmsForModel('google/gemini-2.5-flash', { baselineModel: 'google/gemini-2.5-flash' });
-    expect(baseline.map((arm) => arm.id)).toEqual(['or-native']);
+    expect(baseline.map((arm) => arm.id)).toEqual(['local-text']);
     const challenger = analysisArmsForModel('z-ai/glm-5.3-flash', { baselineModel: 'google/gemini-2.5-flash' });
-    expect(challenger.map((arm) => arm.id)).toEqual(['local-text', 'local-raster', 'or-cloudflare', 'or-mistral-ocr']);
+    expect(challenger.map((arm) => arm.id)).toEqual(['local-text']);
 });
 
-test('dry-run estimate charges Mistral pages once and adds a completion estimate per cell', () => {
+test('dry-run estimate costs only Stage A analysis on canonical text', () => {
     const { estimateRunCost } = require('../scripts/benchmark-pdf-engines');
     const estimate = estimateRunCost({
         models: ['z-ai/glm-5.3-flash', 'google/gemini-2.5-flash'],
@@ -576,10 +416,11 @@ test('dry-run estimate charges Mistral pages once and adds a completion estimate
         repeats: 1,
         args: { baseline: 'google/gemini-2.5-flash' },
     });
-    expect(estimate.parserUsd).toBeCloseTo(5 * 2 / 1000);
+    expect(estimate.parserUsd).toBe(0);
     expect(estimate.analysisUsd).toBeGreaterThan(0);
     expect(estimate.totalUsd).toBeCloseTo(estimate.parserUsd + estimate.analysisUsd);
     expect(estimate.perModel['google/gemini-2.5-flash']).toBeGreaterThan(0);
+    expect(estimate.analysisRequests).toBe(12);
 });
 
 test('unusable JSON is a model failure, so it counts as answered but invalid', () => {
@@ -608,7 +449,7 @@ test('a reasoning model gets its own token headroom so the answer keeps the prod
         seen.push({ name, context });
         return { text: '{}', cost: 0.001, latency: 1, provider: 'mock', errors: [], pages: 1, parsed: {}, json: { valid: true, truncated: false }, groundingText: '' };
     });
-    const documents = [{ docId: 'd1', title: 'Doc', filePath: '/tmp/x.pdf', pages: 1, textLayer: true, pageBucket: '1-2', tableHeavy: false }];
+    const documents = [{ docId: 'd1', title: 'Doc', filePath: '/tmp/x.pdf', pages: 1, textLayer: true, canonicalTranscript: { text: 'Frozen source text. '.repeat(10), pageMap: [], verified: true } }];
     const models = ['x/y'];
     const capabilitiesByModel = { 'x/y': { fileNative: true, imageInput: true } };
     try {
@@ -647,7 +488,7 @@ test('the dry-run estimate includes reasoning tokens as billable completion', ()
 test('--arms narrows the matrix so one cell can be re-run as a diagnostic', async () => {
     const outputDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pdf-arms-filter-'));
     const arm = jest.fn(async () => ({ text: '{}', cost: 0.001, latency: 1, provider: 'mock', errors: [], pages: 1, parsed: {}, json: { valid: true, truncated: false }, groundingText: '' }));
-    const documents = [{ docId: 'd1', title: 'Doc', filePath: '/tmp/x.pdf', pages: 1, textLayer: true, pageBucket: '1-2', tableHeavy: false }];
+    const documents = [{ docId: 'd1', title: 'Doc', filePath: '/tmp/x.pdf', pages: 1, textLayer: true, canonicalTranscript: { text: 'Frozen source text. '.repeat(10), pageMap: [], verified: true } }];
     const capabilitiesByModel = { 'x/y': { fileNative: true, imageInput: true } };
     const registry = { 'local-text': arm, 'or-cloudflare': arm, 'or-mistral-ocr': arm, 'or-native': arm };
     try {
@@ -694,127 +535,6 @@ test('reasoning can be set per model, so the baseline keeps its production defau
     expect(() => resolveReasoningByModel({ reasoning: ['not-a-model:low'] }, models, { baseline })).toThrow(/not in this run/);
 });
 
-test('raster stamps each page header once, instead of stacking it on the model header', () => {
-    const { pageBody } = require('../scripts/lib/arms');
-    // The model is told to open with a header, and this arm sends one image per
-    // request — so its header always says 1 and must not survive the wrap.
-    expect(pageBody('=== STRANICA 1 ===\nODVJETNIK ANTE KUKOČ')).toBe('ODVJETNIK ANTE KUKOČ');
-    expect(pageBody('=== STRANICA 1 === ODVJETNIK ANTE KUKOČ')).toBe('ODVJETNIK ANTE KUKOČ');
-    // A model that mislabels the page (it only ever sees one image) is still
-    // reduced to plain body text.
-    expect(pageBody('=== STRANICA 2 ===\nRJEŠENJE')).toBe('RJEŠENJE');
-    // No header at all: the text is kept verbatim.
-    expect(pageBody('RJEŠENJE\nTRGOVAČKI SUD')).toBe('RJEŠENJE\nTRGOVAČKI SUD');
-    // Repeated headers (the old double-stamp) leave nothing behind.
-    expect(pageBody('=== STRANICA 1 ===\nA\n=== STRANICA 2 ===\nB')).toBe('A\n\nB');
-});
-
-test('a two-page raster cell counts one header per page, not four', () => {
-    const { pageBody } = require('../scripts/lib/arms');
-    // This is the shape that produced markers [1,1,2,1] on 1:Podnesak.pdf: the
-    // model header plus the harness wrapper, for each of two pages.
-    const modelReplies = ['=== STRANICA 1 ===\nprva stranica', '=== STRANICA 1 ===\ndruga stranica'];
-    const text = modelReplies
-        .map((reply, index) => {
-            const body = pageBody(reply);
-            return body ? `=== STRANICA ${index + 1} ===\n${body}` : '';
-        })
-        .filter(Boolean)
-        .join('\n\n');
-    const markers = [...text.matchAll(/===\s*STRANICA\s+(\d+)\s*===/g)].map((m) => Number(m[1]));
-    expect(markers).toEqual([1, 2]);
-    expect(text).toContain('druga stranica');
-});
-
-async function rasterResult(replies, inspect) {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pdf-raster-accounting-'));
-    const filePath = path.join(dir, 'scan.pdf');
-    fs.writeFileSync(filePath, '%PDF stub');
-    const pdf = { numPages: 2, getPage: jest.fn().mockResolvedValue({}), destroy: jest.fn().mockResolvedValue() };
-    jest.doMock('pdfjs-dist/legacy/build/pdf.js', () => ({
-        GlobalWorkerOptions: {}, getDocument: () => ({ promise: Promise.resolve(pdf) }),
-    }));
-    jest.doMock('../court-analysis/agents/analysis-agent', () => ({
-        ...jest.requireActual('../court-analysis/agents/analysis-agent'),
-        renderPageToJpeg: jest.fn().mockResolvedValue(Buffer.from('page')),
-    }));
-    let runRasterAnalysis;
-    jest.isolateModules(() => { ({ runRasterAnalysis } = require('../scripts/lib/arms')); });
-    const fetchImpl = jest.fn();
-    for (const reply of replies) fetchImpl.mockResolvedValueOnce({
-        ok: true, status: 200, text: async () => JSON.stringify(reply),
-    });
-    try {
-        const result = await runRasterAnalysis('x/y', { filePath, pages: 2 }, {
-            requestOptions: { apiKey: 'mock', fetchImpl, maxRetries: 0 },
-        });
-        await inspect(result, fetchImpl);
-    } finally {
-        jest.dontMock('pdfjs-dist/legacy/build/pdf.js');
-        jest.dontMock('../court-analysis/agents/analysis-agent');
-        fs.rmSync(dir, { recursive: true, force: true });
-    }
-}
-
-const rasterReply = (content, usage) => ({ choices: [{ message: { content } }], usage, provider: 'mock' });
-
-test('raster analysis sums OCR and final-analysis tokens including reasoning details', async () => {
-    await rasterResult([
-        rasterReply('page one', { prompt_tokens: 10, completion_tokens: 2, total_tokens: 12, cost: 0.01, completion_tokens_details: { reasoning_tokens: 1 } }),
-        rasterReply('page two', { prompt_tokens: 20, completion_tokens: 3, total_tokens: 23, cost: 0.02, completion_tokens_details: { reasoning_tokens: 2 } }),
-        rasterReply(JSON.stringify(extractionJson), { prompt_tokens: 30, completion_tokens: 4, total_tokens: 34, cost: 0.03, completion_tokens_details: { reasoning_tokens: 3 } }),
-    ], (result, fetchImpl) => {
-        expect(fetchImpl).toHaveBeenCalledTimes(3);
-        expect(result.usage).toMatchObject({ prompt_tokens: 60, completion_tokens: 9, total_tokens: 69, completion_tokens_details: { reasoning_tokens: 6 } });
-        expect(result.cost).toBeCloseTo(0.06);
-        expect(result.costIncomplete).toBe(false);
-        expect(result.errors).toEqual([]);
-    });
-});
-
-test('raster analysis retains partial OCR failures and their costs after successful analysis', async () => {
-    await rasterResult([
-        { error: { message: 'page provider failed' }, usage: { total_tokens: 5, cost: 0.01 } },
-        rasterReply('page two', { total_tokens: 10, cost: 0.02 }),
-        rasterReply(JSON.stringify(extractionJson), { total_tokens: 15, cost: 0.03 }),
-    ], (result) => {
-        expect(result.errors).toEqual([{ message: 'page provider failed' }]);
-        expect(result.failedCall).toBe(false);
-        expect(result.json.valid).toBe(true);
-        expect(result.usage.total_tokens).toBe(30);
-        expect(result.cost).toBeCloseTo(0.06);
-        expect(result.groundingText).not.toContain('STRANICA 1');
-    });
-});
-
-test('empty attempted raster is a costed failure, not a skipped arm', async () => {
-    await rasterResult([
-        rasterReply('=== STRANICA 1 ===', { total_tokens: 5, cost: 0.01 }),
-        { error: { message: 'OCR failed' }, usage: { total_tokens: 10, cost: 0.02 } },
-    ], (result, fetchImpl) => {
-        expect(fetchImpl).toHaveBeenCalledTimes(2);
-        expect(result.skipped).toBeUndefined();
-        expect(result.failedCall).toBe(true);
-        expect(result.errors).toContainEqual({ message: 'OCR failed' });
-        expect(result.cost).toBeCloseTo(0.03);
-        expect(result.usage.total_tokens).toBe(15);
-        const [reliability] = require('../scripts/benchmark-pdf-engines').summarizeRows([{ ...result, arm: 'local-raster', model: 'x/y', documentType: 'scan' }]);
-        expect(reliability).toMatchObject({ N: 1, errors: 1, errorRate: 1, reportedCostCells: 1 });
-        expect(reliability.costPerCell).toBeCloseTo(0.03);
-    });
-});
-
-test('raster stops before another page or analysis when OCR cost is unknown', async () => {
-    await rasterResult([
-        rasterReply('page one', { total_tokens: 5 }),
-    ], (result, fetchImpl) => {
-        expect(fetchImpl).toHaveBeenCalledTimes(1);
-        expect(result.cost).toBeNull();
-        expect(result.costIncomplete).toBe(true);
-        expect(result.failedCall).toBe(true);
-    });
-});
-
 test('cost summaries exclude unknown and partial subtotals while retaining reliability', () => {
     const { summarizeRows } = require('../scripts/benchmark-pdf-engines');
     const base = { arm: 'local-raster', model: 'x/y', documentType: 'scan', pages: 2, latency: 10 };
@@ -829,21 +549,6 @@ test('cost summaries exclude unknown and partial subtotals while retaining relia
     expect(unknown).toMatchObject({ reportedCostCells: 0, costPerCell: null, costPerPage: null });
 });
 
-test('raster retains a reported cost subtotal without treating unreported analysis as free', async () => {
-    await rasterResult([
-        rasterReply('page one', { total_tokens: 5, cost: 0.01 }),
-        rasterReply('page two', { total_tokens: 10, cost: 0.02 }),
-        rasterReply('{}', { total_tokens: 15 }),
-    ], (result) => {
-        expect(result.cost).toBeCloseTo(0.03);
-        expect(result.costIncomplete).toBe(true);
-        expect(result.usage.total_tokens).toBe(30);
-        const [summary] = require('../scripts/benchmark-pdf-engines').summarizeRows([{
-            ...result, arm: 'local-raster', model: 'x/y', documentType: 'scan',
-        }]);
-        expect(summary).toMatchObject({ N: 1, reportedCostCells: 0, incompleteCostCells: 1, costPerCell: null });
-    });
-});
 
 test('partial request failure with a valid answer keeps JSON rates bounded and reliability separate', () => {
     const base = { arm: 'local-raster', model: 'x/y', documentType: 'scan' };

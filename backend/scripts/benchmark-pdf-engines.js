@@ -6,9 +6,9 @@ const path = require('path');
 const crypto = require('crypto');
 const { DEFAULT_MODEL, requestChat, extractAssistantText, ANALYSIS_MAX_TOKENS, DEFAULT_REQUEST_TIMEOUT_MS } = require('./lib/openrouter-client');
 const { getCapabilities, fetchModelMetadata, parseCapabilityOverride, probeModel, readCache, resolveCapabilities, writeCache } = require('./lib/capabilities');
-const { buildArmMatrix, makeAnalysisRegistry, analysisArmsForModel } = require('./lib/arms');
+const { buildArmMatrix, makeAnalysisRegistry, analysisArmsForModel, makeArmRegistry } = require('./lib/arms');
 const { flattenManifest, selectSample } = require('./lib/selection');
-const { computeTextMetrics, jsonValidity, summarizeTextMetrics, isEffectivelyEmpty, effectiveContentChars } = require('./lib/metrics');
+const { jsonValidity, summarizeTextMetrics, effectiveContentChars } = require('./lib/metrics');
 const { scoreGold } = require('./lib/gold');
 const { quoteGrounding } = require('./lib/grounding-metrics');
 const { buildAnalysisPrompt, extractTextFromFile } = require('../court-analysis/agents/analysis-agent');
@@ -16,17 +16,36 @@ const { OIB_CASE_DOCS, SMOKE_DOC_IDS, assertRunScope } = require('./lib/lab-docu
 const { shouldBoundAnalysis, CHUNK_SIZE, CHUNK_OVERLAP } = require('./lib/bounded-analysis');
 const { splitTextIntoChunks } = require('../court-analysis/reasoning/chunker');
 
-function analysisDocumentSkipReason(arm, doc, args) {
-    if (arm.id === 'local-text' && doc.textLayer === false) return 'no-text-layer';
-    if (arm.id === 'local-raster' && doc.textLayer !== false) return 'not-a-scan';
-    if (args.scope !== 'smoke' && args['engines-on-text-layer'] !== true
-        && ['or-cloudflare', 'or-mistral-ocr'].includes(arm.id) && doc.textLayer === true) return 'text-layer';
-    return null;
+const TABLE_HEADERS_DEFAULT = 'off';
+
+function normalizeTableHeaders(value) {
+    const setting = value ?? TABLE_HEADERS_DEFAULT;
+    if (!['on', 'off'].includes(setting)) throw new Error('--table-headers must be on or off.');
+    return setting;
+}
+
+function normalizeAnalysisCondition(value) {
+    const setting = value ?? 'both';
+    if (!['both', 'structured_mode'].includes(setting)) {
+        throw new Error('--analysis-condition must be both or structured_mode.');
+    }
+    return setting;
+}
+function analysisDocumentSkipReason(arm) {
+    return arm.id === 'local-text' ? null : 'not-canonical-text-arm';
 }
 
 const FIXTURE_ROOT = path.resolve(__dirname, '../tests/fixtures/real-documents');
 const DEFAULT_MANIFEST = path.join(FIXTURE_ROOT, '66124057408/manifest.json');
 const OUTPUT_ROOT = path.resolve(__dirname, '../data/pdf-engine-bench');
+const STAGE_T_DOC_IDS = [
+    '6:Prilog St-2_2013-1208-1 - Račun Adria Rijeka 2-2025 (1).pdf',
+    '19:Prilog St-2_2013-1175-1 - Kerum doo u stečaju Iznosi tražbina i troškova postupka.pdf',
+    '26:Prilog St-2_2013-1159-2 - Prilog 2. - Specifikacija djelomičnog namirenja tražbine B2 KAPITAL d.o.o..pdf',
+    '29:Prilog St-2_2013-1153-4 - IOS.pdf',
+    '1:Podnesak.pdf',
+    '10:Troškovnik.pdf',
+];
 const TRANSCRIPT_PROMPT = 'Transcribe the source faithfully. Preserve every word, number, date, identifier, and table row. Do not summarize.';
 // USD per 1M tokens, for dry-run estimates only. Actual spend always comes from
 // OpenRouter's reported `usage.cost`; these numbers must never enter a report as
@@ -60,17 +79,66 @@ function resolvePins(args = {}) {
 
 function parseArgs(argv) {
     const args = {};
-    for (const arg of argv) {
-        const match = /^--([^=]+)(?:=(.*))?$/.exec(arg);
+    const valueFlags = new Set([
+        'doc-id', 'models', 'docs', 'capability', 'provider', 'pin', 'arms', 'reasoning',
+        'scope', 'sample', 'seed', 'baseline', 'baseline-arm', 'max-cost', 'max-docs',
+        'max-pages', 'timeout-ms', 'reasoning-tokens', 'analysis-tokens', 'analysis-mode',
+        'raster-max-pages', 'known-parties', 'gold-dir', 'manifest', 'repeats', 'concurrency',
+        'table-headers', 'analysis-condition', 'carry-from',
+    ]);
+    for (let index = 0; index < argv.length; index += 1) {
+        const match = /^--([^=]+)(?:=(.*))?$/.exec(argv[index]);
         if (!match) continue;
         const key = match[1];
-        if (match[2] !== undefined) {
-            if (key === 'doc-id') args[key] = [...(args[key] || []), match[2]];
-            else if (['models', 'docs', 'capability', 'provider', 'pin', 'arms', 'reasoning'].includes(key)) args[key] = [...(args[key] || []), ...match[2].split(',')];
-            else args[key] = match[2];
+        let value = match[2];
+        if (value === undefined && valueFlags.has(key) && argv[index + 1] && !argv[index + 1].startsWith('--')) {
+            value = argv[++index];
+        }
+        if (value !== undefined) {
+            if (key === 'doc-id') args[key] = [...(args[key] || []), value];
+            else if (['models', 'docs', 'capability', 'provider', 'pin', 'arms', 'reasoning'].includes(key)) {
+                args[key] = [...(args[key] || []), ...value.split(',')];
+            } else args[key] = value;
         } else args[key] = true;
     }
+    args['table-headers'] = normalizeTableHeaders(args['table-headers']);
+    args['analysis-condition'] = normalizeAnalysisCondition(args['analysis-condition']);
     return args;
+}
+
+function writePartialReportSync(outputDir, rows, signal = 'SIGINT') {
+    const report = {
+        status: 'interrupted',
+        signal,
+        writtenAt: new Date().toISOString(),
+        rows: rows.filter(Boolean),
+    };
+    fs.writeFileSync(path.join(outputDir, 'report-partial.json'), JSON.stringify(report, null, 2), { mode: 0o600 });
+    return report;
+}
+
+function registerPartialReportHandlers({ outputDir, getRows, processObject = process }) {
+    const handleSignal = (signal) => {
+        try {
+            writePartialReportSync(outputDir, getRows(), signal);
+        } catch (error) {
+            console.error(`[pdf-engine-benchmark] failed to flush partial report: ${error.message}`);
+        }
+        const exitCode = signal === 'SIGINT' ? 130 : 143;
+        if (typeof processObject.exit === 'function') processObject.exit(exitCode);
+        else processObject.exitCode = exitCode;
+    };
+    const onInterrupt = () => handleSignal('SIGINT');
+    const onTerminate = () => handleSignal('SIGTERM');
+    processObject.on('SIGINT', onInterrupt);
+    processObject.on('SIGTERM', onTerminate);
+    return {
+        flush: handleSignal,
+        dispose() {
+            processObject.off?.('SIGINT', onInterrupt);
+            processObject.off?.('SIGTERM', onTerminate);
+        },
+    };
 }
 
 // Some challengers (GLM 5.3 Flash among them) think by default. Reasoning
@@ -79,6 +147,8 @@ function parseArgs(argv) {
 // longer documents. When reasoning is enabled, give it its own headroom so the
 // answer keeps the full production budget.
 const DEFAULT_REASONING_MAX_TOKENS = 8192;
+// Every Stage A cell records independent raw and structured model requests.
+const ANALYSIS_CONDITION_COUNT = 2;
 const REASONING_EFFORTS = new Set(['low', 'medium', 'high']);
 
 // Page images are expensive and slow, and production never reads more than its
@@ -481,9 +551,8 @@ async function execute({ args, documents, models, capabilitiesByModel, outputDir
         ...(pins[model] ? { order: [pins[model]] } : args.provider ? { order: args.provider } : {}),
         allow_fallbacks: args['allow-fallbacks'] === true,
         data_collection: 'deny',
+        ...(model === 'z-ai/glm-5.3-flash' ? { require_parameters: true } : {}),
     });
-    const parserRecovery = args['parser-recovery'] || 'auto';
-    if (!['auto', 'off'].includes(parserRecovery)) throw new Error('--parser-recovery must be auto or off.');
     const analysisMode = args['analysis-mode'] || 'bounded';
     if (!['bounded', 'single'].includes(analysisMode)) throw new Error('--analysis-mode must be bounded or single.');
     const timeoutMs = args['timeout-ms'] != null ? Number(args['timeout-ms']) : DEFAULT_REQUEST_TIMEOUT_MS;
@@ -501,19 +570,20 @@ async function execute({ args, documents, models, capabilitiesByModel, outputDir
     const budgetFor = (model) => analysisMaxTokens + reasoningBudget(reasoning.byModel[model], reasoningTokensArg);
     const context = {
         requestOptions, capabilitiesByModel,
-        parserRecovery,
         analysisMode,
+        tableHeaders: args['table-headers'],
+        analysisConditionOnly: args['analysis-condition'] === 'structured_mode' ? 'structured_mode' : null,
         knownParties: args['known-parties'] || 'Participant information was not available from the source page.',
         reasoning: null,
         analysisMaxTokens,
         analysisAnswerTokens: analysisMaxTokens,
         maxPages: Number(args['max-pages'] || Infinity),
-        // Page images are bounded by the same cap production OCR uses, so the
-        // bench cannot render more pages than a real run would ever read.
         rasterMaxPages: Number(args['raster-max-pages'] || process.env.OCR_MAX_PAGES || RASTER_MAX_PAGES_DEFAULT),
         mistralPageRate: args['us-region'] ? 2.2 : 2,
+        noCache: args['no-cache'] === true,
+        forceRerun: args['force-rerun'] === true,
     };
-    const baselineArm = args['baseline-arm'] || 'or-native';
+    const baselineArm = args['baseline-arm'] || 'local-text';
     // `--arms` exists so a single cell can be re-run as a cheap diagnostic
     // instead of paying for a whole matrix.
     const onlyArms = args.arms ? new Set(args.arms) : null;
@@ -533,21 +603,8 @@ async function execute({ args, documents, models, capabilitiesByModel, outputDir
     const skipped = matrix.filter((item) => item.status === 'SKIPPED');
     const rows = [];
     const parserRows = [];
-    const fallbackRows = [];
 
-    // Some arms only make sense on some documents. The rules are stated here,
-    // once, so the dry-run plan, the progress denominator and the live loop
-    // cannot disagree about what was actually going to run.
-    //
-    //  - the text control needs text; on a scan pdf.js returns nothing, and
-    //    scoring "" would be a fake failure.
-    //  - a page-image arm reads a scan; a born-digital PDF already has text,
-    //    and rasterizing it would measure OCR against itself.
-    //  - the file-parser arms are a *diagnostic* on a text layer (that is the
-    //    only place parser fidelity can be scored at all), but they are also
-    //    paid calls. Smoke keeps them on; the paid pilot turns them off unless
-    //    `--engines-on-text-layer` asks for them.
-    const documentSkipReason = (arm, doc) => analysisDocumentSkipReason(arm, doc, args);
+    const documentSkipReason = (arm) => analysisDocumentSkipReason(arm);
     const plannedCells = documents.reduce((total, doc) => total + models.reduce((sum, model) => sum + armsByModel[model]
         .filter((arm) => matrix.find((item) => item.model === model && item.arm === arm.id)?.status === 'READY')
         .filter((arm) => !documentSkipReason(arm, doc)).length, 0), 0);
@@ -564,28 +621,15 @@ async function execute({ args, documents, models, capabilitiesByModel, outputDir
         log(`warning · cost cap stops new cells after completion; up to ${concurrency} cells may already be in flight (a raster cell contains multiple page calls)`);
     }
     log(`reasoning · ${models.map((model) => `${model}=${describeReasoning(reasoning.byModel[model])} (max_tokens ${budgetFor(model)})`).join(' · ')}`);
-    log(`parser recovery · ${parserRecovery} · lossless rewrite, then adaptive same-engine page parsing · no downsampling`);
-    log(`analysis policy · ${analysisMode} · dense/long text up to ${CHUNK_SIZE} characters per segment; native/parser PDFs one page per request`);
+    log(`analysis policy · ${analysisMode} · canonical frozen text only · ${CHUNK_SIZE} characters per text segment`);
     if (reasoning.global && baselineModel && models.includes(baselineModel) && !reasoning.overridesBaseline) {
         log(`warning · --reasoning=${describeReasoning(reasoning.global)} also applies to the baseline ${baselineModel}, which no longer represents production. Pass --reasoning=${baselineModel}:default to keep the reference condition.`);
     }
     if (skipped.length) log(`unsupported cells: ${skipped.map((item) => `${item.arm}/${item.model}`).join(', ')}`);
 
-    // pdf.js is free, so the embedded text layer is read once per document and
-    // reused as both the `local-text` input and the reference for scoring what
-    // the OpenRouter parsers actually returned.
     const localTextByDoc = new Map();
     const readLocalText = async (doc) => {
-        if (!localTextByDoc.has(doc.docId)) {
-            localTextByDoc.set(doc.docId, (async () => {
-                try {
-                    const extraction = doc.benchExtraction || await extractTextFromFile(doc.filePath);
-                    return { text: String(extraction.text || ''), pages: extraction.pages };
-                } catch (error) {
-                    return { text: '', pages: null, error: error.message };
-                }
-            })());
-        }
+        if (!localTextByDoc.has(doc.docId)) localTextByDoc.set(doc.docId, Promise.resolve(readFrozenTranscript(doc)));
         return localTextByDoc.get(doc.docId);
     };
 
@@ -600,7 +644,15 @@ async function execute({ args, documents, models, capabilitiesByModel, outputDir
     const rowByOrder = [];
     const parserRowByOrder = [];
     const runnable = [];
+    const progressRows = new Map();
     let order = 0;
+    const partialReportHooks = registerPartialReportHandlers({
+        outputDir,
+        getRows: () => [
+            ...rowByOrder.filter(Boolean).map((entry) => entry.row),
+            ...progressRows.values(),
+        ],
+    });
 
     for (let repeat = 1; repeat <= repeats; repeat += 1) {
         for (const doc of documents) {
@@ -618,18 +670,27 @@ async function execute({ args, documents, models, capabilitiesByModel, outputDir
                         rowByOrder[cellOrder] = { row: { ...base, status: 'SKIPPED', reason: `skipped:${docSkip}` } };
                         continue;
                     }
-                    if (dryRun) {
-                        if (arm.id === 'local-text') {
-                            const local = await readLocalText(doc);
-                            if (!String(local.text || '').trim()) {
-                                rowByOrder[cellOrder] = { row: { ...base, status: 'SKIPPED', reason: 'skipped:no-text-layer' } };
-                                continue;
-                            }
-                        }
-                        rowByOrder[cellOrder] = { row: { ...base, planned: true } };
+                    const local = await readLocalText(doc);
+                    if (local.error || String(local.text || '').trim().length < 100 || local.verified === false) {
+                        rowByOrder[cellOrder] = {
+                            row: { ...base, status: 'SKIPPED', reason: local.error || local.stageAReason || 'canonical-transcript-under-100-characters' },
+                        };
                         continue;
                     }
-                    runnable.push({ order: cellOrder, base, arm, doc, model, repeat });
+                    const cellBase = {
+                        ...base,
+                        transcriptSourceArm: local.transcriptSourceArm || local.sourceArm || null,
+                        transcriptProvider: local.transcriptProvider || null,
+                    };
+                    const canonicalDoc = {
+                        ...doc,
+                        benchExtraction: { text: local.text, pages: doc.pages, pageRanges: local.pageMap || [] },
+                    };
+                    if (dryRun) {
+                        rowByOrder[cellOrder] = { row: { ...cellBase, planned: true } };
+                        continue;
+                    }
+                    runnable.push({ order: cellOrder, base: cellBase, arm, doc: canonicalDoc, model, repeat });
                 }
             }
         }
@@ -649,67 +710,29 @@ async function execute({ args, documents, models, capabilitiesByModel, outputDir
             label,
             beforeRequest: () => !aborted,
             recordRequest: (request, estimatedParserFee = 0) => {
-                if (request.requestRejection === 'pdf-parser-size-limit') return !aborted;
                 const breach = costGuard.add(request.cost, estimatedParserFee);
                 if (recordCapBreach(breach)) log(`stopped · cost cap reached between requests: ${breach.message}`);
                 if (!Number.isFinite(request.cost) && !aborted) {
                     aborted = { reason: 'cost-unknown', message: 'Provider request did not report cost; stopping before another request.' };
-                    log('stopped · provider request cost is unknown; no further segment or recovery requests will start');
+                    log('stopped · provider request cost is unknown; no further segment requests will start');
                 }
                 return !aborted;
+            },
+            onRequestProgress: (analysisSegmentation, condition = 'raw_parse') => {
+                const metadataKey = condition === 'structured_mode' ? 'structuredAnalysisSegmentation' : 'analysisSegmentation';
+                progressRows.set(cellOrder, {
+                    ...(progressRows.get(cellOrder) || base),
+                    status: 'RUNNING',
+                    [metadataKey]: analysisSegmentation,
+                });
             },
         };
 
         try {
             const result = await registry[arm.id](model, doc, cellContext);
-            let fallback = null;
-            if (result.requestRejection === 'pdf-parser-size-limit' && parserRecovery === 'off' && arm.engine && !aborted) {
-                const fallbackArm = doc.textLayer === true ? 'local-text' : doc.textLayer === false ? 'local-raster' : null;
-                if (!fallbackArm) {
-                    fallback = { docId: doc.docId, sourceArm: arm.id, arm: null, model, repeat, status: 'unavailable', reason: 'unknown-text-layer' };
-                } else if (fallbackArm === 'local-raster' && capabilitiesByModel[model]?.imageInput !== true) {
-                    fallback = { docId: doc.docId, sourceArm: arm.id, arm: fallbackArm, model, repeat, status: 'unavailable', reason: 'image-input-unsupported' };
-                } else if (typeof registry[fallbackArm] !== 'function') {
-                    fallback = { docId: doc.docId, sourceArm: arm.id, arm: fallbackArm, model, repeat, status: 'unavailable', reason: 'fallback-arm-unavailable' };
-                } else {
-                    try {
-                        const fallbackResult = await registry[fallbackArm](model, doc, {
-                            ...cellContext,
-                            label: `${label} · fallback ${fallbackArm}`,
-                        });
-                        const fallbackCostError = costGuard.add(fallbackResult.cost, fallbackResult.estimatedParserFee);
-                        const fallbackCapBreached = recordCapBreach(fallbackCostError);
-                        const fallbackCostIncomplete = fallbackResult.costIncomplete === true || !Number.isFinite(fallbackResult.cost);
-                        if (fallbackCostIncomplete && !aborted) {
-                            aborted = { reason: 'cost-unknown', message: 'Fallback did not report call cost; stopping before scheduling another call.' };
-                            log('stopped · fallback provider did not report cost; already-running cells may still finish');
-                        }
-                        fallback = {
-                            docId: doc.docId, sourceArm: arm.id, arm: fallbackArm, model, repeat,
-                            status: fallbackResult.skipped ? 'skipped' : fallbackResult.failedCall ? 'failed' : 'completed',
-                            cost: fallbackResult.cost ?? null, costIncomplete: fallbackCostIncomplete,
-                            latency: fallbackResult.latency ?? null, parsed: fallbackResult.parsed ?? null,
-                            json: fallbackResult.json ?? null, errors: fallbackResult.errors || [],
-                            provider: fallbackResult.provider || null,
-                        };
-                        if (fallbackCapBreached) log(`stopped · cost cap reached: ${fallbackCostError.message}`);
-                    } catch (error) {
-                        fallback = {
-                            docId: doc.docId, sourceArm: arm.id, arm: fallbackArm, model, repeat,
-                            status: 'failed', cost: null, costIncomplete: true, errors: [error.message],
-                        };
-                        if (!aborted) {
-                            aborted = { reason: 'cost-unknown', message: 'Fallback failed before reporting its cost; stopping before scheduling another call.' };
-                            log('stopped · fallback cost is unknown; already-running cells may still finish');
-                        }
-                    }
-                }
-                fallbackRows.push(fallback);
-                log(`  ↳ local fallback · ${fallback.arm || 'unavailable'} · ${fallback.status}${fallback.reason ? ` · ${fallback.reason}` : ''}`);
-            }
             const costCapError = result.costAccounted ? null : costGuard.add(result.cost, result.estimatedParserFee);
             const capBreached = recordCapBreach(costCapError);
-            if (result.costIncomplete && result.requestRejection !== 'pdf-parser-size-limit' && !aborted) {
+            if (result.costIncomplete && !aborted) {
                 aborted = { reason: 'cost-unknown', message: 'OpenRouter did not report this call cost; stopping before scheduling another call.' };
                 log('stopped · provider did not report cost; already-running cells may still finish');
             }
@@ -719,18 +742,19 @@ async function execute({ args, documents, models, capabilitiesByModel, outputDir
                 };
                 log(`[${cellNumber}/${totalCells}] — ${label} · ${result.skipped} · ${formatSeconds(Date.now() - cellStarted)}`);
                 if (capBreached) log(`stopped · cost cap reached: ${costCapError.message}`);
+                progressRows.delete(cellOrder);
                 return;
             }
 
-            const reportedBase = result.parserRecovery
-                ? { ...base, documentType: `${base.documentType} / ${result.parserRecovery.status === 'completed' ? `${result.parserRecovery.mode}-parser` : 'recovery-failed'}` }
-                : { ...base };
+            const reportedBase = { ...base };
             if (result.analysisSegmentation) {
-                reportedBase.documentType += result.analysisSegmentation.status === 'completed' ? ' / bounded-analysis' : ' / bounded-analysis-failed';
+                reportedBase.documentType += result.analysisSegmentation.status === 'completed'
+                    ? ' / bounded-analysis'
+                    : result.analysisSegmentation.status === 'partial' ? ' / bounded-analysis-partial' : ' / bounded-analysis-failed';
             }
             const { text, parserText, groundingText, ...rest } = result;
             const safeName = crypto.createHash('sha256').update(`${doc.docId}:${arm.id}:${model}:${repeat}`).digest('hex').slice(0, 16);
-            fs.writeFileSync(path.join(outputDir, `analysis-${safeName}.json`), JSON.stringify({ ...reportedBase, text, parserText, parsed: result.parsed, json: result.json, usage: result.usage, finishReason: result.finishReason ?? null, latency: result.latency, cost: result.cost, costIncomplete: result.costIncomplete, requestRejection: result.requestRejection ?? null, httpStatus: result.httpStatus ?? null, diagnostics: result.diagnostics ?? null, parserRecovery: result.parserRecovery ?? null, analysisSegmentation: result.analysisSegmentation ?? null, errors: result.errors, failedCall: result.failedCall, provider: result.provider }, null, 2), { mode: 0o600 });
+            fs.writeFileSync(path.join(outputDir, `analysis-${safeName}.json`), JSON.stringify({ ...reportedBase, text, parserText, parsed: result.parsed, json: result.json, jsonConditions: result.jsonConditions, conditionResults: result.conditionResults ?? null, repairOverhead: result.repairOverhead, usage: result.usage, finishReason: result.finishReason ?? null, latency: result.latency, cost: result.cost, costIncomplete: result.costIncomplete, httpStatus: result.httpStatus ?? null, diagnostics: result.diagnostics ?? null, analysisSegmentation: result.analysisSegmentation ?? null, structuredAnalysisSegmentation: result.structuredAnalysisSegmentation ?? null, requestMetadata: result.requestMetadata ?? null, errors: result.errors, failedCall: result.failedCall, provider: result.provider }, null, 2), { mode: 0o600 });
             const gold = goldByDoc.get(doc.docId) || null;
             const ownGrounding = String(groundingText || '').trim() ? quoteGrounding(result.parsed, groundingText) : null;
             const row = {
@@ -743,29 +767,14 @@ async function execute({ args, documents, models, capabilitiesByModel, outputDir
                 goldAccuracy: gold ? scoreGold(gold, result.parsed) : null,
                 quoteGroundingOwn: ownGrounding,
             };
-            let parserRow = null;
-            if (arm.engine && arm.engine !== 'native') {
-                const local = await readLocalText(doc);
-                parserRow = {
-                    docId: doc.docId, arm: arm.id, model, documentType: reportedBase.documentType, pages: doc.pages,
-                    empty: isEffectivelyEmpty(parserText),
-                    emptyRaw: !String(parserText || '').trim(),
-                    metrics: computeTextMetrics(local.text, parserText || '', null),
-                };
-            }
             rowByOrder[cellOrder] = { row };
-            if (parserRow) parserRowByOrder[cellOrder] = parserRow;
-
+            progressRows.delete(cellOrder);
             const answerState = result.failedCall ? 'failed' : result.json?.valid ? 'JSON ✓' : 'JSON ✗';
             const groundingState = ownGrounding ? `${ownGrounding.grounded}/${ownGrounding.total} grounded` : 'quotes n/a';
             log(`[${cellNumber}/${totalCells}] ✓ ${label} · ${formatSeconds(Date.now() - cellStarted)} · ${formatCost(result.cost)} · ${result.provider || 'unknown'} · ${answerState} · ${groundingState}${usageSummary(result.usage)}`);
-            if (result.parserRecovery) log(`  ↳ PDF recovery · ${result.parserRecovery.mode} · ${result.parserRecovery.status} · ${result.parserRecovery.requests.length} request(s) · ${result.parserRecovery.chunks.length} accepted page range(s)`);
             if (result.analysisSegmentation) log(`  ↳ bounded analysis · ${result.analysisSegmentation.status} · ${result.analysisSegmentation.requests.length} segment operation(s) · ${result.analysisSegmentation.segments.length} source segment(s)`);
             if (result.failedCall && result.errors?.length) {
                 log(`  ↳ ${result.errors.map(briefError).join(' · ')}`);
-            }
-            if (result.requestRejection === 'pdf-parser-size-limit') {
-                log('  ↳ OpenRouter rejected this PDF at the parser size limit (HTTP 400); the parser result remains failed and any local fallback is reported separately.');
             }
             if (!result.parsed && result.finishReason === 'length') {
                 log(`  ↳ output hit max_tokens (${cellContext.analysisMaxTokens}); raise --analysis-tokens or lower --reasoning. finish=length`);
@@ -773,14 +782,17 @@ async function execute({ args, documents, models, capabilitiesByModel, outputDir
             if (capBreached) log(`stopped · cost cap reached: ${costCapError.message}`);
         } catch (error) {
             if (recordCapBreach(error)) {
+                progressRows.delete(cellOrder);
                 log(`stopped · cost cap reached: ${error.message}`);
                 return;
             }
             rowByOrder[cellOrder] = { row: { ...base, text: '', errors: [error.message] } };
+            progressRows.delete(cellOrder);
             log(`[${cellNumber}/${totalCells}] ✗ ${label} · ${formatSeconds(Date.now() - cellStarted)} · ${briefError(error)}`);
             logger?.debug?.(error?.stack || String(error));
         }
     };
+
 
     let nextCell = 0;
     const worker = async () => {
@@ -790,6 +802,7 @@ async function execute({ args, documents, models, capabilitiesByModel, outputDir
         }
     };
     await Promise.all(Array.from({ length: Math.min(concurrency, runnable.length) }, worker));
+    partialReportHooks.dispose();
     rows.push(...rowByOrder.filter(Boolean).map((entry) => entry.row));
     parserRows.push(...parserRowByOrder.filter(Boolean));
 
@@ -800,11 +813,10 @@ async function execute({ args, documents, models, capabilitiesByModel, outputDir
         extractionSummary: summarizeExtractionRows(rows),
         textMetricSummary: summarizeTextMetrics(parserRows),
         parserMetrics: parserRows,
-        fallbacks: fallbackRows,
         actualCost: costGuard.total(),
         estimatedParserFee: costGuard.estimated(),
         spendTotal: costGuard.spendTotal(),
-        costMissingCalls: rows.filter((row) => row.costIncomplete).length + fallbackRows.filter((row) => row.costIncomplete).length,
+        costMissingCalls: rows.filter((row) => row.costIncomplete).length,
         interpretation: 'Descriptive comparison only; no automatic winner is selected.',
     };
 }
@@ -813,11 +825,233 @@ function assertLiveCaps(args, dryRun) {
     if (dryRun) return;
     for (const flag of ['max-docs', 'max-pages', 'max-cost']) {
         const value = Number(args[flag]);
-        if (args[flag] == null || !Number.isFinite(value) || value < 0 || (flag !== 'max-cost' && value < 1)) {
+        if (args[flag] == null || args[flag] === true || !Number.isFinite(value) || value < 0 || (flag !== 'max-cost' && value < 1)) {
             throw new Error(`Live runs require a finite --${flag} cap; inspect a dry run first.`);
         }
     }
 }
+function transcriptPageMap(text, pageRanges = []) {
+    if (pageRanges.length) {
+        return pageRanges.map(({ pageNumber, startIndex, endIndex }) => ({ pageNumber, startIndex, endIndex }));
+    }
+    const markers = [...String(text || '').matchAll(/===\s*STRANICA\s+(\d+)\s*===\s*/gu)];
+    if (!markers.length) return text ? [{ pageNumber: 1, startIndex: 0, endIndex: text.length }] : [];
+    return markers.map((marker, index) => ({
+        pageNumber: Number(marker[1]),
+        startIndex: marker.index + marker[0].length,
+        endIndex: markers[index + 1]?.index ?? text.length,
+    }));
+}
+
+function frozenTranscriptPath(docId, transcriptRoot = path.join(OUTPUT_ROOT, 'fixtures', 'transcripts')) {
+    return path.join(transcriptRoot, `${docId}.json`);
+}
+function persistVerifiedTranscript(filePath, fixture) {
+    if (fixture?.canonicalTranscript?.verified !== true || fixture?.stageA?.status !== 'ready') return false;
+    fs.mkdirSync(path.dirname(filePath), { recursive: true, mode: 0o700 });
+    fs.writeFileSync(filePath, JSON.stringify(fixture, null, 2), { mode: 0o600 });
+    return true;
+}
+
+function extractTranscriptProvider(fixture, sourceArm) {
+    if (sourceArm === 'local-text') return 'pdfjs';
+    const raw = fixture?.parserRuns?.[sourceArm]?.provider ?? fixture?.canonicalTranscript?.provider ?? null;
+    if (Array.isArray(raw)) {
+        const joined = raw.filter(Boolean).join(', ');
+        return joined || null;
+    }
+    return raw ? String(raw) : null;
+}
+
+function readFrozenTranscript(doc) {
+    if (doc.canonicalTranscript) {
+        const sourceArm = doc.canonicalTranscript.sourceArm || null;
+        return {
+            ...doc.canonicalTranscript,
+            transcriptSourceArm: sourceArm,
+            transcriptProvider: doc.canonicalTranscript.transcriptProvider || extractTranscriptProvider(doc, sourceArm),
+        };
+    }
+    const filePath = frozenTranscriptPath(doc.docId);
+    if (!fs.existsSync(filePath)) return { error: `Frozen transcript missing: ${filePath}` };
+    try {
+        const fixture = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+        const canonical = fixture.canonicalTranscript;
+        if (!canonical || typeof canonical.text !== 'string') {
+            return { error: `Frozen transcript has no canonical text: ${filePath}` };
+        }
+        const sourceArm = canonical.sourceArm || null;
+        return {
+            ...canonical,
+            transcriptSourceArm: sourceArm,
+            transcriptProvider: extractTranscriptProvider(fixture, sourceArm),
+            stageAReason: fixture.stageA?.reason || null,
+        };
+    } catch (error) {
+        return { error: `Frozen transcript could not be read: ${error.message}` };
+    }
+}
+
+async function runStageT({
+    args, outputDir, logger = null, registry = makeArmRegistry(),
+    transcriptRoot = path.join(OUTPUT_ROOT, 'fixtures', 'transcripts'),
+}) {
+    const explicitSelection = Boolean(args.docs?.length || args['doc-id']?.length);
+    const targetDocIds = explicitSelection
+        ? null
+        : args['all-corpus']
+            ? OIB_CASE_DOCS.map((doc) => doc.docId)
+            : STAGE_T_DOC_IDS;
+    const docs = explicitSelection
+        ? resolveRunDocuments(args, 'pilot')
+        : resolveRunDocuments({ ...args, docs: [], 'doc-id': targetDocIds }, 'pilot');
+    const byId = new Map(docs.map((doc) => [doc.docId, doc]));
+    const orderedDocIds = targetDocIds || docs.map((doc) => doc.docId);
+    const missing = orderedDocIds.filter((docId) => !byId.has(docId));
+    if (missing.length) throw new Error(`Stage T fixture selection missing: ${missing.join(', ')}`);
+    const dryRun = Boolean(args['dry-run'] || !args.approved);
+    const maxCost = Number(args['max-cost']);
+    if (!dryRun && (args['max-cost'] === true || !Number.isFinite(maxCost) || maxCost < 0)) {
+        throw new Error('Stage T live runs require a finite non-negative --max-cost.');
+    }
+    const skipExisting = Boolean(args['skip-existing'] && !args['force-rerun'] && !args['no-cache']);
+    const canonicalOnly = Boolean(args['canonical-only']);
+    const model = args.models?.[0] || DEFAULT_MODEL;
+    const costGuard = createCostGuard(dryRun ? Infinity : maxCost);
+    const requestOptions = {
+        apiKey: process.env.OPENROUTER_API_KEY,
+        timeoutMs: args['timeout-ms'] != null ? Number(args['timeout-ms']) : DEFAULT_REQUEST_TIMEOUT_MS,
+        ...(logger ? { onEvent: (event) => logger.event(event) } : {}),
+    };
+    const context = {
+        requestOptions,
+        provider: { ...(args.provider ? { order: args.provider } : {}), allow_fallbacks: false, data_collection: 'deny' },
+        reasoning: parseReasoningArg(args.reasoning?.[0]),
+        maxPages: Infinity,
+        transcriptionMaxTokens: 4096,
+        label: `stage-t · ${model}`,
+    };
+    const summary = { model, maxCost: dryRun ? null : maxCost, actualCost: 0, estimatedCost: 0, documents: [], aborted: null };
+    for (const docId of orderedDocIds) {
+        const doc = byId.get(docId);
+        const scanned = doc.textLayer === false;
+        const canonicalArm = scanned ? 'local-raster' : 'local-text';
+        const arms = canonicalOnly
+            ? [canonicalArm]
+            : (scanned ? ['local-raster', 'or-cloudflare', 'or-mistral-ocr'] : ['local-text', 'or-cloudflare', 'or-mistral-ocr']);
+        const existingPath = frozenTranscriptPath(docId, transcriptRoot);
+        if (skipExisting && fs.existsSync(existingPath)) {
+            try {
+                const existing = JSON.parse(fs.readFileSync(existingPath, 'utf8'));
+                if (existing?.canonicalTranscript?.verified === true && existing?.stageA?.status === 'ready' && String(existing.canonicalTranscript.text || '').trim().length >= 100) {
+                    logger?.info?.(`stage T · ${docId} · cached (${existing.canonicalTranscript.charCount} chars)`);
+                    summary.documents.push({
+                        docId,
+                        status: 'cached',
+                        canonicalArm: existing.canonicalTranscript.sourceArm || canonicalArm,
+                        canonicalCharacters: existing.canonicalTranscript.charCount || existing.canonicalTranscript.text.length,
+                        stageA: 'ready',
+                        fixtureWritten: false,
+                    });
+                    continue;
+                }
+            } catch { /* re-run when unreadable */ }
+        }
+        logger?.info?.(`stage T · ${docId} · ${arms.join(', ')}`);
+        if (dryRun) {
+            summary.documents.push({ docId, status: 'planned', arms, pages: doc.pages || null, scanned });
+            continue;
+        }
+        const results = {};
+        for (const armId of arms) {
+            if (summary.aborted) break;
+            let result;
+            try {
+                const armContext = { ...context, label: `${armId} · ${docId}` };
+                if (armId === 'local-raster') {
+                    armContext.recordRequest = (request) => {
+                        if (!Number.isFinite(request.cost)) {
+                            summary.aborted = { reason: 'cost-unknown', message: 'local-raster page request did not report a complete cost.' };
+                            return false;
+                        }
+                        const breach = costGuard.add(request.cost);
+                        if (breach) {
+                            summary.aborted = { reason: 'cost-cap', message: breach.message };
+                            return false;
+                        }
+                        return true;
+                    };
+                }
+                result = await registry[armId](model, doc, armContext);
+            } catch (error) {
+                result = { text: '', errors: [error.message], cost: null, costIncomplete: armId !== 'local-text' };
+            }
+            const text = String(result.text || '');
+            const cost = Number.isFinite(result.cost) ? result.cost : null;
+            const estimatedParserFee = Number.isFinite(result.estimatedParserFee) ? result.estimatedParserFee : 0;
+            if (armId !== 'local-text' && !result.costAccounted) {
+                const breach = costGuard.add(cost, estimatedParserFee);
+                if (breach) summary.aborted = { reason: 'cost-cap', message: breach.message };
+                else if (result.costIncomplete || cost == null) {
+                    summary.aborted = { reason: 'cost-unknown', message: `${armId} did not report a complete request cost.` };
+                }
+            }
+            results[armId] = {
+                status: text.trim().length < 100 ? 'parser-failure' : result.errors?.length ? 'completed-with-errors' : 'completed',
+                text,
+                charCount: text.length,
+                pageMap: (armId.startsWith('or-') && Number(doc.pages) > 1 && !text.includes('=== STRANICA'))
+                    ? [] : transcriptPageMap(text, result.pageRanges || []),
+                pages: result.pages ?? doc.pages ?? null,
+                provider: result.provider ?? null,
+                cost,
+                estimatedParserFee,
+                costIncomplete: result.costIncomplete === true || (armId !== 'local-text' && cost == null),
+                latencyMs: result.latency ?? result.latencyMs ?? null,
+                usage: result.usage ?? null,
+                errors: [
+                    ...(result.errors || []),
+                    ...(text.trim().length < 100 ? ['Parser output was shorter than 100 characters.'] : []),
+                ],
+            };
+        }
+        const canonical = results[canonicalArm] || { text: '', pageMap: [], errors: ['Canonical Stage T arm did not run.'] };
+        const canonicalLength = String(canonical.text || '').trim().length;
+        const canonicalEligible = canonicalLength >= 100 && !canonical.errors?.length && !canonical.costIncomplete;
+        const eligible = canonicalEligible && !summary.aborted;
+        const stageAReason = canonicalLength < 100
+            ? 'canonical-parser-text-under-100-characters'
+            : !canonicalEligible ? 'canonical-transcript-incomplete'
+                : summary.aborted ? 'stage-t-run-aborted' : null;
+        const fixture = {
+            schemaVersion: 1,
+            document: { docId, title: doc.title, file: path.relative(FIXTURE_ROOT, doc.filePath), pages: doc.pages, textLayer: doc.textLayer === true },
+            canonicalTranscript: {
+                sourceArm: canonicalArm,
+                text: canonical.text || '',
+                charCount: String(canonical.text || '').length,
+                pageMap: canonical.pageMap || [],
+                verified: eligible,
+            },
+            parserRuns: results,
+            stageA: { status: eligible ? 'ready' : 'aborted', reason: stageAReason },
+        };
+        const fixtureWritten = persistVerifiedTranscript(frozenTranscriptPath(docId, transcriptRoot), fixture);
+        summary.documents.push({
+            docId, canonicalArm, canonicalCharacters: fixture.canonicalTranscript.charCount,
+            stageA: fixture.stageA.status, fixtureWritten,
+            parsers: Object.fromEntries(Object.entries(results).map(([id, value]) => [id, value.status])),
+            ...(!eligible ? { canonicalTranscript: fixture.canonicalTranscript, parserRuns: results } : {}),
+        });
+        if (summary.aborted) break;
+    }
+    summary.actualCost = costGuard.total();
+    summary.estimatedCost = costGuard.estimated();
+    fs.writeFileSync(path.join(outputDir, 'stage-t-report.json'), JSON.stringify(summary, null, 2), { mode: 0o600 });
+    logger?.info?.(`stage T complete · actual ${formatCost(summary.actualCost)} · estimated ${formatCost(summary.estimatedCost)}${summary.aborted ? ` · stopped=${summary.aborted.reason}` : ''}`);
+    return summary;
+}
+
 
 // Dry-run estimate. Parser pages are billed per page; the model completion is
 // estimated from a conservative token budget per cell. Real spend always comes
@@ -825,7 +1059,7 @@ function assertLiveCaps(args, dryRun) {
 function estimateRunCost({ models, pages, documents = [], repeats = 1, args = {} }) {
     const rate = args['us-region'] ? 2.2 : 2;
     const baselineModel = args.baseline || null;
-    const baselineArm = args['baseline-arm'] || 'or-native';
+    const baselineArm = args['baseline-arm'] || 'local-text';
     // Reasoning is billed as completion tokens, so a thinking model costs more
     // than the answer alone. Estimate it instead of pretending it is free.
     const reasoning = resolveReasoningByModel(args, models, { baseline: baselineModel });
@@ -834,6 +1068,7 @@ function estimateRunCost({ models, pages, documents = [], repeats = 1, args = {}
     let parserUsd = 0;
     let analysisUsd = 0;
     let analysisRequests = 0;
+    const conditionCount = args['analysis-condition'] === 'structured_mode' ? 1 : ANALYSIS_CONDITION_COUNT;
     const perModel = {};
     for (const model of models) {
         const selected = analysisArmsForModel(model, { baselineModel, baselineArm });
@@ -855,10 +1090,10 @@ function estimateRunCost({ models, pages, documents = [], repeats = 1, args = {}
                         ? doc?.analysisPlan?.textSegments || Math.max(1, Math.ceil(pageCount * 900 / 3150))
                         : Math.max(1, Math.ceil(Math.min(pageCount, Number(args['raster-max-pages'] || RASTER_MAX_PAGES_DEFAULT)) * 8192 / 3150))
                     : 1;
-                analysisRequests += segments * repeats;
+                analysisRequests += segments * repeats * conditionCount;
                 const inputTokens = 3000 * segments + pageCount * 900;
                 const outputTokens = segments * (mayReason ? analysisMaxTokens : Math.min(analysisMaxTokens, 4000 + Math.ceil(pageCount / segments) * 600));
-                modelUsd += ((inputTokens / 1e6) * price.input + (outputTokens / 1e6) * price.output) * repeats;
+                modelUsd += ((inputTokens / 1e6) * price.input + (outputTokens / 1e6) * price.output) * repeats * conditionCount;
                 // A page-image arm makes one transcription call per page before
                 // the analysis call above, so it is not a single-request cell.
                 if (arm.kind === 'image') {
@@ -867,11 +1102,6 @@ function estimateRunCost({ models, pages, documents = [], repeats = 1, args = {}
                     modelUsd += ((ocrInput / 1e6) * price.input + (ocrOutput / 1e6) * price.output) * pageCount * repeats;
                 }
                 if (arm.engine === 'mistral-ocr') parserUsd += pageCount * rate / 1000 * repeats;
-                // Allow one accepted chunk per page before whole-document analysis.
-                // Confirmed size rejects do not reach model inference.
-                if (['cloudflare-ai', 'mistral-ocr'].includes(arm.engine) && args['parser-recovery'] !== 'off') {
-                    modelUsd += ((pageCount * 1000 / 1e6) * price.input + (pageCount / 1e6) * price.output) * repeats;
-                }
             }
         }
         perModel[model] = Number(modelUsd.toFixed(4));
@@ -901,12 +1131,17 @@ async function main() {
     if (!['pilot', 'smoke'].includes(scope)) throw new Error('--scope must be pilot or smoke');
     const overrides = (args.capability || []).map(parseCapabilityOverride);
     const dryRun = Boolean(args['dry-run'] || !args.approved);
-    if (!args.probe) assertLiveCaps(args, dryRun);
+    if (!args.probe && !args['stage-t']) assertLiveCaps(args, dryRun);
     const runId = createRunId();
     const outputDir = path.join(OUTPUT_ROOT, runId);
     fs.mkdirSync(outputDir, { recursive: true, mode: 0o700 });
     const logger = createBenchLogger({ debug: Boolean(args.debug), verbose: Boolean(args.verbose), logFile: path.join(outputDir, 'progress.log') });
     logger.info(`run ${runId} · scope=${scope} · dryRun=${dryRun} · models=${models.join(',')} · output=${outputDir}`);
+    if (args['stage-t']) {
+        const report = await runStageT({ args, outputDir, logger });
+        console.log(JSON.stringify(report, null, 2));
+        return;
+    }
     if (args.probe) {
         if (!args.approved) throw new Error('--probe requires --approved; it sends tiny local PDF/PNG payloads to OpenRouter');
         if (args['dry-run']) throw new Error('--probe cannot be combined with --dry-run');
@@ -942,21 +1177,19 @@ async function main() {
     assertRunScope({ docs, smokeRun: scope === 'smoke', dryRun });
     capDocuments(docs, args);
     logger.info(`documents · ${docs.length} selected`);
-    const pages = [];
+    const pages = docs.map((doc) => Number(doc.pages) || 0);
     for (const doc of docs) {
-        logger.debug(`inspecting ${doc.docId}`);
-        pages.push(await inspectPdfPages(doc));
-    }
-    docs.forEach((doc, index) => { doc.pages = pages[index]; });
-    if (args['analysis-mode'] !== 'single') {
-        for (const doc of docs) {
-            doc.benchExtraction = await extractTextFromFile(doc.filePath);
-            const text = String(doc.benchExtraction.text || '');
-            doc.analysisPlan = {
-                textSegments: shouldBoundAnalysis(doc, { analysisMode: 'bounded' }, text)
-                    ? Math.max(1, splitTextIntoChunks(text, { chunkSize: CHUNK_SIZE, chunkOverlap: CHUNK_OVERLAP, docId: doc.docId }).length) : 1,
-            };
-        }
+        const canonical = readFrozenTranscript(doc);
+        doc.benchExtraction = {
+            text: canonical.error ? '' : String(canonical.text || ''),
+            pages: doc.pages || canonical.pageMap?.length || null,
+            pageRanges: canonical.pageMap || [],
+        };
+        const text = doc.benchExtraction.text;
+        doc.analysisPlan = {
+            textSegments: shouldBoundAnalysis(doc, { analysisMode: 'bounded' }, text)
+                ? Math.max(1, splitTextIntoChunks(text, { chunkSize: CHUNK_SIZE, chunkOverlap: CHUNK_OVERLAP, docId: doc.docId }).length) : 1,
+        };
     }
     const totalPages = pages.reduce((sum, count) => sum + count, 0);
     logger.info(`pages · ${totalPages} total · ${docs.map((doc) => `${doc.docId}=${doc.pages}`).join(' · ')}`);
@@ -985,9 +1218,8 @@ async function main() {
     const answerTokens = Number(args['analysis-tokens'] || ANALYSIS_MAX_TOKENS);
     logger.info(`pins · ${models.map((model) => `${model}→${pins[model] || 'any'}`).join(' · ')} · allowFallbacks=${args['allow-fallbacks'] === true}`);
     const context = {
-        runId, scope, models, baseline: args.baseline || null, baselineArm: args['baseline-arm'] || 'or-native',
+        runId, scope, models, baseline: args.baseline || null, baselineArm: args['baseline-arm'] || 'local-text',
         pins, allowFallbacks: args['allow-fallbacks'] === true,
-        parserRecovery: args['parser-recovery'] || 'auto',
         analysisMode: args['analysis-mode'] || 'bounded',
         estimatedAnalysisRequests: estimate.analysisRequests,
         reasoning: reasoning.byModel, reasoningTokens,
@@ -1023,7 +1255,9 @@ async function main() {
             estimatedTotalUsd: estimate.totalUsd,
             estimatedPerModel: estimate.perModel,
             capabilitiesByModel,
-            plannedCalls: 'Document × model × arm cells; bounded analysis can issue multiple segment requests per cell. Raster adds OCR calls, and parser-size recovery can add parsing requests. Inspect estimatedAnalysisRequests and per-source plans.',
+            plannedCalls: args['analysis-condition'] === 'structured_mode'
+                ? 'Document × model × arm cells; each Stage A cell runs one JSON response_format condition with multiple segment requests for bounded text. Stage A reads only canonical frozen transcripts.'
+                : 'Document × model × arm cells; each Stage A cell runs unconstrained and response_format JSON conditions, with multiple segment requests per condition for bounded text. Stage A reads only canonical frozen transcripts.',
         } : {}),
         costAndLatency: report.summary,
         parserFidelity: report.textMetricSummary,
@@ -1047,4 +1281,4 @@ if (require.main === module) {
     });
 }
 
-module.exports = { parseArgs, loadDocuments, resolveRunDocuments, inspectPdfPages, capDocuments, resolveRunCapabilities, assertLiveCaps, assertEstimatedCostCap, summarizeRows, summarizeExtractionRows, percentile, buildExtractionBody, runExtraction, execute, estimateRunCost, resolvePins, createBenchLogger, parseReasoningArg, resolveReasoningByModel, usageSummary, main };
+module.exports = { parseArgs, loadDocuments, resolveRunDocuments, inspectPdfPages, capDocuments, resolveRunCapabilities, assertLiveCaps, assertEstimatedCostCap, summarizeRows, summarizeExtractionRows, percentile, buildExtractionBody, runExtraction, execute, estimateRunCost, resolvePins, createBenchLogger, parseReasoningArg, resolveReasoningByModel, usageSummary, persistVerifiedTranscript, extractTranscriptProvider, runStageT, writePartialReportSync, registerPartialReportHandlers, main };

@@ -4,116 +4,149 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { execute } = require('../scripts/benchmark-pdf-engines');
+const { runTextAnalysis } = require('../scripts/lib/arms');
 
-const textDoc = { docId: 'text.pdf', title: 'Text', filePath: '/tmp/text.pdf', pages: 2, textLayer: true, pageBucket: '1-2', tableHeavy: false };
-const scanDoc = { docId: 'scan.pdf', title: 'Scan', filePath: '/tmp/scan.pdf', pages: 2, textLayer: false, pageBucket: '1-2', tableHeavy: false };
+const canonicalText = 'Canonical frozen transcript. '.repeat(8);
+const textDoc = {
+    docId: 'text.pdf', title: 'Text', filePath: '/tmp/text.pdf', pages: 2,
+    textLayer: true, canonicalTranscript: { text: canonicalText, pageMap: [], verified: true },
+};
+const scanDoc = {
+    docId: 'scan.pdf', title: 'Scan', filePath: '/tmp/scan.pdf', pages: 2,
+    textLayer: false, canonicalTranscript: { text: canonicalText, pageMap: [], verified: true },
+};
 
-const answered = (report) => report.rows.filter((row) => row.status !== 'SKIPPED');
-
-function registryFor(record) {
-    const recordArm = (arm) => async (model, doc, context) => {
-        record.push({ arm, doc: doc.docId, context });
-        return { text: '{}', parsed: {}, json: { valid: true, truncated: false }, groundingText: '', errors: [], cost: 0, latency: 1, provider: 'mock', pages: doc.pages };
-    };
-    return {
-        'local-text': recordArm('local-text'),
-        'local-raster': recordArm('local-raster'),
-        'or-cloudflare': recordArm('or-cloudflare'),
-        'or-mistral-ocr': recordArm('or-mistral-ocr'),
-        'or-native': recordArm('or-native'),
-    };
-}
-
-async function run({ args, documents, record = [], registry = registryFor(record), capabilities = { fileNative: true, imageInput: true } }) {
+async function run(documents, registry) {
     const outputDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pdf-arms-policy-'));
     try {
-        const report = await execute({
-            args: { 'max-cost': 10, repeats: 1, ...args },
+        return await execute({
+            args: { 'max-cost': 10, repeats: 1 },
             documents,
             models: ['x/y'],
-            capabilitiesByModel: { 'x/y': capabilities },
+            capabilitiesByModel: { 'x/y': {} },
             outputDir,
             dryRun: false,
             registry,
         });
-        return { report, record };
     } finally {
         fs.rmSync(outputDir, { recursive: true, force: true });
     }
 }
 
-test('a pilot run does not pay for file parsers on documents that already have text', async () => {
-    const { record } = await run({ args: { scope: 'pilot' }, documents: [textDoc] });
-    expect(record.map((item) => item.arm).sort()).toEqual(['local-text', 'or-native']);
+test('Stage A sends canonical frozen text for both digital and scanned filings only', async () => {
+    const calls = [];
+    const registry = {
+        'local-text': async (_model, doc) => {
+            calls.push({ docId: doc.docId, text: doc.benchExtraction.text });
+            return {
+                text: '{"summary":"read canonical text"}',
+                parsed: { summary: 'read canonical text' },
+                json: { valid: true, truncated: false },
+                groundingText: doc.benchExtraction.text,
+                errors: [],
+                cost: 0,
+                latency: 1,
+                provider: 'mock',
+                pages: doc.pages,
+            };
+        },
+    };
+    const report = await run([textDoc, scanDoc], registry);
+
+    expect(calls).toEqual([
+        { docId: 'text.pdf', text: canonicalText },
+        { docId: 'scan.pdf', text: canonicalText },
+    ]);
+    expect(report.rows.map((row) => row.arm)).toEqual(['local-text', 'local-text']);
 });
 
-test('smoke keeps the parser arms on a text layer, because that is the only place parser fidelity is measurable', async () => {
-    const { record } = await run({ args: { scope: 'smoke' }, documents: [textDoc] });
-    expect(record.map((item) => item.arm).sort()).toEqual(['local-text', 'or-cloudflare', 'or-mistral-ocr', 'or-native']);
+test('Stage A skips canonical transcripts shorter than 100 characters', async () => {
+    const arm = jest.fn();
+    const doc = {
+        ...textDoc,
+        canonicalTranscript: { text: 'too short', pageMap: [], verified: false },
+    };
+    const report = await run([doc], { 'local-text': arm });
+
+    expect(arm).not.toHaveBeenCalled();
+    expect(report.rows[0]).toMatchObject({
+        status: 'SKIPPED',
+        reason: 'canonical-transcript-under-100-characters',
+    });
 });
 
-test('--engines-on-text-layer restores the parser arms in a pilot run', async () => {
-    const { record } = await run({ args: { scope: 'pilot', 'engines-on-text-layer': true }, documents: [textDoc] });
-    expect(record.map((item) => item.arm).sort()).toEqual(['local-text', 'or-cloudflare', 'or-mistral-ocr', 'or-native']);
-});
-
-test('the page-image arm runs only on scans', async () => {
-    const onText = await run({ args: { scope: 'smoke' }, documents: [textDoc] });
-    expect(onText.record.some((item) => item.arm === 'local-raster')).toBe(false);
-    expect(onText.report.rows.find((row) => row.arm === 'local-raster').reason).toBe('skipped:not-a-scan');
-
-    const onScan = await run({ args: { scope: 'smoke' }, documents: [scanDoc] });
-    expect(onScan.record.some((item) => item.arm === 'local-raster')).toBe(true);
-});
-
-test('the page-image arm is bounded by the production OCR page cap', async () => {
-    const previous = process.env.OCR_MAX_PAGES;
-    process.env.OCR_MAX_PAGES = '7';
+test('Stage A independently measures raw, structured, and repaired output offline', async () => {
+    const checkpointDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pdf-condition-checkpoints-'));
+    const chat = jest.fn()
+        .mockResolvedValueOnce({
+            response: { choices: [{ message: { content: '```json\n{"summary":"raw"}\n```' } }] },
+            cost: 0.01, latencyMs: 5, status: 200, finish_reason: 'stop', provider: 'mock',
+            usage: { input_tokens: 10, output_tokens: 5, total_tokens: 15 },
+        })
+        .mockResolvedValueOnce({
+            response: { choices: [{ message: { content: '{"summary":"structured"}' } }] },
+            cost: 0.02, latencyMs: 7, status: 200, finish_reason: 'stop', provider: 'mock',
+            usage: { input_tokens: 11, output_tokens: 6, total_tokens: 17 },
+        });
     try {
-        const fromEnv = await run({ args: { scope: 'smoke' }, documents: [scanDoc] });
-        const raster = fromEnv.record.find((item) => item.arm === 'local-raster');
-        expect(raster.context.rasterMaxPages).toBe(7);
+        const result = await runTextAnalysis('x/y', {
+            ...textDoc,
+            benchExtraction: { text: canonicalText, pages: 2, pageRanges: [] },
+        }, { requestChat: chat, checkpointDir, analysisMaxTokens: 100 });
 
-        const overridden = await run({ args: { scope: 'smoke', 'raster-max-pages': '3' }, documents: [scanDoc] });
-        expect(overridden.record.find((item) => item.arm === 'local-raster').context.rasterMaxPages).toBe(3);
+        expect(chat).toHaveBeenCalledTimes(2);
+        expect(chat.mock.calls[0][0].response_format).toBeUndefined();
+        expect(chat.mock.calls[1][0].response_format).toEqual({ type: 'json_object' });
+        expect(result.jsonConditions).toMatchObject({
+            raw_parse: false,
+            structured_mode: true,
+            repaired: true,
+            rawFailed: true,
+        });
+        expect(result.conditionResults).toMatchObject({
+            raw_parse: { requested: true, passed: false, cost: 0.01 },
+            structured_mode: { requested: true, passed: true, cost: 0.02 },
+            repaired: { rawFailed: true, passed: true, cost: 0 },
+        });
+        expect(result.cost).toBeCloseTo(0.03);
+        expect(result.latency).toBe(12);
+        const rawRequest = result.conditionResults.raw_parse.requests[0];
+        expect(rawRequest.rawPersistedBeforeParse).toBe(true);
+        expect(JSON.parse(fs.readFileSync(path.resolve(__dirname, '..', rawRequest.rawArtifact), 'utf8'))).toMatchObject({
+            rawText: '```json\n{"summary":"raw"}\n```',
+            status: 'completed',
+            rawPersistedBeforeParse: true,
+        });
     } finally {
-        if (previous === undefined) delete process.env.OCR_MAX_PAGES;
-        else process.env.OCR_MAX_PAGES = previous;
+        fs.rmSync(checkpointDir, { recursive: true, force: true });
     }
 });
 
-test('attempted empty raster failures retain paid costs and errors in runner reliability', async () => {
-    const failure = {
-        text: '', parsed: null, groundingText: '', failedCall: true,
-        errors: ['OCR provider failed', 'Raster produced no usable transcription'],
-        usage: { total_tokens: 12 }, cost: 0.03, costIncomplete: false,
-        latency: 15, retries: 1, provider: 'mock', pages: 2,
-    };
-    const arm = jest.fn().mockResolvedValue(failure);
-    const { report } = await run({
-        args: { scope: 'smoke', arms: ['local-raster'] }, documents: [scanDoc],
-        registry: { 'local-raster': arm },
-    });
-    expect(report.skippedCells).toHaveLength(0);
-    expect(report.rows).toHaveLength(1);
-    expect(report.rows[0]).toMatchObject({
-        failedCall: true, errors: failure.errors, usage: failure.usage, cost: 0.03,
-        costIncomplete: false, retries: 1, pages: 2, textLength: 0,
-    });
-    expect(report.actualCost).toBeCloseTo(0.03);
-    expect(report.summary[0]).toMatchObject({ N: 1, errors: 1, errorRate: 1, costPerCell: 0.03 });
-    expect(report.extractionSummary[0]).toMatchObject({ N: 1, answered: 0, errors: 1, validRate: null });
-});
-
-test('unsupported raster remains skipped and never incurs requests or reliability failures', async () => {
-    const arm = jest.fn();
-    const { report } = await run({
-        args: { scope: 'smoke', arms: ['local-raster'] }, documents: [scanDoc],
-        capabilities: { fileNative: false, imageInput: false }, registry: { 'local-raster': arm },
-    });
-    expect(arm).not.toHaveBeenCalled();
-    expect(report.rows[0]).toMatchObject({ status: 'SKIPPED', reason: expect.stringContaining('unsupported-capability') });
-    expect(report.summary).toEqual([]);
-    expect(report.extractionSummary).toEqual([]);
-    expect(report.actualCost).toBe(0);
+test('Stage A stops after bounded raw sidecar persistence failure', async () => {
+    const checkpointPath = path.join(os.tmpdir(), `pdf-condition-checkpoint-blocker-${process.pid}`);
+    fs.writeFileSync(checkpointPath, 'not a directory');
+    const requestChat = jest.fn(async () => ({
+        response: { choices: [{ message: { content: '{"summary":"must not be parsed"}' } }] },
+        cost: 0.01, latencyMs: 5, status: 200, finish_reason: 'stop',
+    }));
+    try {
+        const result = await runTextAnalysis('x/y', {
+            ...textDoc,
+            pages: 12,
+            benchExtraction: { text: canonicalText, pages: 12, pageRanges: [] },
+        }, { requestChat, checkpointDir: checkpointPath });
+        expect(requestChat).toHaveBeenCalledTimes(1);
+        expect(result.jsonConditions).toMatchObject({
+            raw_parse: false,
+            structured_mode: null,
+        });
+        expect(result.conditionResults.raw_parse.requests[0]).toMatchObject({
+            status: 'failed',
+            rawPersistedBeforeParse: false,
+            rawPersistenceError: expect.any(String),
+            parseDiagnostics: { name: expect.any(String) },
+        });
+    } finally {
+        fs.rmSync(checkpointPath, { force: true });
+    }
 });

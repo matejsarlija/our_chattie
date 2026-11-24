@@ -1,6 +1,6 @@
 'use strict';
 
-const { OIB_CASE_DOCS, SMOKE_DOC_IDS, assertRunScope } = require('../scripts/lib/lab-documents');
+const { OIB_CASE_DOCS, SMOKE_DOC_IDS, FULL_PILOT_MIN, FULL_PILOT_MAX, assertRunScope } = require('../scripts/lib/lab-documents');
 
 const byId = (id) => OIB_CASE_DOCS.find((doc) => doc.docId === id);
 const smokeDocs = SMOKE_DOC_IDS.map(byId);
@@ -21,23 +21,24 @@ test('dry runs accept any non-empty selection, including a single document', () 
 
 test('a live smoke run requires exactly the fixed trio', () => {
     expect(() => assertRunScope({ docs: smokeDocs, smokeRun: true, dryRun: false })).not.toThrow();
-    const otherThree = ['1:Podnesak.pdf', '2:Žalba.pdf', '5:Prijedlog.pdf'].map(byId);
+    const otherThree = ['1:Podnesak.pdf', '2:Žalba.pdf', '4:Rješenje - odbijen prigovor na diobeni popis.pdf'].map(byId);
     expect(() => assertRunScope({ docs: otherThree, smokeRun: true, dryRun: false })).toThrow(/fixed 3-document trio/);
     expect(() => assertRunScope({ docs: OIB_CASE_DOCS.slice(0, 12), smokeRun: true, dryRun: false })).toThrow(/fixed 3-document trio/);
 });
 
-test('a live benchmark keeps the 12–20 document pilot range', () => {
-    expect(() => assertRunScope({ docs: smokeDocs, smokeRun: false, dryRun: false })).toThrow(/12–20/);
-    expect(() => assertRunScope({ docs: OIB_CASE_DOCS.slice(0, 11), smokeRun: false, dryRun: false })).toThrow(/12–20/);
-    expect(() => assertRunScope({ docs: OIB_CASE_DOCS.slice(0, 12), smokeRun: false, dryRun: false })).not.toThrow();
+test('a live benchmark keeps the configured pilot document range', () => {
+    const rangeRe = new RegExp(`${FULL_PILOT_MIN}–${FULL_PILOT_MAX}`);
+    expect(() => assertRunScope({ docs: smokeDocs, smokeRun: false, dryRun: false })).toThrow(rangeRe);
+    expect(() => assertRunScope({ docs: OIB_CASE_DOCS.slice(0, FULL_PILOT_MIN - 1), smokeRun: false, dryRun: false })).toThrow(rangeRe);
+    expect(() => assertRunScope({ docs: OIB_CASE_DOCS.slice(0, FULL_PILOT_MIN), smokeRun: false, dryRun: false })).not.toThrow();
     expect(() => assertRunScope({ docs: OIB_CASE_DOCS, smokeRun: false, dryRun: false })).not.toThrow();
 });
 
 const { resolveRunDocuments } = require('../scripts/benchmark-pdf-engines');
 
-test('resolveRunDocuments defaults to the 16 curated documents for pilot', () => {
+test('resolveRunDocuments defaults to the 25 curated documents for pilot', () => {
     const docs = resolveRunDocuments({}, 'pilot');
-    expect(docs).toHaveLength(16);
+    expect(docs).toHaveLength(25);
     expect(docs.map((d) => d.docId)).toEqual(OIB_CASE_DOCS.map((d) => d.docId));
 });
 
@@ -47,15 +48,14 @@ test('resolveRunDocuments defaults to the fixed 3-doc trio for smoke', () => {
     expect(docs.map((d) => d.docId)).toEqual(SMOKE_DOC_IDS);
 });
 
-test('smoke compares GLM parser paths with the native Gemini baseline', () => {
+test('Stage A compares models on the canonical frozen text arm only', () => {
     const { analysisArmsForModel } = require('../scripts/lib/arms');
     const baselineModel = 'google/gemini-2.5-flash';
     const challengerModel = 'z-ai/glm-5.3-flash';
     const challengerArms = analysisArmsForModel(challengerModel, { baselineModel });
     const baselineArms = analysisArmsForModel(baselineModel, { baselineModel });
-    expect(challengerArms.map((arm) => arm.id)).toEqual(['local-text', 'local-raster', 'or-cloudflare', 'or-mistral-ocr']);
-    expect(challengerArms.some((arm) => arm.id === 'or-native')).toBe(false);
-    expect(baselineArms.map((arm) => arm.id)).toEqual(['or-native']);
+    expect(challengerArms.map((arm) => arm.id)).toEqual(['local-text']);
+    expect(baselineArms.map((arm) => arm.id)).toEqual(['local-text']);
 });
 
 test('resolveRunDocuments preserves explicit doc-id selection', () => {
