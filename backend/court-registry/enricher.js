@@ -118,118 +118,109 @@ function verifyNameMatch(scrapedName, apiName) {
  * @param {Array} participants - Array of objects { name: "...", role: "..." }
  * @returns {Promise<Array>} - Enriched participants
  */
-async function enrichParticipants(participants) {
+const REGISTRY_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+const LOOKUP_CONCURRENCY = 3;
+
+function cacheKeyFor(participant) {
+    const digits = String(participant.oib || '').replace(/\D+/g, '');
+    if (/^\d{11}$/.test(digits)) return `oib:${digits}`;
+    const name = normalizeName(participant.name);
+    return name ? `name:${name}` : null;
+}
+
+async function enrichOne(participant, store) {
+    const newP = { ...participant };
+    if (!isLegalEntity(newP.name)) return { ...newP, enrichmentStatus: 'skipped_person' };
+
+    const key = cacheKeyFor(newP);
+    if (key && store?.getRegistryCache) {
+        try {
+            const cached = store.getRegistryCache(key);
+            if (cached && typeof cached === 'object') return { ...newP, ...cached };
+        } catch (error) {
+            logger.warn('court-registry.enricher', `Registry cache read failed: ${error.message}`);
+        }
+    }
+
+    try {
+        let match = null;
+        const participantOib = newP.oib ? String(newP.oib).trim() : null;
+        const searchName = normalizeName(newP.name);
+        if (participantOib) {
+            logger.agent.log(`[Enricher] Searching by OIB (detalji_subjekta): ${participantOib} (Name: "${newP.name}")`);
+            match = await apiClient.searchByOib(participantOib);
+            if (match) logger.agent.log(`[Enricher] ✓ Found exact OIB match via ID endpoint: MBS ${match.mbs}`);
+        }
+
+        if (!match) {
+            logger.agent.log(`[Enricher] Fallback: Searching for "${searchName}" (OIB: ${participantOib || 'None'})...`);
+            const searchResult = await apiClient.searchCompany(searchName, { includeInactive: true });
+            if (participantOib && Array.isArray(searchResult)) {
+                match = searchResult.find((result) => String(result.oib) === participantOib);
+            } else if (!participantOib && Array.isArray(searchResult)) {
+                match = searchResult.find((result) => {
+                    const apiName = result.tvtka || result.naziv || result.ime || result.skracena_tvrtka;
+                    return verifyNameMatch(newP.name, apiName);
+                });
+            }
+        }
+
+        if (match) {
+            let finalData = match;
+            if (!finalData.gfi || (Array.isArray(finalData.gfi) && finalData.gfi.length === 0)) {
+                const details = await apiClient.getCompanyDetails(match.mbs);
+                if (details) finalData = details;
+            }
+            newP.companyData = mapCompanyData(finalData);
+            newP.enrichmentStatus = 'enriched';
+            const cd = newP.companyData;
+            logger.agent.log(`[Enricher] Whole Company Data: ${JSON.stringify(cd)}`);
+            logger.agent.log(`[Enricher] ✓ Enriched "${newP.name}"`);
+            logger.agent.log(`[Enricher]   → MBS: ${cd.mbs || 'N/A'}, OIB: ${cd.oib || 'N/A'}`);
+            logger.agent.log(`[Enricher]   → Official Name: ${cd.officialName || 'N/A'}`);
+            logger.agent.log(`[Enricher]   → Status: ${cd.status === 1 ? 'Active' : cd.status === 5 ? 'Deleted' : cd.status || 'N/A'}`);
+            if (cd.lastFinancialReportYear) logger.agent.log(`[Enricher]   → Last GFI: ${cd.lastFinancialReportYear}`);
+            if (cd.founders) logger.agent.log(`[Enricher]   → Founders: ${cd.founders}`);
+            if (cd.registeredSeat) logger.agent.log(`[Enricher]   → Seat: ${cd.registeredSeat}`);
+        } else {
+            newP.enrichmentStatus = 'not_found';
+            logger.agent.log(`[Enricher] ✗ No match found for "${newP.name}"`);
+        }
+
+        if (key && store?.putRegistryCache) {
+            try {
+                store.putRegistryCache(key, {
+                    companyData: newP.companyData || null,
+                    enrichmentStatus: newP.enrichmentStatus,
+                }, REGISTRY_CACHE_TTL_MS);
+            } catch (error) {
+                logger.warn('court-registry.enricher', `Registry cache write failed: ${error.message}`);
+            }
+        }
+    } catch (error) {
+        logger.agent.error(`[Enricher] Error processing "${newP.name}": ${error.message}`);
+        newP.enrichmentStatus = 'error';
+    }
+    return newP;
+}
+
+async function enrichParticipants(participants, options = {}) {
     if (!process.env.COURT_REGISTRY_CLIENT_ID) {
         logger.warn('court-registry.enricher', 'Missing API credentials. Skipping enrichment.');
         return participants;
     }
 
-    const enrichedList = [];
-
-    for (const p of participants) {
-        // Clone to avoid mutation side-effects
-        const newP = { ...p };
-
-        // 1. Check if it's a company
-        if (isLegalEntity(newP.name)) {
-            try {
-                let match = null;
-                const participantOib = newP.oib ? String(newP.oib).trim() : null;
-                const searchName = normalizeName(newP.name);
-
-                // Strategy 1: Search by OIB using dedicated endpoint (most reliable)
-                if (participantOib) {
-                    // ... (Strategy 1 remains the same)
-                    logger.agent.log(`[Enricher] Searching by OIB (detalji_subjekta): ${participantOib} (Name: "${newP.name}")`);
-                    const oibMatch = await apiClient.searchByOib(participantOib);
-
-                    if (oibMatch) {
-                        logger.agent.log(`[Enricher] ✓ Found exact OIB match via ID endpoint: MBS ${oibMatch.mbs}`);
-                        match = oibMatch;
-                    } else {
-                        logger.agent.log(`[Enricher] OIB ${participantOib} not found via direct lookup.`);
-                    }
-                }
-
-                // Strategy 2: Fallback to name search + OIB filter
-                if (!match) {
-                    logger.agent.log(`[Enricher] Fallback: Searching for "${searchName}" (OIB: ${participantOib || 'None'})...`);
-                    const searchResult = await apiClient.searchCompany(searchName, { includeInactive: true });
-
-                    if (participantOib && searchResult && Array.isArray(searchResult)) {
-                        logger.agent.log(`[Enricher] Filtering ${searchResult.length} results by OIB ${participantOib}...`);
-                        match = searchResult.find(r => String(r.oib) === participantOib);
-                        if (match) logger.agent.log(`[Enricher] ✓ Found OIB match in name results: MBS ${match.mbs}`);
-                        else logger.agent.log(`[Enricher] ⚠ No result matched OIB ${participantOib}.`);
-
-                    } else if (!participantOib && searchResult && Array.isArray(searchResult) && searchResult.length > 0) {
-                        // Strategy 3: Name-only search (Defensive Verification)
-                        // Old code: match = searchResult[0];
-
-                        // New Defensive Code:
-                        logger.agent.log(`[Enricher] Validating ${searchResult.length} name candidates against "${newP.name}"...`);
-                        
-                        match = searchResult.find(r => {
-                            // API result might have different name fields
-                            const apiName = r.tvtka || r.naziv || r.ime || r.skracena_tvrtka;
-                            const isMatch = verifyNameMatch(newP.name, apiName);
-                            if (isMatch) {
-                                logger.agent.log(`[Enricher] ✓ Accepted match: "${apiName}" (MBS: ${r.mbs})`);
-                            }
-                            return isMatch;
-                        });
-
-                        if (!match) {
-                            logger.agent.log(`[Enricher] ⚠ All candidates rejected. Search term "${searchName}" yielded results, but none matched sufficiently.`);
-                        }
-                    }
-                }
-                
-                // ... (rest of logic)
-
-                if (match) {
-                    // If we got the match from searchByOib, it's already full details.
-                    // If we got it from searchCompany (list), we might need to fetch details.
-
-                    let finalData = match;
-
-                    // Strategy 2 (list search) returns 'subjekti' objects which lack detailed data like GFI.
-                    // If GFI is missing, we fetch full details by MBS.
-                    if (!finalData.gfi || (Array.isArray(finalData.gfi) && finalData.gfi.length === 0)) {
-                        logger.agent.log(`[Enricher] GFI data missing in initial match. Fetching full details for MBS ${match.mbs}...`);
-                        const details = await apiClient.getCompanyDetails(match.mbs);
-                        if (details) finalData = details;
-                    }
-
-                    newP.companyData = mapCompanyData(finalData);
-                    newP.enrichmentStatus = 'enriched';
-
-                    // Log enrichment details
-                    const cd = newP.companyData;
-                    logger.agent.log(`[Enricher] Whole Company Data: ${JSON.stringify(cd)}`);
-                    logger.agent.log(`[Enricher] ✓ Enriched "${newP.name}"`);
-                    logger.agent.log(`[Enricher]   → MBS: ${cd.mbs || 'N/A'}, OIB: ${cd.oib || 'N/A'}`);
-                    logger.agent.log(`[Enricher]   → Official Name: ${cd.officialName || 'N/A'}`);
-                    logger.agent.log(`[Enricher]   → Status: ${cd.status === 1 ? 'Active' : cd.status === 5 ? 'Deleted' : cd.status || 'N/A'}`);
-                    if (cd.lastFinancialReportYear) logger.agent.log(`[Enricher]   → Last GFI: ${cd.lastFinancialReportYear}`);
-                    if (cd.founders) logger.agent.log(`[Enricher]   → Founders: ${cd.founders}`);
-                    if (cd.registeredSeat) logger.agent.log(`[Enricher]   → Seat: ${cd.registeredSeat}`);
-                } else {
-                    newP.enrichmentStatus = 'not_found';
-                    logger.agent.log(`[Enricher] ✗ No match found for "${newP.name}"`);
-                }
-            } catch (error) {
-                logger.agent.error(`[Enricher] Error processing "${newP.name}": ${error.message}`);
-                newP.enrichmentStatus = 'error';
-            }
-        } else {
-            newP.enrichmentStatus = 'skipped_person';
+    const source = Array.isArray(participants) ? participants : [];
+    const enriched = new Array(source.length);
+    let nextIndex = 0;
+    async function worker() {
+        while (nextIndex < source.length) {
+            const index = nextIndex++;
+            enriched[index] = await enrichOne(source[index], options.store);
         }
-
-        enrichedList.push(newP);
     }
-
-    return enrichedList;
+    await Promise.all(Array.from({ length: Math.min(LOOKUP_CONCURRENCY, source.length) }, () => worker()));
+    return enriched;
 }
 
-module.exports = { enrichParticipants, verifyNameMatch };
+module.exports = { enrichParticipants, verifyNameMatch, REGISTRY_CACHE_TTL_MS, LOOKUP_CONCURRENCY };

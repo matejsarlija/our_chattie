@@ -5,8 +5,8 @@
 //   latest → persist both → return the diff.
 //
 // Shared by the CLI (`scripts/check-changes.js`, B1) and the REST route
-// (`/api/change-detection/*`, B2). Reuses the Phase A `CsvExportClient` for
-// acquisition and the localStore-style JSON store for persistence.
+// (`/api/change-detection/*`, B2). Reuses the Phase A `CsvExportClient` and
+// SQLite persistence.
 //
 // Error philosophy: a CSV fetch/parse failure propagates as the typed
 // `CsvExportError` so callers map it through `friendlyAnalysisErrorMessage` —
@@ -15,7 +15,7 @@
 // fails the check.
 
 const { CsvExportClient, CsvExportError } = require('../scraper/csvExportClient');
-const { createChangeDetectionStore } = require('./store');
+const { createSqliteStore } = require('../services/sqliteStore');
 const { buildSnapshot, queryIdFor } = require('./snapshot');
 const { diffSnapshots } = require('./diff');
 
@@ -27,7 +27,7 @@ const { diffSnapshots } = require('./diff');
  */
 function createChangeCheckService(options = {}) {
     const client = options.client || new CsvExportClient();
-    const store = options.store || createChangeDetectionStore();
+    const store = options.store || createSqliteStore();
     const now = options.now ? new Date(options.now) : null;
 
     /**

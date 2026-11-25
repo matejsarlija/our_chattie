@@ -16,6 +16,7 @@ const express = require('express');
 const { parseCourtAnalysisRequest } = require('../http/courtAnalysisRequest');
 const { friendlyAnalysisErrorMessage } = require('../http/friendlyAnalysisError');
 const { CsvExportError } = require('../scraper/csvExportClient');
+const { normalizeQueryValue } = require('./snapshot');
 
 const QUERY_ID_RE = /^[0-9a-f]{40}$/;
 
@@ -60,6 +61,19 @@ function createChangeDetectionRouter(options = {}) {
             }
             console.error('[ChangeDetection] check failed:', err && err.stack ? err.stack : err);
             return res.status(500).json({ error: 'Provjera promjena nije uspjela zbog interne greške.' });
+        }
+    });
+
+    router.get('/history', ...(readLimiter ? [readLimiter] : []), async (req, res) => {
+        const queryValue = String(req.query.queryValue || '').trim();
+        if (!queryValue) return res.status(400).json({ error: 'queryValue is required.' });
+        const isOib = /^\d{11}$/.test(queryValue.replace(/\D+/g, ''));
+        const normalized = normalizeQueryValue(isOib ? 'oib' : 'case_number', queryValue);
+        try {
+            return res.status(200).json(service.store.getHistoryByQueryValue(normalized));
+        } catch (err) {
+            console.error('[ChangeDetection] history read failed:', err && err.stack ? err.stack : err);
+            return res.status(500).json({ error: 'Povijest provjera nije mogla biti učitana.' });
         }
     });
 

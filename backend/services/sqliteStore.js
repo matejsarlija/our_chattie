@@ -3,6 +3,7 @@ const path = require('path');
 const crypto = require('crypto');
 const Database = require('better-sqlite3');
 const { buildRunSummary, toRunListItem } = require('../court-analysis/utils/runSummary');
+const { normalizeQueryValue } = require('../change-detection/snapshot');
 
 const DEFAULT_DATA_DIR = path.join(__dirname, '..', 'data', 'analysis');
 const RUN_STATUSES = ['queued', 'running', 'done', 'partial', 'error', 'interrupted', 'canceled'];
@@ -471,7 +472,65 @@ function createSqliteStore(options = {}) {
     migrate();
   }
 
+  function importLegacyChangeDetection() {
+    if (db.pragma('user_version', { simple: true }) >= 2) return;
+    const legacyDir = path.resolve(options.legacyChangeDetectionDir
+      || process.env.CHANGE_DETECTION_DATA_DIR
+      || (options.dataDir || options.dbPath
+        ? path.join(dataDir, 'change-detection')
+        : path.join(__dirname, '..', 'data', 'change-detection')));
+    const latestByQuery = new Map();
+    const snapshotDir = path.join(legacyDir, 'snapshots');
+    if (fs.existsSync(snapshotDir)) {
+      for (const name of fs.readdirSync(snapshotDir).filter((entry) => entry.endsWith('.json'))) {
+        try {
+          const snapshot = JSON.parse(fs.readFileSync(path.join(snapshotDir, name), 'utf8'));
+          if (snapshot?.id && snapshot?.query && snapshot.snapshotId) latestByQuery.set(snapshot.id, snapshot);
+        } catch {
+          // Preserve valid history even if one legacy snapshot is corrupt.
+        }
+      }
+    }
+
+    const historyDir = path.join(legacyDir, 'history');
+    const legacyDiffs = [];
+    if (fs.existsSync(historyDir)) {
+      for (const queryId of fs.readdirSync(historyDir)) {
+        const diffPath = path.join(historyDir, queryId, 'diffs.jsonl');
+        if (!fs.existsSync(diffPath)) continue;
+        const snapshot = latestByQuery.get(queryId);
+        const queryValue = snapshot?.query
+          ? normalizeQueryValue(snapshot.query.type, snapshot.query.value)
+          : null;
+        for (const line of fs.readFileSync(diffPath, 'utf8').split('\\n')) {
+          if (!line.trim()) continue;
+          try {
+            legacyDiffs.push({ queryId, queryValue, diff: JSON.parse(line) });
+          } catch {
+            // A torn legacy JSONL row must not hide later valid records.
+          }
+        }
+      }
+    }
+
+    const migrate = db.transaction(() => {
+      for (const [queryId, snapshot] of latestByQuery) {
+        db.prepare(`INSERT OR REPLACE INTO change_snapshots (query_id, query_value, snapshot_id, payload_json, captured_at)
+          VALUES (?, ?, ?, ?, ?)`)
+          .run(queryId, normalizeQueryValue(snapshot.query.type, snapshot.query.value), snapshot.snapshotId,
+            stringify(snapshot), snapshot.capturedAt || nowIso());
+      }
+      const insertDiff = db.prepare('INSERT INTO change_diffs (query_id, query_value, snapshot_id, diff_json, created_at) VALUES (?, ?, ?, ?, ?)');
+      for (const { queryId, queryValue, diff } of legacyDiffs) {
+        insertDiff.run(queryId, queryValue, diff.toSnapshotId || diff.snapshotId || '', stringify(diff), diff.computedAt || nowIso());
+      }
+      db.pragma('user_version = 2');
+    });
+    migrate();
+  }
+
   importLegacyJson();
+  importLegacyChangeDetection();
 
   const store = {
     dataDir,
@@ -615,6 +674,56 @@ function createSqliteStore(options = {}) {
         VALUES (?, ?, 'TranscribePage', ?, ?, 1, ?, ?)
         ON CONFLICT(content_hash, engine, prompt_version, model_id) DO UPDATE SET text = excluded.text, created_at = excluded.created_at`)
         .run(`${contentHash}:p${pageNumber}`, options.engine || 'page-cache', options.promptVersion || 1, options.modelId || 'page-cache', text, nowIso());
+    },
+    getLatestSnapshot(queryId) {
+      const row = db.prepare('SELECT payload_json FROM change_snapshots WHERE query_id = ?').get(queryId);
+      return row ? parseJson(row.payload_json) : null;
+    },
+    recordCheck(snapshot, diff) {
+      try {
+        const write = db.transaction(() => {
+          db.prepare(`INSERT INTO change_snapshots (query_id, query_value, snapshot_id, payload_json, captured_at)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(query_id) DO UPDATE SET query_value = excluded.query_value, snapshot_id = excluded.snapshot_id,
+              payload_json = excluded.payload_json, captured_at = excluded.captured_at`)
+            .run(snapshot.id, normalizeQueryValue(snapshot.query.type, snapshot.query.value), snapshot.snapshotId, stringify(snapshot), snapshot.capturedAt);
+          db.prepare('INSERT INTO change_diffs (query_id, query_value, snapshot_id, diff_json, created_at) VALUES (?, ?, ?, ?, ?)')
+            .run(snapshot.id, normalizeQueryValue(snapshot.query.type, snapshot.query.value), snapshot.snapshotId, stringify(diff), nowIso());
+        });
+        write();
+        return { save: { ok: true, archived: true }, append: { ok: true }, ok: true };
+      } catch (error) {
+        return { ok: false, error: error.message };
+      }
+    },
+    getHistory(queryId) {
+      const snapshots = db.prepare('SELECT DISTINCT snapshot_id FROM change_diffs WHERE query_id = ? ORDER BY id')
+        .all(queryId).map((row) => ({ snapshotId: row.snapshot_id }));
+      const diffs = db.prepare('SELECT diff_json FROM change_diffs WHERE query_id = ? ORDER BY id')
+        .all(queryId).map((row) => parseJson(row.diff_json)).filter(Boolean);
+      return { queryId, snapshots, diffs };
+    },
+    getHistoryByQueryValue(queryValue) {
+      const rows = db.prepare('SELECT DISTINCT query_id FROM change_diffs WHERE query_value = ? ORDER BY id DESC').all(queryValue);
+      const histories = rows.map(({ query_id }) => store.getHistory(query_id));
+      if (histories.length === 1) return histories[0];
+      return { queryValue, histories };
+    },
+    getRegistryCache(key) {
+      const row = db.prepare('SELECT payload_json, expires_at FROM registry_cache WHERE oib_or_key = ?').get(key);
+      if (!row) return null;
+      if (Date.parse(row.expires_at) <= Date.now()) {
+        db.prepare('DELETE FROM registry_cache WHERE oib_or_key = ?').run(key);
+        return null;
+      }
+      return parseJson(row.payload_json);
+    },
+    putRegistryCache(key, payload, ttlMs = 24 * 60 * 60 * 1000) {
+      const fetchedAt = nowIso();
+      const expiresAt = new Date(Date.now() + ttlMs).toISOString();
+      db.prepare(`INSERT INTO registry_cache (oib_or_key, payload_json, fetched_at, expires_at) VALUES (?, ?, ?, ?)
+        ON CONFLICT(oib_or_key) DO UPDATE SET payload_json = excluded.payload_json, fetched_at = excluded.fetched_at, expires_at = excluded.expires_at`)
+        .run(key, stringify(payload), fetchedAt, expiresAt);
     },
     close() {
       if (db.open) db.close();

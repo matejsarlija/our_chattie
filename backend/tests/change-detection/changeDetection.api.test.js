@@ -5,11 +5,26 @@ const request = require('supertest');
 const express = require('express');
 
 const { createChangeDetectionRouter } = require('../../change-detection/api');
-const { createChangeDetectionStore } = require('../../change-detection/store');
+const { createSqliteStore } = require('../../services/sqliteStore');
 const { buildSnapshot } = require('../../change-detection/snapshot');
 const { diffSnapshots } = require('../../change-detection/diff');
 const { CsvExportError } = require('../../scraper/csvExportClient');
 const { parseCsvExport } = require('../../scraper/csvExportParser');
+const openStores = [];
+const tempDirs = [];
+
+function makeStore(prefix = 'cd-api-') {
+    const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+    tempDirs.push(dataDir);
+    const store = createSqliteStore({ dataDir });
+    openStores.push(store);
+    return store;
+}
+
+afterEach(() => {
+    for (const store of openStores.splice(0)) store.close();
+    for (const dir of tempDirs.splice(0)) fs.rmSync(dir, { recursive: true, force: true });
+});
 
 const FIXTURES_DIR = path.join(__dirname, '..', 'fixtures', 'change-detection');
 
@@ -45,7 +60,7 @@ describe('POST /api/change-detection/check (H-08)', () => {
         };
         const calls = [];
         const service = {
-            store: createChangeDetectionStore({ dataDir: fs.mkdtempSync(path.join(os.tmpdir(), 'cd-api-')) }),
+            store: makeStore(),
             runCheck: async (query) => { calls.push(query); return result; }
         };
 
@@ -109,36 +124,37 @@ describe('POST /api/change-detection/check (H-08)', () => {
     });
 });
 
-describe('GET /api/change-detection/history/:queryId (H-08)', () => {
-    test('returns persisted snapshots and diffs for a query', async () => {
-        const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cd-api-history-'));
-        const store = createChangeDetectionStore({ dataDir });
-
-        const QUERY = { type: 'oib', value: '66124057408' };
-        const oldSnapshot = snapshotFromFixture('oib-old.csv', QUERY, '2026-08-25T10:00:00.000Z');
-        const newSnapshot = snapshotFromFixture('oib-new.csv', QUERY, '2026-08-26T10:00:00.000Z');
+describe('GET /api/change-detection/history?queryValue=... (H-08)', () => {
+    test('returns persisted snapshots and diffs for a normalized query value', async () => {
+        const store = makeStore('cd-api-history-');
+        const query = { type: 'oib', value: '6612 4057 408' };
+        const oldSnapshot = snapshotFromFixture('oib-old.csv', query, '2026-08-25T10:00:00.000Z');
+        const newSnapshot = snapshotFromFixture('oib-new.csv', query, '2026-08-26T10:00:00.000Z');
         const diff = diffSnapshots(oldSnapshot, newSnapshot, { now: '2026-08-26T10:00:01.000Z' });
         store.recordCheck(newSnapshot, diff);
 
         const service = { store, runCheck: async () => {} };
         const res = await request(makeApp(service))
-            .get(`/api/change-detection/history/${oldSnapshot.id}`);
+            .get('/api/change-detection/history')
+            .query({ queryValue: '6612 4057 408' });
 
         expect(res.status).toBe(200);
         expect(res.body.queryId).toBe(oldSnapshot.id);
-        expect(res.body.snapshots.map((s) => s.snapshotId)).toEqual([newSnapshot.snapshotId]);
+        expect(res.body.snapshots.map((snapshot) => snapshot.snapshotId)).toEqual([newSnapshot.snapshotId]);
         expect(res.body.diffs).toHaveLength(1);
         expect(res.body.diffs[0].counts.added).toBe(diff.counts.added);
-
-        fs.rmSync(dataDir, { recursive: true, force: true });
     });
 
-    test('rejects malformed queryIds with 400', async () => {
-        const service = { store: {}, runCheck: async () => {} };
-        const res = await request(makeApp(service)).get('/api/change-detection/history/not-a-hash');
-        expect(res.status).toBe(400);
+    test('requires queryValue and rejects malformed queryIds', async () => {
+        const service = { store: makeStore(), runCheck: async () => {} };
+        const missingQueryValue = await request(makeApp(service)).get('/api/change-detection/history');
+        expect(missingQueryValue.status).toBe(400);
+
+        const malformedId = await request(makeApp(service)).get('/api/change-detection/history/not-a-hash');
+        expect(malformedId.status).toBe(400);
     });
 });
+
 
 describe('router factory guards', () => {
     test('requires a change-check service', () => {

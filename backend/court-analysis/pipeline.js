@@ -951,7 +951,7 @@ async function processScrapedCases(casesToProcess, progressCallback, options = {
             if (caseInfo.participants && caseInfo.participants.length > 0) {
                 stageAwareProgress?.({ step: 'discovering', message: `Dohvaćam podatke iz Sudskog registra za sudionike...` });
                 try {
-                    caseInfo.participants = await enrichParticipants(caseInfo.participants);
+                    caseInfo.participants = await enrichParticipants(caseInfo.participants, { store: resolvedOptions.analysisStore });
                 } catch (err) {
                     logger.agent.error('Enrichment failed gracefully:', err.message);
                 }

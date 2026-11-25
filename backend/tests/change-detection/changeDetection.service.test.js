@@ -3,10 +3,11 @@ const os = require('os');
 const path = require('path');
 
 const { createChangeCheckService } = require('../../change-detection/service');
-const { createChangeDetectionStore } = require('../../change-detection/store');
+const { createSqliteStore } = require('../../services/sqliteStore');
 const { CsvExportClient, CsvExportError } = require('../../scraper/csvExportClient');
 
 const FIXTURES_DIR = path.join(__dirname, '..', 'fixtures', 'change-detection');
+const openStores = [];
 const EXPORT_URL = 'https://e-oglasna.pravosudje.hr/objave/izvoz/csv?text=66124057408&sort=datePublished%2Cdesc';
 
 function makeService(fixtureName, overrides = {}) {
@@ -21,7 +22,8 @@ function makeService(fixtureName, overrides = {}) {
             return fs.readFileSync(path.join(FIXTURES_DIR, fixtureName), 'utf8');
         }
     });
-    const store = createChangeDetectionStore({ dataDir });
+    const store = createSqliteStore({ dataDir });
+    openStores.push(store);
     const service = createChangeCheckService({
         client,
         store,
@@ -31,6 +33,7 @@ function makeService(fixtureName, overrides = {}) {
 }
 
 afterEach(() => {
+    for (const store of openStores.splice(0)) store.close();
     for (const dir of fs.readdirSync(os.tmpdir())) {
         if (dir.startsWith('change-detection-svc-')) {
             fs.rmSync(path.join(os.tmpdir(), dir), { recursive: true, force: true });
@@ -139,11 +142,8 @@ describe('change-check service over frozen fixtures (H-05/H-07)', () => {
     });
 
     test('a persistence failure warns but the check still returns the diff', async () => {
-        const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'change-detection-svc-'));
-        // A file where the snapshots directory must live → all writes fail.
-        fs.writeFileSync(path.join(dataDir, 'snapshots'), 'blocker');
-
-        const { service } = makeService('oib-new.csv', { dataDir });
+        const { service, store } = makeService('oib-new.csv');
+        jest.spyOn(store, 'recordCheck').mockReturnValue({ ok: false });
         const result = await service.runCheck({ type: 'oib', value: '66124057408' });
 
         expect(result.persisted.ok).toBe(false);

@@ -32,7 +32,7 @@ async function startServer() {
   const courtAnalysisQueue = new PQueue({ concurrency: 2 });
   const analysisStore = createSqliteStore();
   const analysisLabStore = createAnalysisLabStore();
-  const changeCheckService = createChangeCheckService();
+  const changeCheckService = createChangeCheckService({ store: analysisStore });
 
   app.use(helmet());
   app.use('/api/court-analysis', rateLimiter);
