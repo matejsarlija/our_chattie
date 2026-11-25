@@ -18,16 +18,16 @@
 const { extractJsonBlock } = require('../../helpers/jsonExtract');
 const { normalizeText } = require('./indexer');
 const { withGeminiRetry, withGeminiTimeout } = require('../../helpers/geminiRetry');
-const { trackGeminiInvoke } = require('../../helpers/geminiUsage');
-const { createGeminiClient, outputCapWarning } = require('../../helpers/geminiConfig');
+const { trackUsageInvoke } = require('../../helpers/geminiUsage');
+const { createOpenRouterRoleClient, outputCapWarning } = require('../../llm/openrouterConfig');
 const agentLog = require('../../helpers/agentLog');
 
 const MAX_CLAIM_JUDGE_PAIRS = 5;
 const QUOTE_EXCERPT_CHARS = 500;
 
-function getGemini() {
-    if (!getGemini.cached) getGemini.cached = createGeminiClient('claimJudge');
-    return getGemini.cached;
+function getRoleClient() {
+    if (!getRoleClient.cached) getRoleClient.cached = createOpenRouterRoleClient('claimJudge');
+    return getRoleClient.cached;
 }
 
 function normalizedNames(entry) {
@@ -194,7 +194,7 @@ function createClaimJudge({ tracker = null, onUsage = null } = {}) {
     return async function judgeClaim(pair) {
         const prompt = buildClaimJudgePrompt(pair);
         const response = await withGeminiRetry(() => withGeminiTimeout(
-            (signal) => trackGeminiInvoke(getGemini(), prompt, { signal, tracker, onUsage })
+            (signal) => trackUsageInvoke(getRoleClient(), prompt, { signal, tracker, onUsage })
         ));
         const parsed = parseClaimVerdict(response?.content);
         if (parsed.reasons === 'unparseable judge output') {

@@ -10,8 +10,6 @@
 // split: trace on agentLog, outcomes on logger + runId.
 
 require("dotenv").config();
-const { Tool } = require("@langchain/core/tools");
-const { HumanMessage } = require("@langchain/core/messages");
 const fs = require("fs");
 const crypto = require("crypto");
 const os = require("os");
@@ -21,8 +19,9 @@ const WordExtractor = require("word-extractor");
 const { buildRetrievalChunks, splitTextIntoChunks } = require("../reasoning/chunker");
 const agentLog = require("../../helpers/agentLog");
 const logger = require("../../helpers/logger");
-
-const { GEMINI_MODEL, GEMINI_API_KEY, createGeminiClient, outputCapWarning } = require("../../helpers/geminiConfig");
+const { createOpenRouterRoleClient, outputCapWarning } = require("../../llm/openrouterConfig");
+const { trackUsageInvoke } = require("../../helpers/geminiUsage");
+const { withGeminiRetry, withGeminiTimeout } = require("../../helpers/geminiRetry");
 const { classifyFileFailure, classifyFileFailureDetailed } = require("../../helpers/friendlyAnalysisError");
 const { buildStageCounterEvent } = require("../../helpers/analysisStage");
 const { extractJsonBlock, modelContentToText } = require("../../helpers/jsonExtract");
@@ -37,19 +36,12 @@ const {
     FIELD_SPECS,
 } = require("../reasoning/extractionSchema");
 const ocrPageStore = require("../../helpers/ocrPageStore");
-const {
-    DOCUMENT_INPUT_MODES,
-    resolveDocumentInputMode,
-    shouldUseNativePdf,
-    transcribeNativePdf,
-} = require("../../helpers/nativePdfDocument");
-// Role-scoped clients: document JSON analysis and vision OCR differ in
-// temperature and output-token policy; targeted field repair (T1-3) gets the
-// cheap, zero-temperature lite role with a field-scoped output cap.
-const gemini = createGeminiClient("analysis");
-const repairGemini = createGeminiClient("repair");
-const ocrGemini = createGeminiClient("ocr");
-const ocrBatchGemini = createGeminiClient("ocr-batch");
+
+// All model roles use the OpenRouter client; page OCR sends raster images only.
+const gemini = createOpenRouterRoleClient("analysis");
+const repairGemini = createOpenRouterRoleClient("repair");
+const ocrGemini = createOpenRouterRoleClient("ocr");
+const ocrBatchGemini = createOpenRouterRoleClient("ocr-batch");
 
 /**
  * Invokes the repair role once (T1-3). Bounded by construction: callers allow
@@ -65,7 +57,7 @@ async function invokeRepairGemini(prompt, { file, progressCallback, usageTracker
             message: `Popravljam ekstrakciju za ${fileName}...`,
         });
     const response = await withGeminiRetry(
-        () => withGeminiTimeout((signal) => trackGeminiInvoke(repairGemini, prompt, { signal, tracker: usageTracker, onUsage })),
+        () => withGeminiTimeout((signal) => trackUsageInvoke(repairGemini, [{ role: "user", content: prompt }], { signal, tracker: usageTracker, onUsage })),
         {
             onRetry: ({ attempt, delayMs }) => {
                 progressCallback &&
@@ -215,8 +207,6 @@ async function validateAndRepairAnalysisSegment(response, segment, file, repairC
 }
 
 const pdfjsLib = require("pdfjs-dist/legacy/build/pdf.js");
-const { withGeminiRetry, withGeminiTimeout } = require("../../helpers/geminiRetry");
-const { trackGeminiInvoke } = require("../../helpers/geminiUsage");
 
 // Explicitly set the worker script path for Node.js. The legacy main-thread
 // build must be paired with the legacy worker (not the default build worker).
@@ -569,7 +559,7 @@ function isTimeoutLikeError(err) {
 // pages upload large payloads and generation is slower. A separate ceiling
 // keeps the shared 30s text-call default from starving OCR mid-page.
 function resolveOcrTimeoutMs() {
-    const raw = Number(process.env.GEMINI_OCR_TIMEOUT_MS);
+    const raw = Number(process.env.OPENROUTER_OCR_TIMEOUT_MS);
     return Number.isFinite(raw) && raw >= 1000 ? Math.floor(raw) : 90000;
 }
 
@@ -719,109 +709,6 @@ function splitBatchedOcrPages(responseText, expectedPages) {
     return segments;
 }
 
-function recordNativePdfUsage(usage, options = {}) {
-    if (!usage || !options.tracker) return;
-    options.tracker.record(usage);
-    if (typeof options.onUsage === 'function') {
-        options.onUsage(options.tracker.snapshot());
-    }
-}
-
-function normalizePageMarkedTranscript(responseText, expectedPages) {
-    const pages = splitBatchedOcrPages(responseText, expectedPages);
-    if (pages.some((page) => typeof page !== 'string' || page.trim().length === 0)) {
-        return null;
-    }
-    return pages
-        .map((page, index) => `=== STRANICA ${index + 1} ===\n${page.trim()}`)
-        .join('\n\n');
-}
-
-/**
- * Native document input path for scanned PDFs. It is deliberately bounded to
- * an entire document that fits the same normal OCR page budget; longer PDFs
- * use the existing page-bounded raster path rather than silently uploading a
- * full docket. A malformed/unsupported native response is a normal fallback,
- * never a run failure.
- */
-async function extractTextViaNativePdf(filePath, progressCallback, options = {}) {
-    const mode = resolveDocumentInputMode();
-    if (mode === DOCUMENT_INPUT_MODES.LOCAL) {
-        return buildExtractionResult({ error: 'native-pdf-disabled' });
-    }
-
-    try {
-        const fileBytes = fs.readFileSync(filePath);
-        if (fileBytes.length > resolvePdfMaxBytes()) {
-            return buildExtractionResult({ method: 'native-pdf', error: EXTRACTION_ERROR_CODES.PDF_TOO_LARGE });
-        }
-        const pdf = await pdfjsLib.getDocument({
-            data: new Uint8Array(fileBytes),
-            standardFontDataUrl: PDFJS_STANDARD_FONT_DATA_URL,
-        }).promise;
-        const pageCount = pdf.numPages;
-        await pdf.destroy();
-
-        if (!shouldUseNativePdf({
-            mode,
-            pageCount,
-            fallbackMaxPages: resolveOcrMaxPages(),
-        })) {
-            agentLog.log(
-                `[Native PDF] Skipping ${path.basename(filePath)}: mode=${mode}, pages=${pageCount}, ` +
-                `native range is ${process.env.NATIVE_PDF_MIN_PAGES || 1}-${Math.min(resolveOcrMaxPages(), Number.parseInt(process.env.NATIVE_PDF_MAX_PAGES, 10) || resolveOcrMaxPages())}.`,
-            );
-            return buildExtractionResult({ method: 'native-pdf', pages: pageCount, error: 'native-pdf-outside-budget' });
-        }
-
-        const contentHash = crypto.createHash('sha256').update(fileBytes).digest('hex');
-        const cached = ocrPageStore.readNativePdfFromDisk(contentHash);
-        const cachedText = cached && normalizePageMarkedTranscript(cached, pageCount);
-        if (cachedText) {
-            agentLog.log(`[Native PDF] Persistent cache hit: ${contentHash.slice(0, 8)} (${pageCount} pages).`);
-            return buildExtractionResult({ text: cachedText, method: 'native-pdf', pages: pageCount });
-        }
-
-        progressCallback && progressCallback({
-            step: 'analyzing',
-            message: `OCR: šaljem izvorni PDF (${pageCount} stranica) u Gemini (${path.basename(filePath)})...`,
-        });
-        const result = await withGeminiRetry(
-            () => withGeminiTimeout(async (signal) => {
-                const response = await transcribeNativePdf({
-                    apiKey: GEMINI_API_KEY,
-                    model: GEMINI_MODEL,
-                    fileBytes,
-                    pageCount,
-                    signal,
-                });
-                recordNativePdfUsage(response.usage, options);
-                return response;
-            }, { timeoutMs: resolveOcrTimeoutMs() }),
-        );
-        const text = normalizePageMarkedTranscript(result?.text, pageCount);
-        if (!text) {
-            agentLog.error(`[Native PDF] Invalid page-marked transcript for ${path.basename(filePath)}; falling back to raster OCR.`);
-            return buildExtractionResult({ method: 'native-pdf', pages: pageCount, error: 'native-pdf-invalid-transcript' });
-        }
-        ocrPageStore.writeNativePdfToDisk(contentHash, text);
-        return buildExtractionResult({
-            text,
-            method: 'native-pdf',
-            pages: pageCount,
-            pageRanges: pageRangesFromMarkedText(text),
-        });
-    } catch (err) {
-        agentLog.error(
-            `[Native PDF] Failed for ${filePath}; falling back to raster OCR:`,
-            err?.name === 'AbortError' ? err.message : err,
-        );
-        return buildExtractionResult({
-            method: 'native-pdf',
-            error: isTimeoutLikeError(err) ? EXTRACTION_ERROR_CODES.OCR_TIMEOUT : EXTRACTION_ERROR_CODES.OCR_FAILED,
-        });
-    }
-}
 
 /**
  * Extracts text from an image-based PDF using pdf.js and Gemini Vision.
@@ -907,15 +794,15 @@ async function extractTextViaOCR(filePath, progressCallback, options = {}) {
                     const imageBuffer = await renderPageToJpeg(page);
                     content.push({
                         type: "image_url",
-                        image_url: `data:image/jpeg;base64,${imageBuffer.toString("base64")}`,
+                        image_url: { url: `data:image/jpeg;base64,${imageBuffer.toString("base64")}` },
                     });
                 }
                 content.push({ type: "text", text: buildOcrBatchInstruction() });
-                const message = new HumanMessage({ content });
+                const message = { role: "user", content };
 
                 const response = await withGeminiRetry(
                     () => withGeminiTimeout(
-                        (signal) => trackGeminiInvoke(ocrBatchGemini, [message], { signal, tracker: options.tracker, onUsage: options.onUsage }),
+                        (signal) => trackUsageInvoke(ocrBatchGemini, [message], { signal, tracker: options.tracker, onUsage: options.onUsage }),
                         { timeoutMs: resolveOcrTimeoutMs() },
                     ),
                     {
@@ -972,22 +859,23 @@ async function extractTextViaOCR(filePath, progressCallback, options = {}) {
                 const page = await pdf.getPage(i);
                 const imageBuffer = await renderPageToJpeg(page);
 
-                const message = new HumanMessage({
+                const message = {
+                    role: "user",
                     content: [
                         {
                             type: "image_url",
-                            image_url: `data:image/jpeg;base64,${imageBuffer.toString("base64")}`,
+                            image_url: { url: `data:image/jpeg;base64,${imageBuffer.toString("base64")}` },
                         },
                         {
                             type: "text",
                             text: "Extract all text from this document image. The document is in Croatian. Provide only the raw text.",
                         },
                     ],
-                });
+                };
 
                 const response = await withGeminiRetry(
                     () => withGeminiTimeout(
-                        (signal) => trackGeminiInvoke(ocrGemini, [message], { signal, tracker: options.tracker, onUsage: options.onUsage }),
+                        (signal) => trackUsageInvoke(ocrGemini, [message], { signal, tracker: options.tracker, onUsage: options.onUsage }),
                         { timeoutMs: resolveOcrTimeoutMs() },
                     ),
                     {
@@ -1134,15 +1022,7 @@ function buildAnalysisPrompt(knownParties, segmentText) {
                 Provide ONLY the json object and nothing else. Text:\n\n${segmentText}`;
 }
 
-class AnalyzeDocumentsTool extends Tool {
-    constructor() {
-        super();
-        this.name = "analyze_documents_for_one_case";
-        this.description =
-            "Analyzes a set of documents related to a single court case entry and returns structured info for each.";
-    }
-
-    async _call(input) {
+async function analyzeClusterDocuments(input) {
         const { files, caseInfo, progressCallback, usageTracker, onUsage, runId } = input;
         // Run correlation for the one outcome signal this tool emits via the
         // structured logger (see grounding catch below). Null outside runs.
@@ -1235,19 +1115,11 @@ class AnalyzeDocumentsTool extends Tool {
                             ? `[Analyzer] Text extraction failed for ${path.basename(file.filePath)} (error=${extraction.error}); trying OCR fallback`
                             : `[Analyzer] No embedded text layer in ${path.basename(file.filePath)} (likely scanned); trying OCR fallback`,
                     );
-                    // Native document input is an optional, bounded upgrade
-                    // for scanned PDFs. It retains PDF layout/table context
-                    // while returning the same page-marked source text our
-                    // grounding pipeline expects. Any failure falls through
-                    // to the established raster OCR path.
-                    const nativePdfResult = await extractTextViaNativePdf(
+                    const ocrResult = await extractTextViaOCR(
                         file.filePath,
                         progressCallback,
                         { tracker: usageTracker, onUsage },
                     );
-                    const ocrResult = nativePdfResult.text && nativePdfResult.text.trim().length > 0
-                        ? nativePdfResult
-                        : await extractTextViaOCR(file.filePath, progressCallback, { tracker: usageTracker, onUsage });
                     if (ocrResult.text && ocrResult.text.trim().length > 0) {
                         text = ocrResult.text;
                         extraction = ocrResult;
@@ -1334,7 +1206,7 @@ class AnalyzeDocumentsTool extends Tool {
                 const prompt = buildAnalysisPrompt(knownParties, segment.text);
 
                 const response = await withGeminiRetry(
-                    () => withGeminiTimeout((signal) => trackGeminiInvoke(gemini, prompt, { signal, tracker: usageTracker, onUsage })),
+                    () => withGeminiTimeout((signal) => trackUsageInvoke(gemini, [{ role: "user", content: prompt }], { signal, tracker: usageTracker, onUsage })),
                     {
                         onRetry: ({ attempt, delayMs }) => {
                             progressCallback &&
@@ -1493,7 +1365,6 @@ class AnalyzeDocumentsTool extends Tool {
         } finally {
             if (heartbeatTimer) clearInterval(heartbeatTimer);
         }
-    }
 }
 
 function sleep(ms) {
@@ -1607,9 +1478,8 @@ function resetOcrPageCacheForTests() {
 }
 
 module.exports = {
-    AnalyzeDocumentsTool,
+    analyzeClusterDocuments,
     extractTextFromFile,
-    extractTextViaNativePdf,
     extractTextViaOCR,
     renderPageToJpeg,
     buildOcrBatchInstruction,

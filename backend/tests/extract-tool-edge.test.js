@@ -1,26 +1,23 @@
 const fs = require('fs');
 const path = require('path');
 const AdmZip = require('adm-zip');
-const { ExtractArchiveTool, sanitizeEntryName } = require('../court-analysis/agents/extract-tool');
+const { extractArchiveFiles, sanitizeEntryName } = require('../court-analysis/agents/extract-tool');
 
-describe('ExtractArchiveTool edge/error cases', () => {
+describe('extractArchiveFiles edge/error cases', () => {
     it('returns error for non-zip file', async () => {
-        const tool = new ExtractArchiveTool();
-        const result = await tool._call({ filePath: __filename, destination: __dirname });
+        const result = await extractArchiveFiles({ filePath: __filename, destination: __dirname });
         expect(result.status).toBe('error');
         expect(result.error_message).toMatch(/Extraction failed/i);
     });
 
     it('returns error for missing destination', async () => {
-        const tool = new ExtractArchiveTool();
-        const result = await tool._call({ filePath: __filename, destination: '' });
+        const result = await extractArchiveFiles({ filePath: __filename, destination: '' });
         expect(result.status).toBe('error');
         expect(result.error_message).toBe('Destination path is required.');
     });
 
     it('returns error for non-existent archive', async () => {
-        const tool = new ExtractArchiveTool();
-        const result = await tool._call({ filePath: '/tmp/does-not-exist.zip', destination: '/tmp/out' });
+        const result = await extractArchiveFiles({ filePath: '/tmp/does-not-exist.zip', destination: '/tmp/out' });
         expect(result.status).toBe('error');
         expect(result.error_message).toMatch(/not found/i);
     });
@@ -60,7 +57,7 @@ describe('sanitizeEntryName', () => {
     });
 });
 
-describe('ExtractArchiveTool zip extraction', () => {
+describe('extractArchiveFiles zip extraction', () => {
     const outDir = path.resolve(__dirname, 'extract-edge-test');
     const zipPath = path.resolve(__dirname, 'edge-test.zip');
 
@@ -81,8 +78,7 @@ describe('ExtractArchiveTool zip extraction', () => {
     });
 
     it('extracts all files with correct entry names', async () => {
-        const tool = new ExtractArchiveTool();
-        const result = await tool._call({ filePath: zipPath, destination: outDir });
+        const result = await extractArchiveFiles({ filePath: zipPath, destination: outDir });
         expect(result.status).toBe('success');
         const names = result.extractedFiles.map((e) => e.entryName).sort();
         expect(names).toEqual(['another/deep/file.txt', 'deep/nested/file.txt', 'good.txt']);
@@ -94,8 +90,7 @@ describe('ExtractArchiveTool zip extraction', () => {
     });
 
     it('each extractedFile has filePath and entryName', async () => {
-        const tool = new ExtractArchiveTool();
-        const result = await tool._call({ filePath: zipPath, destination: outDir });
+        const result = await extractArchiveFiles({ filePath: zipPath, destination: outDir });
         for (const entry of result.extractedFiles) {
             expect(typeof entry.filePath).toBe('string');
             expect(typeof entry.entryName).toBe('string');

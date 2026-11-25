@@ -1,12 +1,12 @@
 const os = require('os');
-const { DownloadDocumentsTool } = require('../court-analysis/agents/download-agent');
+const { downloadClusterAttachments } = require('../court-analysis/agents/download-agent');
 const fs = require('fs');
 const path = require('path');
 const { PassThrough } = require('stream');
 jest.mock('axios');
 const axios = require('axios');
 
-describe('DownloadDocumentsTool edge/error cases', () => {
+describe('downloadClusterAttachments edge/error cases', () => {
     let cacheDir;
 
     beforeAll(() => {
@@ -26,15 +26,13 @@ describe('DownloadDocumentsTool edge/error cases', () => {
     });
 
     it('returns empty for empty input', async () => {
-        const tool = new DownloadDocumentsTool();
-        const result = await tool._call({ documentLinks: [] });
+        const result = await downloadClusterAttachments({ documentLinks: [] });
         expect(Array.isArray(result)).toBe(true);
         expect(result.length).toBe(0);
     });
 
     it('handles invalid URLs gracefully', async () => {
-        const tool = new DownloadDocumentsTool();
-        const files = await tool._call({ documentLinks: [{ url: 'http://invalid.url', text: 'bad' }] });
+        const files = await downloadClusterAttachments({ documentLinks: [{ url: 'http://invalid.url', text: 'bad' }] });
         expect(Array.isArray(files)).toBe(true);
         // Should not throw, but may not download
         expect(files[0]?.filePath).toBeUndefined();

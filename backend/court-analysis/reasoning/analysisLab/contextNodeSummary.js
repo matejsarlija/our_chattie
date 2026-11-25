@@ -3,8 +3,8 @@
 // LC-2 — bounded ContextNode summary service with citation validation.
 //
 // Builds a compact, bounded source packet for one eligible ContextNode,
-// invokes the dedicated `contextNode` summary role, and validates every
-// returned statement's ids against the node's own evidence. Validated ids
+// invokes the shared `synthesis` role and validates every returned
+// statement's ids against the node's own evidence. Validated ids
 // are retained as references — but id membership is NOT a grounding proof:
 // summaries are derived context only (`grounded: false`,
 // `supportsFinding: false`) and can never independently support a report
@@ -18,15 +18,13 @@
 // caller selects nodes, the model only summarizes the packet it is given.
 
 const { extractJsonBlock, extractJsonArrayAtKey, modelContentToText } = require('../../../helpers/jsonExtract');
-const {
-    createGeminiClient,
-    outputCapWarning,
-    CONTEXT_NODE_PROMPT_VERSION,
-} = require('../../../helpers/geminiConfig');
+const { outputCapWarning, createOpenRouterRoleClient } = require('../../../llm/openrouterConfig');
 const { withGeminiRetry, withGeminiTimeout } = require('../../../helpers/geminiRetry');
-const { trackGeminiInvoke } = require('../../../helpers/geminiUsage');
+const { trackUsageInvoke } = require('../../../helpers/geminiUsage');
 const agentLog = require('../../../helpers/agentLog');
 const { collectContextFacts } = require('../caseContextBuilder');
+
+const NODE_SUMMARY_PROMPT_VERSION = 'v1';
 
 // Only lifecycle branches are summarizable in v1: the case root is too
 // broad, periods duplicate chronology the flat path already carries, and
@@ -111,7 +109,7 @@ function buildNodeSourcePacket(node, facts = [], maxPacketChars = NODE_SUMMARY_M
         nodeId: node?.id || null,
         kind: node?.kind || null,
         title: node?.title || null,
-        promptVersion: CONTEXT_NODE_PROMPT_VERSION,
+        promptVersion: NODE_SUMMARY_PROMPT_VERSION,
         facts: packetFacts,
         availableIds: {
             sourceDocumentIds: [...(node?.sourceDocumentIds || [])],
@@ -124,7 +122,7 @@ function buildNodeSourcePacket(node, facts = [], maxPacketChars = NODE_SUMMARY_M
 }
 
 /**
- * Builds the `contextNode` role prompt for one source packet. The model may
+ * Builds the `synthesis` role prompt for one source packet. The model may
  * only cite ids from the packet's allow-list; anything else is discarded by
  * the validator, so the prompt states the constraint explicitly.
  */
@@ -142,7 +140,7 @@ function buildContextNodeSummaryPrompt(packet) {
         ))
         .join('\n');
     return (
-        `SAŽETAK KONTEKSTNOG ČVORA (prompt contextNode-v${CONTEXT_NODE_PROMPT_VERSION}). ` +
+        `SAŽETAK KONTEKSTNOG ČVORA (prompt synthesis-${NODE_SUMMARY_PROMPT_VERSION}). ` +
         `Sažmi dokazni materijal čvora "${packet?.title || ''}" (${packet?.kind || ''}) u 1-4 kratke tvrdnje na hrvatskom. ` +
         `Svaka tvrdnja MORA navesti sourceDocumentIds/factIds/citationIds isključivo s ovog popisa dopuštenih identifikatora: ${allowed.join(', ') || '(nema)'}. ` +
         `Tvrdnja bez valjanih identifikatora bit će odbačena. Ne izmišljaj činjenice, iznose, datume ni veze izvan priloženog materijala.\n\n` +
@@ -229,7 +227,7 @@ function parseNodeSummaryResponse(content, node) {
 }
 
 /**
- * Production `summarizeLlm` seam over the `contextNode` role, mirroring
+ * Production `summarizeLlm` seam over the `synthesis` role, mirroring
  * `createClaimJudge`: lazy client (importing this module never needs an API
  * key), retry + timeout inside. Usage is recorded against `tracker`;
  * `onUsage` is intentionally left to the caller (`summarizeContextNode`
@@ -237,18 +235,18 @@ function parseNodeSummaryResponse(content, node) {
  */
 function createContextNodeLlm({ tracker = null } = {}) {
     const holder = {};
-    function getGemini() {
-        if (!holder.cached) holder.cached = createGeminiClient('contextNode');
+    function getRoleClient() {
+        if (!holder.cached) holder.cached = createOpenRouterRoleClient('synthesis');
         return holder.cached;
     }
-    return async function summarizeWithGemini({ prompt }) {
+    return async function summarizeWithModel({ prompt }) {
         const response = await withGeminiRetry(() => withGeminiTimeout(
-            (signal) => trackGeminiInvoke(getGemini(), prompt, { signal, tracker, onUsage: null })
+            (signal) => trackUsageInvoke(getRoleClient(), prompt, { signal, tracker, onUsage: null })
         ));
         const content = modelContentToText(response?.content);
         if (!content.trim()) {
-            agentLog.warn(outputCapWarning('contextNode'));
-            throw new Error('Empty contextNode completion.');
+            agentLog.warn(outputCapWarning('synthesis'));
+            throw new Error('Empty synthesis completion.');
         }
         return content;
     };
@@ -299,7 +297,7 @@ async function summarizeContextNode(node, facts = [], options = {}) {
         node,
         outcome: {
             nodeId, status: 'partial', reason, accepted: 0, rejected: 0,
-            calls: 0, promptVersion: CONTEXT_NODE_PROMPT_VERSION,
+            calls: 0, promptVersion: NODE_SUMMARY_PROMPT_VERSION,
             gap: `node-summary:${reason}`,
             ...extra,
         },
@@ -328,11 +326,11 @@ async function summarizeContextNode(node, facts = [], options = {}) {
             nodeId
         );
     } catch (err) {
-        fireUsage(onUsage, { role: 'contextNode', nodeId, status: 'partial', reason: 'call-failed', usage: tracker?.snapshot?.() || null });
+        fireUsage(onUsage, { role: 'synthesis', nodeId, status: 'partial', reason: 'call-failed', usage: tracker?.snapshot?.() || null });
         agentLog.warn(`[ContextNodeSummary] Node ${nodeId} summary call failed; retaining raw node (${err.message})`);
         return partial('call-failed', { calls, detail: String(err?.message || err).slice(0, 300) });
     }
-    fireUsage(onUsage, { role: 'contextNode', nodeId, status: 'responded', usage: tracker?.snapshot?.() || null });
+    fireUsage(onUsage, { role: 'synthesis', nodeId, status: 'responded', usage: tracker?.snapshot?.() || null });
 
     const parsed = parseNodeSummaryResponse(content, node);
     if (!parsed.ok) {
@@ -353,7 +351,7 @@ async function summarizeContextNode(node, facts = [], options = {}) {
             nodeId, status: parsed.truncated ? 'partial' : 'complete',
             reason: parsed.truncated ? 'truncated-summary' : null,
             accepted: parsed.accepted, rejected: parsed.rejected,
-            calls, promptVersion: CONTEXT_NODE_PROMPT_VERSION,
+            calls, promptVersion: NODE_SUMMARY_PROMPT_VERSION,
             packetTruncated: packet.truncated,
             responseTruncated: parsed.truncated,
             gap: parsed.truncated ? 'node-summary:truncated-summary' : null,
@@ -412,7 +410,7 @@ async function summarizeContextNodes(nodes, facts = [], options = {}) {
             accepted: 0,
             rejected: 0,
             calls: 0,
-            promptVersion: CONTEXT_NODE_PROMPT_VERSION,
+            promptVersion: NODE_SUMMARY_PROMPT_VERSION,
             gap: 'node-summary:node-budget-exhausted',
         });
     }

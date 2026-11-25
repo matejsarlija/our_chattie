@@ -65,7 +65,7 @@ describe('analysisLab profiles (LA-1)', () => {
         expect(snapshot.codeRevision).toBe('abc123');
         expect(snapshot.modelRoles.synthesis.model).toBeTruthy();
         expect(snapshot.modelRoles.verify.model).toBeTruthy();
-        expect(snapshot.promptVersions).toMatchObject({ contextNode: 'v1' });
+        expect(snapshot.promptVersions).toMatchObject({ nodeSummary: 'v1', synthesis: 'vCurrent' });
         expect(snapshot.schemaVersions.evidence).toBe(1);
         expect(snapshot.executionSnapshot.followUpVerification).toBe('off');
         // Serializable with no loss.
@@ -75,14 +75,14 @@ describe('analysisLab profiles (LA-1)', () => {
     test('snapshots never persist credentials', () => {
         const snapshot = snapshotProfile('baseline-flat-v1', {
             codeRevision: 'abc123',
-            GOOGLE_API_KEY: 'secret-key',
+            OPENROUTER_API_KEY: 'secret-key',
             apiKey: 'secret-key',
             gates: { claimJudge: 'on' },
             retrieval: { mode: 'standard', apiKey: 'secret-key' },
         });
         const serialized = JSON.stringify(snapshot);
         expect(serialized).not.toContain('secret-key');
-        expect(serialized).not.toMatch(/apiKey|GOOGLE_API_KEY/i);
+        expect(serialized).not.toMatch(/apiKey|OPENROUTER_API_KEY/i);
     });
 
     test('later mutation of config/profile objects cannot mutate an existing snapshot', () => {

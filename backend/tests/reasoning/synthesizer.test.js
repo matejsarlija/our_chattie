@@ -1,15 +1,7 @@
-// Mocking necessary modules
-const { HumanMessage } = require("@langchain/core/messages");
-
-// Mock ChatGoogleGenerativeAI
 const mockInvoke = jest.fn();
-jest.mock("@langchain/google-genai", () => {
-    return {
-        ChatGoogleGenerativeAI: jest.fn().mockImplementation(() => ({
-            invoke: mockInvoke
-        }))
-    };
-});
+jest.mock('../../llm/openrouterClient.js', () => ({
+    createOpenRouterClient: () => ({ invoke: mockInvoke })
+}));
 
 // Mock retry helper
 jest.mock("../../helpers/geminiRetry", () => ({
@@ -83,12 +75,12 @@ describe('Synthesizer', () => {
             { source: 'd1', text: 'quote', provenance: { acquisitionMode: 'search-window' } }
         ]);
 
-        // Check if the prompt contained key info
         const lastCallArgs = mockInvoke.mock.calls[0][0];
-        // lastCallArgs should be a string or array of messages. 
-        // Our implementation will likely pass a string or HumanMessage.
-        // Let's assume it passes a string for now or we check the content.
-        const promptText = typeof lastCallArgs === 'string' ? lastCallArgs : lastCallArgs[0]?.content || lastCallArgs;
+        const promptText = typeof lastCallArgs === 'string'
+            ? lastCallArgs
+            : Array.isArray(lastCallArgs)
+                ? lastCallArgs.map(({ role, content }) => `${role}: ${content}`).join('\n')
+                : String(lastCallArgs);
         expect(promptText).toContain('St-123/2023');
         expect(promptText).toContain('Party A');
     });

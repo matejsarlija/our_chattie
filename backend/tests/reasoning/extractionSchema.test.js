@@ -1,4 +1,4 @@
-const { GEMINI_ROLE_CONFIG } = require('../../helpers/geminiConfig');
+const { OPENROUTER_ROLE_CONFIG } = require('../../llm/openrouterConfig');
 const {
     EXTRACTION_SCHEMA_VERSION,
     REPAIRABLE_FIELDS,
@@ -384,7 +384,7 @@ describe('parseFieldRepairResponse', () => {
             })),
             citedFilingReferences: Array.from({ length: 20 }, (_, index) => `St-2/2013-${900 + index}`),
         };
-        const estimatedCapacity = GEMINI_ROLE_CONFIG.analysis.maxOutputTokens * 4;
+        const estimatedCapacity = OPENROUTER_ROLE_CONFIG.analysis.maxOutputTokens * 4;
         expect(JSON.stringify(dense).length).toBeLessThan(estimatedCapacity * 0.75);
     });
 });

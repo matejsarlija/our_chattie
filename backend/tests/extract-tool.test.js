@@ -1,9 +1,9 @@
 const fs = require('fs');
 const path = require('path');
 const AdmZip = require('adm-zip');
-const { ExtractArchiveTool } = require('../court-analysis/agents/extract-tool');
+const { extractArchiveFiles } = require('../court-analysis/agents/extract-tool');
 
-describe('ExtractArchiveTool', () => {
+describe('extractArchiveFiles', () => {
     const testZipPath = path.resolve(__dirname, 'test-archive.zip');
     const extractDir = path.resolve(__dirname, 'extracted');
 
@@ -25,8 +25,7 @@ describe('ExtractArchiveTool', () => {
     });
 
     it('extracts a zip archive and returns file list with correct shape', async () => {
-        const tool = new ExtractArchiveTool();
-        const result = await tool._call({ filePath: testZipPath, destination: extractDir });
+        const result = await extractArchiveFiles({ filePath: testZipPath, destination: extractDir });
         expect(result.status).toBe('success');
         expect(Array.isArray(result.extractedFiles)).toBe(true);
         expect(result.extractedFiles.length).toBe(3);
@@ -47,15 +46,13 @@ describe('ExtractArchiveTool', () => {
     });
 
     it('skips directory entries', async () => {
-        const tool = new ExtractArchiveTool();
-        const result = await tool._call({ filePath: testZipPath, destination: extractDir });
+        const result = await extractArchiveFiles({ filePath: testZipPath, destination: extractDir });
         const names = result.extractedFiles.map((e) => e.entryName);
         expect(names).not.toContain('subdir/');
     });
 
     it('returns error for non-existent file', async () => {
-        const tool = new ExtractArchiveTool();
-        const result = await tool._call({ filePath: 'nonexistent.zip', destination: extractDir });
+        const result = await extractArchiveFiles({ filePath: 'nonexistent.zip', destination: extractDir });
         expect(result.status).toBe('error');
         expect(result.error_message).toMatch(/not found/i);
     });
@@ -63,8 +60,7 @@ describe('ExtractArchiveTool', () => {
     it('auto-creates destination directory', async () => {
         const newDir = path.resolve(__dirname, 'extract-new-dir');
         if (fs.existsSync(newDir)) fs.rmSync(newDir, { recursive: true, force: true });
-        const tool = new ExtractArchiveTool();
-        const result = await tool._call({ filePath: testZipPath, destination: newDir });
+        const result = await extractArchiveFiles({ filePath: testZipPath, destination: newDir });
         expect(result.status).toBe('success');
         expect(fs.existsSync(newDir)).toBe(true);
         fs.rmSync(newDir, { recursive: true, force: true });

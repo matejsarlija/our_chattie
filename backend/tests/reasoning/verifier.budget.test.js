@@ -1,7 +1,7 @@
 const mockInvoke = jest.fn();
 
-jest.mock('@langchain/google-genai', () => ({
-    ChatGoogleGenerativeAI: jest.fn().mockImplementation(() => ({ invoke: mockInvoke }))
+jest.mock('../../llm/openrouterClient.js', () => ({
+    createOpenRouterClient: () => ({ invoke: mockInvoke }),
 }));
 
 jest.mock('../../helpers/geminiRetry', () => ({

@@ -11,18 +11,17 @@
 
 const { extractJsonBlock } = require('../../helpers/jsonExtract');
 const { withGeminiRetry, withGeminiTimeout } = require('../../helpers/geminiRetry');
-const { trackGeminiInvoke } = require('../../helpers/geminiUsage');
-const { createGeminiClient, outputCapWarning } = require('../../helpers/geminiConfig');
+const { trackUsageInvoke } = require('../../helpers/geminiUsage');
+const { createOpenRouterRoleClient, outputCapWarning } = require('../../llm/openrouterConfig');
 const agentLog = require('../../helpers/agentLog');
 
 const MAX_SIGNIFICANCE_ITEMS = 20;
 const SIGNIFICANCE_LEVELS = ['high', 'medium', 'low'];
 
-function getGemini() {
-    if (!getGemini.cached) getGemini.cached = createGeminiClient('significance');
-    return getGemini.cached;
+function getRoleClient() {
+    if (!getRoleClient.cached) getRoleClient.cached = createOpenRouterRoleClient('significance');
+    return getRoleClient.cached;
 }
-
 function itemText(item) {
     if (!item || typeof item !== 'object') return null;
     for (const key of ['finding', 'text', 'question', 'description']) {
@@ -88,7 +87,7 @@ function createSignificanceJudge({ tracker = null, onUsage = null } = {}) {
     return async function judgeSignificance(shortlist) {
         const prompt = buildSignificancePrompt(shortlist);
         const response = await withGeminiRetry(() => withGeminiTimeout(
-            (signal) => trackGeminiInvoke(getGemini(), prompt, { signal, tracker, onUsage })
+            (signal) => trackUsageInvoke(getRoleClient(), prompt, { signal, tracker, onUsage })
         ));
         const ranking = parseSignificanceRanking(response?.content, shortlist);
         if (!ranking) {

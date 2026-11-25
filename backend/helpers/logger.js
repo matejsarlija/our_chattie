@@ -4,7 +4,7 @@ const LEVELS = { debug: 10, info: 20, warn: 30, error: 40 };
 const DEFAULT_LEVEL = process.env.LOG_LEVEL || 'info';
 
 const OIB_PATTERN = /\b\d{11}\b/g;
-const KEY_PATTERN = /(["']?)(api[_-]?key|authorization|token|secret|password|google_api_key)(["']?)\s*[:=]\s*["']?[^\s"',;]+["']?/gi;
+const KEY_PATTERN = /(["']?)(api[_-]?key|authorization|token|secret|password|openrouter_api_key)(["']?)\s*[:=]\s*["']?[^\s"',;]+["']?/gi;
 const KEY_REPLACEMENT = '$1$2$3:[REDACTED]';
 
 function redactSecrets(value) {

@@ -23,7 +23,7 @@ const { buildSynthesisInput, appendContextClaims } = require('./synthesisInputBu
 const { buildCaseContext, collectContextFacts } = require('./caseContextBuilder');
 const { getProfile } = require('./analysisLab/profiles');
 const { summarizeContextNodes } = require('./analysisLab/contextNodeSummary');
-const { CONTEXT_NODE_PROMPT_VERSION } = require('../../helpers/geminiConfig');
+const NODE_SUMMARY_PROMPT_VERSION = 'v1';
 
 const BRANCH_CLAIM_TEXT_MAX_CHARS = 1200;
 const TRACE_TEXT_MAX_CHARS = 600;
@@ -254,7 +254,7 @@ function buildDerivedClaims(node, factsById, analysesById, filingsIndex, startIn
                 supportsFinding: false,
                 sourceReferences,
                 statementIndex,
-                promptVersion: CONTEXT_NODE_PROMPT_VERSION,
+                promptVersion: NODE_SUMMARY_PROMPT_VERSION,
             },
         });
     });
@@ -344,7 +344,7 @@ async function buildProfileReportInput({
                 strategy: profile.contextStrategy,
                 rootId,
                 nodeSummaries: profile.nodeSummaries,
-                promptVersion: CONTEXT_NODE_PROMPT_VERSION,
+                promptVersion: NODE_SUMMARY_PROMPT_VERSION,
                 selectedNodeIds: summarizedNodes.map((node) => node.id),
                 branchClaimIds: branchClaims.map((claim) => claim.id),
                 derivedClaimIds: derivedClaims.map((claim) => claim.id),

@@ -155,7 +155,7 @@ describe('analysis lab persistence hygiene (LQ-2)', () => {
         await labStore.completeExperimentVariant({
             experimentId: created.id,
             profileId: 'baseline-flat-v1',
-            profileSnapshot: { id: 'baseline-flat-v1', nested: { GOOGLE_API_KEY: 'sk-live-123' } },
+            profileSnapshot: { id: 'baseline-flat-v1', nested: { OPENROUTER_API_KEY: 'sk-live-123' } },
             report: { findings: [{ text: 'x', citations: [{ sourceId: 'lab-doc-01' }], secretNote: 'hunter2' }] },
             trace: { profileId: 'baseline-flat-v1', debug: { password: 's3cret', inputTokens: 10 } },
             usage: { calls: 1, inputTokens: 10, totalTokens: 10, apiKey: 'sk-live-456' },

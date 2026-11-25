@@ -1,7 +1,7 @@
 require("dotenv").config();
 const { withGeminiRetry, withGeminiTimeout } = require("../../helpers/geminiRetry");
-const { trackGeminiInvoke } = require("../../helpers/geminiUsage");
-const { createGeminiClient, outputCapWarning } = require("../../helpers/geminiConfig");
+const { trackUsageInvoke } = require("../../helpers/geminiUsage");
+const { createOpenRouterRoleClient, outputCapWarning } = require("../../llm/openrouterConfig");
 const { extractJsonBlock } = require("../../helpers/jsonExtract");
 const agentLog = require("../../helpers/agentLog");
 const { SCHEMA_VERSION, validateReport } = require("./schema");
@@ -14,7 +14,7 @@ const {
     applyCoverageConfidenceGuard
 } = require("./coverageGuard");
 
-const gemini = createGeminiClient("synthesis");
+const gemini = createOpenRouterRoleClient("synthesis");
 const MAX_REPORT_FINDINGS = 12;
 const MAX_REPORT_QUESTIONS = 8;
 const MAX_REPORT_NEXT_STEPS = 8;
@@ -165,7 +165,7 @@ async function synthesizeReport(evidencePackage, options = {}) {
     `;
 
     try {
-        const response = await withGeminiRetry(() => withGeminiTimeout((signal) => trackGeminiInvoke(gemini, prompt, { signal, tracker: options.tracker, onUsage: options.onUsage })));
+        const response = await withGeminiRetry(() => withGeminiTimeout((signal) => trackUsageInvoke(gemini, prompt, { signal, tracker: options.tracker, onUsage: options.onUsage })));
         const parsed = extractJsonBlock(response.content);
 
         if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {

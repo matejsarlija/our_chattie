@@ -15,15 +15,11 @@ const mockNormalizeReasoningEvidence = jest.fn((evidencePackage) => ({
 }));
 
 jest.mock('../court-analysis/agents/download-agent', () => ({
-    DownloadDocumentsTool: jest.fn().mockImplementation(() => ({
-        _call: mockDownloadCall
-    }))
+    downloadClusterAttachments: mockDownloadCall,
 }));
 
 jest.mock('../court-analysis/agents/analysis-agent', () => ({
-    AnalyzeDocumentsTool: jest.fn().mockImplementation(() => ({
-        _call: mockAnalyzeCall
-    }))
+    analyzeClusterDocuments: mockAnalyzeCall,
 }));
 
 jest.mock('../court-registry/enricher', () => ({
@@ -39,10 +35,8 @@ jest.mock('../court-analysis/reasoning/verifier', () => ({
     verifyReport: mockVerifyReport
 }));
 
-jest.mock('@langchain/google-genai', () => ({
-    ChatGoogleGenerativeAI: jest.fn().mockImplementation(() => ({
-        invoke: jest.fn().mockResolvedValue({ content: '[]' })
-    }))
+jest.mock('../llm/openrouterClient.js', () => ({
+    createOpenRouterClient: () => ({ invoke: jest.fn().mockResolvedValue({ content: '[]' }) }),
 }));
 
 jest.mock('adm-zip', () => {

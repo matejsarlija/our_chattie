@@ -1,6 +1,5 @@
 // agents/download-agent.js
 
-const { Tool } = require('@langchain/core/tools');
 const fs = require('fs');
 const path = require('path');
 const axios = require('axios');
@@ -137,58 +136,46 @@ async function downloadFile(url, baseFilename, fallbackLinkText) {
 }
 
 
-class DownloadDocumentsTool extends Tool {
-    constructor() {
-        super();
-        this.name = 'download_documents';
-        this.description = 'Download documents from URLs and return file paths.';
+async function downloadClusterAttachments(input) {
+    const { documentLinks, progressCallback } = input;
+    const downloaded = [];
+    let completed = 0;
+    let cacheHits = 0;
+
+    for (const link of documentLinks) {
+        try {
+            const safeName = (link.text || 'document').replace(/[^a-zA-Z0-9-_]/g, '_').slice(0, 40);
+            const baseFilename = `${Date.now()}_${safeName}`;
+            const { filePath, fromCache } = await downloadFile(link.url, baseFilename, link.text);
+            downloaded.push({
+                filePath,
+                url: link.url,
+                text: link.text,
+                fromCache,
+                sourceDocumentLinkId: link.id ?? link.documentLinkId ?? null,
+                sourceEntryIndex: link.entryIndex ?? link.sourceEntryIndex ?? null,
+            });
+            if (fromCache) cacheHits++;
+            completed++;
+            const currentProgress = 50 + Math.round((completed / documentLinks.length) * 30);
+            const message = fromCache
+                ? `Reused from cache: ${path.basename(filePath)}`
+                : `Downloaded: ${path.basename(filePath)}`;
+            progressCallback && progressCallback({ step: 'downloading', progress: currentProgress, message, completed, total: documentLinks.length });
+        } catch (err) {
+            agentLog.error(`[Downloader] Failed to download ${link.text} from ${link.url}:`, err.message);
+            completed++;
+            const currentProgress = 50 + Math.round((completed / documentLinks.length) * 30);
+            progressCallback && progressCallback({ step: 'downloading', progress: currentProgress, message: `Failed: ${link.text}`, completed, total: documentLinks.length, failed: true });
+        }
     }
 
-    async _call(input) {
-        const { documentLinks, progressCallback } = input;
-        const downloaded = [];
-        let completed = 0;
-        let cacheHits = 0;
-
-        for (const link of documentLinks) {
-            try {
-                const safeName = (link.text || 'document').replace(/[^a-zA-Z0-9-_]/g, '_').slice(0, 40);
-                const baseFilename = `${Date.now()}_${safeName}`;
-                const { filePath, fromCache } = await downloadFile(link.url, baseFilename, link.text);
-                // Explicit provenance: carried through filesForAnalysis →
-                // individualAnalyses so attachAnalysesToEvidencePackage can
-                // resolve the source entry by id/index instead of fuzzy
-                // filename matching. Null when the caller passes bare
-                // {url, text} links (legacy path); url/text matching covers it.
-                downloaded.push({
-                    filePath,
-                    url: link.url,
-                    text: link.text,
-                    fromCache,
-                    sourceDocumentLinkId: link.id ?? link.documentLinkId ?? null,
-                    sourceEntryIndex: link.entryIndex ?? link.sourceEntryIndex ?? null,
-                });
-                if (fromCache) cacheHits++;
-                completed++;
-                const currentProgress = 50 + Math.round((completed / documentLinks.length) * 30);
-                const message = fromCache
-                    ? `Reused from cache: ${path.basename(filePath)}`
-                    : `Downloaded: ${path.basename(filePath)}`;
-                progressCallback && progressCallback({ step: 'downloading', progress: currentProgress, message, completed, total: documentLinks.length });
-            } catch (err) {
-                agentLog.error(`[Downloader] Failed to download ${link.text} from ${link.url}:`, err.message);
-                completed++;
-                const currentProgress = 50 + Math.round((completed / documentLinks.length) * 30);
-                progressCallback && progressCallback({ step: 'downloading', progress: currentProgress, message: `Failed: ${link.text}`, completed, total: documentLinks.length, failed: true });
-            }
-        }
-
-        if (documentLinks.length > 0) {
-            agentLog.log(`[Downloader] Download cache: ${cacheHits}/${documentLinks.length} served without network.`);
-        }
-        progressCallback && progressCallback({ step: 'downloading', progress: 80, message: 'All downloads attempted.' });
-        return downloaded;
+    if (documentLinks.length > 0) {
+        agentLog.log(`[Downloader] Download cache: ${cacheHits}/${documentLinks.length} served without network.`);
     }
+    progressCallback && progressCallback({ step: 'downloading', progress: 80, message: 'All downloads attempted.' });
+    return downloaded;
 }
 
-module.exports = { DownloadDocumentsTool };
+module.exports = { downloadClusterAttachments };
+

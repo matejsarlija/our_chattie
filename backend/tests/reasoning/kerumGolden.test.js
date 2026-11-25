@@ -15,8 +15,8 @@
  * items mirroring that content through the deterministic pipeline
  * (collect → consolidate → reconcile) and asserts the end-to-end shape.
  */
-jest.mock('@langchain/google-genai', () => ({
-    ChatGoogleGenerativeAI: jest.fn().mockImplementation(() => ({ invoke: jest.fn() })),
+jest.mock('../../llm/openrouterClient.js', () => ({
+    createOpenRouterClient: () => ({ invoke: jest.fn() }),
 }));
 
 jest.mock('../../helpers/geminiRetry', () => ({
@@ -25,7 +25,7 @@ jest.mock('../../helpers/geminiRetry', () => ({
 }));
 
 jest.mock('../../helpers/geminiUsage', () => ({
-    trackGeminiInvoke: jest.fn(),
+    trackUsageInvoke: jest.fn(),
 }));
 
 const fs = require('fs');

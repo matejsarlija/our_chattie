@@ -1,4 +1,4 @@
-// Live verification of the reasoning engine chain against real Gemini.
+// Offline-safe entry point for manually verifying the OpenRouter reasoning chain.
 // Builds a ClusterEvidencePackage from the frozen baseline fixture (real scraped
 // + analyzed ST-2/2013 Kerum data) and runs generateClusterReport end-to-end.
 (async () => {
@@ -11,12 +11,10 @@ const { validateClusterEvidencePackage } = require('../court-analysis/reasoning/
 const { generateClusterReport } = require('../court-analysis/reasoning/reportService');
 const { validateReport } = require('../court-analysis/reasoning/schema');
 
-// Every run of this script spends real Gemini tokens, so every run also
-// writes a small, structured, diffable snapshot to .eval/snapshots/ —
-// win or lose — giving a free regression baseline without any manual
-// copy-pasting. Metrics only (no narrative prose, which varies run to run
-// regardless of quality); pair with test-artifacts/live-reasoning-report.json
-// (full raw report, overwritten each run) when the prose itself matters.
+// Each live run spends real OpenRouter tokens. It writes a small, structured,
+// diffable metrics snapshot to .eval/snapshots/ for regression comparison.
+// Pair with test-artifacts/live-reasoning-report.json when the prose itself
+// matters.
 const SNAPSHOT_DIR = path.join(__dirname, '..', '.eval', 'snapshots');
 
 function writeSnapshot(payload) {
@@ -39,8 +37,8 @@ const fixturePath = path.join(__dirname, '..', 'fixtures', 'analysis-baselines',
 const fixture = JSON.parse(fs.readFileSync(fixturePath, 'utf8'));
 const processedCases = fixture.pipeline.rawResult.processedCases;
 
-if (!process.env.GOOGLE_API_KEY) {
-    console.error('GOOGLE_API_KEY is not set.');
+if (!process.env.OPENROUTER_API_KEY) {
+    console.error('OPENROUTER_API_KEY is not set.');
     process.exit(2);
 }
 

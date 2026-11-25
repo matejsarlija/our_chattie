@@ -1,20 +1,10 @@
 const { SCHEMA_VERSION } = require('../../court-analysis/reasoning/schema');
 
-// 1. Mock the module factory
-jest.mock("@langchain/google-genai");
-
-// 2. Import the mocked class
-const { ChatGoogleGenerativeAI } = require("@langchain/google-genai");
-
-// 3. Create the mock function we want to track
 const mockInvoke = jest.fn();
-
-// 4. Set the implementation BEFORE requiring the module under test
-ChatGoogleGenerativeAI.mockImplementation(() => ({
-    invoke: mockInvoke
+jest.mock('../../llm/openrouterClient.js', () => ({
+    createOpenRouterClient: () => ({ invoke: mockInvoke })
 }));
 
-// 5. Require the module under test
 const { verifyReport } = require('../../court-analysis/reasoning/verifier');
 
 // Mock retry helper

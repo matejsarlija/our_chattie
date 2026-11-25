@@ -1,7 +1,7 @@
 const {
   createUsageTracker,
   extractUsageFromResponse,
-  trackGeminiInvoke,
+  trackUsageInvoke,
 } = require('../helpers/geminiUsage');
 
 describe('createUsageTracker', () => {
@@ -102,7 +102,7 @@ describe('extractUsageFromResponse', () => {
   });
 });
 
-describe('trackGeminiInvoke', () => {
+describe('trackUsageInvoke', () => {
   test('records usage and fires onUsage with the cumulative snapshot', async () => {
     const tracker = createUsageTracker();
     const onUsage = jest.fn();
@@ -113,7 +113,7 @@ describe('trackGeminiInvoke', () => {
       }),
     };
 
-    const response = await trackGeminiInvoke(gemini, 'prompt', { signal: undefined, tracker, onUsage });
+    const response = await trackUsageInvoke(gemini, 'prompt', { signal: undefined, tracker, onUsage });
 
     expect(gemini.invoke).toHaveBeenCalledWith('prompt', {});
     expect(response.content).toBe('result');
@@ -128,7 +128,7 @@ describe('trackGeminiInvoke', () => {
       invoke: jest.fn().mockResolvedValue({ content: 'x', usage_metadata: { input_tokens: 1, output_tokens: 1, total_tokens: 2 } }),
     };
 
-    await trackGeminiInvoke(gemini, 'prompt', { signal, tracker: createUsageTracker() });
+    await trackUsageInvoke(gemini, 'prompt', { signal, tracker: createUsageTracker() });
 
     expect(gemini.invoke).toHaveBeenCalledWith('prompt', { signal });
   });
@@ -138,7 +138,7 @@ describe('trackGeminiInvoke', () => {
     const onUsage = jest.fn();
     const gemini = { invoke: jest.fn().mockResolvedValue({ content: 'x' }) };
 
-    const response = await trackGeminiInvoke(gemini, 'prompt', { tracker, onUsage });
+    const response = await trackUsageInvoke(gemini, 'prompt', { tracker, onUsage });
 
     expect(response.content).toBe('x');
     expect(onUsage).not.toHaveBeenCalled();

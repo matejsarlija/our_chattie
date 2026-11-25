@@ -4,10 +4,8 @@ const path = require('path');
 
 const mockGeminiInvoke = jest.fn();
 
-jest.mock('@langchain/google-genai', () => ({
-  ChatGoogleGenerativeAI: jest.fn().mockImplementation(() => ({
-    invoke: mockGeminiInvoke,
-  })),
+jest.mock('../llm/openrouterClient.js', () => ({
+  createOpenRouterClient: () => ({ invoke: mockGeminiInvoke }),
 }));
 
 jest.mock('../helpers/geminiRetry', () => ({
@@ -16,7 +14,7 @@ jest.mock('../helpers/geminiRetry', () => ({
 }));
 
 jest.mock('../helpers/geminiUsage', () => ({
-  trackGeminiInvoke: (_gemini, prompt, _opts) => mockGeminiInvoke(prompt),
+  trackUsageInvoke: (_client, prompt, _opts) => mockGeminiInvoke(Array.isArray(prompt) && prompt.length === 1 && typeof prompt[0]?.content === 'string' ? prompt[0].content : prompt),
 }));
 
 const mockGetDocument = jest.fn();
@@ -38,7 +36,7 @@ jest.mock('canvas', () => ({
   })),
 }));
 
-const { AnalyzeDocumentsTool, resetOcrPageCacheForTests } = require('../court-analysis/agents/analysis-agent');
+const { analyzeClusterDocuments, resetOcrPageCacheForTests } = require('../court-analysis/agents/analysis-agent');
 
 // The persistent L2 OCR page cache is content-hash keyed and SHARED on disk:
 // a fake fixture PDF ('fake-pdf' bytes) can collide with an entry written by
@@ -64,7 +62,7 @@ function mockScannedPdfPage() {
     };
 }
 
-describe('AnalyzeDocumentsTool edge/error cases', () => {
+describe('analyzeClusterDocuments edge/error cases', () => {
     beforeEach(() => {
         mockGeminiInvoke.mockReset();
         mockGeminiInvoke.mockResolvedValue({
@@ -80,8 +78,7 @@ describe('AnalyzeDocumentsTool edge/error cases', () => {
     });
 
     it('returns error for empty file list', async () => {
-        const tool = new AnalyzeDocumentsTool();
-        const result = await tool._call({ files: [] });
+        const result = await analyzeClusterDocuments({ files: [] });
         expect(Array.isArray(result.individualAnalyses)).toBe(true);
         expect(result.individualAnalyses.length).toBe(0);
     });
@@ -89,9 +86,8 @@ describe('AnalyzeDocumentsTool edge/error cases', () => {
     it('handles non-PDF file gracefully', async () => {
         const txtPath = path.resolve(__dirname, 'dummy.txt');
         fs.writeFileSync(txtPath, 'Just some text');
-        const tool = new AnalyzeDocumentsTool();
         const files = [{ filePath: txtPath, url: 'mock', text: 'Dummy TXT' }];
-        const result = await tool._call({ files });
+        const result = await analyzeClusterDocuments({ files });
         expect(result.individualAnalyses[0].aiResult).toBeDefined();
         fs.unlinkSync(txtPath);
     });
@@ -105,8 +101,7 @@ describe('AnalyzeDocumentsTool edge/error cases', () => {
         mockGeminiInvoke.mockRejectedValue(new Error('Gemini request timed out after 30000ms'));
 
         try {
-            const tool = new AnalyzeDocumentsTool();
-            const result = await tool._call({
+            const result = await analyzeClusterDocuments({
                 files: [{ filePath: pdfPath, url: 'mock', text: 'Scanned PDF' }],
                 caseInfo: { participants: [] },
             });
@@ -128,8 +123,7 @@ describe('AnalyzeDocumentsTool edge/error cases', () => {
         });
 
         try {
-            const tool = new AnalyzeDocumentsTool();
-            const result = await tool._call({
+            const result = await analyzeClusterDocuments({
                 files: [{ filePath: pdfPath, url: 'mock', text: 'Corrupt PDF' }],
                 caseInfo: { participants: [] },
             });
@@ -151,8 +145,7 @@ describe('AnalyzeDocumentsTool edge/error cases', () => {
         mockGetDocument.mockReturnValue({ promise: Promise.resolve(mockScannedPdfDoc()) });
 
         try {
-            const tool = new AnalyzeDocumentsTool();
-            const result = await tool._call({
+            const result = await analyzeClusterDocuments({
                 files: [{ filePath: pdfPath, url: 'mock', text: 'OCR-rescued PDF' }],
                 caseInfo: { participants: [] },
             });
@@ -171,8 +164,7 @@ describe('transient second-pass retry', () => {
     fs.writeFileSync(txtPath, 'Some readable court document text for analysis.');
 
     const runSingleFile = async () => {
-        const tool = new AnalyzeDocumentsTool();
-        return tool._call({
+        return analyzeClusterDocuments({
             files: [{ filePath: txtPath, url: 'mock', text: 'Retry probe' }],
             caseInfo: { participants: [] },
         });

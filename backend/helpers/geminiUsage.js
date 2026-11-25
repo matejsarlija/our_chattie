@@ -1,9 +1,8 @@
-// Token-usage accounting for Gemini calls across the analysis pipeline.
+// Token-usage accounting for OpenRouter calls across the analysis pipeline.
 //
-// @langchain/google-genai `invoke` returns an AIMessage whose `usage_metadata`
-// carries `{ input_tokens, output_tokens, total_tokens }`. Every call site used
-// to discard it. This module centralizes extraction and per-run accumulation so
-// token usage can be streamed live and persisted on the analysis run.
+// The client normalizes provider usage into `{ input_tokens, output_tokens,
+// total_tokens }`. This module accumulates it per run for streaming and
+// persistence.
 
 /**
  * Creates a cumulative usage tracker for a single analysis run.
@@ -69,8 +68,8 @@ function toNonNegativeInt(value) {
 }
 
 /**
- * Extracts a normalized usage object from a LangChain AIMessage response.
- * Returns null when the response carries no usage metadata (e.g. a refusal).
+ * Extracts normalized usage from an OpenRouter response.
+ * Returns null when the response carries no usage metadata.
  * @param {object|null} response
  * @returns {{ inputTokens: number|null, outputTokens: number|null, totalTokens: number|null }|null}
  */
@@ -92,21 +91,21 @@ function extractUsageFromResponse(response) {
 }
 
 /**
- * Invokes the Gemini client and records any returned usage against `tracker`,
+ * Invokes the model client and records returned usage against `tracker`,
  * firing `onUsage` with the updated cumulative snapshot. Returns the raw
- * AIMessage so call sites keep using `.content` as before.
+ * normalized response so call sites keep using `.content` as before.
  *
- * Must be called inside the existing withGeminiRetry/withGeminiTimeout closure
- * so every retry attempt (which still consumes tokens) is accounted for.
+ * Must be called inside the request retry/timeout closure so every attempt
+ * (which may consume tokens) is accounted for.
  *
- * @param {import('@langchain/google-genai').ChatGoogleGenerativeAI} gemini
+ * @param {{ invoke: Function }} client
  * @param {any} input
  * @param {{ signal?: AbortSignal, tracker?: object, onUsage?: (snapshot: object) => void }} [options]
- * @returns {Promise<object>} The AIMessage response.
+ * @returns {Promise<object>} The normalized model response.
  */
-async function trackGeminiInvoke(gemini, input, options = {}) {
+async function trackUsageInvoke(client, input, options = {}) {
     const { signal, tracker, onUsage } = options;
-    const response = await gemini.invoke(input, signal ? { signal } : {});
+    const response = await client.invoke(input, signal ? { signal } : {});
 
     if (tracker) {
         const usage = extractUsageFromResponse(response);
@@ -124,5 +123,5 @@ async function trackGeminiInvoke(gemini, input, options = {}) {
 module.exports = {
     createUsageTracker,
     extractUsageFromResponse,
-    trackGeminiInvoke,
+    trackUsageInvoke,
 };

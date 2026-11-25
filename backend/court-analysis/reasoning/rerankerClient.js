@@ -15,21 +15,20 @@
 // reranker.js); output is a strict JSON array of {id, score} recovered via
 // extractJsonBlock with outputCapWarning on parse failure.
 
-const { createGeminiClient, outputCapWarning } = require('../../helpers/geminiConfig');
+const { createOpenRouterRoleClient, outputCapWarning } = require('../../llm/openrouterConfig');
 const { withGeminiRetry, withGeminiTimeout } = require('../../helpers/geminiRetry');
-const { trackGeminiInvoke } = require('../../helpers/geminiUsage');
+const { trackUsageInvoke } = require('../../helpers/geminiUsage');
 const { extractJsonBlock } = require('../../helpers/jsonExtract');
 const agentLog = require('../../helpers/agentLog');
 const { resolveReasoningRerankMode } = require('../../helpers/reasoningSettings');
 
-// Lazy client: constructing ChatGoogleGenerativeAI at import time would force
-// every consumer of this module (and its tests) to hold an API key, even when
-// reranking never runs. Build on first use instead.
-let gemini = null;
+// Lazy client: constructing a provider client at import time would require an API key,
+// even when reranking never runs. Build on first use instead.
+let roleClient = null;
 
-function getGemini() {
-    if (!gemini) gemini = createGeminiClient('rerank');
-    return gemini;
+function getRoleClient() {
+    if (!roleClient) roleClient = createOpenRouterRoleClient('rerank');
+    return roleClient;
 }
 
 function resolveRerankMode() {
@@ -74,7 +73,7 @@ function createLlmRerank({ tracker = null, onUsage = null } = {}) {
 
         const prompt = buildRerankPrompt(candidates);
         const response = await withGeminiRetry(() => withGeminiTimeout(
-            (signal) => trackGeminiInvoke(getGemini(), prompt, { signal, tracker, onUsage })
+            (signal) => trackUsageInvoke(getRoleClient(), prompt, { signal, tracker, onUsage })
         ));
 
         const parsed = extractJsonBlock(response.content);

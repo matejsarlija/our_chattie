@@ -6,7 +6,7 @@ const { PassThrough } = require('stream');
 jest.mock('axios');
 const axios = require('axios');
 
-const { DownloadDocumentsTool } = require('../court-analysis/agents/download-agent');
+const { downloadClusterAttachments } = require('../court-analysis/agents/download-agent');
 const { DownloadCache, getDownloadCache, cacheKeyFor } = require('../helpers/downloadCache');
 
 describe('DownloadCache store', () => {
@@ -110,7 +110,7 @@ describe('DownloadCache store', () => {
     });
 });
 
-describe('DownloadDocumentsTool download memoization', () => {
+describe('downloadClusterAttachments download memoization', () => {
     let root;
 
     beforeEach(() => {
@@ -137,15 +137,14 @@ describe('DownloadDocumentsTool download memoization', () => {
 
     it('downloads once on repeat runs and serves the rest from cache', async () => {
         axios.mockImplementation(mockPdfResponse());
-        const tool = new DownloadDocumentsTool();
         const links = [{ url: 'https://e-oglasna.pravosudje.hr/objave/dokument/abc/preuzimanje', text: 'Podnesak' }];
 
-        const first = await tool._call({ documentLinks: links, progressCallback: null });
+        const first = await downloadClusterAttachments({ documentLinks: links, progressCallback: null });
         expect(first).toHaveLength(1);
         expect(first[0].fromCache).toBe(false);
         expect(fs.readFileSync(first[0].filePath)).toEqual(Buffer.from('PDFDATA'));
 
-        const second = await tool._call({ documentLinks: links, progressCallback: null });
+        const second = await downloadClusterAttachments({ documentLinks: links, progressCallback: null });
         expect(second).toHaveLength(1);
         expect(second[0].fromCache).toBe(true);
         expect(fs.readFileSync(second[0].filePath)).toEqual(Buffer.from('PDFDATA'));
@@ -155,7 +154,7 @@ describe('DownloadDocumentsTool download memoization', () => {
         // Simulating pipeline cleanup between runs must not evict the entry.
         fs.unlinkSync(first[0].filePath);
         fs.unlinkSync(second[0].filePath);
-        const third = await tool._call({ documentLinks: links, progressCallback: null });
+        const third = await downloadClusterAttachments({ documentLinks: links, progressCallback: null });
         expect(third[0].fromCache).toBe(true);
         expect(fs.existsSync(third[0].filePath)).toBe(true);
         expect(axios.mock.calls).toHaveLength(1);
@@ -165,8 +164,7 @@ describe('DownloadDocumentsTool download memoization', () => {
         axios.mockImplementation(mockPdfResponse('CRO', {
             'content-disposition': `attachment; name="Podnesak.pdf"; filename*=UTF-8''Rje%C5%A1enje_o_du%C5%BEniku.pdf`,
         }));
-        const tool = new DownloadDocumentsTool();
-        const [result] = await tool._call({
+        const [result] = await downloadClusterAttachments({
             documentLinks: [{ url: 'https://e-oglasna.pravosudje.hr/objave/dokument/cro/preuzimanje', text: 'Dokument' }],
             progressCallback: null,
         });
@@ -186,10 +184,9 @@ describe('DownloadDocumentsTool download memoization', () => {
             process.nextTick(() => stream.emit('error', new Error('connection reset')));
             return Promise.resolve({ data: stream, headers: {} });
         });
-        const tool = new DownloadDocumentsTool();
         const failedUrl = 'https://e-oglasna.pravosudje.hr/objave/dokument/broken/preuzimanje';
 
-        const files = await tool._call({
+        const files = await downloadClusterAttachments({
             documentLinks: [{ url: failedUrl, text: 'Broken' }],
             progressCallback: null,
         });
@@ -203,7 +200,7 @@ describe('DownloadDocumentsTool download memoization', () => {
 
         // A healthy URL still downloads normally afterwards.
         axios.mockImplementation(mockPdfResponse('OK'));
-        const [recovered] = await tool._call({
+        const [recovered] = await downloadClusterAttachments({
             documentLinks: [{ url: 'https://e-oglasna.pravosudje.hr/objave/dokument/fine/preuzimanje', text: 'Fine' }],
             progressCallback: null,
         });

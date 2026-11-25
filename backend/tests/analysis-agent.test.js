@@ -1,10 +1,8 @@
 const fs = require('fs');
 const path = require('path');
 
-jest.mock('@langchain/google-genai', () => ({
-  ChatGoogleGenerativeAI: jest.fn().mockImplementation(() => ({
-    invoke: mockGeminiInvoke,
-  })),
+jest.mock('../llm/openrouterClient.js', () => ({
+  createOpenRouterClient: () => ({ invoke: mockGeminiInvoke }),
 }));
 
 jest.mock('../helpers/geminiRetry', () => ({
@@ -13,11 +11,11 @@ jest.mock('../helpers/geminiRetry', () => ({
 }));
 
 jest.mock('../helpers/geminiUsage', () => ({
-  trackGeminiInvoke: (_gemini, prompt, _opts) => mockGeminiInvoke(prompt),
+  trackUsageInvoke: (_client, prompt, _opts) => mockGeminiInvoke(Array.isArray(prompt) && prompt.length === 1 && typeof prompt[0]?.content === 'string' ? prompt[0].content : prompt),
 }));
 
 const mockGeminiInvoke = jest.fn();
-const { AnalyzeDocumentsTool, mergeAnalysisChunkResults } = require('../court-analysis/agents/analysis-agent');
+const { analyzeClusterDocuments, mergeAnalysisChunkResults } = require('../court-analysis/agents/analysis-agent');
 test('mergeAnalysisChunkResults keeps the first concrete top-level decision outcome', () => {
     const makeResult = (id, decisionOutcome) => ({
         segment: { id, startIndex: 0, endIndex: 10, pageNumbers: [1] },
@@ -77,8 +75,7 @@ describe('AnalyzeDocumentsTool', () => {
     });
 
     it('extracts text from a DOCX file and calls Gemini', async () => {
-        const tool = new AnalyzeDocumentsTool();
-        const result = await tool._call({
+        const result = await analyzeClusterDocuments({
             files: [{ filePath: testDocxPath, url: 'mock', text: 'Test DOCX' }],
             caseInfo: { participants: [] },
         });
@@ -88,8 +85,7 @@ describe('AnalyzeDocumentsTool', () => {
     });
 
     it('extracts text from a TXT file and calls Gemini', async () => {
-        const tool = new AnalyzeDocumentsTool();
-        const result = await tool._call({
+        const result = await analyzeClusterDocuments({
             files: [{ filePath: testTxtPath, url: 'mock', text: 'Test TXT' }],
             caseInfo: { participants: [] },
         });
@@ -99,8 +95,7 @@ describe('AnalyzeDocumentsTool', () => {
     });
 
     it('returns error for missing file', async () => {
-        const tool = new AnalyzeDocumentsTool();
-        const result = await tool._call({
+        const result = await analyzeClusterDocuments({
             files: [{ filePath: 'nonexistent.pdf', url: 'mock', text: 'Missing PDF' }],
             caseInfo: { participants: [] },
         });
@@ -109,8 +104,7 @@ describe('AnalyzeDocumentsTool', () => {
     });
 
     it('returns error for unsupported file type', async () => {
-        const tool = new AnalyzeDocumentsTool();
-        const result = await tool._call({
+        const result = await analyzeClusterDocuments({
             files: [{ filePath: '/tmp/test.xyz', url: 'mock', text: 'Bad type' }],
             caseInfo: { participants: [] },
         });
@@ -125,8 +119,7 @@ describe('AnalyzeDocumentsTool', () => {
         fs.writeFileSync(fileB, 'Case B text');
         try {
             const events = [];
-            const tool = new AnalyzeDocumentsTool();
-            const result = await tool._call({
+            const result = await analyzeClusterDocuments({
                 files: [
                     { filePath: fileA, url: 'mock', text: 'A.txt' },
                     { filePath: fileB, url: 'mock', text: 'B.txt' },
@@ -160,8 +153,7 @@ describe('AnalyzeDocumentsTool', () => {
         fs.writeFileSync(fileB, 'Case D text');
         try {
             const events = [];
-            const tool = new AnalyzeDocumentsTool();
-            await tool._call({
+            await analyzeClusterDocuments({
                 files: [
                     { filePath: fileA, url: 'mock', text: 'C.txt' },
                     { filePath: fileB, url: 'mock', text: 'D.txt' },
@@ -187,8 +179,7 @@ describe('AnalyzeDocumentsTool', () => {
 
     it('emits a failed file event carrying the extraction error reason', async () => {
         const events = [];
-        const tool = new AnalyzeDocumentsTool();
-        await tool._call({
+        await analyzeClusterDocuments({
             files: [{ filePath: 'nonexistent.pdf', url: 'mock', text: 'missing.pdf' }],
             caseInfo: { participants: [] },
             progressCallback: (event) => events.push(event),
@@ -223,8 +214,7 @@ describe('AnalyzeDocumentsTool', () => {
             fs.writeFileSync(fileB, 'Heartbeat B');
 
             const events = [];
-            const tool = new AnalyzeDocumentsTool();
-            const promise = tool._call({
+            const promise = analyzeClusterDocuments({
                 files: [
                     { filePath: fileA, url: 'mock', text: 'hb-a.txt' },
                     { filePath: fileB, url: 'mock', text: 'hb-b.txt' },
@@ -263,8 +253,7 @@ describe('AnalyzeDocumentsTool', () => {
     });
 
     it('asks the model for J identity/direction fields in the extraction prompt', async () => {
-        const tool = new AnalyzeDocumentsTool();
-        await tool._call({
+        await analyzeClusterDocuments({
             files: [{ filePath: testTxtPath, url: 'mock', text: 'Test TXT' }],
             caseInfo: { participants: [] },
         });
@@ -287,8 +276,7 @@ describe('AnalyzeDocumentsTool', () => {
                 }],
             }),
         });
-        const tool = new AnalyzeDocumentsTool();
-        const result = await tool._call({
+        const result = await analyzeClusterDocuments({
             files: [{ filePath: testTxtPath, text: 'Test TXT' }],
             caseInfo: { participants: [] },
         });
@@ -313,8 +301,7 @@ describe('AnalyzeDocumentsTool', () => {
                 citedFilingReferences: ['St-2/2013-1214', ''],
             }),
         });
-        const tool = new AnalyzeDocumentsTool();
-        const result = await tool._call({
+        const result = await analyzeClusterDocuments({
             files: [{ filePath: testTxtPath, url: 'mock', text: 'Test TXT' }],
             caseInfo: { participants: [] },
         });
@@ -332,7 +319,7 @@ describe('AnalyzeDocumentsTool', () => {
         mockGeminiInvoke.mockResolvedValue({
             content: JSON.stringify({ caseNumber: '1', decisionDate: 'd', summary: 's', amounts: [] }),
         });
-        const result2 = await tool._call({
+        const result2 = await analyzeClusterDocuments({
             files: [{ filePath: testTxtPath, url: 'mock', text: 'Test TXT' }],
             caseInfo: { participants: [] },
         });

@@ -1,10 +1,9 @@
 // pipeline.js
 
 const { createDiscoveryClient } = require('../scraper/discoveryClient');
-const { DownloadDocumentsTool } = require('./agents/download-agent');
-const { ExtractArchiveTool } = require('./agents/extract-tool');
-// We will modify AnalyzeDocumentsTool, so we need to import it
-const { AnalyzeDocumentsTool } = require('./agents/analysis-agent');
+const { downloadClusterAttachments } = require('./agents/download-agent');
+const { extractArchiveFiles } = require('./agents/extract-tool');
+const { analyzeClusterDocuments } = require('./agents/analysis-agent');
 const { enrichParticipants } = require('../court-registry/enricher');
 const {
     DEFAULT_CASE_LIMIT,
@@ -1593,9 +1592,7 @@ async function processScrapedCases(casesToProcess, progressCallback, options = {
             queryType: resolvedOptions.query?.type || null,
         });
 
-        const downloadTool = new DownloadDocumentsTool();
-        const extractTool = new ExtractArchiveTool();
-        const analyzeTool = new AnalyzeDocumentsTool();
+
 
         // Reason only over the selected primary cluster. Other clusters remain discovery outputs.
         for (let i = 0; i < totalCases; i++) {
@@ -1629,7 +1626,7 @@ async function processScrapedCases(casesToProcess, progressCallback, options = {
             // 2a. Download
             stageAwareProgress?.({ step: 'downloading', message: `Preuzimam arhivu za predmet ${i + 1} (${documentLinks.length} linkova)...` });
             let downloadFailed = 0;
-            downloadedFiles = await downloadTool._call({
+            downloadedFiles = await downloadClusterAttachments({
                 documentLinks,
                 progressCallback: (event) => {
                     stageAwareProgress?.(event);
@@ -1695,7 +1692,7 @@ async function processScrapedCases(casesToProcess, progressCallback, options = {
                 extractedFilePaths.push(file.filePath);
                 if (path.extname(file.filePath).toLowerCase() === '.zip') {
                     const extractionDir = path.dirname(file.filePath);
-                    const extractionResult = await extractTool._call({ filePath: file.filePath, destination: extractionDir });
+                    const extractionResult = await extractArchiveFiles({ filePath: file.filePath, destination: extractionDir });
                     for (const extracted of (extractionResult.extractedFiles || [])) {
                         // Zip-extracted files get a new working-copy path and an
                         // in-archive display name, but keep the parent zip's
@@ -1764,7 +1761,7 @@ async function processScrapedCases(casesToProcess, progressCallback, options = {
 
             // 2c. Analyze THIS case's documents
             stageAwareProgress?.({ step: 'reasoning', message: `Analiziram ${filesForAnalysis.length} datoteka za predmet ${i + 1}...` });
-            const analysis = await analyzeTool._call({ files: filesForAnalysis, caseInfo: caseInfo, progressCallback: stageAwareProgress, usageTracker, onUsage: emitUsage, runId });
+            const analysis = await analyzeClusterDocuments({ files: filesForAnalysis, caseInfo: caseInfo, progressCallback: stageAwareProgress, usageTracker, onUsage: emitUsage, runId });
             const analysisCoverage = analysis?.coverage || {};
             stageAwareProgress?.({
                 step: 'reasoning',

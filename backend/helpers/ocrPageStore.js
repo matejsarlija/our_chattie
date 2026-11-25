@@ -1,36 +1,22 @@
-// helpers/ocrPageStore.js
+// Disk-backed L2 behind the in-memory OCR page LRU. Pages already paid for
+// survive backend restarts, so repeat analyses over unchanged documents do
+// not re-spend vision quota.
 //
-// Disk-backed L2 behind the in-memory OCR page LRU in
-// court-analysis/agents/analysis-agent.js. Pages already paid for survive
-// backend restarts, so repeat analyses over unchanged documents never re-spend
-// vision quota.
-//
-// Layout:
-//   <root>/<version>/<sha256(fileBytes)>-p<pageNumber>.json   # { "text": "..." }
-//
-// Invariants (do not regress):
-// - Version isolation: the directory segment combines OCR_PROMPT_VERSION with
-//   the Gemini model id. Bump OCR_PROMPT_VERSION whenever OCR prompts or the
-//   batch marker contract change; model swaps invalidate automatically.
-// - L1/L2 parity: any string cached in memory must be cached on disk verbatim,
-//   empty strings included — callers treat non-null as a hit either way.
-// - Never fail OCR: every disk error is swallowed and reported as a miss.
+// Layout: <root>/<version>/<sha256(fileBytes)>-p<pageNumber>.json
+// Invariants: cache version includes the OCR prompt and model; cache failures
+// never break an in-flight OCR run.
 
 const fs = require('fs');
 const path = require('path');
 
-let geminiModel = null;
-try {
-    ({ GEMINI_MODEL: geminiModel } = require('./geminiConfig'));
-} catch (err) {
-    geminiModel = null;
-}
+const { resolveRoleConfig } = require('../llm/openrouterConfig');
+const OCR_MODEL = resolveRoleConfig('ocr').model;
 
 // Bump when OCR prompt text or the batch marker contract changes.
 const OCR_PROMPT_VERSION = 2;
 
 function versionSegment() {
-    const model = String(geminiModel || 'unknown-model').replace(/[^a-zA-Z0-9._-]/g, '_');
+    const model = String(OCR_MODEL).replace(/[^a-zA-Z0-9._-]/g, '_');
     return `v${OCR_PROMPT_VERSION}-${model}`;
 }
 
@@ -49,16 +35,6 @@ function pageFilePath(contentHash, pageNumber) {
     );
 }
 
-// Native-PDF transcription is cached separately from rendered-page OCR.
-// It has a different marker contract and must never be mistaken for an
-// individual page entry during a raster fallback.
-function nativePdfFilePath(contentHash) {
-    return path.join(
-        resolveStoreRoot(),
-        versionSegment(),
-        `${contentHash}-native-pdf.json`,
-    );
-}
 
 /**
  * Returns the cached page text, or null on miss / corruption. Mirrors the
@@ -90,36 +66,12 @@ function writeOcrPageToDisk(contentHash, pageNumber, text) {
     }
 }
 
-function readNativePdfFromDisk(contentHash) {
-    try {
-        const parsed = JSON.parse(fs.readFileSync(nativePdfFilePath(contentHash), 'utf8'));
-        return typeof parsed?.text === 'string' ? parsed.text : null;
-    } catch (err) {
-        return null;
-    }
-}
-
-function writeNativePdfToDisk(contentHash, text) {
-    if (typeof text !== 'string') return;
-    try {
-        const filePath = nativePdfFilePath(contentHash);
-        fs.mkdirSync(path.dirname(filePath), { recursive: true });
-        const tmpPath = `${filePath}.tmp-${process.pid}-${Date.now()}`;
-        fs.writeFileSync(tmpPath, JSON.stringify({ text }));
-        fs.renameSync(tmpPath, filePath);
-    } catch (err) {
-        // Cache writes must never break an in-flight document transcription.
-    }
-}
 
 module.exports = {
     OCR_PROMPT_VERSION,
     versionSegment,
     resolveStoreRoot,
     pageFilePath,
-    nativePdfFilePath,
     readOcrPageFromDisk,
     writeOcrPageToDisk,
-    readNativePdfFromDisk,
-    writeNativePdfToDisk,
 };

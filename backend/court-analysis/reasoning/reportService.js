@@ -11,10 +11,10 @@ const { runFollowUpVerification } = require('./followUpVerification');
 const { runQueryPlanner, mergeRetrievalQueries } = require('./queryPlanner');
 const { buildSynthesisInput } = require('./synthesisInputBuilder');
 const { buildProfileReportInput } = require('./contextReportAdapter');
-const { createGeminiClient } = require('../../helpers/geminiConfig');
+const { createOpenRouterRoleClient } = require('../../llm/openrouterConfig');
 const { modelContentToText } = require('../../helpers/jsonExtract');
 const { withGeminiRetry, withGeminiTimeout } = require('../../helpers/geminiRetry');
-const { trackGeminiInvoke } = require('../../helpers/geminiUsage');
+const { trackUsageInvoke } = require('../../helpers/geminiUsage');
 const { resolveReasoningPlanner, resolveReasoningFollowUp, resolveReasoningClaimJudge, resolveReasoningSignificance } = require('../../helpers/reasoningSettings');
 const agentLog = require('../../helpers/agentLog');
 const logger = require('../../helpers/logger');
@@ -22,19 +22,19 @@ const logger = require('../../helpers/logger');
 // Follow-up re-verification reuses the strict 'verify' role policy
 // (temperature 0.1, bounded output) — it is the same concern, one pass later.
 // Lazy construction: importing this module must not require an API key.
-let followUpGemini = null;
+let followUpClient = null;
 
-function getFollowUpGemini() {
-    if (!followUpGemini) followUpGemini = createGeminiClient('verify');
-    return followUpGemini;
+function getFollowUpClient() {
+    if (!followUpClient) followUpClient = createOpenRouterRoleClient('verify');
+    return followUpClient;
 }
 
 // Planner reuses the 'planner' role policy — lazy for the same reason.
-let plannerGemini = null;
+let plannerClient = null;
 
-function getPlannerGemini() {
-    if (!plannerGemini) plannerGemini = createGeminiClient('planner');
-    return plannerGemini;
+function getPlannerClient() {
+    if (!plannerClient) plannerClient = createOpenRouterRoleClient('planner');
+    return plannerClient;
 }
 
 // Gate for the optional LLM passes (planner / follow-up): "off" never runs;
@@ -98,7 +98,7 @@ async function generateClusterReport(clusterEvidencePackage, options = {}) {
             const planned = await runQueryPlanner(clusterEvidencePackage, {
                 plannerLlm: async ({ prompt }) => {
                     const response = await withGeminiRetry(() => withGeminiTimeout(
-                        (signal) => trackGeminiInvoke(getPlannerGemini(), prompt, { signal, tracker: options.tracker, onUsage: options.onUsage })
+                        (signal) => trackUsageInvoke(getPlannerClient(), prompt, { signal, tracker: options.tracker, onUsage: options.onUsage })
                     ));
                     return modelContentToText(response.content);
                 },
@@ -279,7 +279,7 @@ async function generateClusterReport(clusterEvidencePackage, options = {}) {
             const followUp = await runFollowUpVerification(verifiedReport, clusterEvidencePackage, {
                 followUpLlm: async ({ prompt }) => {
                     const response = await withGeminiRetry(() => withGeminiTimeout(
-                        (signal) => trackGeminiInvoke(getFollowUpGemini(), prompt, { signal, tracker: options.tracker, onUsage: options.onUsage })
+                        (signal) => trackUsageInvoke(getFollowUpClient(), prompt, { signal, tracker: options.tracker, onUsage: options.onUsage })
                     ));
                     return modelContentToText(response.content);
                 },

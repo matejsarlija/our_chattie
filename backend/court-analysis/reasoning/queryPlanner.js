@@ -15,9 +15,7 @@
 // Cost contract: exactly ONE call per run; ≤6 planned queries; the merge cap
 // bounds total queries so synthesis/verifier input stays budgeted downstream.
 
-const { createGeminiClient, outputCapWarning } = require('../../helpers/geminiConfig');
-const { withGeminiRetry, withGeminiTimeout } = require('../../helpers/geminiRetry');
-const { trackGeminiInvoke } = require('../../helpers/geminiUsage');
+const { createOpenRouterRoleClient, outputCapWarning } = require('../../llm/openrouterConfig');
 const { extractJsonBlock } = require('../../helpers/jsonExtract');
 const agentLog = require('../../helpers/agentLog');
 const { normalizeText } = require('./indexer');
@@ -25,14 +23,6 @@ const { normalizeText } = require('./indexer');
 const MAX_PLANNED_QUERIES = 6;
 const MAX_TOTAL_QUERIES = 8;
 const MAX_INVENTORY_FILES = 15;
-
-// Lazy client: importing this module must not require an API key.
-let gemini = null;
-
-function getGemini() {
-    if (!gemini) gemini = createGeminiClient('planner');
-    return gemini;
-}
 
 /**
  * Deterministic case inventory — everything the planner may reference.

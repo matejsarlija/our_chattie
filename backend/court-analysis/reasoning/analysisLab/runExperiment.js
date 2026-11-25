@@ -144,13 +144,13 @@ async function prepareSharedReportArtifacts(evidencePackage, executionSnapshot, 
     let effectivePlannerLlm = plannerLlm;
     let effectiveLlmRerank = llmRerank;
     if (production && typeof effectivePlannerLlm !== 'function') {
-        const { createGeminiClient } = require('../../../helpers/geminiConfig');
+        const { createOpenRouterRoleClient } = require('../../../llm/openrouterConfig');
         const { withGeminiRetry, withGeminiTimeout } = require('../../../helpers/geminiRetry');
-        const { trackGeminiInvoke } = require('../../../helpers/geminiUsage');
-        const gemini = createGeminiClient('planner');
+        const { trackUsageInvoke } = require('../../../helpers/geminiUsage');
+        const roleClient = createOpenRouterRoleClient('planner');
         effectivePlannerLlm = async ({ prompt }) => {
             const response = await withGeminiRetry(() => withGeminiTimeout(
-                (signal) => trackGeminiInvoke(gemini, prompt, { signal, tracker: sharedTracker, onUsage: null })
+                (signal) => trackUsageInvoke(roleClient, prompt, { signal, tracker: sharedTracker, onUsage: null })
             ));
             return response.content;
         };

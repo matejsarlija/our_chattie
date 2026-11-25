@@ -15,8 +15,8 @@
  *     tests/fixtures/real-documents entries folders, if previously fetched),
  *   - otherwise a synthetic 3-page "scanned" PDF rendered via node-canvas.
  *
- * Gated exactly like verify-live-reasoning: requires GOOGLE_API_KEY, costs a
- * handful of vision requests, never runs in CI lanes.
+ * Gated on OPENROUTER_API_KEY, costs a handful of vision requests, and
+ * never runs in CI lanes.
  *
  * Usage: npm run verify:ocr-batch
  */
@@ -31,8 +31,8 @@
     const os = require('os');
     const path = require('path');
 
-    if (!process.env.GOOGLE_API_KEY) {
-        console.error('GOOGLE_API_KEY is not set — live OCR probe skipped.');
+    if (!process.env.OPENROUTER_API_KEY) {
+        console.error('OPENROUTER_API_KEY is not set — live OCR probe skipped.');
         process.exit(2);
     }
 

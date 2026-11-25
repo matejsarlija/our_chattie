@@ -2,22 +2,19 @@ const DEFAULT_MAX_RETRIES = 3;
 const BASE_DELAY_MS = 1500;
 const MAX_DELAY_MS = 15000;
 
-// Fail-fast guard against hung GenAI requests: `invoke` can pend without
-// ever settling, which stalls `withGeminiRetry` (it only reacts to thrown
-// errors) and therefore the whole analysis queue. Each request is capped with
-// a timer-driven AbortSignal so stuck calls reject promptly and the pipeline
-// can surface a transparent error + persist partial results. Sized for paid
-// quotas and synthesis-scale prompts; override with GEMINI_REQUEST_TIMEOUT_MS.
-const GEMINI_REQUEST_TIMEOUT_MS = Number(process.env.GEMINI_REQUEST_TIMEOUT_MS) || 120000;
+// Fail-fast guard against hung OpenRouter requests: `invoke` can pend without
+// ever settling, which stalls the retry loop. Each request is capped with a
+// timer-driven AbortSignal so stuck calls reject promptly and partial results
+// can be persisted. Override with OPENROUTER_REQUEST_TIMEOUT_MS.
+const OPENROUTER_REQUEST_TIMEOUT_MS = Number(process.env.OPENROUTER_REQUEST_TIMEOUT_MS) || 30000;
 
-// Transient bursts hang inside the SDK until the timeout guard fires, so
-// AbortError timeouts are retried with backoff by default. Set to "0" to
-// restore strict fail-fast behavior.
-const GEMINI_RETRY_TIMEOUTS = process.env.GEMINI_RETRY_TIMEOUTS !== '0';
+// Transient bursts hang until the timeout guard fires, so AbortError timeouts
+// are retried with backoff by default. Set to "0" to restore fail-fast behavior.
+const OPENROUTER_RETRY_TIMEOUTS = process.env.OPENROUTER_RETRY_TIMEOUTS !== '0';
 
 const { isDailyQuotaExhaustion, extractProviderError } = require('./friendlyAnalysisError');
 
-async function withGeminiTimeout(callable, { timeoutMs = GEMINI_REQUEST_TIMEOUT_MS } = {}) {
+async function withGeminiTimeout(callable, { timeoutMs = OPENROUTER_REQUEST_TIMEOUT_MS } = {}) {
     if (!timeoutMs || timeoutMs <= 0) {
         return Promise.resolve().then(() => callable(undefined));
     }
@@ -99,7 +96,7 @@ function shouldRetry(error, options = {}) {
     // A rate-limit/timeout is a transient burst that recovers with backoff,
     // so it is retried. Only an explicit daily-quota signal (checked above)
     // stops retries.
-    if (isTimeout) return options.retryTimeouts !== false && GEMINI_RETRY_TIMEOUTS;
+    if (isTimeout) return options.retryTimeouts !== false && OPENROUTER_RETRY_TIMEOUTS;
     return true;
   }
 
@@ -144,6 +141,6 @@ module.exports = {
     withGeminiTimeout,
     parseRetryAfterMs,
     shouldRetry,
-    GEMINI_REQUEST_TIMEOUT_MS,
-    GEMINI_RETRY_TIMEOUTS,
+    OPENROUTER_REQUEST_TIMEOUT_MS,
+    OPENROUTER_RETRY_TIMEOUTS,
 };

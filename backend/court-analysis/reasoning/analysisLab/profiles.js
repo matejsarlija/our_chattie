@@ -10,11 +10,7 @@
 // snapshots are deep copies — later mutation of config/profile objects cannot
 // mutate an existing snapshot.
 
-const {
-    GEMINI_ROLE_CONFIG,
-    DEFAULT_GEMINI_MODEL,
-    CONTEXT_NODE_PROMPT_VERSION,
-} = require('../../../helpers/geminiConfig');
+const { OPENROUTER_ROLE_CONFIG } = require('../../../llm/openrouterConfig');
 const { EXTRACTION_SCHEMA_VERSION } = require('../extractionSchema');
 const { SCHEMA_VERSION: REPORT_SCHEMA_VERSION } = require('../schema');
 
@@ -22,13 +18,10 @@ const { SCHEMA_VERSION: REPORT_SCHEMA_VERSION } = require('../schema');
 // `schemaVersion: 1` (see evidencePackage.js buildClusterEvidencePackage).
 const EVIDENCE_SCHEMA_VERSION = 1;
 
-// Prompt versions snapshotted with each profile. There is no standalone
-// synthesis prompt-version constant in the codebase, so the current flat
-// synthesis prompt is recorded as `vCurrent`; the node-summary prompt version
-// is the single source in geminiConfig (LC-2 owns the role itself).
+// Prompt versions captured by Lab snapshots.
 const LAB_PROMPT_VERSIONS = {
-    contextNode: CONTEXT_NODE_PROMPT_VERSION,
     synthesis: 'vCurrent',
+    nodeSummary: 'v1',
 };
 
 const CONTEXT_STRATEGIES = ['flat', 'case-context'];
@@ -63,9 +56,8 @@ const BUILT_IN_PROFILES = {
     },
 };
 
-// Matches credential-bearing keys (apiKey, GOOGLE_API_KEY, secrets) without
-// eating usage telemetry: `inputTokens`/`outputTokens`/`totalTokens` must
-// survive redaction so per-variant cost stays inspectable.
+// Match credential-bearing keys without eating usage telemetry:
+// `inputTokens`/`outputTokens`/`totalTokens` must survive redaction.
 const SECRET_KEY_PATTERN = /api[_-]?key|secret|credential|password|private[_-]?key|access[_-]?token|refresh[_-]?token|id[_-]?token|auth[_-]?token|(^|[_-])tokens?([_-]|$)|(^|[_-])auth([_-]|$)/i;
 
 function isKnownProfile(profileId) {
@@ -96,14 +88,13 @@ function stripSecrets(value) {
 }
 
 /**
- * Resolves the effective model id + generation parameters for a Gemini role,
- * read-only from the central role config. The `GEMINI_MODEL` env override
- * wins, mirroring `createGeminiClient`.
+ * Resolves the effective model id + generation parameters from the central
+ * OpenRouter role config.
  */
 function resolveRoleSnapshot(role) {
-    const roleConfig = GEMINI_ROLE_CONFIG?.[role] || {};
+    const roleConfig = OPENROUTER_ROLE_CONFIG?.[role] || {};
     return {
-        model: process.env.GEMINI_MODEL || roleConfig.model || DEFAULT_GEMINI_MODEL,
+        model: roleConfig.model || null,
         temperature: roleConfig.temperature ?? null,
         maxOutputTokens: roleConfig.maxOutputTokens ?? null,
     };

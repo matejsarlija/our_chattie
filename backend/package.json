@@ -31,9 +31,6 @@
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
-    "@google/genai": "2.23.0",
-    "@langchain/core": "^0.3.61",
-    "@langchain/google-genai": "^0.2.14",
     "adm-zip": "^0.5.16",
     "axios": "^1.10.0",
     "canvas": "^3.2.0",

@@ -4,10 +4,8 @@ const path = require('path');
 
 const mockGeminiInvoke = jest.fn();
 
-jest.mock('@langchain/google-genai', () => ({
-    ChatGoogleGenerativeAI: jest.fn().mockImplementation(() => ({
-        invoke: mockGeminiInvoke,
-    })),
+jest.mock('../llm/openrouterClient.js', () => ({
+    createOpenRouterClient: () => ({ invoke: mockGeminiInvoke }),
 }));
 
 jest.mock('../helpers/geminiRetry', () => ({
@@ -16,10 +14,10 @@ jest.mock('../helpers/geminiRetry', () => ({
 }));
 
 jest.mock('../helpers/geminiUsage', () => ({
-    trackGeminiInvoke: (_gemini, prompt, _opts) => mockGeminiInvoke(prompt),
+    trackUsageInvoke: (_client, prompt, _opts) => mockGeminiInvoke(Array.isArray(prompt) && prompt.length === 1 && typeof prompt[0]?.content === 'string' ? prompt[0].content : prompt),
 }));
 
-const { AnalyzeDocumentsTool } = require('../court-analysis/agents/analysis-agent');
+const { analyzeClusterDocuments } = require('../court-analysis/agents/analysis-agent');
 
 const GOOD_AMOUNT = {
     description: 'Tražbina vjerovnika',
@@ -68,8 +66,7 @@ describe('AnalyzeDocumentsTool field repair (T1-3)', () => {
     }
 
     function run(files) {
-        const tool = new AnalyzeDocumentsTool();
-        return tool._call({ files, caseInfo: { participants: [] }, progressCallback: jest.fn() });
+        return analyzeClusterDocuments({ files, caseInfo: { participants: [] }, progressCallback: jest.fn() });
     }
 
     test('valid documents cost exactly one call and carry no gaps', async () => {
@@ -214,9 +211,8 @@ describe('AnalyzeDocumentsTool field repair (T1-3)', () => {
             }
             return Promise.resolve({ content: goodDoc() });
         });
-        const tool = new AnalyzeDocumentsTool();
         const expected = crypto.createHash('sha256').update('Tekst  dokumenta.').digest('hex');
-        const result = await tool._call({
+        const result = await analyzeClusterDocuments({
             files: [txtFile('x.txt', 'Tekst  dokumenta.'), txtFile('y.txt', 'Tekst dokumenta.')],
             caseInfo: { participants: [] },
             progressCallback: jest.fn()

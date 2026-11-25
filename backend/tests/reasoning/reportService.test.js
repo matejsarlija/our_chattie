@@ -7,10 +7,9 @@ const mockVerifyReport = jest.fn();
 const mockInvoke = jest.fn();
 const mockRunQueryPlanner = jest.fn().mockResolvedValue([]);
 
-jest.mock('@langchain/google-genai', () => ({
-    ChatGoogleGenerativeAI: jest.fn().mockImplementation(() => ({ invoke: mockInvoke }))
+jest.mock('../../llm/openrouterClient.js', () => ({
+    createOpenRouterClient: () => ({ invoke: mockInvoke })
 }));
-
 jest.mock('../../helpers/geminiRetry', () => ({
     withGeminiRetry: (fn) => fn(),
     withGeminiTimeout: (callable) => callable(undefined)

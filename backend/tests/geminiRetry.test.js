@@ -1,8 +1,8 @@
-const { withGeminiTimeout, GEMINI_REQUEST_TIMEOUT_MS, shouldRetry, parseRetryAfterMs } = require('../helpers/geminiRetry');
+const { withGeminiTimeout, OPENROUTER_REQUEST_TIMEOUT_MS, shouldRetry, parseRetryAfterMs } = require('../helpers/geminiRetry');
 
 describe('withGeminiTimeout', () => {
   test('defaults to a positive, env-overridable timeout', () => {
-    expect(GEMINI_REQUEST_TIMEOUT_MS).toBeGreaterThan(0);
+    expect(OPENROUTER_REQUEST_TIMEOUT_MS).toBeGreaterThan(0);
   });
 
   test('returns the callable result when it resolves before the timeout', async () => {

@@ -6,10 +6,14 @@ const mockGeminiInvoke = jest.fn();
 const mockWithGeminiRetry = jest.fn();
 const mockSplitTextIntoChunks = jest.fn();
 
-jest.mock('@langchain/google-genai', () => ({
-  ChatGoogleGenerativeAI: jest.fn().mockImplementation(() => ({
-    invoke: mockGeminiInvoke,
-  })),
+jest.mock('../llm/openrouterClient.js', () => ({
+  createOpenRouterClient: () => ({
+    invoke: (input) => mockGeminiInvoke(
+      Array.isArray(input) && input.length === 1 && typeof input[0]?.content === 'string'
+        ? input[0].content
+        : input,
+    ),
+  }),
 }));
 
 jest.mock('../helpers/geminiRetry', () => ({
@@ -22,7 +26,7 @@ jest.mock('../court-analysis/reasoning/chunker', () => ({
   buildRetrievalChunks: jest.fn(() => []),
 }));
 
-const { AnalyzeDocumentsTool } = require('../court-analysis/agents/analysis-agent');
+const { analyzeClusterDocuments } = require('../court-analysis/agents/analysis-agent');
 
 describe('AnalyzeDocumentsTool chunking integration', () => {
   beforeEach(() => {
@@ -52,7 +56,6 @@ describe('AnalyzeDocumentsTool chunking integration', () => {
   });
 
   it('uses chunking/retrieval path for large documents', async () => {
-    const tool = new AnalyzeDocumentsTool();
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'analysis-agent-'));
     const largeTxtPath = path.join(tmpDir, 'large.txt');
     const largeText = `UVOD\\n${'A'.repeat(28000)}\\nZAKLJUCAK`;
@@ -60,7 +63,7 @@ describe('AnalyzeDocumentsTool chunking integration', () => {
     fs.writeFileSync(largeTxtPath, largeText, 'utf8');
 
     try {
-      const result = await tool._call({
+      const result = await analyzeClusterDocuments({
         files: [{ filePath: largeTxtPath, text: 'large.txt', url: 'mock://large' }],
         caseInfo: { participants: [] },
       });
@@ -119,17 +122,15 @@ describe('AnalyzeDocumentsTool chunking integration', () => {
       };
     });
 
-    const tool = new AnalyzeDocumentsTool();
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'analysis-agent-all-chunks-'));
     const largeTxtPath = path.join(tmpDir, 'large.txt');
     fs.writeFileSync(largeTxtPath, 'A'.repeat(28000), 'utf8');
 
     try {
-      const result = await tool._call({
+      const result = await analyzeClusterDocuments({
         files: [{ filePath: largeTxtPath, text: 'large.txt' }],
         caseInfo: { participants: [] },
       });
-
       expect(mockGeminiInvoke).toHaveBeenCalledTimes(chunks.length);
       expect(mockGeminiInvoke.mock.calls.map(([prompt]) => prompt).join('\n'))
         .toContain('Evidence marker 8');
@@ -165,7 +166,7 @@ describe('AnalyzeDocumentsTool chunking integration', () => {
     fs.writeFileSync(filePath, 'A'.repeat(28000), 'utf8');
 
     try {
-      const result = await new AnalyzeDocumentsTool()._call({
+      const result = await analyzeClusterDocuments({
         files: [{ filePath, text: 'large.txt' }],
         caseInfo: { participants: [] },
       });
@@ -218,7 +219,7 @@ describe('AnalyzeDocumentsTool chunking integration', () => {
     fs.writeFileSync(filePath, sourceText, 'utf8');
 
     try {
-      const result = await new AnalyzeDocumentsTool()._call({
+      const result = await analyzeClusterDocuments({
         files: [{ filePath, text: 'large.txt' }],
         caseInfo: { participants: [] },
       });

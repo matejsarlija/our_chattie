@@ -18,10 +18,9 @@ const {
 const DEFAULT_DATA_DIR = path.join(__dirname, '..', 'data', 'analysis');
 
 const EXPERIMENT_STATUSES = ['running', 'complete', 'partial', 'error'];
-// Matches credential-bearing keys (apiKey, GOOGLE_API_KEY, secrets,
-// passwords, standalone token/auth segments) without eating usage
-// telemetry: `inputTokens`/`outputTokens`/`totalTokens` must survive so the
-// §6 cost dimension (calls/tokens per variant) stays persisted.
+// Match credential-bearing keys without eating usage telemetry:
+// `inputTokens`/`outputTokens`/`totalTokens` must survive redaction so the
+// §6 cost dimension stays persisted.
 const SECRET_KEY_PATTERN = /api[_-]?key|secret|credential|password|private[_-]?key|access[_-]?token|refresh[_-]?token|id[_-]?token|auth[_-]?token|(^|[_-])tokens?([_-]|$)|(^|[_-])auth([_-]|$)/i;
 
 function getDataDir(override) {

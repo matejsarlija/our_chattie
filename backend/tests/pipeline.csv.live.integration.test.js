@@ -34,49 +34,32 @@ jest.mock('canvas', () => ({
     })),
 }));
 
-// This lane's job is to prove the REAL CSV export fetch + parsing + mapping +
-// grouping + download + extraction + pipeline-orchestration plumbing holds
-// together end to end. It is NOT the place to spend real Gemini tokens: the
-// mocked PDF text below is synthetic, so any real model call analyzing it
-// produces zero signal about analysis quality — that's what
-// backend/scripts/verify-live-reasoning.js and verify-live-ocr-batch.js are
-// for, against real, purpose-built fixtures. Mocking at the
-// createGeminiClient/generateClusterReport boundary keeps AnalyzeDocumentsTool's
-// real orchestration (retries, JSON parsing, usage tracking) exercised, while
-// making every model call free, instant, and deterministic — and, as a side
-// effect, this lane no longer needs a real GOOGLE_API_KEY to run.
-jest.mock('../helpers/geminiConfig', () => {
-    const actual = jest.requireActual('../helpers/geminiConfig');
-    const cannedContentByRole = {
-        analysis: JSON.stringify({
-            caseNumber: 'MOCK-1/2024',
-            decisionDate: '2024-01-01',
-            summary: 'Mock summary for CSV live pipeline test.',
-            amounts: [],
-        }),
-        ocr: 'Mock OCR page text.',
-        'ocr-batch': '=== STRANICA 1 ===\nMock OCR page text.',
-    };
-    const mockUsageMetadata = { input_tokens: 50, output_tokens: 20, total_tokens: 70 };
-    return {
-        ...actual,
-        createGeminiClient: (role) => ({
+// The local OpenRouter client boundary keeps AnalyzeDocumentsTool orchestration
+// exercised while making every model call free, instant, and deterministic.
+jest.mock('../llm/openrouterClient.js', () => ({
+    createOpenRouterClient: () => {
+        const cannedContentByRole = {
+            analysis: JSON.stringify({
+                caseNumber: 'MOCK-1/2024',
+                decisionDate: '2024-01-01',
+                summary: 'Mock summary for CSV live pipeline test.',
+                amounts: [],
+            }),
+            ocr: 'Mock OCR page text.',
+            'ocr-batch': '=== STRANICA 1 ===\nMock OCR page text.',
+        };
+        const mockUsageMetadata = { input_tokens: 50, output_tokens: 20, total_tokens: 70 };
+        return {
             invoke: jest.fn().mockResolvedValue({
-                content: cannedContentByRole[role] ?? '{}',
+                content: cannedContentByRole.analysis,
                 usage_metadata: mockUsageMetadata,
             }),
-        }),
-    };
-});
+        };
+    },
+}));
 
-// generateClusterReport fans out into synthesis + verify + rerank + planner,
-// each a real Gemini call over the (already mocked-cheap) analyzed text.
-// That subsystem's model-quality behavior is exactly what verify-live-
-// reasoning.js already covers with a real fixture; re-running it here against
-// synthetic per-document text only reproduces flakiness unrelated to what
-// this lane verifies (the CSV discovery path). composeOverviewMarkdown stays
-// real (it's pure/deterministic) so this canned report still exercises the
-// actual markdown composition path.
+// The mocked report service isolates this lane to the CSV discovery path;
+// markdown composition remains real and deterministic.
 jest.mock('../court-analysis/reasoning/reportService', () => {
     const actual = jest.requireActual('../court-analysis/reasoning/reportService');
     const mockReport = {
@@ -179,7 +162,8 @@ describeIfIntegration('runCourtAnalysis pipeline (live CSV export discovery)', (
             );
             expect(totalFiles).toBeGreaterThan(0);
 
-            // Usage is deterministic and cheap here (Gemini is mocked above),
+-            // Usage is deterministic and cheap here (Gemini is mocked above),
++            // Usage is deterministic and cheap here (the local client is mocked),
             // but still asserted non-zero as a regression guard: if usage
             // accounting broke and silently returned zero, this lane fails
             // instead of hiding it.

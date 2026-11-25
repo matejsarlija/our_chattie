@@ -31,16 +31,6 @@ describe('ocrPageStore', () => {
         expect(store.readOcrPageFromDisk('abc123', 1)).toBe('');
     });
 
-    it('round-trips a native-PDF transcript separately from rendered pages', () => {
-        const store = require('../helpers/ocrPageStore');
-        const transcript = '=== STRANICA 1 ===\nPrva stranica';
-        store.writeNativePdfToDisk('abc123', transcript);
-
-        expect(store.readNativePdfFromDisk('abc123')).toBe(transcript);
-        expect(store.readOcrPageFromDisk('abc123', 1)).toBeNull();
-        expect(store.nativePdfFilePath('abc123')).not.toBe(store.pageFilePath('abc123', 1));
-    });
-
     it('refuses non-string payloads', () => {
         const store = require('../helpers/ocrPageStore');
         store.writeOcrPageToDisk('abc123', 1, null);
@@ -65,20 +55,20 @@ describe('ocrPageStore', () => {
         let store;
         let oldSegment;
         try {
-            process.env.GEMINI_MODEL = 'gemini-test-swap';
+            process.env.OPENROUTER_MODEL = 'openrouter-test-swap';
             jest.resetModules();
             store = require('../helpers/ocrPageStore');
             store.writeOcrPageToDisk('abc123', 1, 'old model text');
             oldSegment = store.versionSegment();
-            expect(oldSegment).toContain('gemini-test-swap');
+            expect(oldSegment).toContain('openrouter-test-swap');
         } finally {
-            delete process.env.GEMINI_MODEL;
+            delete process.env.OPENROUTER_MODEL;
             jest.resetModules();
             store = require('../helpers/ocrPageStore');
         }
 
         // Default-model reader must not see the other model's pages...
-        expect(store.versionSegment()).not.toContain('gemini-test-swap');
+        expect(store.versionSegment()).not.toContain('openrouter-test-swap');
         expect(store.readOcrPageFromDisk('abc123', 1)).toBeNull();
         // ...and the old entry must still be on disk under its own namespace.
         // The segment is captured, never hardcoded, so prompt-version bumps

@@ -596,8 +596,9 @@ describe('reasoning reconcilePropertyFlows', () => {
         expect(timeline.latestValue).toBe(15000);
     });
 
-    test('analysis role cap leaves headroom for J-era schema on dense documents', () => {        const { GEMINI_ROLE_CONFIG } = require('../../helpers/geminiConfig');
-        expect(GEMINI_ROLE_CONFIG.analysis.maxOutputTokens).toBeGreaterThanOrEqual(16384);
+    test('analysis role cap leaves headroom for J-era schema on dense documents', () => {
+        const { OPENROUTER_ROLE_CONFIG } = require('../../llm/openrouterConfig');
+        expect(OPENROUTER_ROLE_CONFIG.analysis.maxOutputTokens).toBeGreaterThanOrEqual(16384);
         // Dense synthetic document: 30 amounts with verbatim quotes + identity
         // fields + 10 property entries + 12 procedural events with full quotes.
         // At ~4 chars/token, the analysis cap must hold this with margin.
@@ -643,7 +644,7 @@ describe('reasoning reconcilePropertyFlows', () => {
             citedFilingReferences: ['St-2/2013-1214', 'St-2/2013-1215'],
         };
         const chars = JSON.stringify(dense).length;
-        const estimatedCapacity = GEMINI_ROLE_CONFIG.analysis.maxOutputTokens * 4;
+        const estimatedCapacity = OPENROUTER_ROLE_CONFIG.analysis.maxOutputTokens * 4;
         expect(chars).toBeLessThan(estimatedCapacity * 0.75);
     });
     test('claim-balance change ignores linked payment and assignment amounts', () => {

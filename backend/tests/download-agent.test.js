@@ -2,7 +2,7 @@ const os = require('os');
 const fs = require('fs');
 const path = require('path');
 const { PassThrough } = require('stream');
-const { DownloadDocumentsTool } = require('../court-analysis/agents/download-agent');
+const { downloadClusterAttachments } = require('../court-analysis/agents/download-agent');
 
 jest.mock('axios');
 const axios = require('axios');
@@ -42,8 +42,7 @@ describe('downloadDocuments', () => {
 
     it('downloads files and returns file info', async () => {
         const progressUpdates = [];
-        const tool = new DownloadDocumentsTool();
-        const files = await tool._call({ documentLinks: testLinks, progressCallback: (progress) => progressUpdates.push(progress) });
+        const files = await downloadClusterAttachments({ documentLinks: testLinks, progressCallback: (progress) => progressUpdates.push(progress) });
         expect(files.length).toBe(1);
         expect(fs.existsSync(files[0].filePath)).toBe(true);
         expect(files[0].url).toBe(testUrl);
@@ -52,12 +51,11 @@ describe('downloadDocuments', () => {
 
     it('reports per-link completion counters in progress callbacks', async () => {
         const progressUpdates = [];
-        const tool = new DownloadDocumentsTool();
         const links = [
             { url: testUrl, text: 'First PDF' },
             { url: testUrl, text: 'Second PDF' },
         ];
-        await tool._call({ documentLinks: links, progressCallback: (progress) => progressUpdates.push(progress) });
+        await downloadClusterAttachments({ documentLinks: links, progressCallback: (progress) => progressUpdates.push(progress) });
         const perLink = progressUpdates.filter((p) => Number.isFinite(p.completed));
         expect(perLink).toHaveLength(2);
         expect(perLink[0]).toEqual(expect.objectContaining({ completed: 1, total: 2 }));
@@ -65,8 +63,7 @@ describe('downloadDocuments', () => {
     });
 
     it('threads explicit document provenance through to downloaded files', async () => {
-        const tool = new DownloadDocumentsTool();
-        const files = await tool._call({
+        const files = await downloadClusterAttachments({
             documentLinks: [{ url: testUrl, text: 'Dummy PDF', id: 'St-1/2024::entry-2::doc-1', entryIndex: 2 }],
         });
         expect(files).toHaveLength(1);

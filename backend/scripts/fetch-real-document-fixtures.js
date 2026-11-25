@@ -123,7 +123,7 @@ function sha256File(filePath) {
  * Safe zip extraction: entries are flattened under destinationDir using their
  * basename only. Zip-slip paths and directory entries are skipped. Returns
  * [{ entryName, filePath }] with original archive names preserved in
- * entryName (matching ExtractArchiveTool's shape).
+ * entryName (matching extractArchiveFiles' shape).
  */
 function extractZipSafely(zipPath, destinationDir) {
     const zip = new AdmZip(zipPath);

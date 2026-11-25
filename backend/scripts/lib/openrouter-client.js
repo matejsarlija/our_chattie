@@ -9,9 +9,8 @@ const MISTRAL_OCR_USD_PER_PAGE = 0.002;
 // generous for a 16k-token analysis on a small PDF, while still turning a
 // stalled connection into a logged error the operator can act on.
 const DEFAULT_REQUEST_TIMEOUT_MS = 5 * 60 * 1000;
-// Mirrors GEMINI_ROLE_CONFIG.analysis.maxOutputTokens. The analysis schema is
-// large enough that a smaller cap truncates mid-JSON on dense documents, which
-// would otherwise be misread as a parser/transcriber failure.
+// Matches the production analysis output budget; dense extraction responses
+// need generous headroom to avoid truncating mid-JSON.
 const ANALYSIS_MAX_TOKENS = 16384;
 
 function hasFilePart(messages) {

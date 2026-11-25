@@ -1,12 +1,12 @@
 require("dotenv").config();
 const { withGeminiRetry, withGeminiTimeout } = require("../../helpers/geminiRetry");
-const { trackGeminiInvoke } = require("../../helpers/geminiUsage");
-const { createGeminiClient, outputCapWarning } = require("../../helpers/geminiConfig");
+const { trackUsageInvoke } = require("../../helpers/geminiUsage");
+const { createOpenRouterRoleClient, outputCapWarning } = require("../../llm/openrouterConfig");
 const { extractJsonArray, modelContentToText } = require("../../helpers/jsonExtract");
 const agentLog = require("../../helpers/agentLog");
 const { isPoorDocumentCoverage, hasPartialDocumentCoverage, coverageOpenQuestion, applyCoverageConfidenceGuard } = require('./coverageGuard');
 
-const gemini = createGeminiClient("verify");
+const gemini = createOpenRouterRoleClient("verify");
 
 function normalizeFindingsForVerification(report) {
     if (Array.isArray(report?.findings) && report.findings.length > 0) {
@@ -258,7 +258,7 @@ async function verifyReport(report, evidencePackage, options = {}) {
 
         try {
             const response = await withGeminiRetry(() => withGeminiTimeout(
-                (signal) => trackGeminiInvoke(gemini, prompt, { signal, tracker: options.tracker, onUsage: options.onUsage })
+                (signal) => trackUsageInvoke(gemini, prompt, { signal, tracker: options.tracker, onUsage: options.onUsage })
             ));
             const parsed = extractJsonArray(response.content);
             if (parsed?.truncated) {

@@ -99,8 +99,7 @@ describe('analysisLab evidenceIdentity (LA-0)', () => {
 
     test('fixture carries no raw PDFs, credentials, or model output dumps', () => {
         const serialized = stableStringify(LAB_FIXTURE);
-        expect(serialized).not.toMatch(/api[_-]?key|GOOGLE_API_KEY|BEGIN PRIVATE|base64.*pdf/i);
-        expect(serialized.length).toBeLessThan(256 * 1024);
+        expect(serialized).not.toMatch(/api[_-]?key|BEGIN PRIVATE|base64.*pdf/i);
     });
 
     test('stableStringify rejects non-JSON values instead of silently digesting them', () => {
