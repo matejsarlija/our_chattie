@@ -122,7 +122,6 @@ describe('buildCourtAnalysisPayload', () => {
                     individualAnalyses: [
                         {
                             fileName: 'doc-1.pdf',
-                            aiResult: 'Nalaz',
                             error: null
                         }
                     ],
@@ -238,5 +237,24 @@ describe('buildCourtAnalysisPayload', () => {
         ]);
         expect(payload.processedCases[0].files[0]).not.toHaveProperty('filePath');
         expect(payload.processedCases[0].analysis.individualAnalyses[0]).not.toHaveProperty('rawChunkCount');
+    });
+    test('omits duplicated raw analysis results so the initial detail artifact remains small', () => {
+        const payload = buildCourtAnalysisPayload({
+            processedCases: [{
+                analysis: {
+                    individualAnalyses: [{ text: 'large.pdf', aiResult: { raw: 'x'.repeat(600_000) } }],
+                    coverage: { analyzed: 1, failed: 0 }
+                }
+            }],
+            clusterEvidencePackage: { facts: [{ id: 'fact-1' }] },
+            report: { summary: 'kept' },
+            comparativeAnalysis: 'kept'
+        });
+
+        expect(payload.processedCases[0].analysis.individualAnalyses[0]).toEqual({ fileName: 'large.pdf', error: undefined });
+        expect(payload.processedCases[0].analysis.coverage).toEqual({ analyzed: 1, failed: 0 });
+        expect(payload.clusterEvidencePackage).toEqual({ facts: [{ id: 'fact-1' }] });
+        expect(payload.report).toEqual({ summary: 'kept' });
+        expect(Buffer.byteLength(JSON.stringify(payload))).toBeLessThan(500 * 1024);
     });
 });

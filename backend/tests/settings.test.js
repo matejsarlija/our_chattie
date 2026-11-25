@@ -3,7 +3,7 @@ const os = require('os');
 const path = require('path');
 const request = require('supertest');
 const express = require('express');
-const { createLocalStore } = require('../services/localStore');
+const { createSqliteStore } = require('../services/sqliteStore');
 
 function makeApp(store) {
   const app = express();
@@ -32,7 +32,7 @@ describe('lawyer settings store + API', () => {
 
   beforeEach(() => {
     dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'analysis-settings-'));
-    store = createLocalStore({ dataDir });
+    store = createSqliteStore({ dataDir });
     app = makeApp(store);
   });
 

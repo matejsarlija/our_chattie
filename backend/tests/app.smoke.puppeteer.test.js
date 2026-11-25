@@ -73,8 +73,8 @@ describeIfSmoke('Puppeteer smoke (live)', () => {
   };
 
   const seedDetailRun = async (resultJson) => {
-    const { createLocalStore } = require('../services/localStore');
-    const store = createLocalStore();
+      const { createSqliteStore } = require('../services/sqliteStore');
+      const store = createSqliteStore();
     const run = await store.createAnalysisRun({
       oib: '12345678901',
       queryType: 'oib',
@@ -178,8 +178,8 @@ describeIfSmoke('Puppeteer smoke (live)', () => {
     await runWithFailureArtifacts('analysis detail renders the report timeline annex with dates and citations', async () => {
       // Seed a run directly into the backend's data dir so the detail page has
       // a persisted result_json.report.timeline to render (backend reads files per request).
-      const { createLocalStore } = require('../services/localStore');
-      const store = createLocalStore();
+      const { createSqliteStore } = require('../services/sqliteStore');
+      const store = createSqliteStore();
       const run = await store.createAnalysisRun({
         oib: '12345678901',
         queryType: 'oib',

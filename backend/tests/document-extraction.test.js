@@ -34,6 +34,7 @@ const {
     extractTextViaOCR,
     resetOcrPageCacheForTests,
 } = require('../court-analysis/agents/analysis-agent');
+const { createSqliteStore } = require('../services/sqliteStore');
 
 describe('extractTextFromFile', () => {
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'extraction-test-'));
@@ -160,17 +161,6 @@ describe('extractTextFromFile', () => {
 });
 
 describe('extractTextViaOCR', () => {
-    let ocrCacheDir;
-
-    beforeAll(() => {
-        ocrCacheDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ocr-page-store-test-'));
-        process.env.OCR_CACHE_DIR = ocrCacheDir;
-    });
-
-    afterAll(() => {
-        delete process.env.OCR_CACHE_DIR;
-        if (ocrCacheDir) fs.rmSync(ocrCacheDir, { recursive: true, force: true });
-    });
 
     beforeEach(() => {
         // Invoke-count assertions elsewhere in this file assume per-test
@@ -502,29 +492,34 @@ describe('OCR resilience and cost guards', () => {
         }
     });
 
-    it('serves pages from the persistent store after a simulated backend restart', async () => {
+
+    it('serves pages from the SQLite store after a simulated backend restart', async () => {
         setupOcr({ numPages: 2 });
         mockGeminiInvoke.mockImplementation(() => Promise.resolve({
             content: '=== STRANICA 1 ===\npersist body one\n=== STRANICA 2 ===\npersist body two',
         }));
 
         const tmpFile = uniqueTmpPdf('persist');
+        const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ocr-sqlite-test-'));
+        let sqliteStore = createSqliteStore({ dataDir });
         try {
-            const first = await extractTextViaOCR(tmpFile);
+            const first = await extractTextViaOCR(tmpFile, undefined, { sqliteStore });
             const callsAfterFirst = mockGeminiInvoke.mock.calls.length;
             expect(callsAfterFirst).toBe(1);
 
-            // Wiping only the in-memory LRU simulates a backend restart; the
-            // disk tier must satisfy every page without new vision spend.
+            sqliteStore.close();
             resetOcrPageCacheForTests();
+            sqliteStore = createSqliteStore({ dataDir });
 
-            const second = await extractTextViaOCR(tmpFile);
+            const second = await extractTextViaOCR(tmpFile, undefined, { sqliteStore });
             expect(mockGeminiInvoke.mock.calls.length).toBe(callsAfterFirst);
             expect(second.pages).toBe(2);
             expect(second.error).toBeNull();
             expect(second.text).toContain('persist body one');
             expect(second.text).toContain('persist body two');
         } finally {
+            if (sqliteStore) sqliteStore.close();
+            fs.rmSync(dataDir, { recursive: true, force: true });
             fs.unlinkSync(tmpFile);
         }
     });

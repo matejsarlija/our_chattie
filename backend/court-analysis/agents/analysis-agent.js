@@ -11,7 +11,7 @@ const mammoth = require("mammoth");
 const WordExtractor = require("word-extractor");
 const { buildRetrievalChunks, splitTextIntoChunks } = require("../reasoning/retrieval/chunker");
 const logger = require("../../services/logger");
-const { createOpenRouterRoleClient, outputCapWarning } = require("../../llm/openrouterConfig");
+const { createOpenRouterRoleClient, outputCapWarning, resolveRoleConfig } = require("../../llm/openrouterConfig");
 const { trackUsageInvoke } = require("../../llm/usage");
 const { withGeminiRetry, withGeminiTimeout } = require("../../llm/retry");
 const { classifyFileFailure, classifyFileFailureDetailed } = require("../../http/friendlyAnalysisError");
@@ -27,7 +27,8 @@ const {
     EXTRACTION_SCHEMA_VERSION,
     FIELD_SPECS,
 } = require("../reasoning/schema/extractionSchema");
-const ocrPageStore = require("../../helpers/ocrPageStore");
+const OCR_PAGE_CACHE_PROMPT_VERSION = 2;
+const OCR_PAGE_CACHE_MODEL = resolveRoleConfig("ocr").model;
 
 // All model roles use the OpenRouter client; page OCR sends raster images only.
 const gemini = createOpenRouterRoleClient("analysis");
@@ -598,10 +599,9 @@ async function renderPageToJpeg(page) {
 
 // Page-level OCR memo keyed by document content hash, so transient second-pass
 // retries (and re-runs) never re-spend vision quota on pages already read.
-// Two tiers: an in-process LRU (L1) in front of a persistent disk store (L2,
-// helpers/ocrPageStore.js) so pages survive backend restarts. The store is
-// versioned by prompt/model and never fails a run — see its header for the
-// invalidation contract.
+// Two tiers: an in-process LRU (L1) in front of the run's SQLite store (L2),
+// so pages survive backend restarts. The cache is versioned by prompt/model
+// and never fails a run.
 const OCR_PAGE_CACHE_MAX_ENTRIES = 200;
 const ocrPageCache = new Map();
 
@@ -613,7 +613,7 @@ function splitOcrCacheKey(key) {
     return { contentHash: key.slice(0, separator), pageNumber };
 }
 
-function readCachedOcrPage(key) {
+function readCachedOcrPage(key, sqliteStore) {
     if (ocrPageCache.has(key)) {
         const value = ocrPageCache.get(key);
         ocrPageCache.delete(key);
@@ -624,14 +624,23 @@ function readCachedOcrPage(key) {
     // cache hit upstream (zero vision spend).
     const parts = splitOcrCacheKey(key);
     if (!parts) return null;
-    const fromDisk = ocrPageStore.readOcrPageFromDisk(parts.contentHash, parts.pageNumber);
+    let fromDisk = null;
+    try {
+        fromDisk = sqliteStore?.getOcrPage(parts.contentHash, parts.pageNumber, {
+            engine: "page-cache",
+            promptVersion: OCR_PAGE_CACHE_PROMPT_VERSION,
+            modelId: OCR_PAGE_CACHE_MODEL,
+        }) ?? null;
+    } catch {
+        return null;
+    }
     if (fromDisk === null) return null;
     logger.agent.log(`[OCR] Persistent cache hit: ${parts.contentHash.slice(0, 8)} page ${parts.pageNumber}`);
     ocrPageCache.set(key, fromDisk);
     return fromDisk;
 }
 
-function writeCachedOcrPage(key, value) {
+function writeCachedOcrPage(key, value, sqliteStore) {
     if (ocrPageCache.has(key)) ocrPageCache.delete(key);
     ocrPageCache.set(key, value);
     while (ocrPageCache.size > OCR_PAGE_CACHE_MAX_ENTRIES) {
@@ -639,7 +648,15 @@ function writeCachedOcrPage(key, value) {
     }
     const parts = splitOcrCacheKey(key);
     if (parts) {
-        ocrPageStore.writeOcrPageToDisk(parts.contentHash, parts.pageNumber, value);
+        try {
+            sqliteStore?.putOcrPage(parts.contentHash, parts.pageNumber, value, {
+                engine: "page-cache",
+                promptVersion: OCR_PAGE_CACHE_PROMPT_VERSION,
+                modelId: OCR_PAGE_CACHE_MODEL,
+            });
+        } catch {
+            // OCR cache failures must never discard an in-flight result.
+        }
     }
 }
 
@@ -750,7 +767,7 @@ async function extractTextViaOCR(filePath, progressCallback, options = {}) {
         const pendingPageNumbers = [];
         let cachedPagesHit = 0;
         for (let i = 1; i <= maxPages; i++) {
-            const cached = readCachedOcrPage(`${contentHash}:${i}`);
+            const cached = readCachedOcrPage(`${contentHash}:${i}`, options.sqliteStore);
             if (cached === null) pendingPageNumbers.push(i);
             else {
                 pageTexts.set(i, cached);
@@ -808,7 +825,7 @@ async function extractTextViaOCR(filePath, progressCallback, options = {}) {
                     const segment = segments[positionIndex];
                     if (typeof segment === "string") {
                         pageTexts.set(pageNumber, segment);
-                        writeCachedOcrPage(`${contentHash}:${pageNumber}`, segment);
+                        writeCachedOcrPage(`${contentHash}:${pageNumber}`, segment, options.sqliteStore);
                         batchCovered += 1;
                     }
                 });
@@ -870,7 +887,7 @@ async function extractTextViaOCR(filePath, progressCallback, options = {}) {
                 );
                 const pageText = modelContentToText(response?.content);
                 pageTexts.set(i, pageText);
-                writeCachedOcrPage(`${contentHash}:${i}`, pageText);
+                writeCachedOcrPage(`${contentHash}:${i}`, pageText, options.sqliteStore);
             } catch (pageErr) {
                 logger.agent.error(`[OCR] Page ${i}/${maxPages} failed for ${filePath}:`,
                 pageErr?.name === "AbortError" ? pageErr.message : pageErr,);
@@ -995,7 +1012,7 @@ function buildAnalysisPrompt(knownParties, segmentText) {
 }
 
 async function analyzeClusterDocuments(input) {
-        const { files, caseInfo, progressCallback, usageTracker, onUsage, runId } = input;
+        const { files, caseInfo, progressCallback, usageTracker, onUsage, runId, sqliteStore } = input;
         // Run correlation for the one outcome signal this tool emits via the
         // structured logger (see grounding catch below). Null outside runs.
         const toolRunId = runId || null;
@@ -1088,7 +1105,7 @@ async function analyzeClusterDocuments(input) {
                     const ocrResult = await extractTextViaOCR(
                         file.filePath,
                         progressCallback,
-                        { tracker: usageTracker, onUsage },
+                        { tracker: usageTracker, onUsage, sqliteStore },
                     );
                     if (ocrResult.text && ocrResult.text.trim().length > 0) {
                         text = ocrResult.text;

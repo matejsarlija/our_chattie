@@ -1,7 +1,7 @@
 const path = require('path');
 const os = require('os');
 const fs = require('fs');
-const { createLocalStore } = require('../services/localStore');
+const { createSqliteStore } = require('../services/sqliteStore');
 
 describe('localStore lawyer preferences', () => {
     let dataDir;
@@ -23,7 +23,7 @@ describe('localStore lawyer preferences', () => {
             uiPreferences: { compact: true },
         }));
 
-        expect(createLocalStore({ dataDir }).getSettings()).toEqual({
+        expect(createSqliteStore({ dataDir }).getSettings()).toEqual({
             defaultScanDepth: 'full',
             uiPreferences: { compact: true },
         });
@@ -33,14 +33,14 @@ describe('localStore lawyer preferences', () => {
             defaultScanDepth: 'standard',
         }));
 
-        expect(createLocalStore({ dataDir }).getSettings()).toEqual({
+        expect(createSqliteStore({ dataDir }).getSettings()).toEqual({
             defaultScanDepth: 'balanced',
         });
     });
 
 
     test('persists supported lawyer preferences and rejects invalid scan depths', async () => {
-        const store = createLocalStore({ dataDir });
+        const store = createSqliteStore({ dataDir });
         await store.updateSettings({
             defaultScanDepth: 'full',
             uiPreferences: { compact: true },

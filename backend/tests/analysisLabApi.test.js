@@ -15,7 +15,7 @@ const express = require('express');
 
 const { createAnalysisLabRouter } = require('../court-analysis/reasoning/analysisLab/api');
 const { createAnalysisLabStore } = require('../services/analysisLabStore');
-const { createLocalStore } = require('../services/localStore');
+const { createSqliteStore } = require('../services/sqliteStore');
 const { runExperiment } = require('../court-analysis/reasoning/analysisLab/runExperiment');
 const {
     cloneEvidencePackage,
@@ -55,7 +55,7 @@ function mockVariantReports({ failProfile = null } = {}) {
 function makeApp({ runExperimentFn = null, limiterMarker = null } = {}) {
     const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'analysis-lab-api-'));
     const labStore = createAnalysisLabStore({ dataDir });
-    const analysisStore = createLocalStore({ dataDir });
+    const analysisStore = createSqliteStore({ dataDir });
     const mark = (name) => (req, res, next) => {
         if (limiterMarker) limiterMarker.calls.push(name);
         next();
@@ -207,13 +207,13 @@ describe('analysis lab experiment creation (LE-3)', () => {
             resultText: 'Sažetak',
             resultJson: { comparativeAnalysis: 'Sažetak', clusterEvidencePackage: cloneEvidencePackage(LAB_FIXTURE) },
         });
-        const runsBefore = fs.readFileSync(path.join(dataDir, 'runs.json'), 'utf8');
+        const runBefore = await analysisStore.getAnalysisRun({ id: run.id });
 
         const res = await request(app)
             .post('/api/analysis-lab/experiments')
             .send({ evidencePackageRef: run.id });
         expect(res.status).toBe(201);
-        expect(fs.readFileSync(path.join(dataDir, 'runs.json'), 'utf8')).toBe(runsBefore);
+        expect(await analysisStore.getAnalysisRun({ id: run.id })).toEqual(runBefore);
     });
 });
 

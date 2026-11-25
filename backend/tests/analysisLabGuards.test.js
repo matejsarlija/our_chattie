@@ -18,7 +18,7 @@ function persistedRecordPath(dataDir, id) {
 
 const { createAnalysisLabRouter } = require('../court-analysis/reasoning/analysisLab/api');
 const { createAnalysisLabStore } = require('../services/analysisLabStore');
-const { createLocalStore } = require('../services/localStore');
+const { createSqliteStore } = require('../services/sqliteStore');
 const { TRACE_BOUNDS } = require('../court-analysis/reasoning/analysisLab/traceBounds');
 
 const FIXTURES_DIR = path.join(__dirname, 'fixtures', 'replays', 'analysis-lab');
@@ -26,7 +26,7 @@ const FIXTURES_DIR = path.join(__dirname, 'fixtures', 'replays', 'analysis-lab')
 function makeApp({ runExperimentFn = null } = {}) {
     const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'analysis-lab-guards-'));
     const labStore = createAnalysisLabStore({ dataDir });
-    const analysisStore = createLocalStore({ dataDir });
+    const analysisStore = createSqliteStore({ dataDir });
     const router = createAnalysisLabRouter({
         labStore,
         analysisStore,

@@ -737,7 +737,7 @@ function resolveAnalysisArgs(optionsOrProgressCallback, maybeProgressCallback) {
         scrapeLimit: computeRawScrapeLimit(depth.poolCap),
         query: options.query || null,
         discoverySource: options.discoverySource || null,
-        runId: options.runId || null,
+        analysisStore: options.analysisStore || null,
         ...depth,
         progressCallback: typeof optionsOrProgressCallback === 'function'
             ? optionsOrProgressCallback
@@ -797,7 +797,7 @@ async function runCourtAnalysis(searchTerm, optionsOrProgressCallback, progressC
             query: resolved.query || { value: searchTerm },
             discoveryMetadata,
             scanDepth: resolved.scanDepth,
-            runId: resolved.runId || null,
+            analysisStore: resolved.analysisStore,
         });
     } catch (error) {
         logger.error('pipeline.runCourtAnalysis', 'Court analysis failed', { runId: resolved.runId || null, error: error.message });
@@ -1109,7 +1109,7 @@ async function processScrapedCases(casesToProcess, progressCallback, options = {
 
             // 2c. Analyze THIS case's documents
             stageAwareProgress?.({ step: 'reasoning', message: `Analiziram ${filesForAnalysis.length} datoteka za predmet ${caseInfo.caseNumber}...` });
-            const analysis = await analyzeClusterDocuments({ files: filesForAnalysis, caseInfo: caseInfo, progressCallback: stageAwareProgress, usageTracker, onUsage: emitUsage, runId });
+            const analysis = await analyzeClusterDocuments({ files: filesForAnalysis, caseInfo: caseInfo, progressCallback: stageAwareProgress, usageTracker, onUsage: emitUsage, runId, sqliteStore: resolvedOptions.analysisStore });
             const analysisCoverage = analysis?.coverage || {};
             stageAwareProgress?.({
                 step: 'reasoning',

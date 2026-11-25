@@ -19,7 +19,6 @@ function mapProcessedCase(processedCase) {
             individualAnalyses: Array.isArray(processedCase?.analysis?.individualAnalyses)
                 ? processedCase.analysis.individualAnalyses.map((item) => ({
                     fileName: item.text,
-                    aiResult: item.aiResult,
                     error: item.error
                 }))
                 : [],

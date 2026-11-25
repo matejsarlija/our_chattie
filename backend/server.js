@@ -14,7 +14,7 @@ const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const rateLimiter = require('./http/rateLimiter');
-const { createLocalStore } = require('./services/localStore');
+const { createSqliteStore } = require('./services/sqliteStore');
 const { createAnalysisLabStore } = require('./services/analysisLabStore');
 const { createAnalysisLabRouter } = require('./court-analysis/reasoning/analysisLab/api');
 const { createChangeCheckService } = require('./change-detection/service');
@@ -30,7 +30,7 @@ async function startServer() {
   const port = Number(process.env.PORT) || 3001;
   const host = '0.0.0.0';
   const courtAnalysisQueue = new PQueue({ concurrency: 2 });
-  const analysisStore = createLocalStore();
+  const analysisStore = createSqliteStore();
   const analysisLabStore = createAnalysisLabStore();
   const changeCheckService = createChangeCheckService();
 

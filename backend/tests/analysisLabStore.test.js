@@ -3,7 +3,7 @@ const os = require('os');
 const path = require('path');
 const crypto = require('crypto');
 const { createAnalysisLabStore } = require('../services/analysisLabStore');
-const { createLocalStore } = require('../services/localStore');
+const { createSqliteStore } = require('../services/sqliteStore');
 const { snapshotProfile } = require('../court-analysis/reasoning/analysisLab/profiles');
 
 function persistedRecordPath(dataDir) {
@@ -14,7 +14,7 @@ function makeStores() {
     const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'analysis-lab-store-'));
     return {
         lab: createAnalysisLabStore({ dataDir }),
-        runs: createLocalStore({ dataDir }),
+        runs: createSqliteStore({ dataDir }),
         dataDir,
     };
 }
@@ -262,13 +262,13 @@ describe('analysisLabStore listing and isolation', () => {
         const run = await runs.createAnalysisRun({ oib: 'St-2/2013', queryType: 'case_number', queryValue: 'St-2/2013' });
         await runs.completeAnalysisRun({ analysisId: run.id, resultText: 'original', resultJson: { report: { findings: [1] } } });
 
-        const runsBefore = fs.readFileSync(path.join(dataDir, 'runs.json'), 'utf8');
+        const runBefore = await runs.getAnalysisRun({ id: run.id });
         const experiment = await lab.createExperiment(experimentInput());
         await lab.completeExperimentVariant({ experimentId: experiment.id, ...variantPayload('baseline-flat-v1') });
         await lab.failExperimentVariant({ experimentId: experiment.id, profileId: 'context-tree-v1' });
         await lab.completeExperiment({ experimentId: experiment.id });
 
-        expect(fs.readFileSync(path.join(dataDir, 'runs.json'), 'utf8')).toBe(runsBefore);
+        expect(await runs.getAnalysisRun({ id: run.id })).toEqual(runBefore);
         expect(fs.existsSync(persistedRecordPath(dataDir))).toBe(true);
 
         const reloaded = await runs.getAnalysisRun({ id: run.id });

@@ -94,7 +94,7 @@ function createCourtAnalysisRouter({ analysisStore, courtAnalysisQueue, writeLim
           {
             query: parsedRequest.query,
             scanDepth: parsedRequest.options.scanDepth,
-            runId,
+            analysisStore,
           },
           safeProgress
         );

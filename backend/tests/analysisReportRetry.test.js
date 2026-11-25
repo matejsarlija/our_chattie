@@ -3,7 +3,7 @@ const os = require('os');
 const path = require('path');
 const request = require('supertest');
 const express = require('express');
-const { createLocalStore } = require('../services/localStore');
+const { createSqliteStore } = require('../services/sqliteStore');
 const { createAnalysisReportRetryHandler } = require('../http/analysisReportRetry');
 
 function makeApp(store, regenerate) {
@@ -31,7 +31,7 @@ describe('POST /api/analysis/runs/:id/report', () => {
 
   beforeEach(() => {
     dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'analysis-retry-'));
-    store = createLocalStore({ dataDir });
+    store = createSqliteStore({ dataDir });
   });
 
   afterEach(() => {

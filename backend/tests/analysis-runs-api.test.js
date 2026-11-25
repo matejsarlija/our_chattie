@@ -4,7 +4,7 @@ const path = require('path');
 const EventEmitter = require('events');
 const request = require('supertest');
 const express = require('express');
-const { createLocalStore } = require('../services/localStore');
+const { createSqliteStore } = require('../services/sqliteStore');
 const { parsePagination } = require('../http/pagination');
 const { buildSseEvent } = require('../http/sse');
 const { createAnalysisRunStreamHandler } = require('../http/analysisStreamHandler');
@@ -65,7 +65,7 @@ describe('analysis runs API (local store)', () => {
 
   beforeEach(async () => {
     dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'analysis-api-'));
-    store = createLocalStore({ dataDir });
+    store = createSqliteStore({ dataDir });
     app = makeApp(store);
 
     const run = await store.createAnalysisRun({ oib: '66124057408', queryType: 'oib', queryValue: '66124057408' });
