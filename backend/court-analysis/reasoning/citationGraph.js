@@ -5,12 +5,8 @@
 // Own references come from structured facts, procedural events, and discovery
 // metadata so a decision with no money/property facts still has an identity.
 //
-// Consumers: lifecycle reconciliation uses exact references only. Empty
-// input → empty graph, never throws.
-//
-// Consumers: reconcilePropertyFlows treats citation-linked tražbina entries
-// as lifecycle-chain links (same as an explicit `supersedes`), instead of
-// guessing from prose. Empty input → empty graph, never throws.
+// Lifecycle reconciliation consumes exact filing references as explicit
+// tražbina-chain links, alongside model-provided `supersedes` identifiers.
 
 function ownFilingReferences(analysis) {
     const refs = new Set();

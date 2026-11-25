@@ -364,19 +364,8 @@ function buildPackageMeta(pkg) {
         coverage: pkg.coverage || null,
         proceduralFlow: pkg.proceduralFlow || null,
         reconciliation: pkg.reconciliation || null,
-        propertyReconciliation: pkg.propertyReconciliation || null,
+        flows: pkg.flows || { count: 0, entries: [], currencyTotals: {}, hasFlows: false },
         analysesCount: Array.isArray(pkg.analyses) ? pkg.analyses.length : 0,
-        moneyFlow: pkg.moneyFlow || {
-            count: 0,
-            entries: [],
-            currencyTotals: {},
-            hasMoneyFlow: false
-        },
-        propertyFlow: pkg.propertyFlow || {
-            count: 0,
-            entries: [],
-            hasPropertyFlow: false
-        },
         documentLinks: (pkg.documentLinks || []).map((link) => ({
             id: link.id,
             url: link.url,
@@ -491,25 +480,25 @@ function createReasoningEvidenceFromPackage(pkg) {
         }]
     }));
 
-    // Structured money-flow entries become first-class, source-cited claims so
-    // the report's findings/amounts are grounded in deterministic extraction
-    // (Track 3c) rather than prose alone.
-    const moneyFlowClaims = (pkg.moneyFlow?.entries || []).map((entry, index) => {
-        const displayAmount = Number.isFinite(entry.amount)
-            ? entry.amount.toLocaleString('en-US')
-            : String(entry.amount ?? '');
+    const flowClaims = (pkg.flows?.entries || []).map((entry, index) => {
+        const isAmount = entry.kind === 'amount';
+        const sourceAmount = entry.sourceAmount ?? '';
+        const displayAmount = Number.isFinite(sourceAmount) ? sourceAmount.toLocaleString('en-US') : String(sourceAmount);
+        const flowId = entry.id || `flow-${index + 1}`;
         return {
-            id: `money-flow-${index + 1}`,
-            text: `Financijski iznos ${displayAmount} ${entry.currency || ''} ${entry.description ? `(${entry.description})` : ''}${entry.date ? ` — ${entry.date}` : ''}${entry.fileName ? ` iz dokumenta "${entry.fileName}"` : ''}${entry.grounded === false ? ' [nepotvrđeno u izvornom tekstu]' : ''}.`,
+            id: `flow-claim-${flowId}`,
+            text: `${isAmount ? 'Financijski iznos' : `Imovina (${entry.assetType || 'drugo'})`} ${displayAmount} ${entry.sourceCurrency || ''} ${entry.description ? `(${entry.description})` : ''}${entry.transferor || entry.transferee ? ` — ${entry.transferor || '?'} → ${entry.transferee || '?'}` : ''}${entry.eventType ? ` [${entry.eventType}]` : ''}${entry.date ? ` — ${entry.date}` : ''}${entry.fileName ? ` iz dokumenta "${entry.fileName}"` : ''}${entry.grounded === false ? ' [nepotvrđeno u izvornom tekstu]' : ''}.`,
             confidence: 'medium',
             evidence: [{
-                sourceId: entry.sourceId || `${pkg.clusterId}:money-flow-${index + 1}`,
-                text: `${entry.amount} ${entry.currency || ''} ${entry.description || ''}`.trim(),
+                sourceId: entry.docId || entry.sourceId || `${pkg.clusterId}:${flowId}`,
+                text: `${sourceAmount} ${entry.sourceCurrency || ''} ${entry.description || ''}`.trim(),
                 metadata: {
-                    sourceType: 'analysis-amount',
+                    sourceType: isAmount ? 'analysis-amount' : 'analysis-property',
                     fileName: entry.fileName || null,
                     caseNumber: entry.caseNumber || null,
                     date: entry.date || null,
+                    assetType: entry.assetType || null,
+                    eventType: entry.eventType || null,
                     from: entry.from || null,
                     to: entry.to || null,
                     grounded: entry.grounded === true
@@ -518,41 +507,12 @@ function createReasoningEvidenceFromPackage(pkg) {
         };
     });
 
-    // Structured property-flow entries become first-class claims the same way,
-    // with tražbina lifecycle chains rendered as directional value-change text.
-    const propertyFlowClaims = (pkg.propertyFlow?.entries || []).map((entry, index) => {
-        const displayValue = Number.isFinite(entry.value)
-            ? entry.value.toLocaleString('en-US')
-            : (entry.value ?? '');
-        return {
-            id: `property-flow-${index + 1}`,
-            text: `Imovina (${entry.assetType || 'drugo'}) ${displayValue} ${entry.currency || ''} ${entry.description ? `(${entry.description})` : ''}${entry.transferor || entry.transferee ? ` — ${entry.transferor || '?'} → ${entry.transferee || '?'}` : ''}${entry.eventType ? ` [${entry.eventType}]` : ''}${entry.date ? ` — ${entry.date}` : ''}${entry.fileName ? ` iz dokumenta "${entry.fileName}"` : ''}${entry.grounded === false ? ' [nepotvrđeno u izvornom tekstu]' : ''}.`,
-            confidence: 'medium',
-            evidence: [{
-                sourceId: entry.sourceId || `${pkg.clusterId}:property-flow-${index + 1}`,
-                text: `${entry.value ?? ''} ${entry.currency || ''} ${entry.description || ''}`.trim(),
-                metadata: {
-                    sourceType: 'analysis-property',
-                    fileName: entry.fileName || null,
-                    caseNumber: entry.caseNumber || null,
-                    date: entry.date || null,
-                    assetType: entry.assetType || null,
-                    eventType: entry.eventType || null,
-                    grounded: entry.grounded === true
-                }
-            }]
-        };
-    });
-
-    // Tražbina value-change timelines surface as findings-grade claims so the
-    // discount signal (filed at face value, later sold at a discount) is never
-    // lost between reconciliation and synthesis.
-    const propertyValueChangeClaims = ((pkg.propertyReconciliation?.valueChanges || [])).map((change, index) => ({
-        id: `property-value-change-${index + 1}`,
+    const valueChangeClaims = (pkg.reconciliation?.valueChanges || []).map((change, index) => ({
+        id: `value-change-${index + 1}`,
         text: change.finding || `Vrijednosna promjena tražbine "${change.description}".`,
         confidence: 'medium',
         evidence: (change.stages || []).map((stage) => ({
-            sourceId: stage.sourceId || `${pkg.clusterId}:property-value-change-${index + 1}`,
+            sourceId: stage.sourceId || `${pkg.clusterId}:value-change-${index + 1}`,
             text: `${stage.value ?? ''} ${change.currency || ''} ${change.description || ''}`.trim(),
             metadata: {
                 sourceType: 'analysis-property',
@@ -575,9 +535,8 @@ function createReasoningEvidenceFromPackage(pkg) {
         claims: sortClaimsChronologically([
             ...claims,
             ...analysisClaims,
-            ...moneyFlowClaims,
-            ...propertyFlowClaims,
-            ...propertyValueChangeClaims
+            ...flowClaims,
+            ...valueChangeClaims
         ]),
         meta: buildPackageMeta(pkg)
     };

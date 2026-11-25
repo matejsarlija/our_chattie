@@ -278,20 +278,29 @@ function normalizeFlowItem(raw, index, analysis, options = {}) {
         ? buildFlowValueEur(raw, value, currency)
         : { valueEur: null, valueEurSource: null };
 
+    const kind = assetType === 'novac' ? 'amount' : 'property';
     return {
         id: `flow-${index + 1}`,
+        kind,
+        canonicalPartyId: null,
         assetType,
         description: description === null || description === undefined ? null : String(description).trim() || null,
         // Cadastral/registration anchor; money raws virtually never carry
         // it — stays null for 'novac' unless explicitly present.
         identifier: raw.identifier ?? null,
         value,
+        sourceAmount: value,
+        sourceCurrency: currency,
+        amountEur: eur.valueEur ?? null,
+        sourcePages: Array.isArray(raw.sourcePages) ? [...raw.sourcePages] : [],
+        sourceChunkId: raw.sourceChunkId ?? null,
+        docId: analysis?.id || null,
+        valueChanges: [],
         currency,
         valueEur: eur.valueEur ?? null,
         valueEurSource: eur.valueEurSource ?? null,
         ...(eur.dualCurrency ? { dualCurrency: eur.dualCurrency } : {}),
         ...(eur.currencyNote ? { currencyNote: eur.currencyNote } : {}),
-        // Canonical parties: union of both families' aliases. Precedence
         // keeps each family's own field first so historical mappings round-trip.
         transferor: cleanText(raw.transferor ?? raw.from ?? raw.payerName ?? raw.payer ?? raw.platitelj ?? raw.source ?? raw.ustupitelj),
         transferee: cleanText(raw.transferee ?? raw.to ?? raw.recipientName ?? raw.recipient ?? raw.primatelj ?? raw.target ?? raw.stjecatelj),
@@ -339,9 +348,8 @@ function normalizeFlowItem(raw, index, analysis, options = {}) {
         // unified flow rather than reducing it to the first analysis record.
         filings: Array.isArray(raw.filings) ? raw.filings.map((filing) => ({ ...filing })) : null,
         sources: Array.isArray(raw.sources) ? [...raw.sources] : null,
-        // Non-canonical money aliases (migration release only): money's exact
-        // historical expressions, so deriveMoneyFlowView maps back
-        // byte-identically. Invisible to the property view.
+        // Preserve the extraction vocabulary alongside its canonical-party
+        // fields so callers can use source names without reparsing the quote.
         payerName: cleanText(raw.payerName ?? raw.payer ?? raw.platitelj),
         payerOib: normalizeOib(raw.payerOib ?? raw.payer_oib ?? raw.oibPlatitelja),
         recipientName: cleanText(raw.recipientName ?? raw.recipient ?? raw.primatelj),
@@ -498,24 +506,6 @@ function mergeIdenticalEntries(entries) {
     });
     return merged;
 }
-// Legacy `prop-N` supersedes references name the old per-family id sequence.
-// The unified sequence renumbers everything to `flow-N`, so exact `prop-N`
-// references are rewritten to the corresponding unified id at collect time
-// (ordinal among property-sourced entries). Descriptive-text references pass
-// through untouched for resolveSupersedesTarget's other strategies.
-function rewriteLegacySupersedes(entries) {
-    const propIds = entries.filter((e) => e.__propertyOrdinal !== undefined);
-    const byOrdinal = new Map(propIds.map((e) => [e.__propertyOrdinal, e.id]));
-    for (const entry of entries) {
-        if (typeof entry.supersedes !== 'string') continue;
-        const match = entry.supersedes.trim().match(/^prop-(\d+)$/i);
-        if (!match) continue;
-        const target = byOrdinal.get(Number.parseInt(match[1], 10));
-        if (target) entry.supersedes = target;
-    }
-    for (const entry of entries) delete entry.__propertyOrdinal;
-    return entries;
-}
 
 /**
  * Collects both extraction arrays into one flow array through a single id
@@ -527,7 +517,6 @@ function rewriteLegacySupersedes(entries) {
  */
 function collectFlows(analyses) {
     const entries = [];
-    let propertyOrdinal = 0;
     for (const analysis of Array.isArray(analyses) ? analyses : []) {
         const rawAmounts = analysis?.amounts;
         if (Array.isArray(rawAmounts)) {
@@ -540,20 +529,13 @@ function collectFlows(analyses) {
         if (Array.isArray(rawList)) {
             for (const raw of rawList) {
                 const entry = normalizeFlowItem(raw, entries.length, analysis);
-                if (!entry) continue;
-                propertyOrdinal += 1;
-                entry.__propertyOrdinal = propertyOrdinal;
-                entries.push(entry);
+                if (entry) entries.push(entry);
             }
         }
     }
-    // Collapse repeated extraction of a stable fact within one source, and
-    // byte-identical cross-filing attachments. Distinct source files without
-    // byte hashes are never matched by filename or fact similarity.
     const mergedEntries = mergeIdenticalEntries(entries);
     entries.length = 0;
     entries.push(...mergedEntries);
-    rewriteLegacySupersedes(entries);
 
     const currencyTotals = {};
     let eurTotal = 0;
@@ -577,151 +559,11 @@ function collectFlows(analyses) {
     };
 }
 
-/**
- * Backward-compatible derived views (flow-consolidation PR2): `pkg.moneyFlow`
- * / `pkg.propertyFlow` retain their legacy fields and conditionally add
- * duplicate provenance (`duplicateCount`, source filings and description
- * variants) for entries collapsed by the unified collector.
- * Each view filters the unified array by `assetType` and renumbers its own id
- * sequence in historical order, renaming fields back to legacy vocabulary.
- */
-
-/**
- * Money view: `novac` entries only, `value`→`amount` (+EUR fields), legacy
- * aliases exposed and lifecycle fields omitted. Unmerged output retains the
- * prior shape; merged rows include the duplicate provenance documented above.
- */
-function deriveMoneyFlowView(flows) {
-    const entries = [];
-    for (const flow of Array.isArray(flows?.entries) ? flows.entries : []) {
-        if (flow?.assetType !== 'novac') continue;
-        entries.push({
-            id: `money-${entries.length + 1}`,
-            amount: flow.value ?? null,
-            currency: flow.currency ?? null,
-            amountEur: flow.valueEur ?? null,
-            amountEurSource: flow.valueEurSource ?? null,
-            ...(flow.dualCurrency ? { dualCurrency: flow.dualCurrency } : {}),
-            ...(flow.currencyNote ? { currencyNote: flow.currencyNote } : {}),
-            description: flow.description ?? null,
-            date: flow.date ?? null,
-            direction: flow.direction ?? null,
-            payerName: flow.payerName ?? null,
-            payerOib: flow.payerOib ?? null,
-            recipientName: flow.recipientName ?? null,
-            recipientOib: flow.recipientOib ?? null,
-            from: flow.from ?? null,
-            to: flow.to ?? null,
-            isplatniRed: flow.isplatniRed ?? null,
-            claimRegistryNumber: flow.claimRegistryNumber ?? null,
-            filingReference: flow.filingReference ?? null,
-            quote: flow.quote ?? null,
-            grounded: flow.grounded === true,
-            ...(flow.eventType ? { eventType: flow.eventType } : {}),
-            ...(flow.amountRole ? { amountRole: flow.amountRole } : {}),
-            ...(flow.crossCategoryFactId ? { crossCategoryFactId: flow.crossCategoryFactId } : {}),
-            ...(flow.duplicateCount > 1 ? {
-                duplicateCount: flow.duplicateCount,
-                descriptionVariants: [...(flow.descriptionVariants || [])],
-                sources: [...(flow.sources || [])],
-                filings: (flow.filings || []).map((filing) => ({ ...filing })),
-            } : {}),
-            sourceId: flow.sourceId ?? null,
-            fileName: flow.fileName ?? null,
-            caseNumber: flow.caseNumber ?? null,
-            sourceEntryIndex: flow.sourceEntryIndex ?? null,
-            sourceDocumentLinkId: flow.sourceDocumentLinkId ?? null,
-        });
-    }
-
-    const currencyTotals = {};
-    let eurTotal = 0;
-    let hasEurTotal = false;
-    for (const entry of entries) {
-        const key = entry.currency || 'UNKNOWN';
-        currencyTotals[key] = (currencyTotals[key] || 0) + entry.amount;
-        if (Number.isFinite(entry.amountEur)) {
-            eurTotal += entry.amountEur;
-            hasEurTotal = true;
-        }
-    }
-    eurTotal = Math.round(eurTotal * 100) / 100;
-
-    return {
-        count: entries.length,
-        entries,
-        currencyTotals,
-        ...(hasEurTotal ? { eurTotal } : {}),
-        hasMoneyFlow: entries.length > 0
-    };
-}
-
-/**
- * Maps unified `flow-N` ids back to the legacy property-view `prop-N` ids
- * (renumbered in historical order). Migration shim: the legacy
- * `propertyReconciliation.valueChanges` surface keeps referencing the ids
- * its long-standing consumers (and persisted runs) know, while the unified
- * engine reasons in `flow-N` ids internally.
- */
-function propertyIdByFlowId(flows) {
-    const unified = (Array.isArray(flows?.entries) ? flows.entries : []).filter((flow) => flow && flow.assetType !== 'novac');
-    return new Map(unified.map((flow, index) => [flow.id, `prop-${index + 1}`]));
-}
-
-/**
- * Property view: every non-`novac` entry, legacy vocabulary, with property
- * ids mapped back from unified `flow-N` references. Unmerged output retains
- * the prior shape; merged rows include duplicate provenance.
- */
-function derivePropertyFlowView(flows) {
-    const propIdByFlowId = propertyIdByFlowId(flows);
-    const unified = (Array.isArray(flows?.entries) ? flows.entries : []).filter((flow) => flow && flow.assetType !== 'novac');
-    const entries = unified.map((flow, index) => ({
-        id: `prop-${index + 1}`,
-        description: flow.description,
-        identifier: flow.identifier ?? null,
-        assetType: flow.assetType,
-        ...(flow.eventType ? { eventType: flow.eventType } : {}),
-        transferor: flow.transferor ?? null,
-        transferee: flow.transferee ?? null,
-        value: flow.value ?? null,
-        currency: flow.currency ?? null,
-        ...(Number.isFinite(flow.valueEur)
-            ? { valueEur: flow.valueEur, valueEurSource: flow.valueEurSource ?? null }
-            : {}),
-        ...(flow.dualCurrency ? { dualCurrency: flow.dualCurrency } : {}),
-        ...(flow.currencyNote ? { currencyNote: flow.currencyNote } : {}),
-        ...(flow.valueRole ? { valueRole: flow.valueRole } : {}),
-        ...(flow.crossCategoryFactId ? { crossCategoryFactId: flow.crossCategoryFactId } : {}),
-        isplatniRed: flow.isplatniRed ?? null,
-        claimRegistryNumber: flow.claimRegistryNumber ?? null,
-        filingReference: flow.filingReference ?? null,
-        date: flow.date ?? null,
-        ...(flow.supersedes ? { supersedes: propIdByFlowId.get(flow.supersedes) ?? flow.supersedes } : {}),
-        quote: flow.quote ?? null,
-        grounded: flow.grounded === true,
-        sourceId: flow.sourceId ?? null,
-        fileName: flow.fileName ?? null,
-        caseNumber: flow.caseNumber ?? null,
-        sourceEntryIndex: flow.sourceEntryIndex ?? null,
-        sourceDocumentLinkId: flow.sourceDocumentLinkId ?? null,
-        ...(flow.duplicateCount > 1 ? {
-            duplicateCount: flow.duplicateCount,
-            descriptionVariants: [...(flow.descriptionVariants || [])],
-            sources: [...(flow.sources || [])],
-            filings: (flow.filings || []).map((filing) => ({ ...filing })),
-        } : {}),
-    }));
-    return { count: entries.length, entries, hasPropertyFlow: entries.length > 0 };
-}
 
 module.exports = {
     collectFlows,
     normalizeFlowItem,
     inferAssetType,
-    deriveMoneyFlowView,
-    derivePropertyFlowView,
-    propertyIdByFlowId,
     normalizeCurrency,
     parseAmount,
     parseDualFromQuote,

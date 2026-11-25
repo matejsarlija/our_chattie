@@ -209,14 +209,16 @@ describe('processScrapedCases discovery reconciliation', () => {
             }
         );
 
-        expect(result.clusterEvidencePackage.moneyFlow).toEqual(expect.objectContaining({
+        expect(result.clusterEvidencePackage.flows).toEqual(expect.objectContaining({
             count: 1,
-            hasMoneyFlow: true,
+            hasFlows: true,
             currencyTotals: { EUR: 1200000.00 }
         }));
-        expect(result.clusterEvidencePackage.moneyFlow.entries[0]).toEqual(expect.objectContaining({
-            amount: 1200000.00,
-            currency: 'EUR',
+        expect(result.clusterEvidencePackage.flows.entries[0]).toEqual(expect.objectContaining({
+            kind: 'amount',
+            sourceAmount: 1200000.00,
+            amountEur: 1200000.00,
+            sourceCurrency: 'EUR',
             description: 'Isplata drugog višeg isplatnog reda',
             caseNumber: 'ST-2/2013'
         }));

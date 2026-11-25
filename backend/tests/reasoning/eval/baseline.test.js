@@ -44,7 +44,7 @@ describe('reasoning quality baseline (gold-labeled fixtures)', () => {
         });
 
         test('amount extraction F1 meets the regression floor', () => {
-            const s = amountScore(fixture.pkg.moneyFlow?.entries || [], fixture.gold);
+            const s = amountScore(fixture.pkg.flows?.entries?.filter((entry) => entry.kind === 'amount') || [], fixture.gold);
             expect(s.value).toBeGreaterThanOrEqual(floors['amount.f1']);
         });
 

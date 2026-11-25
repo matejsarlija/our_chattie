@@ -1,21 +1,20 @@
-const { collectPropertyFlows } = require('../../court-analysis/reasoning/propertyFlow');
-const { reconcilePropertyFlows } = require('../../court-analysis/reasoning/reconciliation');
-const { collectMoneyFlows } = require('../../court-analysis/reasoning/moneyFlow');
+const { collectFlows } = require('../../court-analysis/reasoning/flow');
+const { reconcileFlows } = require('../../court-analysis/reasoning/reconciliation');
 const { attachAnalysesToEvidencePackage } = require('../../court-analysis/reasoning/evidencePackage');
 
 function makeAnalysis(id, fileName, propertyFlow, amounts = []) {
     return { id, fileName, caseNumber: 'Stč-2150/2022', amounts, propertyFlow };
 }
 
-describe('reasoning reconcilePropertyFlows', () => {
-    test('empty propertyFlow input → empty output, no errors', () => {
-        expect(reconcilePropertyFlows({ entries: [] })).toEqual({ conflicts: [], openQuestions: [], valueChanges: [] });
-        expect(reconcilePropertyFlows(null)).toEqual({ conflicts: [], openQuestions: [], valueChanges: [] });
-        expect(collectPropertyFlows([])).toEqual({ count: 0, entries: [], hasPropertyFlow: false });
+describe('canonical flow reconciliation and property lifecycle', () => {
+    test('empty flow input returns empty output without errors', () => {
+        expect(reconcileFlows({ entries: [] })).toEqual({ conflicts: [], openQuestions: [], validationWarnings: [], valueChanges: [] });
+        expect(reconcileFlows(null)).toEqual({ conflicts: [], openQuestions: [], validationWarnings: [], valueChanges: [] });
+        expect(collectFlows([])).toEqual({ count: 0, entries: [], currencyTotals: {}, hasFlows: false });
     });
 
-    test('non-tražbina entries: divergent value/transferee → conflict, same shape as moneyFlow', () => {
-        const flow = collectPropertyFlows([
+    test('non-tražbina entries: divergent value/transferee produce a property conflict', () => {
+        const flow = collectFlows([
             makeAnalysis('a-1', 'doc1.pdf', [
                 { description: 'Proizvodni strojevi pogona Rijeka', assetType: 'pokretnina', transferor: 'Ducanor d.o.o.', transferee: 'Kupac A d.o.o.', value: 25000, currency: 'EUR' },
             ]),
@@ -23,7 +22,7 @@ describe('reasoning reconcilePropertyFlows', () => {
                 { description: 'Proizvodni strojevi pogona Rijeka', assetType: 'pokretnina', transferor: 'Ducanor d.o.o.', transferee: 'Kupac B d.o.o.', value: 18000, currency: 'EUR' },
             ]),
         ]);
-        const result = reconcilePropertyFlows(flow);
+        const result = reconcileFlows(flow);
         expect(result.conflicts).toHaveLength(1);
         expect(result.conflicts[0]).toEqual(expect.objectContaining({
             finding: expect.any(String),
@@ -34,16 +33,16 @@ describe('reasoning reconcilePropertyFlows', () => {
     });
 
     test('numeric claim registry number ignores a trailing sentence period', () => {
-        const result = reconcilePropertyFlows({ entries: [
+        const result = reconcileFlows({ entries: [
             {
-                id: 'prop-1', assetType: 'tražbina', eventType: 'prijava', valueRole: 'claim_balance',
+                id: 'flow-1', assetType: 'tražbina', eventType: 'prijava', valueRole: 'claim_balance',
                 description: 'Prijava i utvrđenje tražbine Zagrebačke banke d.d.',
                 claimRegistryNumber: '200', date: '2019-05-03', value: 27888441.11,
                 currency: 'EUR', transferee: 'Zagrebačka banka d.d.',
                 quote: 'Tražbina II. višeg isplatnog reda, broj 200.',
             },
             {
-                id: 'prop-2', assetType: 'tražbina', eventType: 'ustup', valueRole: 'claim_balance',
+                id: 'flow-2', assetType: 'tražbina', eventType: 'ustup', valueRole: 'claim_balance',
                 description: 'Ustup tražbine Zagrebačke banke d.d. na DDM INVEST III AG',
                 claimRegistryNumber: '200.', date: '2019-09-27', value: 27888441.11,
                 currency: 'EUR', transferor: 'Zagrebačka banka d.d.',
@@ -64,7 +63,7 @@ describe('reasoning reconcilePropertyFlows', () => {
     // Normalisation must stay narrow — a register prefix or any letter-bearing
     // identifier keeps its exact form.
     test('does NOT normalise a non-numeric registry number', () => {
-        const result = reconcilePropertyFlows({ entries: [
+        const result = reconcileFlows({ entries: [
             { id: 'p-1', assetType: 'tražbina', eventType: 'prijava', description: 'A',
               claimRegistryNumber: '4 St-2/2013', date: '2020-01-01', value: 100, currency: 'EUR' },
             { id: 'p-2', assetType: 'tražbina', eventType: 'ustup', description: 'B',
@@ -83,7 +82,7 @@ describe('reasoning reconcilePropertyFlows', () => {
             claimRegistryNumber: reg, date, value: 500, currency: 'EUR',
             transferor: 'A d.o.o.', transferee: 'B d.o.o.',
         });
-        const result = reconcilePropertyFlows({ entries: [
+        const result = reconcileFlows({ entries: [
             mk('a', '200', '2020-01-01'),
             mk('b', '200.', '2020-02-01'),
             mk('c', '200', '2020-03-01'),
@@ -95,7 +94,7 @@ describe('reasoning reconcilePropertyFlows', () => {
     // The defect's real-world consequence: one claim split into two chains
     // renders TWO from->to totals for the same registered claim.
     test('does not split one registered claim into two double-counted chains', () => {
-        const result = reconcilePropertyFlows({ entries: [
+        const result = reconcileFlows({ entries: [
             { id: 'x-1', assetType: 'tražbina', eventType: 'prijava', description: 'Prijava',
               claimRegistryNumber: '200', date: '2019-05-03', value: 27888441.11, currency: 'EUR',
               transferee: 'Zagrebačka banka d.d.' },
@@ -116,7 +115,7 @@ describe('reasoning reconcilePropertyFlows', () => {
     });
 
     test('tražbina supersedes chain stays visible without inferring a balance change from assignment price', () => {
-        const flow = collectPropertyFlows([
+        const flow = collectFlows([
             makeAnalysis('a-1', 'prijava.pdf', [
                 {
                     description: 'Tražbina vjerovnika prema dužniku Ducanor d.o.o.',
@@ -129,11 +128,11 @@ describe('reasoning reconcilePropertyFlows', () => {
                     description: 'Tražbina vjerovnika prema dužniku Ducanor d.o.o.',
                     assetType: 'tražbina', eventType: 'ustup',
                     transferor: 'Vjerovnik A d.o.o.', transferee: 'Kupac Tražbina d.o.o.',
-                    value: 15000, currency: 'EUR', date: '2023-06-01', supersedes: 'prop-1',
+                    value: 15000, currency: 'EUR', date: '2023-06-01', supersedes: 'flow-1',
                 },
             ]),
         ]);
-        const result = reconcilePropertyFlows(flow);
+        const result = reconcileFlows(flow);
         expect(result.conflicts).toHaveLength(0);
         expect(result.valueChanges).toHaveLength(1);
         expect(result.valueChanges[0]).toEqual(expect.objectContaining({
@@ -147,7 +146,7 @@ describe('reasoning reconcilePropertyFlows', () => {
     });
 
     test('two competing unlinked cessions of the same receivable DO produce a conflict', () => {
-        const flow = collectPropertyFlows([
+        const flow = collectFlows([
             makeAnalysis('a-1', 'ustup-a.pdf', [
                 {
                     description: 'Tražbina vjerovnika prema dužniku Gradnja Plus d.o.o.',
@@ -165,14 +164,14 @@ describe('reasoning reconcilePropertyFlows', () => {
                 },
             ]),
         ]);
-        const result = reconcilePropertyFlows(flow);
+        const result = reconcileFlows(flow);
         expect(result.conflicts).toHaveLength(1);
         expect(result.conflicts[0].finding).toMatch(/Konkurentske tvrdnje o istoj tražbini/);
         expect(result.valueChanges).toHaveLength(0);
     });
 
     test('TR-3: identifier-less competing descriptions are possibly-related, never contradictory', () => {
-        const flow = collectPropertyFlows([
+        const flow = collectFlows([
             makeAnalysis('a-1', 'ustup-a.pdf', [
                 {
                     description: 'Ustup tražbine',
@@ -190,7 +189,7 @@ describe('reasoning reconcilePropertyFlows', () => {
                 },
             ]),
         ]);
-        const result = reconcilePropertyFlows(flow);
+        const result = reconcileFlows(flow);
         expect(result.conflicts).toHaveLength(0);
         expect(result.valueChanges).toHaveLength(0);
         expect(result.openQuestions).toHaveLength(1);
@@ -202,7 +201,7 @@ describe('reasoning reconcilePropertyFlows', () => {
     });
 
     test('TR-3: shared filing reference keeps the competing-claims conflict', () => {
-        const flow = collectPropertyFlows([
+        const flow = collectFlows([
             makeAnalysis('a-1', 'ustup-a.pdf', [
                 {
                     description: 'Ustup tražbine',
@@ -222,13 +221,13 @@ describe('reasoning reconcilePropertyFlows', () => {
                 },
             ]),
         ]);
-        const result = reconcilePropertyFlows(flow);
+        const result = reconcileFlows(flow);
         expect(result.conflicts).toHaveLength(1);
         expect(result.conflicts[0].finding).toMatch(/Konkurentske tvrdnje o istoj tražbini/);
     });
 
     test('TR-3: description-fallback-only chain links as supersedes-inferred', () => {
-        const flow = collectPropertyFlows([
+        const flow = collectFlows([
             makeAnalysis('a-1', 'prijava.pdf', [
                 {
                     description: 'Tražbina vjerovnika prema dužniku Ducanor d.o.o.',
@@ -246,7 +245,7 @@ describe('reasoning reconcilePropertyFlows', () => {
                 },
             ]),
         ]);
-        const result = reconcilePropertyFlows(flow);
+        const result = reconcileFlows(flow);
         expect(result.conflicts).toHaveLength(0);
         expect(result.valueChanges).toHaveLength(1);
         expect(result.valueChanges[0].linkage).toBe('supersedes-inferred');
@@ -258,15 +257,15 @@ describe('reasoning reconcilePropertyFlows', () => {
             resolveSupersedesTargetWithBasis,
             sharesLifecycleIdentifiers,
         } = require('../../court-analysis/reasoning/propertyFlow');
-        const byId = new Map([['prop-1', { id: 'prop-1' }]]);
+        const byId = new Map([['flow-1', { id: 'flow-1' }]]);
         const pool = [
-            { id: 'prop-1', description: 'Prijava tražbine', claimRegistryNumber: '106' },
-            { id: 'prop-2', description: 'Ustup tražbine', filingReference: 'St-2/2013-1196-1' },
+            { id: 'flow-1', description: 'Prijava tražbine', claimRegistryNumber: '106' },
+            { id: 'flow-2', description: 'Ustup tražbine', filingReference: 'St-2/2013-1196-1' },
         ];
         // Legacy return shape is untouched.
-        expect(resolveSupersedesTarget('prop-1', byId, pool)).toEqual({ id: 'prop-1' });
-        expect(resolveSupersedesTargetWithBasis('prop-1', byId, pool)).toEqual({
-            target: { id: 'prop-1' }, basis: 'id',
+        expect(resolveSupersedesTarget('flow-1', byId, pool)).toEqual({ id: 'flow-1' });
+        expect(resolveSupersedesTargetWithBasis('flow-1', byId, pool)).toEqual({
+            target: { id: 'flow-1' }, basis: 'id',
         });
         expect(resolveSupersedesTargetWithBasis('106', byId, pool).basis).toBe('registry');
         expect(resolveSupersedesTargetWithBasis('St-2/2013-1196-1', byId, pool).basis).toBe('filing');
@@ -288,18 +287,18 @@ describe('reasoning reconcilePropertyFlows', () => {
     });
 
     test('unresolvable supersedes reference degrades to standalone — never throws', () => {
-        const flow = collectPropertyFlows([
+        const flow = collectFlows([
             makeAnalysis('a-1', 'ustup.pdf', [
                 {
                     description: 'Tražbina vjerovnika prema dužniku Nepoznati d.o.o.',
                     assetType: 'tražbina', eventType: 'ustup',
                     transferor: 'Vjerovnik A d.o.o.', transferee: 'Kupac X d.o.o.',
-                    value: 5000, currency: 'EUR', supersedes: 'prop-999',
+                    value: 5000, currency: 'EUR', supersedes: 'flow-999',
                 },
             ]),
         ]);
         let result;
-        expect(() => { result = reconcilePropertyFlows(flow); }).not.toThrow();
+        expect(() => { result = reconcileFlows(flow); }).not.toThrow();
         expect(result.conflicts).toHaveLength(0);
         expect(result.valueChanges).toHaveLength(0);
     });
@@ -311,8 +310,8 @@ describe('reasoning reconcilePropertyFlows', () => {
             [{ analysis: { individualAnalyses: fixture.analyses } }],
             null
         );
-        expect(pkg.propertyFlow.count).toBeGreaterThan(0);
-        const result = reconcilePropertyFlows(pkg.propertyFlow);
+        expect(pkg.flows.entries.filter((entry) => entry.kind === 'property')).toHaveLength(3);
+        const result = pkg.reconciliation;
         expect(result.valueChanges).toHaveLength(1);
         expect(result.valueChanges[0]).toEqual(expect.objectContaining({
             originalValue: null,
@@ -322,12 +321,14 @@ describe('reasoning reconcilePropertyFlows', () => {
         expect(result.conflicts).toHaveLength(0);
     });
 
-    test('existing amounts/moneyFlow behavior is unchanged for documents without propertyFlow', () => {
+    test('amount entries remain in the unified flow without a property-only adapter', () => {
         const analyses = [
             { id: 'a-1', fileName: 'x.pdf', caseNumber: 'C', amounts: [{ description: 'Polog', amount: 1200, currency: 'EUR' }] },
         ];
-        expect(collectMoneyFlows(analyses).count).toBe(1);
-        expect(collectPropertyFlows(analyses)).toEqual({ count: 0, entries: [], hasPropertyFlow: false });
+        const flow = collectFlows(analyses);
+        expect(flow.entries).toHaveLength(1);
+        expect(flow.entries[0].kind).toBe('amount');
+        expect(flow.entries.filter((entry) => entry.kind === 'property')).toHaveLength(0);
     });
 
     test('coverage gains a grounding dimension without changing existing shape', () => {        const fixture = require('../fixtures/eval/stecaj-klaster.fixture.json');
@@ -345,8 +346,8 @@ describe('reasoning reconcilePropertyFlows', () => {
         expect(pkg.coverage.totalClaims).toBe(6);
     });
 
-    test('K-02/K-03: property values consolidate to EUR and reconcile across currencies', () => {        const { reconcilePropertyFlows } = require('../../court-analysis/reasoning/reconciliation');
-        const flow = collectPropertyFlows([
+    test('K-02/K-03: property values consolidate to EUR and reconcile across currencies', () => {
+        const flow = collectFlows([
             makeAnalysis('a-1', 'doc1.pdf', [
                 { description: 'Proizvodni strojevi pogona Rijeka', assetType: 'pokretnina', transferee: 'Kupac A d.o.o.', value: 7534.5, currency: 'HRK' },
             ]),
@@ -358,10 +359,10 @@ describe('reasoning reconcilePropertyFlows', () => {
         expect(flow.entries[0].valueEurSource).toBe('converted');
         expect(flow.entries[1].valueEur).toBe(1000);
         // Same EUR-scale value, same transferee → no conflict.
-        expect(reconcilePropertyFlows(flow).conflicts).toHaveLength(0);
+        expect(reconcileFlows(flow).conflicts).toHaveLength(0);
     });
 
-    test('J-03/J-04: tražbina entries carry rank and registry identifiers', () => {        const flow = collectPropertyFlows([
+    test('J-03/J-04: tražbina entries carry rank and registry identifiers', () => {        const flow = collectFlows([
             makeAnalysis('a-1', 'prijava.pdf', [
                 {
                     description: 'Tražbina CroGo d.o.o.',
@@ -383,8 +384,7 @@ describe('reasoning reconcilePropertyFlows', () => {
     });
 
     test('L-01: shared claimRegistryNumber forms a timeline without fuzzy matching', () => {
-        const { reconcilePropertyFlows } = require('../../court-analysis/reasoning/reconciliation');
-        const flow = collectPropertyFlows([
+        const flow = collectFlows([
             makeAnalysis('a-1', 'prijava.pdf', [
                 {
                     // Deliberately different prose: only the stable ID joins them.
@@ -403,7 +403,7 @@ describe('reasoning reconcilePropertyFlows', () => {
                 },
             ]),
         ]);
-        const result = reconcilePropertyFlows(flow);
+        const result = reconcileFlows(flow);
         expect(result.conflicts).toHaveLength(0);
         expect(result.valueChanges).toHaveLength(1);
         expect(result.valueChanges[0]).toEqual(expect.objectContaining({
@@ -411,9 +411,8 @@ describe('reasoning reconcilePropertyFlows', () => {
         }));
     });
 
-    test('L-01: explicit supersedes resolves by registry number, not prop-N', () => {
-        const { reconcilePropertyFlows } = require('../../court-analysis/reasoning/reconciliation');
-        const flow = collectPropertyFlows([
+    test('L-01: explicit supersedes resolves by registry number, not flow-N', () => {
+        const flow = collectFlows([
             makeAnalysis('a-1', 'prijava.pdf', [
                 {
                     description: 'Tražbina vjerovnika prema dužniku Kerum d.o.o. u stečaju',
@@ -431,14 +430,13 @@ describe('reasoning reconcilePropertyFlows', () => {
                 },
             ]),
         ]);
-        const result = reconcilePropertyFlows(flow);
+        const result = reconcileFlows(flow);
         expect(result.conflicts).toHaveLength(0);
         expect(result.valueChanges).toHaveLength(1);
         expect(result.valueChanges[0].linkage).toBe('supersedes');
     });
 
     test('L-02: citation-linked entries join the chain via context analyses', () => {
-        const { reconcilePropertyFlows } = require('../../court-analysis/reasoning/reconciliation');
         const analyses = [
             {
                 id: 'a-1', fileName: 'prijava.pdf', caseNumber: 'St-2/2013',
@@ -465,104 +463,73 @@ describe('reasoning reconcilePropertyFlows', () => {
                 citedFilingReferences: ['St-2/2013-1196-1'],
             },
         ];
-        const flow = collectPropertyFlows(analyses);
+        const flow = collectFlows(analyses);
         // Without the citation signal this is a competing-claims conflict.
-        expect(reconcilePropertyFlows(flow).conflicts).toHaveLength(1);
+        expect(reconcileFlows(flow).conflicts).toHaveLength(1);
         // With it, the pair joins one timeline.
-        const linked = reconcilePropertyFlows(flow, { analyses });
+        const linked = reconcileFlows(flow, { analyses });
         expect(linked.conflicts).toHaveLength(0);
         expect(linked.valueChanges).toHaveLength(1);
     });
 
-    test('property derived view keeps legacy vocabulary and filters out novac', () => {
-        const { collectFlows, derivePropertyFlowView } = require('../../court-analysis/reasoning/flow');
-        const view = derivePropertyFlowView(collectFlows([
+    test('canonical flow entries preserve the frozen shape and provenance', () => {
+        const flow = collectFlows([
             {
                 id: 'a-1', fileName: 'doc.pdf', caseNumber: 'Stč-2150/2022',
                 entryDate: '2023-05-17',
                 amounts: [{ description: 'Polog', amount: 1200, currency: 'EUR' }],
-                propertyFlow: [
-                    {
-                        description: 'Tražbina vjerovnika prema dužniku iz podneska',
-                        assetType: 'tražbina', eventType: 'prijava',
-                        value: 5000, currency: 'EUR',
-                        isplatniRed: 'drugi viši isplatni red',
-                        claimRegistryNumber: '106',
-                        filingReference: 'St-2/2013-1196-1',
-                    },
-                ],
-            },
-        ]));
-        expect(view.count).toBe(1);
-        expect(view.hasPropertyFlow).toBe(true);
-        expect(view.entries[0]).toEqual(expect.objectContaining({
-            id: 'prop-1',
-            description: 'Tražbina vjerovnika prema dužniku iz podneska',
-            assetType: 'tražbina',
-            eventType: 'prijava',
-            value: 5000,
-            valueEur: 5000,
-            isplatniRed: 'drugi viši isplatni red',
-            claimRegistryNumber: '106',
-            filingReference: 'St-2/2013-1196-1',
-            date: '2023-05-17',
-        }));
-        // Unified-only vocabulary stays invisible to the legacy view.
-        expect(view.entries[0].direction).toBeUndefined();
-        expect(view.entries[0].payerName).toBeUndefined();
-    });
-
-    test('entry key set is frozen (all conditional fields present)', () => {
-        const { collectFlows, derivePropertyFlowView } = require('../../court-analysis/reasoning/flow');
-        const view = derivePropertyFlowView(collectFlows([
-            {
-                id: 'a-1', fileName: 'x.pdf', caseNumber: 'Stč-2150/2022',
                 propertyFlow: [{
                     description: 'Tražbina vjerovnika prema dužniku iz podneska',
-                    assetType: 'tražbina', eventType: 'ustup',
-                    transferor: 'Vjerovnik A d.o.o.', transferee: 'Kupac X d.o.o.',
-                    value: 248.86, currency: 'EUR', amountHrk: 1500,
+                    assetType: 'tražbina', eventType: 'prijava',
+                    value: 5000, currency: 'EUR', grounded: true,
+                    sourcePages: [3], sourceChunkId: 'chunk-3',
                     isplatniRed: 'drugi viši isplatni red',
                     claimRegistryNumber: '106', filingReference: 'St-2/2013-1196-1',
-                    date: '2023-06-01', supersedes: 'neka ranija prijava',
-                    quote: 'Ustupljena tražbina.',
                 }],
             },
-        ]));
-        expect(Object.keys(view.entries[0]).sort()).toEqual([
-            'assetType', 'caseNumber', 'claimRegistryNumber', 'currency', 'currencyNote',
-            'date', 'description', 'dualCurrency', 'eventType', 'fileName',
-            'filingReference', 'grounded', 'id', 'identifier', 'isplatniRed',
-            'quote', 'sourceDocumentLinkId', 'sourceEntryIndex', 'sourceId',
-            'supersedes', 'transferee', 'transferor', 'value', 'valueEur', 'valueEurSource',
         ]);
+        expect(flow.entries).toHaveLength(2);
+        const [amount, property] = flow.entries;
+        expect(amount.kind).toBe('amount');
+        expect(property).toEqual(expect.objectContaining({
+            id: 'flow-2',
+            kind: 'property',
+            canonicalPartyId: null,
+            amountEur: 5000,
+            sourceAmount: 5000,
+            sourceCurrency: 'EUR',
+            sourcePages: [3],
+            sourceChunkId: 'chunk-3',
+            docId: 'a-1',
+            grounded: true,
+            crossCategoryFactId: null,
+            valueChanges: [],
+        }));
     });
 
-    test('entry key set is frozen (all conditional fields absent)', () => {
-        const { collectFlows, derivePropertyFlowView } = require('../../court-analysis/reasoning/flow');
-        const view = derivePropertyFlowView(collectFlows([
-            {
-                id: 'a-1', fileName: 'x.pdf', caseNumber: 'Stč-2150/2022',
-                propertyFlow: [{
-                    description: 'Nepoznata imovina bez dodatnih podataka',
-                    value: null, currency: null,
-                }],
-            },
-        ]));
-        // No assetType → 'drugo' (no eventType/supersedes), no parseable
-        // value → no valueEur keys, no dual figures.
-        expect(Object.keys(view.entries[0]).sort()).toEqual([
-            'assetType', 'caseNumber', 'claimRegistryNumber', 'currency',
-            'date', 'description', 'fileName', 'filingReference', 'grounded',
-            'id', 'identifier', 'isplatniRed', 'quote', 'sourceDocumentLinkId',
-            'sourceEntryIndex', 'sourceId', 'transferee', 'transferor', 'value',
-        ]);
-        expect(view.entries[0].eventType).toBeUndefined();
-        expect(view.entries[0].supersedes).toBeUndefined();
-        expect(view.entries[0].valueEur).toBeUndefined();
+    test('canonical property flow entries retain lifecycle identifiers', () => {
+        const flow = collectFlows([{
+            id: 'a-1',
+            propertyFlow: [{
+                description: 'Tražbina vjerovnika prema dužniku iz podneska',
+                assetType: 'tražbina', eventType: 'ustup',
+                value: 248.86, currency: 'EUR', amountHrk: 1500,
+                claimRegistryNumber: '106', filingReference: 'St-2/2013-1196-1',
+                date: '2023-06-01', supersedes: 'previous claim',
+            }],
+        }]);
+        expect(flow.entries[0]).toEqual(expect.objectContaining({
+            kind: 'property',
+            assetType: 'tražbina',
+            eventType: 'ustup',
+            valueRole: null,
+            claimRegistryNumber: '106',
+            filingReference: 'St-2/2013-1196-1',
+            value: 248.86,
+        }));
     });
 
-    test('legacy prop-N supersedes round-trips through the unified ids', () => {        const flow = collectPropertyFlows([
+    test('canonical flow IDs resolve supersedes links across entries', () => {        const flow = collectFlows([
             makeAnalysis('a-1', 'prijava.pdf', [
                 {
                     description: 'Tražbina vjerovnika prema dužniku Ducanor d.o.o.',
@@ -574,12 +541,12 @@ describe('reasoning reconcilePropertyFlows', () => {
                 {
                     description: 'Tražbina vjerovnika prema dužniku Ducanor d.o.o.',
                     assetType: 'tražbina', eventType: 'ustup',
-                    value: 15000, currency: 'EUR', date: '2023-06-01', supersedes: 'prop-1',
+                    value: 15000, currency: 'EUR', date: '2023-06-01', supersedes: 'flow-1',
                 },
             ]),
         ]);
-        expect(flow.entries[1].supersedes).toBe('prop-1');
-        const result = reconcilePropertyFlows(flow);
+        expect(flow.entries[1].supersedes).toBe('flow-1');
+        const result = reconcileFlows(flow);
         expect(result.valueChanges).toHaveLength(1);
     });
 
@@ -588,10 +555,10 @@ describe('reasoning reconcilePropertyFlows', () => {
         const timeline = buildValueChangeTimeline([
             // Lexicographically "15.06.2022." > "2023-06-01" — string sorting
             // would put the 2022 stage last and invert original/latest values.
-            { id: 'prop-2', description: 'Tražbina', value: 15000, currency: 'EUR', date: '2023-06-01', valueRole: 'claim_balance', sourceId: 's-2', fileName: 'b.pdf' },
-            { id: 'prop-1', description: 'Tražbina', value: 84500, currency: 'EUR', date: '15.06.2022.', valueRole: 'claim_balance', sourceId: 's-1', fileName: 'a.pdf' },
+            { id: 'flow-2', description: 'Tražbina', value: 15000, currency: 'EUR', date: '2023-06-01', valueRole: 'claim_balance', sourceId: 's-2', fileName: 'b.pdf' },
+            { id: 'flow-1', description: 'Tražbina', value: 84500, currency: 'EUR', date: '15.06.2022.', valueRole: 'claim_balance', sourceId: 's-1', fileName: 'a.pdf' },
         ], 'test');
-        expect(timeline.stages.map((s) => s.id)).toEqual(['prop-1', 'prop-2']);
+        expect(timeline.stages.map((s) => s.id)).toEqual(['flow-1', 'flow-2']);
         expect(timeline.originalValue).toBe(84500);
         expect(timeline.latestValue).toBe(15000);
     });
@@ -648,7 +615,7 @@ describe('reasoning reconcilePropertyFlows', () => {
         expect(chars).toBeLessThan(estimatedCapacity * 0.75);
     });
     test('claim-balance change ignores linked payment and assignment amounts', () => {
-        const result = reconcilePropertyFlows({ entries: [
+        const result = reconcileFlows({ entries: [
             { id: 'claim-1', assetType: 'tražbina', eventType: 'prijava', valueRole: 'claim_balance',
               description: 'Tražbina 200', claimRegistryNumber: '200', date: '2020-01-01',
               value: 100, currency: 'EUR' },
@@ -671,7 +638,7 @@ describe('reasoning reconcilePropertyFlows', () => {
     });
 
     test('does not compare explicitly labelled claim balances across unsupported currencies', () => {
-        const result = reconcilePropertyFlows({ entries: [
+        const result = reconcileFlows({ entries: [
             { id: 'claim-eur', assetType: 'tražbina', eventType: 'prijava', valueRole: 'claim_balance',
               description: 'Tražbina 202', claimRegistryNumber: '202', date: '2020-01-01',
               value: 100, currency: 'EUR' },
@@ -689,7 +656,7 @@ describe('reasoning reconcilePropertyFlows', () => {
     });
 
     test('linked amounts without explicit comparable roles remain events, not balance deltas', () => {
-        const result = reconcilePropertyFlows({ entries: [
+        const result = reconcileFlows({ entries: [
             { id: 'claim-1', assetType: 'tražbina', eventType: 'prijava', description: 'Tražbina 201',
               claimRegistryNumber: '201', value: 100, currency: 'EUR' },
             { id: 'payment-1', assetType: 'tražbina', eventType: 'namirenje', description: 'Namirenje 201',

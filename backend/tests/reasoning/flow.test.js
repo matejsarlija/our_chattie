@@ -1,6 +1,5 @@
 const {
     collectFlows,
-    derivePropertyFlowView,
     normalizeFlowItem,
     inferAssetType,
     normalizeCurrency,
@@ -207,14 +206,14 @@ describe('reasoning flow (unified normalize + collect)', () => {
             expect(sale.supersedes).toBeUndefined();
         });
 
-        test('legacy prop-N supersedes rewrites to the unified id', () => {
+        test('canonical flow supersedes references remain unchanged', () => {
             const flows = collectFlows([
                 {
                     ...analysis(),
                     amounts: [],
                     propertyFlow: [
                         { description: 'Tražbina vjerovnika prema dužniku', assetType: 'tražbina', eventType: 'prijava', value: 84500, currency: 'EUR' },
-                        { description: 'Tražbina vjerovnika prema dužniku', assetType: 'tražbina', eventType: 'ustup', value: 15000, currency: 'EUR', supersedes: 'prop-1' },
+                        { description: 'Tražbina vjerovnika prema dužniku', assetType: 'tražbina', eventType: 'ustup', value: 15000, currency: 'EUR', supersedes: 'flow-1' },
                     ],
                 },
             ]);
@@ -267,7 +266,7 @@ describe('reasoning flow (unified normalize + collect)', () => {
                     sourceDocumentLinkId: 'link-a',
                 })],
             }));
-            expect(derivePropertyFlowView(flows).entries[0]).toEqual(expect.objectContaining({
+            expect(flows.entries[0]).toEqual(expect.objectContaining({
                 duplicateCount: 3,
                 descriptionVariants: [
                     'Ustup tražbine od Banke A na Društvo B',

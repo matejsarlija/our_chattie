@@ -24,6 +24,20 @@ const VALUE_ROLE_LABELS = {
   unknown: 'uloga iznosa nije utvrđena',
 };
 const isNum = (value) => typeof value === 'number' && Number.isFinite(value);
+const stageAmount = (stage) => isNum(stage?.amountEur)
+  ? stage.amountEur
+  : isNum(stage?.value)
+    ? stage.value
+    : stage?.sourceAmount;
+const stageCurrency = (stage) => (
+  isNum(stage?.amountEur) ? 'EUR' : stage?.sourceCurrency || stage?.currency || 'EUR'
+);
+function sourceProvenance(stage) {
+  const pages = Array.isArray(stage?.sourcePages) ? stage.sourcePages.join(', ') : stage?.sourcePages;
+  return [pages ? `str. ${pages}` : null, stage?.sourceChunkId ? `dio ${stage.sourceChunkId}` : null]
+    .filter(Boolean)
+    .join(' · ');
+}
 const eventLabel = (type) => EVENT_TYPE_LABELS[type] || 'Događaj';
 const hasDate = (stage) => Boolean(String(stage?.date ?? '').trim());
 
@@ -79,15 +93,21 @@ function safeHttpUrl(value) {
 function relevantSourceRows(stages, sourceDocumentsById) {
   const seen = new Set();
   return stages
-    .filter((stage) => isNum(stage?.value))
+    .filter((stage) => isNum(stageAmount(stage)))
     .map((stage) => {
-      const document = sourceDocumentsById.get(stage?.sourceId);
+      const documentId = stage?.docId || stage?.sourceId;
+      const document = sourceDocumentsById.get(documentId);
       const fileName = document?.fileName || stage?.fileName;
       if (!fileName) return null;
-      const key = stage?.sourceId || fileName;
+      const key = documentId || fileName;
       if (seen.has(key)) return null;
       seen.add(key);
-      return { fileName: String(fileName).split(/[\\/]/).pop(), url: safeHttpUrl(document?.url), key };
+      return {
+        fileName: String(fileName).split(/[\\/]/).pop(),
+        url: safeHttpUrl(document?.url),
+        provenance: sourceProvenance(stage),
+        key,
+      };
     })
     .filter(Boolean);
 }
@@ -114,9 +134,10 @@ function StageRecords({ records }) {
               {parties ? <span>· {parties}</span> : null}
               {isNum(record?.value) ? <span>· {formatAmount(record.value, record.currency)}</span> : null}
             </div>
-            {record?.fileName ? (
+            {record?.fileName || sourceProvenance(record) ? (
               <div className="mt-0.5 break-all font-mono text-[11px]">
-                {String(record.fileName).split('/').pop()}
+                {[record?.fileName ? String(record.fileName).split(/[\\/]/).pop() : null, sourceProvenance(record)]
+                  .filter(Boolean).join(' · ')}
               </div>
             ) : null}
           </li>
@@ -205,9 +226,10 @@ function EventRow({ group }) {
             </summary>
             <StageRecords records={records} />
           </details>
-        ) : stage?.fileName ? (
+        ) : stage?.fileName || sourceProvenance(stage) ? (
           <div className="mt-1.5 break-all font-mono text-[11px] text-ink-muted">
-            {String(stage.fileName).split('/').pop()}
+            {[stage?.fileName ? String(stage.fileName).split(/[\\/]/).pop() : null, sourceProvenance(stage)]
+              .filter(Boolean).join(' · ')}
           </div>
         ) : null}
       </div>
@@ -217,6 +239,11 @@ function EventRow({ group }) {
           {hasValue ? formatAmount(stage.value, stage.currency) : <span className="text-sm font-normal text-ink-muted">Nije navedeno</span>}
         </div>
         {hasValue ? <div className="text-xs text-ink-muted">iznos naveden u zapisu</div> : null}
+        {isNum(stage?.amountEur) && isNum(stage?.sourceAmount) && stage?.sourceCurrency && stage.sourceCurrency !== 'EUR' ? (
+          <div className="text-xs text-ink-muted">
+            izvorno {formatAmount(stage.sourceAmount, stage.sourceCurrency)}
+          </div>
+        ) : null}
       </div>
     </li>
   );
@@ -285,7 +312,11 @@ export default function LifecycleTimeline({ valueChanges = [], sourceDocuments =
 
       {visibleChanges.map((change, pageIndex) => {
         const index = start + pageIndex;
-        const stages = Array.isArray(change?.stages) ? change.stages : [];
+        const stages = (Array.isArray(change?.stages) ? change.stages : []).map((stage) => ({
+          ...stage,
+          value: stageAmount(stage),
+          currency: stageCurrency(stage),
+        }));
         const groups = collapseStageRuns(stages);
         const datedGroups = groups.filter((group) => hasDate(group.stage));
         const undatedGroups = groups.filter((group) => !hasDate(group.stage));
@@ -372,9 +403,9 @@ export default function LifecycleTimeline({ valueChanges = [], sourceDocuments =
                         {sourceIndex > 0 ? ', ' : ''}
                         {source.url ? (
                           <a href={source.url} target="_blank" rel="noreferrer" className="font-medium text-accent underline underline-offset-2">
-                            {source.fileName}
+                            {[source.fileName, source.provenance].filter(Boolean).join(' · ')}
                           </a>
-                        ) : source.fileName}
+                        ) : [source.fileName, source.provenance].filter(Boolean).join(' · ')}
                       </span>
                     ))}
                   </p>

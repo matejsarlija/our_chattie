@@ -182,8 +182,8 @@ describe('attachAnalysesToEvidencePackage — ground-truth chunk branch (Phase 0
         }], null);
 
         expect(pkg.factLedger).toHaveLength(2);
-        expect(pkg.moneyFlow.entries).toHaveLength(1);
-        expect(pkg.propertyFlow.entries).toHaveLength(1);
+        expect(pkg.flows.entries.filter((entry) => entry.kind === 'amount')).toHaveLength(1);
+        expect(pkg.flows.entries.filter((entry) => entry.kind === 'property')).toHaveLength(1);
         expect(pkg.flows.entries[0].filings).toEqual(expect.arrayContaining([
             expect.objectContaining({ sourceDocumentLinkId: 'St-1/2024::entry-5::doc-1' })
         ]));
@@ -366,8 +366,8 @@ describe('attachAnalysesToEvidencePackage — structural entry-date fallback', (
             }
         }], null);
 
-        expect(pkg.moneyFlow.entries[0].date).toBe('2023-05-17');
-        expect(pkg.propertyFlow.entries[0].date).toBe('2023-05-17');
+        expect(pkg.flows.entries.find((entry) => entry.kind === 'amount').date).toBe('2023-05-17');
+        expect(pkg.flows.entries.find((entry) => entry.kind === 'property').date).toBe('2023-05-17');
     });
 
     test('explicit sourceEntryIndex resolves the entry without fuzzy matching', () => {

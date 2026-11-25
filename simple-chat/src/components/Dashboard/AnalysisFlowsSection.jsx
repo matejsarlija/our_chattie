@@ -73,13 +73,15 @@ function dateSortKey(value) {
   return 0;
 }
 
-function buildEvidenceRows(moneyEntries, propertyEntries) {
+function buildEvidenceRows(entries) {
   const rows = [];
   const byCrossCategoryId = new Map();
   let rowIndex = 0;
 
-  const append = (entry, kind) => {
-    if (!entry || typeof entry !== 'object') return;
+  for (const entry of Array.isArray(entries) ? entries : []) {
+    if (!entry || typeof entry !== 'object') continue;
+    const kind = entry.kind === 'property' ? 'property' : entry.kind === 'amount' ? 'money' : null;
+    if (!kind) continue;
     const crossCategoryFactId = typeof entry.crossCategoryFactId === 'string'
       ? entry.crossCategoryFactId
       : null;
@@ -98,10 +100,7 @@ function buildEvidenceRows(moneyEntries, propertyEntries) {
     }
     row[kind === 'money' ? 'moneyEntries' : 'propertyEntries'].push(entry);
     row.categories.add(kind);
-  };
-
-  for (const entry of Array.isArray(moneyEntries) ? moneyEntries : []) append(entry, 'money');
-  for (const entry of Array.isArray(propertyEntries) ? propertyEntries : []) append(entry, 'property');
+  }
 
   return rows.sort((left, right) => {
     const dateDifference = dateSortKey(rowDate(right)) - dateSortKey(rowDate(left));
@@ -122,31 +121,22 @@ function rowDescription(row) {
 }
 
 function rowFigure(row) {
-  const money = row.moneyEntries.find((entry) => isNum(entry?.amountEur) || isNum(entry?.amount));
-  const property = row.propertyEntries.find((entry) => isNum(entry?.valueEur) || isNum(entry?.value));
-  const moneyValue = isNum(money?.amountEur) ? money.amountEur : money?.amount;
-  const propertyValue = isNum(property?.valueEur) ? property.valueEur : property?.value;
-  if (isNum(moneyValue) && isNum(propertyValue) && Math.abs(moneyValue - propertyValue) > 0.01) {
+  const entries = [...row.moneyEntries, ...row.propertyEntries];
+  const values = entries.map((entry) => entry?.amountEur).filter(isNum);
+  if (values.some((value) => Math.abs(value - values[0]) > 0.01)) {
     return { mismatch: true, value: null, currency: null, source: null };
   }
-  if (isNum(moneyValue)) {
-    return {
-      mismatch: false,
-      value: moneyValue,
-      currency: money?.amountEur != null || money?.currency === 'EUR' ? 'EUR' : money?.currency,
-      source: formatSourceAmount(money?.amount, money?.currency),
-    };
-  }
-  if (isNum(propertyValue)) {
-    return {
-      mismatch: false,
-      value: propertyValue,
-      currency: property?.valueEur != null || property?.currency === 'EUR' ? 'EUR' : property?.currency,
-      source: formatSourceAmount(property?.value, property?.currency),
-    };
-  }
-  return { mismatch: false, value: null, currency: null, source: null };
+  const amount = values[0];
+  if (!isNum(amount)) return { mismatch: false, value: null, currency: null, source: null };
+  const sourceEntry = entries.find((entry) => entry?.sourceAmount != null && entry?.sourceCurrency);
+  return {
+    mismatch: false,
+    value: amount,
+    currency: 'EUR',
+    source: formatSourceAmount(sourceEntry?.sourceAmount, sourceEntry?.sourceCurrency),
+  };
 }
+
 
 function rowSearchText(row, sourceDocumentsById) {
   const fields = [];
@@ -167,8 +157,11 @@ function rowSearchText(row, sourceDocumentsById) {
       entry?.direction,
       entry?.assetType,
       entry?.eventType,
+      entry?.canonicalPartyId,
+      entry?.sourceChunkId,
+      Array.isArray(entry?.sourcePages) ? entry.sourcePages.join(' ') : entry?.sourcePages,
     );
-    const document = sourceDocumentsById.get(entry?.sourceId);
+    const document = sourceDocumentsById.get(entry?.docId);
     fields.push(document?.fileName);
   }
   return normalizeSearch(fields.filter(Boolean).join(' '));
@@ -177,10 +170,10 @@ function rowSearchText(row, sourceDocumentsById) {
 function rowsForSources(row, sourceDocumentsById) {
   const sources = new Map();
   for (const entry of [...row.moneyEntries, ...row.propertyEntries]) {
-    const document = sourceDocumentsById.get(entry?.sourceId);
+    const document = sourceDocumentsById.get(entry?.docId);
     const fileName = document?.fileName || entry?.fileName;
     if (!fileName) continue;
-    const key = entry?.sourceId || fileName;
+    const key = entry?.docId || fileName;
     if (!sources.has(key)) {
       sources.set(key, {
         key,
@@ -240,8 +233,8 @@ function RecordDetails({ row, sourceDocumentsById }) {
               <li key={entry?.id || `money-detail-${index}`}>
                 {[DIRECTION_LABELS[entry?.direction] || entry?.direction, AMOUNT_ROLE_LABELS[entry?.amountRole] || entry?.amountRole, EVENT_TYPE_LABELS[entry?.eventType] || entry?.eventType, entry?.claimRegistryNumber ? `redni broj ${entry.claimRegistryNumber}` : null, entry?.filingReference]
                   .filter(Boolean).join(' · ') || 'Novčana stavka'}
-                {entry?.amountEur != null && entry?.currency && entry.currency !== 'EUR'
-                  ? ` · izvorno ${formatSourceAmount(entry.amount, entry.currency)}`
+                {entry?.sourceCurrency && entry.sourceCurrency !== 'EUR'
+                  ? ` · izvorno ${formatSourceAmount(entry.sourceAmount, entry.sourceCurrency)}`
                   : ''}
               </li>
             ))}
@@ -256,8 +249,8 @@ function RecordDetails({ row, sourceDocumentsById }) {
               <li key={entry?.id || `property-detail-${index}`}>
                 {[ASSET_TYPE_LABELS[entry?.assetType] || entry?.assetType, EVENT_TYPE_LABELS[entry?.eventType] || entry?.eventType, VALUE_ROLE_LABELS[entry?.valueRole] || entry?.valueRole, entry?.transferor, entry?.transferee, entry?.identifier, entry?.claimRegistryNumber ? `redni broj ${entry.claimRegistryNumber}` : null, entry?.filingReference]
                   .filter(Boolean).join(' · ') || 'Imovinska stavka'}
-                {entry?.valueEur != null && entry?.currency && entry.currency !== 'EUR'
-                  ? ` · izvorno ${formatSourceAmount(entry.value, entry.currency)}`
+                {entry?.sourceCurrency && entry.sourceCurrency !== 'EUR'
+                  ? ` · izvorno ${formatSourceAmount(entry.sourceAmount, entry.sourceCurrency)}`
                   : ''}
               </li>
             ))}
@@ -368,21 +361,22 @@ function matchesClaimHistory(change, search) {
   return text.includes(search);
 }
 
-export default function AnalysisFlowsSection({ moneyFlow, propertyFlow, valueChanges, sourceDocuments = [] }) {
+export default function AnalysisFlowsSection({ flows, reconciliation, sourceDocuments = [] }) {
   const [activeView, setActiveView] = useState('all');
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(0);
   const deferredSearch = useDeferredValue(normalizeSearch(search));
-  const moneyEntries = Array.isArray(moneyFlow?.entries) ? moneyFlow.entries : [];
-  const propertyEntries = Array.isArray(propertyFlow?.entries) ? propertyFlow.entries : [];
-  const changes = Array.isArray(valueChanges) ? valueChanges : [];
+  const entries = Array.isArray(flows?.entries) ? flows.entries : [];
+  const moneyEntries = entries.filter((entry) => entry?.kind === 'amount');
+  const propertyEntries = entries.filter((entry) => entry?.kind === 'property');
+  const changes = Array.isArray(reconciliation?.valueChanges) ? reconciliation.valueChanges : [];
   const sourceDocumentsById = useMemo(
     () => new Map((Array.isArray(sourceDocuments) ? sourceDocuments : []).map((document) => [document.id, document])),
     [sourceDocuments],
   );
   const rows = useMemo(
-    () => buildEvidenceRows(moneyEntries, propertyEntries),
-    [moneyEntries, propertyEntries],
+    () => buildEvidenceRows(entries),
+    [entries],
   );
   const filteredRows = useMemo(() => rows.filter((row) => {
     if (activeView === 'money' && !row.categories.has('money')) return false;
@@ -408,7 +402,7 @@ export default function AnalysisFlowsSection({ moneyFlow, propertyFlow, valueCha
   const visibleCount = isClaimHistory ? filteredChanges.length : filteredRows.length;
   const pageCount = isClaimHistory ? 1 : Math.ceil(visibleCount / PAGE_SIZE);
   const rowSources = new Set(rows.flatMap((row) => [...row.moneyEntries, ...row.propertyEntries]
-    .map((entry) => entry?.sourceId).filter(Boolean)));
+    .map((entry) => entry?.docId).filter(Boolean)));
   const ungroundedCount = rows.filter((row) => !rowGrounding(row)).length;
 
   const changeView = (nextView) => {

@@ -1,7 +1,6 @@
 // backend/court-analysis/reasoning/propertyFlow.js
 //
-// Property-flow extraction surface: structural parallel to moneyFlow.js for
-// real estate, movable assets, receivables/claims (tražbina) and other assets.
+// Tražbina lifecycle primitives for the canonical flow reconciliation surface.
 //
 // assetType: "nekretnina" | "pokretnina" | "tražbina" | "drugo" (coarse, best-effort).
 // eventType (tražbina lifecycle only): "prijava" | "ustup" | "namirenje" | "drugo".
@@ -10,7 +9,7 @@
 // first, then by normalized-description containment fallback; unresolvable
 // references degrade to standalone treatment — never throw.
 //
-// Empty input → empty output, no errors (moneyFlow.js philosophy).
+// Empty lifecycle input returns an empty result without throwing.
 
 const { findCitationLinkedPairs } = require('./citationGraph');
 const { normalizeText } = require('./indexer');
@@ -40,21 +39,9 @@ function normalizeEventType(value) {
     return VALID_EVENT_TYPES.includes(raw) ? raw : null;
 }
 
-/**
- * Legacy entry point (flow-consolidation PR2): thin wrapper over the unified
- * collector + property derived view. Output is byte-identical to the old
- * implementation for the same input (verified by the eval-fixture diff).
- * @param {Array<object>} analyses
- * @returns {{count: number, entries: Array<object>, hasPropertyFlow: boolean}}
- */
-function collectPropertyFlows(analyses) {
-    const { collectFlows, derivePropertyFlowView } = require('./flow');
-    return derivePropertyFlowView(collectFlows(analyses));
-}
 
-// Grouping key shared with reconcileMoneyFlows philosophy: normalized
-// description tokens + assetType. Short/generic descriptions yield null and
-// are never grouped (avoid over-merging distinct assets).
+// Grouping key for asset descriptions: normalized tokens + assetType.
+// Short/generic descriptions yield null and are never grouped (avoid over-merging).
 function propertyGroupKey(entry) {
     const tokens = normalizeText(entry?.description || '')
         .split(/[^a-z0-9]+/)
@@ -259,9 +246,8 @@ function buildValueChangeTimeline(groupEntries, linkage, valueFn) {
 /**
  * Tražbina lifecycle reconciliation (registry/citation-linked chains,
  * `resolveSupersedesTarget`, value-change timelines). Extracted so the
- * unified `reconcileFlows` (reconciliation.js) and the legacy
- * `reconcilePropertyFlows` share one implementation: algorithm untouched,
- * only re-sourced.
+ * unified `reconcileFlows` (reconciliation.js) is the lifecycle owner;
+ * algorithm unchanged, only re-sourced.
  *
  * @param {Array<object>} trazbinaEntries - Entries with assetType 'tražbina'.
  * @param {Array<object>} allEntries - Full entry set for stable-id scoping.
@@ -280,7 +266,7 @@ function reconcileTrazbinaLifecycle(trazbinaEntries, allEntries, context = {}, v
     const entriesById = new Map(scope.map((e) => [String(e?.id), e]));
 
     // K-03: value comparison runs on the consolidated EUR scale when both
-    // sides have one, mirroring reconcileMoneyFlows.
+    // sides have one, consistent with canonical flow reconciliation.
     const effectiveValue = typeof valueFn === 'function'
         ? valueFn
         : (e) => (Number.isFinite(e.valueEur) ? e.valueEur : e.value);
@@ -390,40 +376,8 @@ function reconcileTrazbinaLifecycle(trazbinaEntries, allEntries, context = {}, v
     return { conflicts, openQuestions, valueChanges };
 }
 
-/**
- * Deterministic property-flow reconciliation, mirroring reconcileMoneyFlows
- * grouping/conflict philosophy with a distinct tražbina lifecycle path.
- *
- * Legacy entry point (flow-consolidation PR3): thin wrapper over the unified
- * `reconcileFlows`. Output matches the historical implementation for the
- * same input (verified by the eval-fixture diff + lifecycle tests).
- *
- * @param {object} propertyFlow - Output of collectPropertyFlows.
- * @param {object} [context] - Optional `{ analyses }` (normalized analyses
- * carrying `citedFilingReferences`); enables the L-02 citation-link signal.
- * @returns {{conflicts: Array, openQuestions: Array<{text: string, source: string, kind: string}>, valueChanges: Array<object>}}
- */
-function reconcilePropertyFlows(propertyFlow, context = {}) {
-    // Lazy require: reconciliation.js loads this module at its top level,
-    // so an eager require back would cycle.
-    const { reconcileFlows } = require('./reconciliation');
-    const flows = {
-        entries: (Array.isArray(propertyFlow?.entries) ? propertyFlow.entries : []).map(asLegacyPropertyFlow),
-    };
-    const result = reconcileFlows(flows, context);
-    return { conflicts: result.conflicts, openQuestions: result.openQuestions, valueChanges: result.valueChanges };
-}
-
-// Legacy property-view entries already speak the value vocabulary; the
-// shared engine only needs the `assetType` discriminant guaranteed.
-function asLegacyPropertyFlow(entry) {
-    if (!entry || typeof entry !== 'object') return entry;
-    return { ...entry, assetType: entry.assetType || 'drugo' };
-}
 
 module.exports = {
-    collectPropertyFlows,
-    reconcilePropertyFlows,
     reconcileTrazbinaLifecycle,
     resolveSupersedesTarget,
     resolveSupersedesTargetWithBasis,

@@ -171,14 +171,10 @@ export default function AnalysisRunDetailPage() {
   const flows = useMemo(() => {
     const pkg = parsedResult?.clusterEvidencePackage || null;
     return {
-      moneyFlow: pkg?.moneyFlow || report?.meta?.moneyFlow || null,
-      propertyFlow: pkg?.propertyFlow || report?.meta?.propertyFlow || null,
-      valueChanges:
-        pkg?.propertyReconciliation?.valueChanges ||
-        report?.meta?.propertyReconciliation?.valueChanges ||
-        [],
+      flows: pkg?.flows || null,
+      reconciliation: pkg?.reconciliation || null,
     };
-  }, [parsedResult, report]);
+  }, [parsedResult]);
   const sourceDocuments = useMemo(() => {
     const pkg = parsedResult?.clusterEvidencePackage;
     const analyses = Array.isArray(pkg?.analyses) ? pkg.analyses : [];
@@ -382,9 +378,8 @@ export default function AnalysisRunDetailPage() {
               />
 
               <AnalysisFlowsSection
-                moneyFlow={flows.moneyFlow}
-                propertyFlow={flows.propertyFlow}
-                valueChanges={flows.valueChanges}
+                flows={flows.flows}
+                reconciliation={flows.reconciliation}
                 sourceDocuments={sourceDocuments}
               />
 

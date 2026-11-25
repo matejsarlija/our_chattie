@@ -1,6 +1,15 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import AnalysisCoverageBanner from '../AnalysisCoverageBanner';
 import AnalysisFlowsSection from '../AnalysisFlowsSection';
+function renderFlows(entries = [], valueChanges = [], sourceDocuments = []) {
+  return render(
+    <AnalysisFlowsSection
+      flows={{ entries }}
+      reconciliation={{ valueChanges }}
+      sourceDocuments={sourceDocuments}
+    />
+  );
+}
 
 describe('grounding + property-flow UI surfacing', () => {
   test('coverage banner shows grounded-claims counts when present', () => {
@@ -78,10 +87,9 @@ describe('grounding + property-flow UI surfacing', () => {
       currency: 'EUR',
       direction: 'potraživanje',
       grounded: true,
+      kind: 'amount',
     }));
-    const { container } = render(
-      <AnalysisFlowsSection moneyFlow={{ entries }} propertyFlow={{ entries: [] }} valueChanges={[]} />
-    );
+    const { container } = renderFlows(entries);
 
     expect(container.querySelectorAll('[data-testid="evidence-record-row"]')).toHaveLength(10);
     expect(screen.getByText('Prikaz 1–10 od 24')).toBeInTheDocument();
@@ -96,10 +104,9 @@ describe('grounding + property-flow UI surfacing', () => {
       description: `Imovina ${index + 1}`,
       assetType: 'nekretnina',
       grounded: index !== 0,
+      kind: 'property',
     }));
-    const { container } = render(
-      <AnalysisFlowsSection moneyFlow={{ entries: [] }} propertyFlow={{ entries }} valueChanges={[]} />
-    );
+    const { container } = renderFlows(entries);
 
     fireEvent.click(screen.getByRole('button', { name: 'Imovina 12' }));
     expect(screen.getByRole('button', { name: 'Imovina 12' })).toHaveAttribute('aria-pressed', 'true');
@@ -111,71 +118,45 @@ describe('grounding + property-flow UI surfacing', () => {
   });
 
   test('flows section labels an ungrounded property record for source review', () => {
-    render(
-      <AnalysisFlowsSection
-        moneyFlow={{ entries: [] }}
-        propertyFlow={{
-          entries: [{
-            id: 'prop-2', sourceId: 'analysis-prop', description: 'Proizvodni strojevi', assetType: 'pokretnina',
-            transferor: 'Ducanor d.o.o.', transferee: 'Kupac Prostor d.o.o.',
-            value: 25000, valueEur: 25000, currency: 'EUR', date: '2023-02-10',
-            fileName: 'Rjesenje_o_prodaji_imovine.pdf', grounded: false,
-          }],
-        }}
-        valueChanges={[]}
-        sourceDocuments={[{ id: 'analysis-prop', fileName: 'Rjesenje_o_prodaji_imovine.pdf', url: 'https://court.example.test/file.pdf' }]}
-      />
-    );
+    renderFlows([{
+      id: 'prop-2', kind: 'property', docId: 'analysis-prop', description: 'Proizvodni strojevi', assetType: 'pokretnina',
+      transferor: 'Ducanor d.o.o.', transferee: 'Kupac Prostor d.o.o.',
+      sourceAmount: 25000, sourceCurrency: 'EUR', amountEur: 25000, date: '2023-02-10',
+      fileName: 'Rjesenje_o_prodaji_imovine.pdf', grounded: false,
+    }], [], [{ id: 'analysis-prop', fileName: 'Rjesenje_o_prodaji_imovine.pdf', url: 'https://court.example.test/file.pdf' }]);
     expect(screen.getByRole('link', { name: 'Rjesenje_o_prodaji_imovine.pdf' })).toHaveAttribute('href', 'https://court.example.test/file.pdf');
     expect(screen.getByRole('button', { name: 'Imovina 1' })).toBeInTheDocument();
     expect(screen.getByText(/provjerite izvor/)).toBeInTheDocument();
   });
 
   test('flows section hides entirely when both flows are empty', () => {
-    const { container } = render(
-      <AnalysisFlowsSection moneyFlow={{ entries: [] }} propertyFlow={{ entries: [] }} valueChanges={[]} />
-    );
+    const { container } = renderFlows();
     expect(container).toBeEmptyDOMElement();
   });
 
   test('money records keep parties and direction inspectable', () => {
-    render(
-      <AnalysisFlowsSection
-        moneyFlow={{
-          entries: [{
-            id: 'money-1', description: 'Tražbina CroGo', amount: 1000, currency: 'EUR',
-            amountEur: 1000, direction: 'potraživanje',
-            from: 'Kerum d.o.o.', to: 'CroGo d.o.o.',
-            fileName: 'Prilog.pdf',
-          }],
-        }}
-        propertyFlow={{ entries: [] }}
-        valueChanges={[]}
-      />
-    );
+    renderFlows([{
+      id: 'money-1', kind: 'amount', description: 'Tražbina CroGo', sourceAmount: 1000, sourceCurrency: 'EUR',
+      amountEur: 1000, direction: 'potraživanje',
+      from: 'Kerum d.o.o.', to: 'CroGo d.o.o.',
+      fileName: 'Prilog.pdf',
+    }]);
     expect(screen.getByRole('button', { name: 'Novčane stavke 1' })).toBeInTheDocument();
     expect(screen.getByText('Kerum d.o.o. · CroGo d.o.o.')).toBeInTheDocument();
     expect(screen.getAllByText('potraživanje').length).toBeGreaterThan(0);
   });
 
   test('merges an exact cross-category echo into one expandable evidence row', () => {
-    const { container } = render(
-      <AnalysisFlowsSection
-        moneyFlow={{
-          entries: [{
-            id: 'money-1', crossCategoryFactId: 'cross-123', description: 'Prodajna cijena strojeva',
-            amount: 25000, amountEur: 25000, currency: 'EUR', quote: 'strojevi za 25.000 EUR',
-          }],
-        }}
-        propertyFlow={{
-          entries: [{
-            id: 'property-1', crossCategoryFactId: 'cross-123', description: 'Prodaja strojeva',
-            assetType: 'pokretnina', value: 25000, valueEur: 25000, currency: 'EUR',
-          }],
-        }}
-        valueChanges={[]}
-      />
-    );
+    const { container } = renderFlows([
+      {
+        id: 'money-1', kind: 'amount', crossCategoryFactId: 'cross-123', description: 'Prodajna cijena strojeva',
+        sourceAmount: 25000, sourceCurrency: 'EUR', amountEur: 25000, quote: 'strojevi za 25.000 EUR',
+      },
+      {
+        id: 'property-1', kind: 'property', crossCategoryFactId: 'cross-123', description: 'Prodaja strojeva',
+        assetType: 'pokretnina', sourceAmount: 25000, sourceCurrency: 'EUR', amountEur: 25000,
+      },
+    ]);
 
     expect(container.querySelectorAll('[data-testid="evidence-record-row"]')).toHaveLength(1);
     expect(screen.getByRole('button', { name: 'Novčane stavke 1' })).toBeInTheDocument();
@@ -186,20 +167,11 @@ describe('grounding + property-flow UI surfacing', () => {
     expect(screen.getByText('strojevi za 25.000 EUR', { exact: false })).toBeInTheDocument();
   });
 
-
   test('does not sum claims and liabilities into a misleading register total', () => {
-    render(
-      <AnalysisFlowsSection
-        moneyFlow={{
-          entries: [
-            { id: 'claim', description: 'Prijavljena tražbina', amount: 100, amountEur: 100, currency: 'EUR', direction: 'potraživanje' },
-            { id: 'liability', description: 'Dosuđena obveza', amount: 100, amountEur: 100, currency: 'EUR', direction: 'obveza' },
-          ],
-        }}
-        propertyFlow={{ entries: [] }}
-        valueChanges={[]}
-      />
-    );
+    renderFlows([
+      { id: 'claim', kind: 'amount', description: 'Prijavljena tražbina', sourceAmount: 100, sourceCurrency: 'EUR', amountEur: 100, direction: 'potraživanje' },
+      { id: 'liability', kind: 'amount', description: 'Dosuđena obveza', sourceAmount: 100, sourceCurrency: 'EUR', amountEur: 100, direction: 'obveza' },
+    ]);
 
     expect(screen.queryByText('zbroj svih stavki — nije iznos tražbine')).not.toBeInTheDocument();
     expect(screen.queryByText('200,00 €')).not.toBeInTheDocument();
@@ -207,50 +179,26 @@ describe('grounding + property-flow UI surfacing', () => {
   });
 
   test('money flow renders English ruling-outcome directions as Croatian labels', () => {
-    render(
-      <AnalysisFlowsSection
-        moneyFlow={{
-          entries: [
-            { id: 'money-2', description: 'Trosak zalbenog postupka', amount: 63.38, currency: 'EUR', amountEur: 63.38, direction: 'netted' },
-          ],
-        }}
-        propertyFlow={{ entries: [] }}
-        valueChanges={[]}
-      />
-    );
+    renderFlows([{
+      id: 'money-2', kind: 'amount', description: 'Trosak zalbenog postupka', sourceAmount: 63.38, sourceCurrency: 'EUR', amountEur: 63.38, direction: 'netted',
+    }]);
     expect(screen.getAllByText('prebijeno').length).toBeGreaterThan(0);
     expect(screen.queryByText('netted')).not.toBeInTheDocument();
   });
 
-  // P3: a converted figure must never be presented as if it had been stated.
   test('money flow shows the source-stated figure beneath a converted EUR figure', () => {
-    render(
-      <AnalysisFlowsSection
-        moneyFlow={{
-          entries: [{
-            id: 'money-3', description: 'Tražbina drugog višeg reda',
-            amount: 177218.01, currency: 'HRK', amountEur: 23520.87, amountEurSource: 'converted',
-            direction: 'potraživanje',
-          }],
-        }}
-        propertyFlow={{ entries: [] }}
-        valueChanges={[]}
-      />
-    );
+    renderFlows([{
+      id: 'money-3', kind: 'amount', description: 'Tražbina drugog višeg reda',
+      sourceAmount: 177218.01, sourceCurrency: 'HRK', amountEur: 23520.87,
+      direction: 'potraživanje',
+    }]);
     expect(screen.getByText('23.520,87 €')).toBeInTheDocument();
     expect(screen.getByText('izvorno 177.218,01 HRK')).toBeInTheDocument();
   });
 
   test('money flow omits the source line when the figure was stated in EUR', () => {
-    render(
-      <AnalysisFlowsSection
-        moneyFlow={{ entries: [{ id: 'm', description: 'Polog', amount: 1200, currency: 'EUR', amountEur: 1200 }] }}
-        propertyFlow={{ entries: [] }}
-        valueChanges={[]}
-      />
-    );
+    renderFlows([{ id: 'm', kind: 'amount', description: 'Polog', sourceAmount: 1200, sourceCurrency: 'EUR', amountEur: 1200 }]);
     expect(screen.getAllByText('1.200,00 €').length).toBe(1);
-    // no HRK marker when the figure was stated in EUR
     expect(screen.queryByText('iz HRK')).not.toBeInTheDocument();
     expect(screen.queryByText(/^iznos u izvoru/)).not.toBeInTheDocument();
   });
@@ -259,25 +207,19 @@ describe('grounding + property-flow UI surfacing', () => {
   // stages[], originalValue, latestValue, delta and discountPct, and the old UI
   // rendered only `finding`.
   test('value changes render a lifecycle timeline with delta and discount', () => {
-    render(
-      <AnalysisFlowsSection
-        moneyFlow={{ entries: [] }}
-        propertyFlow={{ entries: [] }}
-        valueChanges={[{
-          description: 'Tražbina vjerovnika prema dužniku Ducanor d.o.o.',
-          linkage: 'supersedes',
-          originalValue: 84500,
-          latestValue: 15000,
-          delta: -69500,
-          discountPct: -82.25,
-          comparisonStatus: 'comparable',
-          stages: [
-            { id: 'prop-1', eventType: 'prijava', value: 84500, valueRole: 'claim_balance', currency: 'EUR', date: '2022-06-15', transferor: 'Vjerovnik A d.o.o.', fileName: 'Poziv_vjerovnicima_za_prijavu_trazbina.pdf' },
-            { id: 'prop-3', eventType: 'ustup', value: 15000, valueRole: 'claim_balance', currency: 'EUR', date: '2023-06-01', transferor: 'Vjerovnik A d.o.o.', transferee: 'Kupac Tražbina d.o.o.', fileName: 'Rjesenje_o_prodaji_imovine.pdf' },
-          ],
-        }]}
-      />
-    );
+    renderFlows([], [{
+      description: 'Tražbina vjerovnika prema dužniku Ducanor d.o.o.',
+      linkage: 'supersedes',
+      originalValue: 84500,
+      latestValue: 15000,
+      delta: -69500,
+      discountPct: -82.25,
+      comparisonStatus: 'comparable',
+      stages: [
+        { id: 'prop-1', eventType: 'prijava', value: 84500, valueRole: 'claim_balance', currency: 'EUR', date: '2022-06-15', transferor: 'Vjerovnik A d.o.o.', fileName: 'Poziv_vjerovnicima_za_prijavu_trazbina.pdf' },
+        { id: 'prop-3', eventType: 'ustup', value: 15000, valueRole: 'claim_balance', currency: 'EUR', date: '2023-06-01', transferor: 'Vjerovnik A d.o.o.', transferee: 'Kupac Tražbina d.o.o.', fileName: 'Rjesenje_o_prodaji_imovine.pdf' },
+      ],
+    }]);
 
     fireEvent.click(screen.getByRole('button', { name: 'Povijest tražbina 1' }));
     expect(screen.getByRole('region', { name: 'Povijest tražbina' })).toBeInTheDocument();
@@ -299,13 +241,7 @@ describe('grounding + property-flow UI surfacing', () => {
   });
 
   test('value changes fall back to `finding` when no stages were recorded', () => {
-    render(
-      <AnalysisFlowsSection
-        moneyFlow={{ entries: [] }}
-        propertyFlow={{ entries: [] }}
-        valueChanges={[{ description: 'Tražbina vjerovnika', finding: 'Tražbina ustupljena je za 15,000 EUR.' }]}
-      />
-    );
+    renderFlows([], [{ description: 'Tražbina vjerovnika', finding: 'Tražbina ustupljena je za 15,000 EUR.' }]);
     fireEvent.click(screen.getByRole('button', { name: 'Povijest tražbina 1' }));
     expect(screen.getByText(/Tražbina ustupljena je za 15,000 EUR\./)).toBeInTheDocument();
   });

@@ -116,18 +116,16 @@ function deriveCoverage(resultJson) {
     return hasAny ? coverage : null;
 }
 
-function readMoneyFlow(resultJson) {
+function readFlows(resultJson) {
     const pkg = readPackage(resultJson);
-    if (pkg && pkg.moneyFlow && typeof pkg.moneyFlow === 'object') return pkg.moneyFlow;
-    const fromMeta = resultJson?.report?.meta?.moneyFlow;
-    return fromMeta && typeof fromMeta === 'object' ? fromMeta : null;
+    return pkg?.flows && typeof pkg.flows === 'object' ? pkg.flows : null;
 }
 
 function deriveAmounts(resultJson) {
-    const moneyFlow = readMoneyFlow(resultJson);
-    if (!moneyFlow) return null;
-    const entries = Array.isArray(moneyFlow.entries) ? moneyFlow.entries : [];
-    if (!entries.length && !isFiniteNumber(moneyFlow.eurTotal)) return null;
+    const flows = readFlows(resultJson);
+    if (!flows) return null;
+    const entries = (Array.isArray(flows.entries) ? flows.entries : []).filter((entry) => entry.kind === 'amount');
+    if (!entries.length && !isFiniteNumber(flows.eurTotal)) return null;
 
     // Resolve each entry's EUR figure.
     //
@@ -147,13 +145,13 @@ function deriveAmounts(resultJson) {
         if (isFiniteNumber(entry?.amountEur)) {
             return {
                 amountEur: entry.amountEur,
-                source: (typeof entry.amount === 'number' || typeof entry.amount === 'string') && entry.currency !== 'EUR'
-                    ? { amount: entry.amount, currency: entry.currency ?? null }
+                source: (typeof entry.sourceAmount === 'number' || typeof entry.sourceAmount === 'string') && entry.sourceCurrency !== 'EUR'
+                    ? { amount: entry.sourceAmount, currency: entry.sourceCurrency ?? null }
                     : null,
             };
         }
-        if (entry?.currency === 'EUR' && isFiniteNumber(entry?.amount)) {
-            return { amountEur: entry.amount, source: null };
+        if (entry?.sourceCurrency === 'EUR' && isFiniteNumber(entry?.sourceAmount)) {
+            return { amountEur: entry.sourceAmount, source: null };
         }
         return null;
     };
@@ -193,6 +191,9 @@ function deriveAmounts(resultJson) {
     const directionsPresent = [...new Set(eurEntries.map((e) => e.direction).filter(Boolean))];
     const singleDirection = directionsPresent.length === 1 ? directionsPresent[0] : null;
 
+    const eurTotal = eurEntries.length
+        ? Math.round(eurEntries.reduce((total, entry) => total + entry.amountEur, 0) * 100) / 100
+        : null;
     return {
         entryCount: entries.length,
         directionsPresent,
@@ -200,7 +201,7 @@ function deriveAmounts(resultJson) {
         // Only meaningful when the flow is single-direction; still exposed so a
         // caller can see what the backend computed, with `mixedDirections` as
         // the caveat that makes it unsafe to present.
-        eurTotal: isFiniteNumber(moneyFlow.eurTotal) ? moneyFlow.eurTotal : null,
+        eurTotal,
         mixedDirections: singleDirection === null && directionsPresent.length > 1,
         // Largest single directional claim, for callers that want an individual
         // figure rather than a matter-level total.

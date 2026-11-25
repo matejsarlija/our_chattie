@@ -1178,8 +1178,7 @@ async function processScrapedCases(casesToProcess, progressCallback, options = {
         // VISUALIZATION REMOVED.
         //
         // This used to call `VisualizerTool` to have Gemini restate the
-        // already-structured moneyFlow / propertyFlow entries as a Mermaid
-        // flowchart, appending the raw diagram to `comparativeAnalysis`.
+        // already-structured canonical flow entries as a Mermaid flowchart,
         //
         // Removed because it never worked and could not be made to work
         // reliably: across 13 real runs exactly one produced a diagram, and that
@@ -1225,8 +1224,8 @@ async function processScrapedCases(casesToProcess, progressCallback, options = {
             documentsFailed: summaryCoverage.failed,
             groundedClaims: enrichedEvidencePackage?.coverage?.groundedClaims ?? null,
             totalClaims: enrichedEvidencePackage?.coverage?.totalClaims ?? null,
-            propertyFlowEntries: enrichedEvidencePackage?.propertyFlow?.count ?? 0,
-            propertyConflicts: enrichedEvidencePackage?.propertyReconciliation?.conflicts?.length ?? 0,
+            propertyFlowEntries: enrichedEvidencePackage?.flows?.entries?.filter((entry) => entry.kind === 'property').length ?? 0,
+            propertyConflicts: enrichedEvidencePackage?.reconciliation?.conflicts?.filter((conflict) => conflict.kind === 'property' || conflict.kind === 'lifecycle').length ?? 0,
             usage: usageTracker.snapshot(),
             durationMs: Date.now() - runStartedAt,
             reportError,
@@ -1266,8 +1265,8 @@ async function processScrapedCases(casesToProcess, progressCallback, options = {
             documentsFailed: failureCoverage.failed,
             groundedClaims: partialResult.clusterEvidencePackage?.coverage?.groundedClaims ?? null,
             totalClaims: partialResult.clusterEvidencePackage?.coverage?.totalClaims ?? null,
-            propertyFlowEntries: partialResult.clusterEvidencePackage?.propertyFlow?.count ?? 0,
-            propertyConflicts: partialResult.clusterEvidencePackage?.propertyReconciliation?.conflicts?.length ?? 0,
+            propertyFlowEntries: partialResult.clusterEvidencePackage?.flows?.entries?.filter((entry) => entry.kind === 'property').length ?? 0,
+            propertyConflicts: partialResult.clusterEvidencePackage?.reconciliation?.conflicts?.filter((conflict) => conflict.kind === 'property' || conflict.kind === 'lifecycle').length ?? 0,
             usage: usageTracker.snapshot(),
             durationMs: Date.now() - runStartedAt,
             error: error.message,

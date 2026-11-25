@@ -72,7 +72,7 @@ function evaluateFixture(fixture, seed) {
         retrievalRecallAtK(retrieval, fixture.gold, 10),
         retrievalRecallAtK(retrieval, fixture.gold, 20),
         retrievalMrr(retrieval, fixture.gold),
-        amountScore(fixture.pkg.moneyFlow?.entries || [], fixture.gold)
+        amountScore((fixture.pkg.flows?.entries || []).filter((entry) => entry.kind === 'amount'), fixture.gold)
     ];
 
     // Mutator self-check: applied must be non-empty and byte-reproducible for

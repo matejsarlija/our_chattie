@@ -55,7 +55,13 @@ function buildInventory(evidencePackage) {
             ...(pkg.identity?.participantNames || []),
             ...(pkg.entries || []).flatMap((entry) => (entry.participants || []).map((p) => p.name)).filter(Boolean)
         ])].slice(0, 10),
-        moneyTotalsByCurrency: pkg.moneyFlow?.currencyTotals || {}
+        moneyTotalsByCurrency: (pkg.flows?.entries || [])
+            .filter((entry) => entry.kind === 'amount' && Number.isFinite(entry.sourceAmount))
+            .reduce((totals, entry) => {
+                const currency = entry.sourceCurrency || 'UNKNOWN';
+                totals[currency] = (totals[currency] || 0) + entry.sourceAmount;
+                return totals;
+            }, {})
     };
 }
 

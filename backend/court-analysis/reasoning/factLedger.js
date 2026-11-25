@@ -62,6 +62,7 @@ function buildFactLedger(analyses) {
             if (!raw || typeof raw !== 'object') continue;
             rows.push({
                 kind: 'amount',
+                doc,
                 description: cleanString(raw.description),
                 // Preserve legacy extractor numeric strings (Croatian table
                 // cells commonly use `1.200.000,00`) before flows consume the
@@ -73,7 +74,7 @@ function buildFactLedger(analyses) {
                 direction: cleanString(raw.direction),
                 amountRole: cleanString(raw.amountRole),
                 eventType: cleanString(raw.eventType),
-                valueRole: cleanString(raw.valueRole),
+                quote: cleanString(raw.quote),
                 crossCategoryFactId: null,
                 legalEffect: cleanString(raw.legalEffect),
                 references: Array.isArray(raw.references) ? raw.references.filter((r) => typeof r === 'string' && r.trim()) : [],
@@ -89,10 +90,10 @@ function buildFactLedger(analyses) {
                 isplatniRed: cleanString(raw.isplatniRed),
                 claimRegistryNumber: cleanString(raw.claimRegistryNumber),
                 filingReference: cleanString(raw.filingReference),
-                quote: typeof raw.quote === 'string' ? raw.quote : null,
                 grounded: raw.grounded === true,
+                sourcePages: Array.isArray(raw.sourcePages) ? [...raw.sourcePages] : [],
+                sourceChunkId: raw.sourceChunkId ?? null,
                 page: null,
-                doc,
                 filings: [filingRef(doc)]
             });
         }
@@ -100,15 +101,15 @@ function buildFactLedger(analyses) {
             if (!raw || typeof raw !== 'object') continue;
             rows.push({
                 kind: 'property',
+                doc,
                 description: cleanString(raw.description),
                 value: parseAmount(raw.value ?? raw.amount),
                 currency: cleanString(raw.currency),
-                valueEur: parseAmount(raw.valueEur ?? raw.amountEur),
                 date: cleanString(raw.date),
                 direction: cleanString(raw.direction),
                 amountRole: null,
                 eventType: cleanString(raw.eventType),
-                valueRole: cleanString(raw.valueRole),
+                quote: cleanString(raw.quote),
                 crossCategoryFactId: null,
                 legalEffect: cleanString(raw.legalEffect),
                 references: Array.isArray(raw.references) ? raw.references.filter((r) => typeof r === 'string' && r.trim()) : [],
@@ -127,10 +128,10 @@ function buildFactLedger(analyses) {
                 claimRegistryNumber: cleanString(raw.claimRegistryNumber),
                 filingReference: cleanString(raw.filingReference),
                 supersedes: cleanString(raw.supersedes),
-                quote: typeof raw.quote === 'string' ? raw.quote : null,
                 grounded: raw.grounded === true,
+                sourcePages: Array.isArray(raw.sourcePages) ? [...raw.sourcePages] : [],
+                sourceChunkId: raw.sourceChunkId ?? null,
                 page: null,
-                doc,
                 filings: [filingRef(doc)]
             });
         }

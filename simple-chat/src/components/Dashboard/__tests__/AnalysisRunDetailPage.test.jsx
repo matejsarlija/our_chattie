@@ -239,7 +239,8 @@ describe('AnalysisRunDetailPage metadata modules', () => {
               sourceDocumentLinkId: 'link-1',
             }],
             documentLinks: [{ id: 'link-1', url: 'https://court.example.test/rjesenje.pdf', text: 'Rješenje.pdf' }],
-            moneyFlow: { entries: [{ id: 'money-1', description: 'Tražbina.', amount: 100, currency: 'EUR', amountEur: 100 }] },
+            flows: { entries: [{ id: 'money-1', kind: 'amount', description: 'Tražbina.', sourceAmount: 100, sourceCurrency: 'EUR', amountEur: 100, grounded: true }] },
+            reconciliation: { valueChanges: [] },
           },
           report: {
             schemaVersion: '1.0.0',

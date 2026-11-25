@@ -274,20 +274,20 @@ describe('Track 1: evidence enrichment (1c)', () => {
       },
     ], 'ST-700/2024');
 
-    expect(enriched.moneyFlow).toEqual(expect.objectContaining({
+    expect(enriched.flows).toEqual(expect.objectContaining({
       count: 2,
-      hasMoneyFlow: true,
+      hasFlows: true,
       currencyTotals: { EUR: 1200000.00 + 1033.25 }
     }));
     expect(enriched.analyses[0].amounts).toHaveLength(3);
 
     const evidence = realSynthesizer.normalizeReasoningEvidence(enriched);
-    const moneyFlowClaims = evidence.claims.filter((claim) => claim.id.startsWith('money-flow-'));
-    expect(moneyFlowClaims).toHaveLength(2);
-    expect(moneyFlowClaims[0].text).toContain('1,200,000');
-    expect(moneyFlowClaims[0].text).toContain('EUR');
-    expect(moneyFlowClaims[0].text).toContain('diobni_popis.pdf');
-    expect(evidence.meta.moneyFlow).toEqual(expect.objectContaining({ count: 2, hasMoneyFlow: true }));
+    const flowClaims = evidence.claims.filter((claim) => claim.id.startsWith('flow-claim-'));
+    expect(flowClaims).toHaveLength(2);
+    expect(flowClaims[0].text).toContain('1,200,000');
+    expect(flowClaims[0].text).toContain('EUR');
+    expect(flowClaims[0].text).toContain('diobni_popis.pdf');
+    expect(evidence.meta.flows).toEqual(expect.objectContaining({ count: 2, hasFlows: true }));
   });
 
   test('attachAnalysesToEvidencePackage exposes an empty money-flow surface when no amounts exist', () => {
@@ -303,16 +303,16 @@ describe('Track 1: evidence enrichment (1c)', () => {
       },
     ], 'ST-700/2024');
 
-    expect(enriched.moneyFlow).toEqual({
+    expect(enriched.flows).toEqual(expect.objectContaining({
       count: 0,
       entries: [],
       currencyTotals: {},
-      hasMoneyFlow: false
-    });
+      hasFlows: false
+    }));
 
     const evidence = realSynthesizer.normalizeReasoningEvidence(enriched);
-    expect(evidence.claims.some((claim) => claim.id.startsWith('money-flow-'))).toBe(false);
-    expect(evidence.meta.moneyFlow.hasMoneyFlow).toBe(false);
+    expect(evidence.claims.some((claim) => claim.id.startsWith('flow-claim-'))).toBe(false);
+    expect(evidence.meta.flows.hasFlows).toBe(false);
   });
 });
 

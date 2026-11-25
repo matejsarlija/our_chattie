@@ -30,8 +30,8 @@ jest.mock('../../helpers/geminiUsage', () => ({
 
 const fs = require('fs');
 const path = require('path');
-const { collectMoneyFlows } = require('../../court-analysis/reasoning/moneyFlow');
-const { collectPropertyFlows, reconcilePropertyFlows } = require('../../court-analysis/reasoning/propertyFlow');
+const { collectFlows } = require('../../court-analysis/reasoning/flow');
+const { reconcileFlows } = require('../../court-analysis/reasoning/reconciliation');
 const { hrkToEur } = require('../../court-analysis/reasoning/currencyConversion');
 const { buildCitationGraph } = require('../../court-analysis/reasoning/citationGraph');
 const { applyGroundingToAnalysis } = require('../../court-analysis/reasoning/grounding');
@@ -182,15 +182,15 @@ describe('L-03 Kerum golden fixtures: deterministic pipeline shape', () => {
     };
 
     test('Prilog amount consolidates HRK→EUR and keeps every J identifier', () => {
-        const flow = collectMoneyFlows([prilogAnalysis]);
-        expect(flow.entries[0]).toEqual(expect.objectContaining({
-            amount: 177218.01,
+        const flow = collectFlows([prilogAnalysis]).entries.find((entry) => entry.kind === 'amount');
+        expect(flow).toEqual(expect.objectContaining({
+            value: 177218.01,
             currency: 'HRK',
             amountEur: hrkToEur(177218.01),
-            amountEurSource: 'converted',
+            valueEurSource: 'converted',
             direction: 'potraživanje',
-            payerOib: '66124057408',
-            recipientOib: '79478632402',
+            transferorOib: '66124057408',
+            transfereeOib: '79478632402',
             isplatniRed: 'drugi viši isplatni red',
             claimRegistryNumber: '106',
             filingReference: 'St-2/2013-1196-1',
@@ -200,18 +200,18 @@ describe('L-03 Kerum golden fixtures: deterministic pipeline shape', () => {
     });
 
     test('Troškovnik dual prefers the stated EUR figure (space-variant spelling)', () => {
-        const flow = collectMoneyFlows([troskovnikAnalysis]);
-        expect(flow.entries[0].amountEur).toBe(248.86);
-        expect(flow.entries[0].amountEurSource).toBe('stated');
-        expect(flow.entries[1]).toEqual(expect.objectContaining({
+        const flows = collectFlows([troskovnikAnalysis]).entries.filter((entry) => entry.kind === 'amount');
+        expect(flows[0].amountEur).toBe(248.86);
+        expect(flows[0].valueEurSource).toBe('stated');
+        expect(flows[1]).toEqual(expect.objectContaining({
             amountEur: 63.38,
             direction: 'obveza',
         }));
     });
 
     test('shared registry 106 reconciles to one timeline across both documents', () => {
-        const flow = collectPropertyFlows([prilogAnalysis, troskovnikAnalysis]);
-        const result = reconcilePropertyFlows(flow, { analyses: [prilogAnalysis, troskovnikAnalysis] });
+        const flows = collectFlows([prilogAnalysis, troskovnikAnalysis]);
+        const result = reconcileFlows(flows, { analyses: [prilogAnalysis, troskovnikAnalysis] });
         expect(result.conflicts).toHaveLength(0);
         expect(result.valueChanges).toHaveLength(1);
         expect(result.valueChanges[0].linkage).toBe('claimRegistryNumber');

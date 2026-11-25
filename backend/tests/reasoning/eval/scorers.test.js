@@ -62,7 +62,7 @@ describe('eval scorers', () => {
 
     describe('amountScore', () => {
         test('perfect match yields f1 of 1', () => {
-            const score = amountScore([{ amount: 1200, currency: 'EUR', description: 'polog' }], {
+            const score = amountScore([{ sourceAmount: 1200, sourceCurrency: 'EUR', description: 'polog' }], {
                 expectedAmounts: [{ value: 1200, currency: 'EUR', tolerancePct: 0.001 }]
             });
             expect(score.value).toBe(1);
@@ -72,13 +72,13 @@ describe('eval scorers', () => {
 
         test('tolerance boundary and currency mismatch behave as specified', () => {
             const withinTolerance = amountScore(
-                [{ amount: 1201, currency: 'EUR' }],
+                [{ sourceAmount: 1201, sourceCurrency: 'EUR' }],
                 { expectedAmounts: [{ value: 1200, currency: 'EUR', tolerancePct: 0.001 }] }
             );
             expect(withinTolerance.details.tp).toBe(1);
 
             const wrongCurrency = amountScore(
-                [{ amount: 1200, currency: 'HRK' }],
+                [{ sourceAmount: 1200, sourceCurrency: 'HRK' }],
                 { expectedAmounts: [{ value: 1200, currency: 'EUR' }] }
             );
             expect(wrongCurrency.details.tp).toBe(0);
@@ -86,14 +86,14 @@ describe('eval scorers', () => {
         });
 
         test('descriptionIncludes disambiguates equal-value entries', () => {
-            const entries = [{ amount: 25000, currency: 'EUR', description: 'Prodaja strojeva' }, { amount: 25000, currency: 'EUR', description: 'Najam prostorija' }];
+            const entries = [{ sourceAmount: 25000, sourceCurrency: 'EUR', description: 'Prodaja strojeva' }, { sourceAmount: 25000, sourceCurrency: 'EUR', description: 'Najam prostorija' }];
             expect(amountScore(entries, { expectedAmounts: [{ value: 25000, currency: 'EUR', descriptionIncludes: 'strojeva' }] }).details.tp).toBe(1);
             expect(amountScore(entries, { expectedAmounts: [{ value: 25000, currency: 'EUR', descriptionIncludes: 'nepoznata namjena' }] }).details.tp).toBe(0);
         });
 
         test('hallucinated extra amounts reduce precision via fp', () => {
             const score = amountScore(
-                [{ amount: 100, currency: 'EUR' }, { amount: 999999, currency: 'EUR' }],
+                [{ sourceAmount: 100, sourceCurrency: 'EUR' }, { sourceAmount: 999999, sourceCurrency: 'EUR' }],
                 { expectedAmounts: [{ value: 100, currency: 'EUR' }] }
             );
             expect(score.details.precision).toBeCloseTo(0.5);

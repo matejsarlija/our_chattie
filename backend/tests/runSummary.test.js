@@ -8,22 +8,16 @@
 // is stored once at completion, so the list response stays small.
 //
 // Fixture manifest:
-// - The real Lab package fixture (kerum-lab.json) is the CANONICAL full shape:
-//   identity.participantNames, coverage{analyzed,total,groundedClaims,...},
-//   moneyFlow.entries[] with amountEur/amountEurSource/dualCurrency.
-// - A real production run (e7139609) is the LEGACY shape: caseResult{caseNumber,
-//   court, participants[]}, NO pkg.moneyFlow, NO analysis.coverage. Expected:
-//   identity resolved, coverage/amounts null, no crash.
-// - Empty/absent resultJson must never throw — "never fail a run" applies to
-//   the summary path too, since a projection crash would fail a finished run.
-// - coverage.failedFiles exists as OBJECTS in the current producer but as bare
-//   STRINGS in the frozen replay fixture. A summary that dereferences
-//   file.fileName must render `undefined` for the old shape; this asserts we
-//   normalise instead.
+// - kerum-lab.json is the canonical full shape with `flows.entries`.
+// - A real production run is the legacy shape without `pkg.flows`; summary
+//   amounts remain null while case identity still resolves.
+// - failedFiles appears as objects or strings across persisted runs; both are
+// normalized without throwing.
 
 const { buildRunSummary } = require('../court-analysis/utils/runSummary');
-
-const LAB_PKG = require('./fixtures/replays/analysis-lab/kerum-lab.json');
+const { collectFlows } = require('../court-analysis/reasoning/flow');
+const LAB_FIXTURE = require('./fixtures/replays/analysis-lab/kerum-lab.json');
+const LAB_PKG = { ...LAB_FIXTURE, flows: collectFlows(LAB_FIXTURE.analyses.slice(0, 1)) };
 
 // ── real production run shape (e7139609-dd9f-42a6-b3b6-b9e29fb9c92d) ────────
 const LEGACY_RESULT = {
@@ -48,8 +42,8 @@ const LEGACY_RESULT = {
 };
 
 describe('buildRunSummary — canonical full package', () => {
-    // kerum-lab.json IS a ClusterEvidencePackage; a parsed result carries it
-    // under `clusterEvidencePackage`, so wrap it the way a real run does.
+    // Build the canonical flow surface from the fixture's extracted analyses;
+    // the frozen Lab artifact itself remains an immutable historical replay.
     const summary = buildRunSummary({
         run: { id: 'lab', query_type: 'oib', query_value: '11111111111' },
         resultJson: { clusterEvidencePackage: LAB_PKG },
@@ -130,10 +124,21 @@ describe('buildRunSummary — degraded and absent inputs', () => {
 });
 
 describe('buildRunSummary — money semantics', () => {
-    const wrap = (entries, extra = {}) => ({
-        run: { id: 'x', query_type: 'oib', query_value: '1' },
-        resultJson: { clusterEvidencePackage: { moneyFlow: { count: entries.length, entries, ...extra } } },
-    });
+    const wrap = (entries, extra = {}) => {
+        const flowEntries = entries.map((entry) => ({
+            kind: 'amount',
+            amountEur: entry.amountEur,
+            sourceAmount: entry.amount,
+            sourceCurrency: entry.currency || 'EUR',
+            direction: entry.direction ?? null,
+            dualCurrency: entry.dualCurrency,
+            currencyNote: entry.currencyNote,
+        }));
+        return {
+            run: { id: 'x', query_type: 'oib', query_value: '1' },
+            resultJson: { clusterEvidencePackage: { flows: { count: flowEntries.length, entries: flowEntries, ...extra } } },
+        };
+    };
 
     test('prefers a potraživanje over a larger obveza', () => {
         const summary = buildRunSummary(wrap([

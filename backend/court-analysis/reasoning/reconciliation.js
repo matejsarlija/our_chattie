@@ -16,14 +16,12 @@
 // Everything softer stays an openQuestion, not a conflict.
 //
 // Flow-consolidation PR3: `reconcileFlows` is the one shared entry point
-// over `pkg.flows`. The divergent-group check runs per kind (novac keeps
-// money's ratio rule + texts, other asset types keep property's
-// value-or-transferee rule + texts) so legacy outputs reproduce exactly;
-// totals-vs-parts and dual-mismatch residue run once over the whole array;
-// tražbina lifecycle delegates to propertyFlow's extracted implementation.
+// over `pkg.flows`. Divergent-group rules remain kind-specific; totals,
+// dual-mismatch residue, and tražbina lifecycle reconciliation run once over
+// the canonical array.
 
 const { normalizeText } = require('./indexer');
-const { reconcilePropertyFlows, reconcileTrazbinaLifecycle, formatValue } = require('./propertyFlow');
+const { reconcileTrazbinaLifecycle, formatValue } = require('./propertyFlow');
 
 const DIVERGENCE_RATIO_THRESHOLD = 1.05;
 // Description keys shorter than this are too generic to group safely
@@ -90,17 +88,6 @@ function isSameDocument(a, b) {
 // mixed-currency values.
 const effectiveFlowValue = (entry) => (Number.isFinite(entry?.valueEur) ? entry.valueEur : entry?.value);
 
-// Legacy money-view entries speak the amount vocabulary; map them onto the
-// flow shape (ids and provenance preserved) so the shared checks apply.
-function asNovacFlow(entry) {
-    if (!entry || typeof entry !== 'object') return null;
-    return {
-        ...entry,
-        assetType: entry.assetType || 'novac',
-        value: entry.value ?? entry.amount ?? null,
-        valueEur: entry.valueEur ?? entry.amountEur ?? null,
-    };
-}
 
 function flowGroupKey(entry) {
     const key = descriptionKey(entry?.description || '');
@@ -393,19 +380,4 @@ function reconcileFlows(flows, context = {}) {
     return { conflicts, openQuestions: dedupeQuestions(openQuestions), validationWarnings: dedupeQuestions(validationWarnings), valueChanges: lifecycle.valueChanges };
 }
 
-/**
- * Legacy entry point (flow-consolidation PR3): thin wrapper over the unified
- * engine. For money-vocabulary input the shared checks reproduce the
- * historical output exactly.
- * @param {object} moneyFlow - Output of collectMoneyFlows / deriveMoneyFlowView.
- * @returns {{conflicts: Array, openQuestions: Array}}
- */
-function reconcileMoneyFlows(moneyFlow) {
-    const entries = (Array.isArray(moneyFlow?.entries) ? moneyFlow.entries : [])
-        .map(asNovacFlow)
-        .filter(Boolean);
-    const result = reconcileFlows({ entries }, {});
-    return { conflicts: result.conflicts, openQuestions: result.openQuestions, validationWarnings: result.validationWarnings };
-}
-
-module.exports = { reconcileFlows, reconcileMoneyFlows, reconcilePropertyFlows, isSameDocument, descriptionKey, formatSourceValue, dedupeQuestions };
+module.exports = { reconcileFlows, isSameDocument, descriptionKey, formatSourceValue, dedupeQuestions };

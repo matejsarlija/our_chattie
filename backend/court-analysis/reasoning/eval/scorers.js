@@ -74,9 +74,9 @@ function retrievalMrr(retrievalResult, goldLabels) {
 const ABSOLUTE_AMOUNT_EPSILON = 0.01;
 
 function amountMatches(goldAmount, entry) {
-    if (!entry || typeof entry.amount !== 'number') return false;
+    if (!entry || typeof entry.sourceAmount !== 'number') return false;
     const currencyGold = String(goldAmount.currency || '').toUpperCase();
-    const currencyEntry = String(entry.currency || '').toUpperCase();
+    const currencyEntry = String(entry.sourceCurrency || '').toUpperCase();
     if (currencyGold && currencyEntry && currencyGold !== currencyEntry) return false;
 
     // descriptionIncludes disambiguates equal-value entries (e.g. two 25.000
@@ -89,7 +89,7 @@ function amountMatches(goldAmount, entry) {
     const tolerance = Number.isFinite(goldAmount.tolerancePct)
         ? Math.abs(goldAmount.value) * goldAmount.tolerancePct
         : ABSOLUTE_AMOUNT_EPSILON;
-    return Math.abs(entry.amount - goldAmount.value) <= Math.max(tolerance, ABSOLUTE_AMOUNT_EPSILON);
+    return Math.abs(entry.sourceAmount - goldAmount.value) <= Math.max(tolerance, ABSOLUTE_AMOUNT_EPSILON);
 }
 
 /**
@@ -127,7 +127,7 @@ function amountScore(moneyFlowEntries, goldLabels) {
         fn,
         precision,
         recall,
-        unmatchedExtracted: entries.filter((_, i) => !used.has(i)).map((e) => e.amount)
+        unmatchedExtracted: entries.filter((_, i) => !used.has(i)).map((entry) => entry.sourceAmount)
     });
 }
 

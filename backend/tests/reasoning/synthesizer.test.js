@@ -343,10 +343,10 @@ describe('Synthesizer', () => {
                 { id: 'analysis-newest', fileName: 'newest.pdf', summary: 'Najnovija analiza', decisionDate: '2025-02-10' },
                 { id: 'analysis-oldest', fileName: 'oldest.pdf', summary: 'Najstarija analiza', decisionDate: '2023-01-01' }
             ],
-            moneyFlow: {
+            flows: {
                 entries: [
-                    { sourceId: 'money-newest', amount: 500, currency: 'EUR', description: 'Novija tražbina', date: '2024-06-01' },
-                    { sourceId: 'money-oldest', amount: 100, currency: 'EUR', description: 'Starija tražbina', date: '2022-03-15' }
+                    { id: 'flow-1', kind: 'amount', docId: 'doc-newest', sourceAmount: 500, sourceCurrency: 'EUR', description: 'Novija tražbina', date: '2024-06-01' },
+                    { id: 'flow-2', kind: 'amount', docId: 'doc-oldest', sourceAmount: 100, sourceCurrency: 'EUR', description: 'Starija tražbina', date: '2022-03-15' }
                 ]
             }
         };

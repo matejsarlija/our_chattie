@@ -1,4 +1,4 @@
-const { reconcileMoneyFlows } = require('../../court-analysis/reasoning/reconciliation');
+const { reconcileFlows } = require('../../court-analysis/reasoning/reconciliation');
 
 // sourceId is required (no shared default): entries that are supposed to
 // represent different files must carry different ids, otherwise multi-entry
@@ -8,18 +8,26 @@ const entry = (overrides = {}) => {
     if (!overrides.sourceId) {
         throw new Error('entry() requires an explicit sourceId per entry — shared defaults mask same-document vs cross-document behavior.');
     }
+    const amount = overrides.amount ?? 1000;
+    const currency = overrides.currency ?? 'EUR';
     return {
-        amount: 1000,
-        currency: 'EUR',
-        description: 'Polog za troškove postupka',
-        fileName: 'dokument-1.pdf',
-        ...overrides
+        ...overrides,
+        kind: 'amount',
+        assetType: 'novac',
+        amount,
+        value: amount,
+        currency,
+        sourceAmount: amount,
+        sourceCurrency: currency,
+        valueEur: overrides.amountEur ?? (currency === 'EUR' ? amount : null),
+        description: overrides.description ?? 'Polog za troškove postupka',
+        fileName: overrides.fileName ?? 'dokument-1.pdf',
     };
 };
 
-describe('reconcileMoneyFlows', () => {
+describe('reconcileFlows for amount entries', () => {
     test('flags divergent amounts for the same purpose across documents', () => {
-        const result = reconcileMoneyFlows({
+        const result = reconcileFlows({
             entries: [
                 entry({ amount: 1200, description: 'Polog za troškove stečajnog postupka', fileName: 'a.pdf', sourceId: 's-a' }),
                 entry({ amount: 2500, description: 'polog za troskove stecajnog postupka', fileName: 'b.pdf', sourceId: 's-b' })
@@ -32,7 +40,7 @@ describe('reconcileMoneyFlows', () => {
     });
 
     test('divergence conflicts carry reconciliation provenance tags (M-05)', () => {
-        const result = reconcileMoneyFlows({
+        const result = reconcileFlows({
             entries: [
                 entry({ amount: 1200, description: 'Polog za troškove stečajnog postupka', fileName: 'a.pdf', sourceId: 's-a' }),
                 entry({ amount: 2500, description: 'polog za troskove stecajnog postupka', fileName: 'b.pdf', sourceId: 's-b' })
@@ -45,7 +53,7 @@ describe('reconcileMoneyFlows', () => {
     });
 
     test('does not flag matching duplicate descriptions', () => {
-        const result = reconcileMoneyFlows({
+        const result = reconcileFlows({
             entries: [
                 entry({ amount: 1200, sourceId: 's-a' }),
                 entry({ amount: 1200.005, description: 'polog za troskove postupka', fileName: 'b.pdf', sourceId: 's-b' })
@@ -55,7 +63,7 @@ describe('reconcileMoneyFlows', () => {
     });
 
     test('ignores generic one-token descriptions that would collide across documents', () => {
-        const result = reconcileMoneyFlows({
+        const result = reconcileFlows({
             entries: [
                 entry({ amount: 100, description: 'Iznos', fileName: 'a.pdf', sourceId: 's-a' }),
                 entry({ amount: 99999, description: 'iznos razlicit', fileName: 'b.pdf', sourceId: 's-b' })
@@ -66,7 +74,7 @@ describe('reconcileMoneyFlows', () => {
     });
 
     test('total-vs-parts mismatch becomes a validation warning, not a conflict or question (TR-1)', () => {
-        const result = reconcileMoneyFlows({
+        const result = reconcileFlows({
             entries: [
                 entry({ amount: 90000, description: 'Ukupno prijavljene tražbine', fileName: 'izvjestaj.pdf', sourceId: 's-izvjestaj' }),
                 entry({ amount: 84500, description: 'Tražbina banke', fileName: 'izvjestaj.pdf', sourceId: 's-izvjestaj' })
@@ -91,7 +99,7 @@ describe('reconcileMoneyFlows', () => {
     });
 
     test('matching total suppresses the question entirely', () => {
-        const result = reconcileMoneyFlows({
+        const result = reconcileFlows({
             entries: [
                 entry({ amount: 1000, description: 'Ukupno za naknade', sourceId: 's-doc' }),
                 entry({ amount: 600, description: 'Naknada vjerovniku A', sourceId: 's-doc' }),
@@ -108,7 +116,7 @@ describe('reconcileMoneyFlows', () => {
         // (hundreds of unrelated documents spanning years), producing a wildly
         // inflated, meaningless "sum of parts" and a nonsense openQuestion.
         // Totals only ever summarize line items within their own document.
-        const result = reconcileMoneyFlows({
+        const result = reconcileFlows({
             entries: [
                 entry({ amount: 90000, description: 'Ukupno prijavljene tražbine', fileName: 'izvjestaj.pdf', sourceId: 's-izvjestaj' }),
                 entry({ amount: 1200000000, description: 'Namirenje vjerovnika', fileName: 'nepovezan-dokument.pdf', sourceId: 's-nepovezan' })
@@ -117,13 +125,13 @@ describe('reconcileMoneyFlows', () => {
         expect(result.openQuestions).toHaveLength(0);
     });
 
-    test('empty money flow yields empty output without throwing', () => {
-        expect(reconcileMoneyFlows(null)).toEqual({ conflicts: [], openQuestions: [], validationWarnings: [] });
-        expect(reconcileMoneyFlows({ entries: [] })).toEqual({ conflicts: [], openQuestions: [], validationWarnings: [] });
+    test('empty flows yield empty output without throwing', () => {
+        expect(reconcileFlows(null)).toEqual({ conflicts: [], openQuestions: [], validationWarnings: [], valueChanges: [] });
+        expect(reconcileFlows({ entries: [] })).toEqual({ conflicts: [], openQuestions: [], validationWarnings: [], valueChanges: [] });
     });
 
     test('K-03: equal values in HRK and EUR do not conflict (consolidated scale)', () => {
-        const result = reconcileMoneyFlows({
+        const result = reconcileFlows({
             entries: [
                 entry({ amount: 1000, currency: 'EUR', amountEur: 1000, description: 'Polog za troškove stečajnog postupka', fileName: 'a.pdf', sourceId: 's-a' }),
                 entry({ amount: 7534.5, currency: 'HRK', amountEur: 1000, description: 'polog za troskove stecajnog postupka', fileName: 'b.pdf', sourceId: 's-b' })
@@ -132,7 +140,7 @@ describe('reconcileMoneyFlows', () => {
         expect(result.conflicts).toHaveLength(0);
     });
 
-    test('K-03: genuinely different values across currencies still conflict on EUR scale', () => {        const result = reconcileMoneyFlows({
+    test('K-03: genuinely different values across currencies still conflict on EUR scale', () => {        const result = reconcileFlows({
             entries: [
                 entry({ amount: 1000, currency: 'EUR', amountEur: 1000, description: 'Polog za troškove stečajnog postupka', fileName: 'a.pdf', sourceId: 's-a' }),
                 entry({ amount: 15000, currency: 'HRK', amountEur: 1991.01, description: 'polog za troskove stecajnog postupka', fileName: 'b.pdf', sourceId: 's-b' })
@@ -143,7 +151,7 @@ describe('reconcileMoneyFlows', () => {
     });
 
     test('TR-2: one figure stated twice in the same filing (HRK + EUR) collapses silently', () => {
-        const result = reconcileMoneyFlows({
+        const result = reconcileFlows({
             entries: [
                 entry({ amount: 355134652.87, currency: 'HRK', amountEur: 47134468.55, description: 'Iznos prijavljenih tražbina razlučnih vjerovnika', fileName: 'izvjestaj.pdf', sourceId: 's-doc', sourceDocumentLinkId: 'link-1' }),
                 entry({ amount: 47134468.49, currency: 'EUR', amountEur: 47134468.49, description: 'Iznos prijavljenih tražbina razlučnih vjerovnika', fileName: 'izvjestaj.pdf', sourceId: 's-doc', sourceDocumentLinkId: 'link-1' })
@@ -165,7 +173,7 @@ describe('reconcileMoneyFlows', () => {
         // same-document dual display is routine, and flagging it would
         // recreate the noise this track removes. Cross-source pairs stay
         // reviewable (next test).
-        const result = reconcileMoneyFlows({
+        const result = reconcileFlows({
             entries: [
                 entry({ amount: 355134652.87, currency: 'HRK', amountEur: 47134468.49, description: 'Iznos prijavljenih tražbina razlučnih vjerovnika', fileName: 'izvjestaj.pdf', sourceId: 's-doc', sourceDocumentLinkId: 'link-1' }),
                 entry({ amount: 355134652, currency: 'EUR', description: 'Iznos prijavljenih tražbina razlučnih vjerovnika', fileName: 'izvjestaj.pdf', sourceId: 's-doc', sourceDocumentLinkId: 'link-1' })
@@ -177,7 +185,7 @@ describe('reconcileMoneyFlows', () => {
     });
 
     test('TR-2: cross-source HRK/EUR mismatch stays reviewable with both raw values', () => {
-        const result = reconcileMoneyFlows({
+        const result = reconcileFlows({
             entries: [
                 entry({ amount: 355134652.87, currency: 'HRK', amountEur: 47134468.49, description: 'Iznos prijavljenih tražbina razlučnih vjerovnika', fileName: 'izvjestaj-2024.pdf', sourceId: 's-2024' }),
                 entry({ amount: 355134652, currency: 'EUR', description: 'Iznos prijavljenih tražbina razlučnih vjerovnika', fileName: 'izvjestaj-2025.pdf', sourceId: 's-2025' })
@@ -189,7 +197,7 @@ describe('reconcileMoneyFlows', () => {
     });
 
     test('TR-2 regression: shared local path does not collapse dual values from distinct filings', () => {
-        const result = reconcileMoneyFlows({
+        const result = reconcileFlows({
             entries: [
                 entry({ amount: 355134652.87, currency: 'HRK', amountEur: 47134468.49, description: 'Iznos prijavljenih tražbina razlučnih vjerovnika', fileName: 'Podnesak.pdf', sourceId: '/tmp/Podnesak.pdf', sourceDocumentLinkId: 'St-2/2013::entry-1::doc-1' }),
                 entry({ amount: 355134652, currency: 'EUR', description: 'Iznos prijavljenih tražbina razlučnih vjerovnika', fileName: 'Podnesak.pdf', sourceId: '/tmp/Podnesak.pdf', sourceDocumentLinkId: 'St-2/2013::entry-2::doc-1' })
@@ -199,7 +207,7 @@ describe('reconcileMoneyFlows', () => {
     });
 
     test('TR-2: same-source all-EUR figures at a coincidental 7.5x ratio still conflict', () => {
-        const result = reconcileMoneyFlows({
+        const result = reconcileFlows({
             entries: [
                 entry({ amount: 1000, currency: 'EUR', description: 'Naknada upravitelju', fileName: 'x.pdf', sourceId: 's-x' }),
                 entry({ amount: 7534.5, currency: 'EUR', description: 'Naknada upravitelju', fileName: 'x.pdf', sourceId: 's-x' })
@@ -209,7 +217,7 @@ describe('reconcileMoneyFlows', () => {
     });
 
     test('TL-2: amountRole total is detected without keyword markers', () => {
-        const result = reconcileMoneyFlows({
+        const result = reconcileFlows({
             entries: [
                 entry({ amount: 96500, description: 'Zbroj potraživanja na dan', amountRole: 'total', fileName: 'popis.pdf', sourceId: 's-doc' }),
                 entry({ amount: 84500, description: 'Glavnica vjerovnika Alfa', amountRole: 'line_item', fileName: 'popis.pdf', sourceId: 's-doc' }),
@@ -223,7 +231,7 @@ describe('reconcileMoneyFlows', () => {
 
     test('TL-2: amountRole overrides keyword guessing in both directions', () => {
         // 'Ukupno' in the description but role says line_item → treated as part.
-        const lineItem = reconcileMoneyFlows({
+        const lineItem = reconcileFlows({
             entries: [
                 entry({ amount: 96500, description: 'Ukupno potraživanje', amountRole: 'total', fileName: 'x.pdf', sourceId: 's-x' }),
                 entry({ amount: 90000, description: 'Ukupno djelomično namirenje', amountRole: 'line_item', fileName: 'x.pdf', sourceId: 's-x' })
@@ -232,7 +240,7 @@ describe('reconcileMoneyFlows', () => {
         expect(lineItem.validationWarnings).toHaveLength(1);
 
         // No keyword anywhere, but role declares the total → still caught.
-        const roleOnly = reconcileMoneyFlows({
+        const roleOnly = reconcileFlows({
             entries: [
                 entry({ amount: 1000, description: 'Zbroj potraživanja na dan', amountRole: 'total', fileName: 'y.pdf', sourceId: 's-y' }),
                 entry({ amount: 600, description: 'Glavnica', fileName: 'y.pdf', sourceId: 's-y' })
@@ -243,7 +251,7 @@ describe('reconcileMoneyFlows', () => {
     });
 
     test('TR-2: same-source mixed-currency pair with a genuine gap still conflicts', () => {
-        const result = reconcileMoneyFlows({
+        const result = reconcileFlows({
             entries: [
                 entry({ amount: 100000, currency: 'HRK', amountEur: 13272.28, description: 'Trošak objave', fileName: 'x.pdf', sourceId: 's-x' }),
                 entry({ amount: 20000, currency: 'EUR', description: 'Trošak objave', fileName: 'x.pdf', sourceId: 's-x' })
@@ -257,7 +265,7 @@ describe('reconcileMoneyFlows', () => {
         // document: on the EUR scale the sum (2,000) mismatches the total →
         // one question quoting the EUR-scale sum. A raw same-currency-only
         // comparison would see no EUR parts and stay silent.
-        const result = reconcileMoneyFlows({
+        const result = reconcileFlows({
             entries: [
                 entry({ amount: 1000, currency: 'EUR', amountEur: 1000, description: 'Ukupno za naknade', fileName: 'izvjestaj.pdf', sourceId: 's-doc' }),
                 entry({ amount: 15069, currency: 'HRK', amountEur: 2000, description: 'Naknada vjerovniku A', fileName: 'izvjestaj.pdf', sourceId: 's-doc' })
@@ -269,7 +277,7 @@ describe('reconcileMoneyFlows', () => {
     });
 
     test('K-04: dual-mismatch entries produce their own reconciliation question', () => {
-        const result = reconcileMoneyFlows({
+        const result = reconcileFlows({
             entries: [
                 entry({
                     amount: 248.86, currency: 'EUR', amountEur: 248.86, amountEurSource: 'stated',
@@ -302,7 +310,7 @@ describe('reconcileMoneyFlows', () => {
     });
 
     test('total-vs-parts ignores same-named totals from unrelated files', () => {
-        const result = reconcileMoneyFlows({
+        const result = reconcileFlows({
             entries: [
                 entry({ amount: 90000, description: 'Ukupno prijavljene tražbine', fileName: 'Podnesak.pdf', sourceId: '/tmp/a.pdf' }),
                 entry({ amount: 84500, description: 'Tražbina banke', fileName: 'Podnesak.pdf', sourceId: '/tmp/b.pdf' })
@@ -322,7 +330,7 @@ describe('dedupeQuestions (TD-3)', () => {
             entry({ amount: 3000000, description: 'Glavnica potraživanja', fileName, sourceId: `s-t-${i}` }),
             entry({ amount: 841706.15, description: 'Zatezne kamate', fileName, sourceId: `s-t-${i}` })
         ]));
-        const result = reconcileMoneyFlows({ entries });
+        const result = reconcileFlows({ entries });
         // TR-1 moved same-document totals to extraction-validation warnings;
         // TD-3 folds the repeats there instead of in openQuestions.
         const totals = result.validationWarnings.filter((q) => q.text.includes('Navodni ukupni iznos'));

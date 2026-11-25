@@ -118,12 +118,19 @@ describe('LifecycleTimeline', () => {
     expect(screen.getByText('Prikaz 11–12 od 12 grupa')).toBeInTheDocument();
   });
 
-  test('a single-record row still shows its source filing', () => {
+  test('a single-record row shows canonical amount, linked source and provenance', () => {
     render(<LifecycleTimeline valueChanges={[{
       originalValue: 100, latestValue: 100,
-      stages: [STAGE('only', '2020-01-01', 'prijava', 100, { fileName: 'Rjesenje_o_otvaranju.pdf' })],
+      stages: [STAGE('only', '2020-01-01', 'prijava', undefined, {
+        amountEur: 100, sourceAmount: 120, sourceCurrency: 'HRK', docId: 'doc-1',
+        sourcePages: [5], sourceChunkId: 'chunk-1', fileName: 'Rjesenje_o_otvaranju.pdf',
+      })],
+    }]} sourceDocuments={[{
+      id: 'doc-1', fileName: 'Rjesenje_o_otvaranju.pdf', url: 'https://court.example.test/source.pdf',
     }]} />);
-    expect(screen.getAllByText('Rjesenje_o_otvaranju.pdf')).toHaveLength(2);
+    expect(screen.getAllByText(/Rjesenje_o_otvaranju\.pdf/).length).toBeGreaterThan(0);
+    expect(screen.getByRole('link', { name: /Rjesenje_o_otvaranju\.pdf · str\. 5 · dio chunk-1/ })).toHaveAttribute('href', 'https://court.example.test/source.pdf');
+    expect(screen.getAllByText(/str\. 5 · dio chunk-1/).length).toBeGreaterThan(0);
   });
 
   test('explains why no balance comparison was computed and links the source records', () => {

@@ -1,5 +1,5 @@
 const { deriveEntryDisplayId } = require('../utils/entryDisplayId');
-const { collectFlows, deriveMoneyFlowView, derivePropertyFlowView, propertyIdByFlowId } = require('./flow');
+const { collectFlows } = require('./flow');
 const { buildCitationGraph } = require('./citationGraph');
 const { reconcileFlows } = require('./reconciliation');
 const { countGroundedClaims } = require('./grounding');
@@ -370,8 +370,8 @@ function attachAnalysesToEvidencePackage(pkg, processedCases, clusterId = null) 
             recipientOib: row.parties?.recipientOib, isplatniRed: row.isplatniRed,
             claimRegistryNumber: row.claimRegistryNumber, filingReference: row.filingReference,
             quote: row.quote, grounded: row.grounded,
+            sourcePages: row.sourcePages, sourceChunkId: row.sourceChunkId,
             filings: row.filings,
-            sources: row.filings.map((filing) => filing.analysisId).filter(Boolean),
         }] : [],
         propertyFlow: row?.kind === 'property' ? [{
             description: row.description, value: row.value, valueEur: row.valueEur,
@@ -384,54 +384,27 @@ function attachAnalysesToEvidencePackage(pkg, processedCases, clusterId = null) 
             supersedes: row.supersedes, valueRole: row.valueRole,
             crossCategoryFactId: row.crossCategoryFactId,
             quote: row.quote, grounded: row.grounded,
+            sourcePages: row.sourcePages, sourceChunkId: row.sourceChunkId,
             filings: row.filings,
-            sources: row.filings.map((filing) => filing.analysisId).filter(Boolean),
         }] : [],
     }));
     const flows = collectFlows(flowAnalyses);
-    // Backward-compatible derived views (flow-consolidation PR2): the
-    // unified array is filtered + renamed back to today's exact shapes, so
-    // synthesizer, frontend and persisted-run readers see zero change.
-    // `pkg.flows` is the new additive forward-looking surface.
-    const moneyFlow = deriveMoneyFlowView(flows);
-    const propertyFlow = derivePropertyFlowView(flows);
-    // Deterministic reconciliation (Phase 0.3) over the unified array
-    // (flow-consolidation PR3): one engine, then partitioned back into the
-    // legacy views by finding kind — the single ownership chain
-    // pkg.reconciliation → meta → report.conflicts is unchanged.
-    const flowReconciliation = reconcileFlows(flows, { analyses });
-    const moneyReconciliation = {
-        conflicts: flowReconciliation.conflicts.filter((c) => c.kind === 'arithmetic'),
-        openQuestions: flowReconciliation.openQuestions.filter((q) => q.kind === 'arithmetic'),
-    };
-    // L-02 needs the normalized analyses (citedFilingReferences) alongside
-    // the flow, so the citation-link signal resolves against real nodes.
-    // valueChanges stage ids map back to the legacy prop-N sequence
-    // (migration shim — the engine reasons in flow-N ids internally).
-    const propIdByFlowId = propertyIdByFlowId(flows);
-    const legacyValueChanges = flowReconciliation.valueChanges.map((timeline) => ({
-        ...timeline,
-        stages: (timeline.stages || []).map((stage) => ({
-            ...stage,
-            id: propIdByFlowId.get(stage.id) ?? stage.id,
-        })),
-    }));
-    const propertyReconciliation = {
-        conflicts: flowReconciliation.conflicts.filter((c) => c.kind === 'property' || c.kind === 'lifecycle'),
-        openQuestions: flowReconciliation.openQuestions.filter((q) => q.kind === 'property' || q.kind === 'lifecycle'),
-        valueChanges: legacyValueChanges,
-    };
+    // Keep a single canonical flow surface and one reconciliation result.
+    const reconciliation = reconcileFlows(flows, { analyses });
+    const timelinesByFlowId = new Map();
+    for (const timeline of reconciliation.valueChanges || []) {
+        for (const stage of timeline.stages || []) {
+            if (!timelinesByFlowId.has(stage.id)) timelinesByFlowId.set(stage.id, []);
+            timelinesByFlowId.get(stage.id).push(timeline);
+        }
+    }
+    for (const entry of flows.entries) {
+        entry.valueChanges = timelinesByFlowId.get(entry.id) || [];
+    }
     // L-02 — filing citation graph attached for downstream consumers.
     const citationGraph = buildCitationGraph(analyses, pkg.entries);
     const proceduralFlow = collectProceduralEvents(analyses, pkg.entries);
     const proceduralReconciliation = reconcileProceduralEvents(proceduralFlow, { analyses, citationGraph });
-    const reconciliation = {
-        conflicts: [...(moneyReconciliation.conflicts || []), ...(propertyReconciliation.conflicts || [])],
-        openQuestions: [...(moneyReconciliation.openQuestions || []), ...(propertyReconciliation.openQuestions || [])],
-        // TR-1: extraction-validation warnings travel with the reconciliation
-        // payload (persisted via meta) but never seed report.openQuestions.
-        validationWarnings: [...(flowReconciliation.validationWarnings || [])],
-    };
 
     const total = individualAnalyses.length;
     const analyzed = analyses.length;
@@ -481,9 +454,6 @@ function attachAnalysesToEvidencePackage(pkg, processedCases, clusterId = null) 
         chunks,
         coverage,
         flows,
-        moneyFlow,
-        propertyFlow,
-        propertyReconciliation,
         citationGraph,
         reconciliation,
         proceduralFlow: proceduralReconciliation,

@@ -21,7 +21,7 @@ describe('queryPlanner — model-planned retrieval queries (Phase 1.3)', () => {
         ],
         analyses: [{ fileName: 'rjesenje.pdf' }, { fileName: 'izvjestaj.pdf' }],
         chunks: [{ metadata: { fileName: 'rjesenje.pdf' } }],
-        moneyFlow: { currencyTotals: { EUR: 85500 } }
+        flows: { count: 1, entries: [{ kind: 'amount', sourceAmount: 85500, sourceCurrency: 'EUR' }] }
     });
 
     describe('buildInventory', () => {
