@@ -614,6 +614,16 @@ function createSqliteStore(options = {}) {
       })();
       return requireRun(analysisId);
     },
+    async startAnalysisRun({ analysisId }) {
+      db.prepare(`UPDATE runs SET status = 'running', updated_at = ? WHERE id = ? AND status = 'queued'`).run(nowIso(), analysisId);
+      return requireRun(analysisId);
+    },
+    async cancelAnalysisRun({ analysisId }) {
+      const now = nowIso();
+      db.prepare(`UPDATE runs SET status = 'canceled', error_message = NULL, completed_at = ?, updated_at = ?
+        WHERE id = ? AND status IN ('queued', 'running')`).run(now, now, analysisId);
+      return requireRun(analysisId);
+    },
     async listAnalysisRuns({ limit, offset, includeResults = false }) {
       const count = db.prepare('SELECT COUNT(*) AS count FROM runs').get().count;
       const rows = db.prepare(`SELECT runs.*, ${includeResults ? 'run_artifacts.result_text, run_artifacts.result_json' : 'NULL AS result_text, NULL AS result_json'}
@@ -627,6 +637,12 @@ function createSqliteStore(options = {}) {
     async getAnalysisEvents({ analysisId }) {
       return db.prepare('SELECT id, run_id AS analysis_id, seq, event_type, message, metadata_json, created_at FROM run_events WHERE run_id = ? ORDER BY seq ASC')
         .all(analysisId).map((event) => ({ ...event, metadata: parseJson(event.metadata_json, {}) }));
+    },
+    async getAnalysisEventsAfterSeq({ analysisId, afterSeq = 0 }) {
+      return db.prepare(`SELECT id, run_id AS analysis_id, seq, event_type, message, metadata_json, created_at
+        FROM run_events WHERE run_id = ? AND seq > ? ORDER BY seq ASC`)
+        .all(analysisId, Math.max(0, Math.floor(Number(afterSeq) || 0)))
+        .map((event) => ({ ...event, metadata: parseJson(event.metadata_json, {}) }));
     },
     async getAnalysisRunFull({ id }) {
       const run = requireRun(id);

@@ -13,7 +13,7 @@ const { createAnalysisReportRetryHandler } = require('../http/analysisReportRetr
 const { generateClusterReport, composeOverviewMarkdown } = require('../court-analysis/reasoning/synthesis/reportService');
 const logger = require('../services/logger');
 
-function createAnalysisRunsRouter({ analysisStore, readLimiter, writeLimiter }) {
+function createAnalysisRunsRouter({ analysisStore, readLimiter, writeLimiter, runAbortRegistry, runBus }) {
   const router = express.Router();
 
   router.get('/runs', readLimiter, async (req, res) => {
@@ -60,16 +60,32 @@ function createAnalysisRunsRouter({ analysisStore, readLimiter, writeLimiter }) 
       res.status(404).json({ error: 'Analysis events not found.' });
     }
   });
+  router.post('/runs/:id/cancel', writeLimiter, async (req, res) => {
+    try {
+      const run = await analysisStore.getAnalysisRun({ id: req.params.id });
+      if (!['queued', 'running'].includes(run.status)) {
+        return res.status(409).json({ error: 'Analysis run is not active.', run });
+      }
+      const controller = runAbortRegistry.get(req.params.id);
+      if (!controller) return res.status(409).json({ error: 'Analysis run cannot be canceled.' });
+      controller.abort(new Error('Analysis canceled by user.'));
+      const canceledRun = await analysisStore.cancelAnalysisRun({ analysisId: req.params.id });
+      if (canceledRun.status !== 'canceled') {
+        return res.status(409).json({ error: 'Analysis run is no longer active.', run: canceledRun });
+      }
+      await runBus.publishTerminal(req.params.id, 'canceled');
+      return res.json({ analysisId: req.params.id, status: 'canceled' });
+    } catch (error) {
+      logger.agent.error('[Analysis Runs] cancel failed:', error.message);
+      return res.status(404).json({ error: 'Analysis run not found.' });
+    }
+  });
+
 
   const analysisRunStreamHandler = createAnalysisRunStreamHandler({
-    getAnalysisRunFull: analysisStore.getAnalysisRunFull,
-    buildSseEvent,
-    isTerminalStatus,
-    buildCursor,
-    didRunChange,
-    getNewEvents,
-    shouldStartStreamTimers,
-    streamPollMs: 1500,
+    getAnalysisRun: analysisStore.getAnalysisRun,
+    getAnalysisEventsAfterSeq: analysisStore.getAnalysisEventsAfterSeq,
+    runBus,
     heartbeatMs: 25000,
   });
   router.get('/runs/:id/stream', readLimiter, analysisRunStreamHandler);

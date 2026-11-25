@@ -18,12 +18,13 @@ function recoverServerState({ analysisStore, uploadsDir }) {
   return { interruptedRuns, removedUploadEntries };
 }
 
-function installShutdownHandlers({ server, queue, runAbortRegistry, analysisStore, processRef = process, onError = console.error }) {
+function installShutdownHandlers({ server, queue, runAbortRegistry, analysisStore, runBus, processRef = process, onError = console.error }) {
   let shutdownPromise = null;
 
   function shutdown(signal = 'shutdown') {
     if (shutdownPromise) return shutdownPromise;
     const runIds = runAbortRegistry.abortAll(new Error(`Server shutting down (${signal})`));
+    runBus?.closeAll();
     const serverClosed = new Promise((resolve, reject) => {
       if (!server?.listening) return resolve();
       server.close((error) => (error ? reject(error) : resolve()));

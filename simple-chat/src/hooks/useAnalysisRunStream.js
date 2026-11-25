@@ -57,13 +57,11 @@ export function useAnalysisRunStream({
         case 'snapshot':
           callbacksRef.current.onSnapshot?.(payload);
           break;
-        case 'run.updated':
-          callbacksRef.current.onRunUpdated?.(payload);
-          break;
-        case 'event.created':
-          callbacksRef.current.onEventCreated?.(payload);
+        case 'stage.progress':
+          callbacksRef.current.onEventCreated?.({ event: payload.event });
           break;
         case 'terminal':
+        case 'run.terminal':
           callbacksRef.current.onTerminal?.(payload);
           controller.abort();
           break;

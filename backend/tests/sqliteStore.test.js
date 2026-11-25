@@ -138,4 +138,15 @@ describe('sqliteStore', () => {
         expect(store.markRunsInterrupted([done.id])).toBe(1);
         expect((await store.getAnalysisRun({ id: done.id })).status).toBe('interrupted');
     });
+
+    test('replays persisted run events strictly after the requested sequence', async () => {
+        const run = await store.createAnalysisRun({ status: 'queued' });
+        await store.appendAnalysisEvents({
+            analysisId: run.id,
+            events: [1, 2, 3].map((seq) => ({ eventType: 'stage.progress', message: `event-${seq}` })),
+        });
+
+        const replay = await store.getAnalysisEventsAfterSeq({ analysisId: run.id, afterSeq: 1 });
+        expect(replay.map((event) => event.seq)).toEqual([2, 3]);
+    });
 });

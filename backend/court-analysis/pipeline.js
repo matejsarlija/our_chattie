@@ -728,6 +728,11 @@ function buildDiscoveryResult(casesToProcess, options = {}, progressCallback) {
     };
 }
 
+function throwIfAborted(signal) {
+    if (!signal?.aborted) return;
+    throw signal.reason || Object.assign(new Error('Analysis aborted.'), { name: 'AbortError' });
+}
+
 function resolveAnalysisArgs(optionsOrProgressCallback, maybeProgressCallback) {
     const options = optionsOrProgressCallback && typeof optionsOrProgressCallback === 'object'
         ? optionsOrProgressCallback
@@ -738,6 +743,8 @@ function resolveAnalysisArgs(optionsOrProgressCallback, maybeProgressCallback) {
         query: options.query || null,
         discoverySource: options.discoverySource || null,
         analysisStore: options.analysisStore || null,
+        runId: options.runId || null,
+        signal: options.signal || null,
         ...depth,
         progressCallback: typeof optionsOrProgressCallback === 'function'
             ? optionsOrProgressCallback
@@ -765,6 +772,7 @@ async function runCourtAnalysis(searchTerm, optionsOrProgressCallback, progressC
             scrapeLimit: resolved.scrapeLimit,
         });
         callback?.({ step: 'discovering', progress: 10, message: 'Pretražujem sudske zapise za nedavne objave...' });
+        throwIfAborted(resolved.signal);
         await automator.init();
         const scrapeResult = await automator.searchAndGetLatestCasesWithDocuments(
             searchTerm,
@@ -775,6 +783,7 @@ async function runCourtAnalysis(searchTerm, optionsOrProgressCallback, progressC
             resolved.query || null,
             resolved.scanDepth
         );
+        throwIfAborted(resolved.signal);
         const { casesToProcess, discoveryMetadata } = normalizeScraperResult(scrapeResult);
 
         callback?.({
@@ -798,6 +807,8 @@ async function runCourtAnalysis(searchTerm, optionsOrProgressCallback, progressC
             discoveryMetadata,
             scanDepth: resolved.scanDepth,
             analysisStore: resolved.analysisStore,
+            signal: resolved.signal,
+            runId: resolved.runId,
         });
     } catch (error) {
         logger.error('pipeline.runCourtAnalysis', 'Court analysis failed', { runId: resolved.runId || null, error: error.message });
@@ -931,6 +942,7 @@ async function processScrapedCases(casesToProcess, progressCallback, options = {
 
 
         if (selectedReasoningCluster) {
+        throwIfAborted(resolvedOptions.signal);
             const cluster = selectedReasoningCluster;
             const clusterId = cluster.clusterId || cluster.caseNumber || 'anonymous-1';
             const clusterSummary = discoverySummary.clusters.find((summary) => summary.clusterId === clusterId);
@@ -976,9 +988,11 @@ async function processScrapedCases(casesToProcess, progressCallback, options = {
                         }));
                     }
                 },
+                signal: resolvedOptions.signal,
             });
             stageAwareProgress?.({ step: 'downloading', message: `Preuzeto ${downloadedFiles.length}/${documentLinks.length} datoteka za predmet ${caseInfo.caseNumber}.` });
 
+            throwIfAborted(resolvedOptions.signal);
             // 2b. Unzip
             stageAwareProgress?.({ step: 'extracting', message: `Raspakiram datoteke za predmet ${caseInfo.caseNumber}...` });
             const filesForAnalysis = [];
@@ -1029,7 +1043,15 @@ async function processScrapedCases(casesToProcess, progressCallback, options = {
                 total: null,
                 unit: 'datoteka',
             }));
+            let preflightDone = 0;
+            stageAwareProgress?.(buildStageCounterEvent({
+                stage: 'preflight',
+                done: 0,
+                total: downloadedFiles.length,
+                unit: 'datoteka',
+            }));
             for (const file of downloadedFiles) {
+                throwIfAborted(resolvedOptions.signal);
                 extractedFilePaths.push(file.filePath);
                 if (path.extname(file.filePath).toLowerCase() === '.zip') {
                     const uploadsDir = path.resolve(__dirname, '../uploads');
@@ -1059,6 +1081,13 @@ async function processScrapedCases(casesToProcess, progressCallback, options = {
                     extractedCount++;
                     emitExtractCounter();
                 }
+                preflightDone += 1;
+                stageAwareProgress?.(buildStageCounterEvent({
+                    stage: 'preflight',
+                    done: preflightDone,
+                    total: downloadedFiles.length,
+                    unit: 'datoteka',
+                }));
             }
             
             allFilesToCleanup.push(...extractedFilePaths);
@@ -1109,7 +1138,11 @@ async function processScrapedCases(casesToProcess, progressCallback, options = {
 
             // 2c. Analyze THIS case's documents
             stageAwareProgress?.({ step: 'reasoning', message: `Analiziram ${filesForAnalysis.length} datoteka za predmet ${caseInfo.caseNumber}...` });
-            const analysis = await analyzeClusterDocuments({ files: filesForAnalysis, caseInfo: caseInfo, progressCallback: stageAwareProgress, usageTracker, onUsage: emitUsage, runId, sqliteStore: resolvedOptions.analysisStore });
+            const analysis = await analyzeClusterDocuments({
+                files: filesForAnalysis, caseInfo, progressCallback: stageAwareProgress, usageTracker, onUsage: emitUsage,
+                runId, sqliteStore: resolvedOptions.analysisStore, signal: resolvedOptions.signal,
+            });
+            throwIfAborted(resolvedOptions.signal);
             const analysisCoverage = analysis?.coverage || {};
             stageAwareProgress?.({
                 step: 'reasoning',

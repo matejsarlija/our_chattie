@@ -50,20 +50,17 @@ export const useCourtAnalysisStream = () => {
     const controllerRef = useRef(null);
 
     const streamCourtAnalysis = async (queryInput, callbacks = {}, options = {}) => {
-        const COURT_ANALYSIS_URL = env.courtAnalysisUrl;
         const payload = buildCourtAnalysisPayload(queryInput, options);
-
         setIsLoading(true);
         setProgress(0);
         controllerRef.current = new AbortController();
 
         if (isNonProductionRuntime()) {
-            // Useful for debugging payload contract changes during rollout.
             console.debug('[streamCourtAnalysis] payload query:', payload.query);
         }
 
         try {
-            const response = await fetch(COURT_ANALYSIS_URL, {
+            const response = await fetch(env.courtAnalysisUrl, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload),
@@ -78,59 +75,15 @@ export const useCourtAnalysisStream = () => {
                 throw apiError;
             }
 
-            if (!response.body) {
-                throw new Error('Response body is not available');
+            const accepted = await response.json();
+            if (response.status !== 202 || !accepted?.analysisId || accepted.status !== 'queued') {
+                throw new Error('Server returned an invalid queued-analysis response.');
             }
-
-            const reader = response.body.getReader();
-            const decoder = new TextDecoder();
-            let messageBuffer = '';
-
-            const dispatch = (data) => {
-                if (!data || !data.trim()) return;
-                if (!data.startsWith('data:')) return;
-
-                try {
-                    const jsonData = data.replace(/^data:\s*/, '');
-                    const parsedData = JSON.parse(jsonData);
-
-                    if (parsedData.progress !== undefined) {
-                        setProgress(parsedData.progress);
-                        callbacks.onProgress?.(parsedData);
-                    }
-
-                    if (parsedData.error) {
-                        callbacks.onError?.(parsedData.error, parsedData);
-                    }
-
-                    if (parsedData.step === 'complete' || parsedData.complete || parsedData.done) {
-                        callbacks.onComplete?.(parsedData.data || parsedData);
-                    }
-
-                    callbacks.onMessage?.(parsedData);
-                } catch (e) {
-                    console.error('Error parsing stream data:', e);
-                    callbacks.onError?.('Failed to process server response', e);
-                }
-            };
-
-            while (true) {
-                const { done, value } = await reader.read();
-                if (done) break;
-
-                messageBuffer += decoder.decode(value, { stream: true });
-
-                let boundaryIndex;
-                while ((boundaryIndex = messageBuffer.indexOf('\n\n')) >= 0) {
-                    const completeMessage = messageBuffer.substring(0, boundaryIndex);
-                    messageBuffer = messageBuffer.substring(boundaryIndex + 2);
-                    dispatch(completeMessage);
-                }
-            }
+            callbacks.onAccepted?.(accepted);
+            return accepted;
         } catch (err) {
-            if (err.name !== 'AbortError') {
-                callbacks.onError?.(err.message || 'Unknown error occurred', err);
-            }
+            if (err.name !== 'AbortError') callbacks.onError?.(err.message || 'Unknown error occurred', err);
+            return null;
         } finally {
             setIsLoading(false);
             controllerRef.current = null;

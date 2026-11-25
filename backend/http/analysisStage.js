@@ -4,6 +4,8 @@ const CANONICAL_STAGES = new Set([
   'discovering',
   'grouping',
   'downloading',
+  'preflight',
+  'ocr',
   'extracting',
   'chunking',
   'retrieving',
@@ -23,6 +25,8 @@ const LEGACY_TO_CANONICAL = {
   fetching: 'downloading',
   analyzing: 'reasoning',
   comparing: 'reasoning',
+  ocr_retry: 'ocr',
+  preparing_files: 'preflight',
 };
 
 function normalizeAnalysisProgressEvent(event) {

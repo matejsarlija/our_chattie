@@ -734,6 +734,7 @@ async function extractTextViaOCR(filePath, progressCallback, options = {}) {
     const pageTexts = new Map();
 
     try {
+        throwIfSignalAborted(options.signal);
         const fileBytes = fs.readFileSync(filePath);
         const maxBytes = resolvePdfMaxBytes();
         if (fileBytes.length > maxBytes) {
@@ -779,6 +780,7 @@ async function extractTextViaOCR(filePath, progressCallback, options = {}) {
         // taken when more than one page is missing — a single page gains
         // nothing from batching and would only add marker-parsing risk.
         if (pendingPageNumbers.length > 1) {
+            throwIfSignalAborted(options.signal);
             progressCallback &&
                 progressCallback({
                     step: "analyzing",
@@ -791,6 +793,7 @@ async function extractTextViaOCR(filePath, progressCallback, options = {}) {
                 // instruction's trailing position never shifts page numbering.
                 const content = [];
                 for (const pageNumber of pendingPageNumbers) {
+                    throwIfSignalAborted(options.signal);
                     const page = await pdf.getPage(pageNumber);
                     const imageBuffer = await renderPageToJpeg(page);
                     content.push({
@@ -801,6 +804,7 @@ async function extractTextViaOCR(filePath, progressCallback, options = {}) {
                 content.push({ type: "text", text: buildOcrBatchInstruction() });
                 const message = { role: "user", content };
 
+                throwIfSignalAborted(options.signal);
                 const response = await withGeminiRetry(
                     () => withGeminiTimeout(
                         (signal) => trackUsageInvoke(ocrBatchGemini, [message], { signal, tracker: options.tracker, onUsage: options.onUsage }),
@@ -818,6 +822,7 @@ async function extractTextViaOCR(filePath, progressCallback, options = {}) {
                 );
 
                 // Segments are aligned to image POSITIONS in the request;
+                throwIfSignalAborted(options.signal);
                 // remap each position to its original document page number.
                 const segments = splitBatchedOcrPages(modelContentToText(response?.content), pendingPageNumbers.length);
                 let batchCovered = 0;
@@ -842,6 +847,7 @@ async function extractTextViaOCR(filePath, progressCallback, options = {}) {
         let firstFailure = null;
         for (let i = 1; i <= maxPages; i++) {
             if (pageTexts.has(i)) continue;
+            throwIfSignalAborted(options.signal);
 
             progressCallback &&
                 progressCallback({
@@ -870,6 +876,7 @@ async function extractTextViaOCR(filePath, progressCallback, options = {}) {
                     ],
                 };
 
+                throwIfSignalAborted(options.signal);
                 const response = await withGeminiRetry(
                     () => withGeminiTimeout(
                         (signal) => trackUsageInvoke(ocrGemini, [message], { signal, tracker: options.tracker, onUsage: options.onUsage }),
@@ -889,6 +896,7 @@ async function extractTextViaOCR(filePath, progressCallback, options = {}) {
                 pageTexts.set(i, pageText);
                 writeCachedOcrPage(`${contentHash}:${i}`, pageText, options.sqliteStore);
             } catch (pageErr) {
+                if (options.signal?.aborted) throwIfSignalAborted(options.signal);
                 logger.agent.error(`[OCR] Page ${i}/${maxPages} failed for ${filePath}:`,
                 pageErr?.name === "AbortError" ? pageErr.message : pageErr,);
                 firstFailure = pageErr;
@@ -933,6 +941,7 @@ async function extractTextViaOCR(filePath, progressCallback, options = {}) {
             truncated,
         });
     } catch (err) {
+        if (options.signal?.aborted) throwIfSignalAborted(options.signal);
         // Timeout aborts carry only internal timer frames from the timeout
         // guard — their stack is pure noise. Log the message alone and keep
         // full stacks/inspect formatting for unexpected errors.
@@ -1011,8 +1020,12 @@ function buildAnalysisPrompt(knownParties, segmentText) {
                 Provide ONLY the json object and nothing else. Text:\n\n${segmentText}`;
 }
 
+function throwIfSignalAborted(signal) {
+    if (signal?.aborted) throw signal.reason || Object.assign(new Error('Analysis aborted.'), { name: 'AbortError' });
+}
+
 async function analyzeClusterDocuments(input) {
-        const { files, caseInfo, progressCallback, usageTracker, onUsage, runId, sqliteStore } = input;
+        const { files, caseInfo, progressCallback, usageTracker, onUsage, runId, sqliteStore, signal } = input;
         // Run correlation for the one outcome signal this tool emits via the
         // structured logger (see grounding catch below). Null outside runs.
         const toolRunId = runId || null;
@@ -1074,6 +1087,7 @@ async function analyzeClusterDocuments(input) {
         const heartbeatTimer = total > 0 ? setInterval(emitHeartbeat, ANALYSIS_HEARTBEAT_MS) : null;
 
         const analyzeFile = async (file, { retried = false } = {}) => {
+            throwIfSignalAborted(signal);
             const startedAt = Date.now();
             currentFileName = file.text || path.basename(file.filePath || "");
             // Ground-truth chunks (Phase 0.1) are captured as soon as full text
@@ -1102,11 +1116,21 @@ async function analyzeClusterDocuments(input) {
                     logger.agent.log(extraction.error
                         ? `[Analyzer] Text extraction failed for ${path.basename(file.filePath)} (error=${extraction.error}); trying OCR fallback`
                         : `[Analyzer] No embedded text layer in ${path.basename(file.filePath)} (likely scanned); trying OCR fallback`,);
+                    progressCallback?.({
+                        step: 'ocr',
+                        message: `Pokrećem OCR za ${path.basename(file.filePath)}.`,
+                        metadata: { stage: 'ocr', done: 0, total: 1, unit: 'dokument' },
+                    });
                     const ocrResult = await extractTextViaOCR(
                         file.filePath,
                         progressCallback,
-                        { tracker: usageTracker, onUsage, sqliteStore },
+                        { tracker: usageTracker, onUsage, sqliteStore, signal },
                     );
+                    progressCallback?.({
+                        step: 'ocr',
+                        message: `OCR završen za ${path.basename(file.filePath)}.`,
+                        metadata: { stage: 'ocr', done: 1, total: 1, unit: 'dokument' },
+                    });
                     if (ocrResult.text && ocrResult.text.trim().length > 0) {
                         text = ocrResult.text;
                         extraction = ocrResult;
@@ -1176,6 +1200,7 @@ async function analyzeClusterDocuments(input) {
                 }
 
                 for (const [segmentIndex, segment] of analysisInput.segments.entries()) {
+                    throwIfSignalAborted(signal);
                     const pageLabel = segment.pageNumbers.length > 0
                         ? `, stranice ${segment.pageNumbers[0]}-${segment.pageNumbers.at(-1)}`
                         : '';
@@ -1281,6 +1306,7 @@ async function analyzeClusterDocuments(input) {
                     ...(retrievalChunks ? { retrievalChunks } : {}),
                 };
             } catch (err) {
+                if (signal?.aborted) throwIfSignalAborted(signal);
                 logger.agent.error(`Error analyzing file ${file.filePath}:`,
                 err.message,);
                 batchCounters.failed += 1;

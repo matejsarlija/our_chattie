@@ -24,6 +24,7 @@ const { createChangeDetectionRouter } = require('./routes/changeDetection');
 const path = require('node:path');
 const { createRunAbortRegistry } = require('./http/runAbortRegistry');
 const { recoverServerState, installShutdownHandlers } = require('./http/serverLifecycle');
+const { createRunBus } = require('./http/runBus');
 async function startServer() {
   const { default: PQueue } = await import('p-queue');
   logger.agent.log('p-queue module loaded successfully.');
@@ -34,6 +35,7 @@ async function startServer() {
   const host = '0.0.0.0';
   const courtAnalysisQueue = new PQueue({ concurrency: 2 });
   const analysisStore = createSqliteStore();
+  const runBus = createRunBus({ analysisStore });
   const runAbortRegistry = createRunAbortRegistry();
   const recovery = recoverServerState({
     analysisStore,
@@ -57,8 +59,12 @@ async function startServer() {
   }
   app.use(cors({ origin: allowedOrigins, credentials: true }));
   app.use(express.json());
-  app.use('/api/court-analysis', createCourtAnalysisRouter({ analysisStore, courtAnalysisQueue, writeLimiter: analysisWriteIpLimiter }));
-  app.use('/api/analysis', createAnalysisRunsRouter({ analysisStore, readLimiter: analysisReadIpLimiter, writeLimiter: analysisWriteIpLimiter }));
+  app.use('/api/court-analysis', createCourtAnalysisRouter({
+    analysisStore, courtAnalysisQueue, writeLimiter: analysisWriteIpLimiter, runAbortRegistry, runBus,
+  }));
+  app.use('/api/analysis', createAnalysisRunsRouter({
+    analysisStore, readLimiter: analysisReadIpLimiter, writeLimiter: analysisWriteIpLimiter, runAbortRegistry, runBus,
+  }));
   app.use('/api/analysis-lab', createAnalysisLabRouter({ labStore: analysisLabStore, analysisStore, readLimiter: analysisReadIpLimiter, writeLimiter: analysisWriteIpLimiter }));
 
 
@@ -103,6 +109,7 @@ async function startServer() {
     queue: courtAnalysisQueue,
     runAbortRegistry,
     analysisStore,
+    runBus,
     onError: (error) => logger.agent.error('[Shutdown] Failed:', error),
   });
   server.on('error', (error) => {

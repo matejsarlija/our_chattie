@@ -36,32 +36,16 @@ export default function NewAnalysisModal({ isOpen, onClose }) {
       return;
     }
 
-    let initialAnalysisId = null;
-    let streamError = null;
-
     try {
-      await streamingAPI.streamCourtAnalysis(validated.data, {
-        onMessage: (message) => {
-          if (message?.analysisId && !initialAnalysisId) {
-            initialAnalysisId = message.analysisId;
-            onClose();
-            navigate(`/dashboard/runs/${message.analysisId}`);
-          }
-        },
-        onError: (message) => {
-          streamError = message || 'Neuspjelo pokretanje analize.';
-        },
-        onComplete: () => {},
+      const accepted = await streamingAPI.streamCourtAnalysis(validated.data, {
+        onError: (message) => setError(message || 'Neuspjelo pokretanje analize.'),
       }, { scanDepth });
-
-      if (streamError) {
-        setError(streamError);
+      if (!accepted?.analysisId || accepted.status !== 'queued') {
+        setError((current) => current || 'Neuspjelo pokretanje analize.');
         return;
       }
-
-      if (!initialAnalysisId) {
-        setError('Analiza je pokrenuta, ali identifikator nije vraćen. Pokušajte ponovno.');
-      }
+      onClose();
+      navigate(`/dashboard/runs/${accepted.analysisId}`);
     } catch (err) {
       setError(err.message || 'Neuspjelo pokretanje analize.');
     }

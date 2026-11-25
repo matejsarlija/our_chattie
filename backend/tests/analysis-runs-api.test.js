@@ -1,14 +1,12 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const EventEmitter = require('events');
 const request = require('supertest');
 const express = require('express');
 const { createSqliteStore } = require('../services/sqliteStore');
 const { parsePagination } = require('../http/pagination');
-const { buildSseEvent } = require('../http/sse');
+const { createRunBus } = require('../http/runBus');
 const { createAnalysisRunStreamHandler } = require('../http/analysisStreamHandler');
-const { isTerminalStatus, buildCursor, didRunChange, getNewEvents, shouldStartStreamTimers } = require('../http/analysisStream');
 
 function makeApp(store) {
   const app = express();
@@ -42,15 +40,11 @@ function makeApp(store) {
     }
   });
 
+  const runBus = createRunBus({ analysisStore: store });
   const streamHandler = createAnalysisRunStreamHandler({
-    getAnalysisRunFull: store.getAnalysisRunFull,
-    buildSseEvent,
-    isTerminalStatus,
-    buildCursor,
-    didRunChange,
-    getNewEvents,
-    shouldStartStreamTimers,
-    streamPollMs: 10,
+    getAnalysisRun: store.getAnalysisRun,
+    getAnalysisEventsAfterSeq: store.getAnalysisEventsAfterSeq,
+    runBus,
     heartbeatMs: 1000,
   });
   app.get('/api/analysis/runs/:id/stream', streamHandler);
@@ -111,9 +105,14 @@ describe('analysis runs API (local store)', () => {
     expect(res.body.events).toHaveLength(1);
   });
 
-  test('stream emits terminal immediately for completed run', async () => {
+  test('stream replays the persisted terminal delta for a completed run', async () => {
+    await store.appendAnalysisEvent({
+      analysisId: store.__runId,
+      eventType: 'run.terminal',
+      metadata: { status: 'done' },
+    });
     const res = await request(app)
-      .get(`/api/analysis/runs/${store.__runId}/stream`)
+      .get(`/api/analysis/runs/${store.__runId}/stream?afterSeq=1`)
       .buffer(true)
       .parse((res, cb) => {
         const chunks = [];
@@ -122,9 +121,9 @@ describe('analysis runs API (local store)', () => {
       });
 
     expect(res.status).toBe(200);
-    const body = res.body;
-    expect(body).toContain('event: snapshot');
-    expect(body).toContain('event: terminal');
+    expect(res.body).toContain('id: 2');
+    expect(res.body).toContain('event: run.terminal');
+    expect(res.body).toContain('"status":"done"');
   });
 
   test('full detail returns persisted partial result_json + error for a failed run', async () => {

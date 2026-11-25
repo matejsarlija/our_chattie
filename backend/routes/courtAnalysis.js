@@ -6,7 +6,7 @@ const { normalizeAnalysisProgressEvent } = require('../http/analysisStage');
 const { runCourtAnalysis } = require('../court-analysis/pipeline');
 const logger = require('../services/logger');
 
-function createCourtAnalysisRouter({ analysisStore, courtAnalysisQueue, writeLimiter }) {
+function createCourtAnalysisRouter({ analysisStore, courtAnalysisQueue, writeLimiter, runAbortRegistry, runBus }) {
   const router = express.Router();
 
   router.post('/', writeLimiter, async (req, res) => {
@@ -14,79 +14,70 @@ function createCourtAnalysisRouter({ analysisStore, courtAnalysisQueue, writeLim
     try {
       parsedRequest = parseCourtAnalysisRequest(req.body);
     } catch (err) {
-      if (err.statusCode === 400) {
-        return res.status(400).json({ error: err.message });
-      }
+      if (err.statusCode === 400) return res.status(400).json({ error: err.message });
       throw err;
     }
 
-    res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('Cache-Control', 'no-cache');
-    res.setHeader('Connection', 'keep-alive');
-    res.flushHeaders();
+    let analysisRun;
+    try {
+      analysisRun = await analysisStore.createAnalysisRun({
+        oib: parsedRequest.query.value,
+        queryType: parsedRequest.query.type,
+        queryValue: parsedRequest.query.value,
+        scanDepth: parsedRequest.options.scanDepth,
+        status: 'queued',
+      });
+    } catch (error) {
+      logger.agent.error('[Court Analysis Queue] Failed to create run:', error.message);
+      return res.status(500).json({ error: 'Failed to queue analysis.' });
+    }
 
-    courtAnalysisQueue.add(async () => {
-      let analysisRun = null;
-      const progressCallback = (data) => {
-        if (!res.writableEnded) {
-          res.write(`data: ${JSON.stringify(data)}\n\n`);
+    const runId = analysisRun.id;
+    const controller = runAbortRegistry.register(runId);
+    await runBus.publish({
+      runId,
+      eventType: 'queued',
+      message: 'Zahtjev je zaprimljen.',
+      metadata: { progress: 1, status: 'queued' },
+    });
+
+    const safeProgress = async (event) => {
+      const normalizedEvent = normalizeAnalysisProgressEvent(event);
+      const isUsageUpdate = Boolean(
+        normalizedEvent.usage
+        && typeof normalizedEvent.usage === 'object'
+        && normalizedEvent.message == null
+        && normalizedEvent.data == null
+      );
+      if (isUsageUpdate) {
+        try {
+          await analysisStore.updateAnalysisRunUsage({ analysisId: runId, usage: normalizedEvent.usage });
+        } catch (err) {
+          logger.agent.error('[Analysis Runs] Failed to persist token usage:', err.message);
         }
+        return;
+      }
+      const metadata = {
+        progress: normalizedEvent.progress ?? null,
+        kind: normalizedEvent.kind,
+        ...(normalizedEvent.metadata || {}),
       };
-
       try {
-        analysisRun = await analysisStore.createAnalysisRun({
-          oib: parsedRequest.query.value,
-          queryType: parsedRequest.query.type,
-          queryValue: parsedRequest.query.value,
-          scanDepth: parsedRequest.options.scanDepth,
-          status: 'running',
+        await runBus.publish({
+          runId,
+          eventType: normalizedEvent.step || 'progress',
+          message: normalizedEvent.message || null,
+          metadata,
         });
+      } catch (err) {
+        logger.agent.error('[Analysis Events] Failed to persist progress:', err.message);
+      }
+    };
 
-        const runId = analysisRun.id;
-        const safeProgress = async (event) => {
-          const normalizedEvent = normalizeAnalysisProgressEvent(event);
-          progressCallback(normalizedEvent);
-
-          const isUsageUpdate = Boolean(
-            normalizedEvent.usage
-            && typeof normalizedEvent.usage === 'object'
-            && normalizedEvent.message == null
-            && normalizedEvent.data == null
-          );
-          if (isUsageUpdate) {
-            try {
-              await analysisStore.updateAnalysisRunUsage({
-                analysisId: runId,
-                usage: normalizedEvent.usage,
-              });
-            } catch (err) {
-              logger.agent.error('[Analysis Runs] Failed to persist token usage:', err.message);
-            }
-            return;
-          }
-
-          try {
-            await analysisStore.appendAnalysisEvent({
-              analysisId: runId,
-              eventType: normalizedEvent.step || 'progress',
-              message: normalizedEvent.message || null,
-              metadata: {
-                progress: normalizedEvent.progress || null,
-                hasData: Boolean(normalizedEvent.data),
-                ...(normalizedEvent.metadata || {}),
-              },
-            });
-          } catch (err) {
-            logger.agent.error('[Analysis Events] Failed to persist event:', err.message);
-          }
-        };
-
-        await safeProgress({
-          step: 'queued',
-          progress: 1,
-          message: 'Zahtjev je zaprimljen.',
-          analysisId: runId,
-        });
+    const runQueuedAnalysis = async () => {
+      try {
+        if (controller.signal.aborted) return;
+        await analysisStore.startAnalysisRun({ analysisId: runId });
         await safeProgress({ step: 'starting', progress: 5, message: 'Vaš zahtjev je započeo s obradom...' });
 
         const finalResult = await runCourtAnalysis(
@@ -95,76 +86,53 @@ function createCourtAnalysisRouter({ analysisStore, courtAnalysisQueue, writeLim
             query: parsedRequest.query,
             scanDepth: parsedRequest.options.scanDepth,
             analysisStore,
+            runId,
+            signal: controller.signal,
           },
-          safeProgress
+          safeProgress,
         );
-
+        controller.signal.throwIfAborted();
         const finalPayload = buildCourtAnalysisPayload(finalResult);
         await analysisStore.completeAnalysisRun({
           analysisId: runId,
           resultText: finalPayload.comparativeAnalysis,
           resultJson: finalPayload,
         });
-        await safeProgress({
-          step: 'complete',
-          progress: 100,
-          message: 'Analiza je završena!',
-          data: finalPayload,
-        });
+        await safeProgress({ step: 'complete', progress: 100, message: 'Analiza je završena!' });
+        const completedRun = await analysisStore.getAnalysisRun({ id: runId });
+        await runBus.publishTerminal(runId, completedRun.status);
       } catch (error) {
+        if (controller.signal.aborted || error?.name === 'AbortError') {
+          const canceledRun = await analysisStore.cancelAnalysisRun({ analysisId: runId });
+          await runBus.publishTerminal(runId, canceledRun.status);
+          return;
+        }
         logger.agent.error('[Court Analysis Queue] Pipeline error:', error);
-        if (analysisRun?.id) {
-          const partialPayload = error?.partialResult
-            ? buildCourtAnalysisPayload(error.partialResult)
-            : null;
-          const errorMessage = friendlyAnalysisErrorMessage(error, {
-            stage: error?.stage || null,
-            hasPartial: Boolean(partialPayload),
-          });
-
-          await analysisStore.appendAnalysisEvent({
-            analysisId: analysisRun.id,
-            eventType: 'error',
-            message: errorMessage,
-            metadata: {
-              partialPayload: Boolean(partialPayload),
-              ...(error?.stage ? { failedStage: error.stage } : {}),
-            },
-          }).catch((err) => {
-            logger.agent.error('[Analysis Events] Failed to persist error event:', err.message);
-          });
-          await analysisStore.failAnalysisRun({
-            analysisId: analysisRun.id,
-            errorMessage,
-            resultJson: partialPayload,
-            resultText: partialPayload?.comparativeAnalysis || null,
-          }).catch((err) => {
-            logger.agent.error('[Analysis Runs] Failed to mark error:', err.message);
-          });
-          progressCallback({
-            step: 'error',
-            progress: 100,
-            message: errorMessage,
-            data: partialPayload || undefined,
-          });
-        } else {
-          const errorMessage = friendlyAnalysisErrorMessage(error, { hasPartial: false });
-          progressCallback({ step: 'error', progress: 100, message: errorMessage });
-        }
+        const partialPayload = error?.partialResult ? buildCourtAnalysisPayload(error.partialResult) : null;
+        const errorMessage = friendlyAnalysisErrorMessage(error, {
+          stage: error?.stage || null,
+          hasPartial: Boolean(partialPayload),
+        });
+        await analysisStore.failAnalysisRun({
+          analysisId: runId,
+          errorMessage,
+          resultJson: partialPayload,
+          resultText: partialPayload?.comparativeAnalysis || null,
+        }).catch((err) => logger.agent.error('[Analysis Runs] Failed to mark error:', err.message));
+        await runBus.publish({ runId, eventType: 'error', message: errorMessage, metadata: { status: 'error' } });
+        await runBus.publishTerminal(runId, 'error');
       } finally {
-        if (!res.writableEnded) {
-          res.end();
-        }
-        logger.agent.log(`[Court Analysis Queue] Stream closed for search term: ${parsedRequest.query.value}`);
+        runAbortRegistry.unregister(runId, controller);
       }
+    };
+
+    courtAnalysisQueue.add(runQueuedAnalysis).catch((error) => {
+      logger.agent.error('[Court Analysis Queue] Failed to enqueue run:', error.message);
     });
 
-    req.on('close', () => {
-      logger.agent.log(`[Court Analysis Queue] Client disconnected while waiting or processing term: ${parsedRequest.query.value}`);
-    });
+    return res.status(202).json({ analysisId: runId, status: 'queued' });
   });
 
   return router;
 }
-
 module.exports = { createCourtAnalysisRouter };

@@ -1,22 +1,21 @@
-function createAnalysisRunStreamHandler({
-  getAnalysisRunFull,
-  buildSseEvent,
-  isTerminalStatus,
-  buildCursor,
-  didRunChange,
-  getNewEvents,
-  shouldStartStreamTimers,
-  streamPollMs = 1500,
-  heartbeatMs = 25000,
-}) {
+const { formatRunEvent } = require('./runBus');
+
+function parseAfterSeq(queryValue, headerValue) {
+  const raw = queryValue ?? headerValue;
+  if (raw == null || raw === '') return 0;
+  if (!/^\d+$/.test(String(raw))) return null;
+  const seq = Number(raw);
+  return Number.isSafeInteger(seq) ? seq : null;
+}
+
+function createAnalysisRunStreamHandler({ getAnalysisRun, getAnalysisEventsAfterSeq, runBus, heartbeatMs = 25000 }) {
   return async function analysisRunStreamHandler(req, res) {
-    let currentState;
+    const afterSeq = parseAfterSeq(req.query?.afterSeq, req.get?.('Last-Event-ID') || req.headers?.['last-event-id']);
+    if (afterSeq === null) return res.status(400).json({ error: 'Invalid event sequence.' });
+
     try {
-      currentState = await getAnalysisRunFull({
-        id: req.params.id,
-      });
-    } catch (error) {
-      console.error('[Analysis Runs] stream init failed:', error.message);
+      await getAnalysisRun({ id: req.params.id });
+    } catch {
       return res.status(404).json({ error: 'Analysis run not found.' });
     }
 
@@ -27,112 +26,60 @@ function createAnalysisRunStreamHandler({
     res.flushHeaders?.();
 
     let closed = false;
-    let pollInFlight = false;
+    let replaying = true;
+    let lastSeq = afterSeq;
     let heartbeatTimer = null;
-    let pollTimer = null;
+    const pending = [];
 
     const cleanup = () => {
-      if (heartbeatTimer) {
-        clearInterval(heartbeatTimer);
-        heartbeatTimer = null;
-      }
-      if (pollTimer) {
-        clearInterval(pollTimer);
-        pollTimer = null;
-      }
+      if (heartbeatTimer) clearInterval(heartbeatTimer);
+      heartbeatTimer = null;
+      unsubscribe();
     };
-
     const closeStream = () => {
       if (closed) return;
       closed = true;
       cleanup();
-      if (!res.writableEnded) {
-        res.end();
-      }
+      if (!res.writableEnded) res.end();
     };
-
-    const emit = (eventName, payload) => {
-      if (closed || res.writableEnded) return false;
-      res.write(buildSseEvent(eventName, payload));
+    const send = (message) => {
+      if (closed || message.seq <= lastSeq) return false;
+      res.write(message.frame);
+      lastSeq = message.seq;
+      if (message.event === 'run.terminal') closeStream();
       return true;
     };
+    const onMessage = (message) => {
+      if (message.event === 'close') return closeStream();
+      if (replaying) pending.push(message);
+      else send(message);
+    };
+    const unsubscribe = runBus.subscribe(req.params.id, onMessage);
+    req.on('close', closeStream);
 
-    req.on('close', () => {
+    try {
+      const history = await getAnalysisEventsAfterSeq({ analysisId: req.params.id, afterSeq });
+      for (const row of history) {
+        const message = formatRunEvent(row);
+        if (message.seq > lastSeq) send(message);
+        if (closed) return;
+      }
+      pending.sort((left, right) => left.seq - right.seq);
+      replaying = false;
+      for (const message of pending) {
+        if (message.seq > lastSeq) send(message);
+        if (closed) return;
+      }
+    } catch (error) {
+      console.error('[Analysis Runs] stream replay failed:', error.message);
       closeStream();
-    });
-
-    let lastRun = currentState.run;
-    let lastEvents = currentState.events || [];
-    const snapshotSent = emit('snapshot', {
-      run: lastRun,
-      events: lastEvents,
-      cursor: buildCursor(lastEvents),
-    });
-    if (!snapshotSent) {
-      closeStream();
-      return;
-    }
-
-    if (isTerminalStatus(lastRun?.status)) {
-      emit('terminal', {
-        run: lastRun,
-        cursor: buildCursor(lastEvents),
-      });
-      closeStream();
-      return;
-    }
-
-    if (!shouldStartStreamTimers({
-      snapshotSent,
-      closed,
-      writableEnded: res.writableEnded,
-    })) {
       return;
     }
 
     heartbeatTimer = setInterval(() => {
-      emit('heartbeat', { ts: new Date().toISOString() });
+      if (!closed && !res.writableEnded) res.write(`event: heartbeat\ndata: ${JSON.stringify({ ts: new Date().toISOString() })}\n\n`);
     }, heartbeatMs);
-
-    pollTimer = setInterval(async () => {
-      if (closed || pollInFlight) return;
-      pollInFlight = true;
-
-      try {
-        const latest = await getAnalysisRunFull({
-          id: req.params.id,
-        });
-
-        const runChanged = didRunChange(lastRun, latest.run);
-        const newEvents = getNewEvents(lastEvents, latest.events);
-        const cursor = buildCursor(latest.events);
-
-        if (runChanged) {
-          emit('run.updated', { run: latest.run, cursor });
-        }
-
-        for (const event of newEvents) {
-          emit('event.created', { event, cursor });
-        }
-
-        lastRun = latest.run;
-        lastEvents = latest.events || [];
-
-        if (isTerminalStatus(latest.run?.status)) {
-          emit('terminal', { run: latest.run, cursor });
-          closeStream();
-        }
-      } catch (error) {
-        console.error('[Analysis Runs] stream update failed:', error.message);
-        emit('error', { error: 'Stream update failed.' });
-        closeStream();
-      } finally {
-        pollInFlight = false;
-      }
-    }, streamPollMs);
   };
 }
 
-module.exports = {
-  createAnalysisRunStreamHandler,
-};
+module.exports = { createAnalysisRunStreamHandler, parseAfterSeq };

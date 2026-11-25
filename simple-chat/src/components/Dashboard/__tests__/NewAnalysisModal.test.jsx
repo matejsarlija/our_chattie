@@ -67,11 +67,9 @@ describe('NewAnalysisModal', () => {
   });
 
 
-  test('navigates to detail when analysisId arrives', async () => {
+  test('navigates to detail when the 202 response includes analysisId', async () => {
     const onClose = jest.fn();
-    mockStreamCourtAnalysis.mockImplementation(async (_searchTerm, callbacks) => {
-      callbacks.onMessage({ analysisId: 'run-123' });
-    });
+    mockStreamCourtAnalysis.mockResolvedValue({ analysisId: 'run-123', status: 'queued' });
 
     render(<NewAnalysisModal isOpen onClose={onClose} />);
 

@@ -168,7 +168,9 @@ export function useAnalysisRunDetail({ runId, pollMs = 5000, enabled = true, str
     },
     onTerminal: (payload) => {
       if (payload?.run) {
-        setRun(payload.run);
+        setRun((previous) => ({ ...(previous || {}), ...payload.run }));
+      } else if (payload?.status) {
+        setRun((previous) => ({ ...(previous || {}), status: payload.status }));
       }
       setStreamError('');
       setStreamFallback(false);

@@ -33,4 +33,11 @@ describe('normalizeAnalysisProgressEvent', () => {
     expect(normalized.step).toBe('reasoning');
     expect(normalized.metadata.originalStep).toBe('comparing');
   });
+
+  test('recognizes preflight and OCR lanes', () => {
+    expect(normalizeAnalysisProgressEvent({ step: 'preflight' }).step).toBe('preflight');
+    const ocr = normalizeAnalysisProgressEvent({ step: 'ocr_retry' });
+    expect(ocr.step).toBe('ocr');
+    expect(ocr.metadata.originalStep).toBe('ocr_retry');
+  });
 });

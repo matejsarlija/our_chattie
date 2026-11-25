@@ -8,18 +8,14 @@ jest.mock('../../lib/env', () => ({
   },
 }));
 
-const createDoneReader = () => ({
-  read: jest.fn(() => Promise.resolve({ done: true, value: undefined })),
-});
 
 describe('useCourtAnalysisStream request builder', () => {
   beforeEach(() => {
     global.fetch = jest.fn(() =>
       Promise.resolve({
         ok: true,
-        body: {
-          getReader: () => createDoneReader(),
-        },
+        status: 202,
+        json: () => Promise.resolve({ analysisId: 'run-123', status: 'queued' }),
       }),
     );
   });
@@ -200,50 +196,20 @@ describe('useCourtAnalysisStream request builder', () => {
     expect(buildCourtAnalysisPayload('12345678901', { scanDepth: 'standard' }).options).toEqual({ scanDepth: 'standard' });
   });
 
-  test('forwards progress events from SSE stream', async () => {
-    const encoder = new TextEncoder();
-    const chunks = [
-      'data: {"step":"starting","progress":5,"message":"start"}\n\n',
-      'data: {"step":"complete","progress":100,"message":"done","data":{"comparativeAnalysis":"ok"}}\n\n',
-    ];
-    let index = 0;
-    global.fetch = jest.fn(() =>
-      Promise.resolve({
-        ok: true,
-        body: {
-          getReader: () => ({
-            read: jest.fn(() => {
-              if (index >= chunks.length) {
-                return Promise.resolve({ done: true, value: undefined });
-              }
-              return Promise.resolve({ done: false, value: encoder.encode(chunks[index++]) });
-            }),
-          }),
-        },
-      }),
-    );
-
-    const onProgress = jest.fn();
-    const onComplete = jest.fn();
-
+  test('consumes the 202 queued response JSON instead of opening an SSE body', async () => {
+    const onAccepted = jest.fn();
     function Harness() {
       const api = useCourtAnalysisStream();
-
       useEffect(() => {
-        api.streamCourtAnalysis('66124057408', { onProgress, onComplete, onError: () => {} });
+        api.streamCourtAnalysis('66124057408', { onAccepted });
       }, [api]);
-
       return null;
     }
 
     render(<Harness />);
-
     await waitFor(() => {
-      expect(onProgress).toHaveBeenCalledWith(expect.objectContaining({ step: 'starting', progress: 5 }));
+      expect(onAccepted).toHaveBeenCalledWith({ analysisId: 'run-123', status: 'queued' });
     });
-
-    await waitFor(() => {
-      expect(onComplete).toHaveBeenCalledWith(expect.objectContaining({ comparativeAnalysis: 'ok' }));
-    });
+    expect(global.fetch.mock.calls[0][1].method).toBe('POST');
   });
 });
