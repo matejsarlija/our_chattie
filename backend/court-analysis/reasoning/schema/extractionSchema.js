@@ -1,35 +1,33 @@
-// court-analysis/reasoning/extractionSchema.js
+// court-analysis/reasoning/schema/extractionSchema.js
 //
-// JSON schema for per-document extraction output (spec §4.2 / ticket T1-3).
+// JSON schema for per-document extraction output (v5 / [R100-019]).
 // Hand-rolled deterministic validators — no new dependencies, no model calls.
-//
-// Contract:
-// - `validateExtraction(parsed)` never throws on JSON-shaped input. It returns
-//   `{ valid, value, gaps }` where `value` is the sanitized result (all fields
-//   present, invalid entries dropped or nulled — never invented) and `gaps`
-//   names every field that could not be salvaged (`{ field, code, detail }`).
-// - `amounts`, `propertyFlow`, and `proceduralEvents` are repair-worthy:
-//   malformed facts would harm financial or procedural reasoning. Malformed
-//   scalar metadata degrades to null and citation references to [].
-// - Repair always runs against the ORIGINAL source excerpt/page, never an
-//   earlier model summary, and may answer `absent` (source does not state the
-//   field) — which accepts as empty without a gap.
 
-const EXTRACTION_SCHEMA_VERSION = 4;
+'use strict';
+
+const EXTRACTION_SCHEMA_VERSION = 5;
 
 const TOP_LEVEL_FIELDS = [
     'caseNumber',
     'decisionDate',
     'summary',
+    'keyClaims',
     'decisionOutcome',
     'documentParties',
     'amounts',
+    'tableRows',
     'propertyFlow',
     'citedFilingReferences',
-    'proceduralEvents'
+    'proceduralEvents',
 ];
 
-const REPAIRABLE_FIELDS = ['documentParties', 'amounts', 'propertyFlow', 'proceduralEvents'];
+const REPAIRABLE_FIELDS = [
+    'documentParties',
+    'amounts',
+    'propertyFlow',
+    'proceduralEvents',
+    'decisionOutcome',
+];
 
 const AMOUNT_DIRECTIONS = ['potraživanje', 'obveza', 'awarded', 'rejected', 'netted'];
 const CURRENCIES = ['EUR', 'HRK'];
@@ -44,15 +42,13 @@ const PROCEDURAL_OUTCOMES = [
     'modified', 'remanded', 'pending', 'unknown',
 ];
 const PROCEDURAL_FINALITY = ['final', 'appealable', 'appealed', 'unknown'];
-// TL-1 ledger roles: amount function in the document (total vs row), what the
-// entry's document DOES to the claim/right, and how a lifecycle link is
-// evidenced. All optional; invalid-but-present values gap (they would
-// misdrive TL-2 matching), absent values stay null without a gap.
 const AMOUNT_ROLES = ['total', 'line_item', 'principal', 'cost', 'paid', 'fee'];
 const LEGAL_EFFECTS = ['creates', 'modifies', 'supersedes', 'resolves', 'implements', 'unknown'];
 const VALUE_ROLES = ['claim_balance', 'transfer_consideration', 'payment_amount', 'asset_value', 'unknown'];
 const RELATIONSHIP_BASES = ['explicit_identifier', 'explicit_text', 'inferred'];
 const VALUE_ROLE_GUIDANCE = 'For every non-null propertyFlow.value, include valueRole: "claim_balance" only when the source explicitly states the outstanding claim balance; "transfer_consideration" for the price paid for an assignment; "payment_amount" for a payment or recovery; "asset_value" for another asset valuation; or "unknown" when the amount’s meaning cannot be established. Never treat a payment or assignment price as a remaining claim balance.';
+
+const DECISION_OUTCOME_RULE = `"decisionOutcome" MUST be one of ${PROCEDURAL_OUTCOMES.map((v) => `"${v}"`).join(' | ')}, or null when this is not a court decision/ruling (for example a party submission, invoice, contract, claim table, or bank statement). For a Rješenje/Presuda, report ONLY this document's primary operative disposition in the izreka / riješio je / presudio je, NEVER outcomes of earlier rulings mentioned in obrazloženje. If the operative disposition is absent from this excerpt, return null. Map "usvaja se"/"prihvaća se" to "granted"; "odbija se" to "rejected"; "odbacuje se" to "dismissed"; "potvrđuje se" to "upheld"; "ukida se" to "overturned"; "preinačuje se" to "modified"; "vraća se na ponovni postupak" to "remanded". When an operative appellate clause rejects an appeal and also confirms the lower-court ruling, decisionOutcome MUST be "rejected" (the disposition of the appeal), not "upheld"; use "upheld" only when the ruling directly confirms a decision without explicitly rejecting or dismissing the appeal. For multiple items in the izreka, use the first substantive disposition for this top-level field and record other dispositions in proceduralEvents.`;
 
 function asStringOrNull(value) {
     if (value === null || value === undefined) return null;
@@ -64,13 +60,42 @@ function asStringOrNull(value) {
     return null;
 }
 
+/**
+ * Parses numbers cleanly across plain numbers, standard decimals, and Croatian/European
+ * thousands+decimal formatting (e.g. "1.200.000,00" -> 1200000, "27.682.562,91" -> 27682562.91).
+ */
 function asFiniteNumberOrNull(value) {
     if (typeof value === 'number' && Number.isFinite(value)) return value;
-    if (typeof value === 'string' && value.trim() !== '') {
-        const parsed = Number(value.replace(/\s/g, '').replace(',', '.'));
-        return Number.isFinite(parsed) ? parsed : null;
+    if (typeof value !== 'string') return null;
+
+    let cleaned = value.replace(/[\s\u00A0]+/g, '').trim();
+    if (!cleaned) return null;
+
+    const lastDot = cleaned.lastIndexOf('.');
+    const lastComma = cleaned.lastIndexOf(',');
+
+    if (lastDot !== -1 && lastComma !== -1) {
+        if (lastComma > lastDot) {
+            // European/Croatian: dots are thousands, comma is decimal ("1.200.000,00")
+            cleaned = cleaned.replace(/\./g, '').replace(',', '.');
+        } else {
+            // US/English: commas are thousands, dot is decimal ("1,200,000.00")
+            cleaned = cleaned.replace(/,/g, '');
+        }
+    } else if (lastComma !== -1) {
+        if (/^-?\d{1,3}(?:,\d{3}){2,}$/.test(cleaned)) {
+            cleaned = cleaned.replace(/,/g, '');
+        } else {
+            cleaned = cleaned.replace(/,/g, '.');
+        }
+    } else if (lastDot !== -1) {
+        if (/^-?\d{1,3}(?:\.\d{3}){2,}$/.test(cleaned)) {
+            cleaned = cleaned.replace(/\./g, '');
+        }
     }
-    return null;
+
+    const parsed = Number(cleaned);
+    return Number.isFinite(parsed) ? parsed : null;
 }
 
 function asEnumOrNull(value, allowed) {
@@ -83,6 +108,10 @@ function asOibOrNull(value) {
     if (typeof value !== 'string') return null;
     const digits = value.replace(/\D/g, '');
     return digits.length === 11 ? digits : null;
+}
+
+function gap(field, code, detail) {
+    return { field, code, detail: detail || null };
 }
 
 function validateDocumentParty(raw, index) {
@@ -101,9 +130,9 @@ function validateDocumentParty(raw, index) {
             name: asStringOrNull(raw.name),
             oib,
             role: asStringOrNull(raw.role),
-            quote
+            quote,
         },
-        gaps
+        gaps,
     };
 }
 
@@ -122,8 +151,13 @@ function validateDocumentParties(raw) {
     return { value: documentParties, gaps };
 }
 
-function gap(field, code, detail) {
-    return { field, code, detail: detail || null };
+function validateStringArray(raw, path) {
+    if (raw === undefined || raw === null) return { value: [], gaps: [] };
+    if (!Array.isArray(raw)) return { value: [], gaps: [gap(path, 'schema-mismatch', 'expected an array')] };
+    return {
+        value: raw.map((item) => String(item || '').trim()).filter(Boolean),
+        gaps: [],
+    };
 }
 
 function validateAmount(raw, index) {
@@ -183,9 +217,9 @@ function validateAmount(raw, index) {
             isplatniRed: asStringOrNull(raw.isplatniRed),
             claimRegistryNumber: asStringOrNull(raw.claimRegistryNumber),
             filingReference: asStringOrNull(raw.filingReference),
-            quote: asStringOrNull(raw.quote)
+            quote: asStringOrNull(raw.quote),
         },
-        gaps
+        gaps,
     };
 }
 
@@ -229,8 +263,6 @@ function validatePropertyItem(raw, index) {
         value: {
             description,
             identifier: asStringOrNull(raw.identifier),
-            // Absent remains the safe default; invalid is explicitly gapped
-            // above so the whole field can be repaired from source text.
             assetType: assetType || 'drugo',
             transferor: asStringOrNull(raw.transferor),
             transferee: asStringOrNull(raw.transferee),
@@ -246,11 +278,12 @@ function validatePropertyItem(raw, index) {
             isplatniRed: asStringOrNull(raw.isplatniRed),
             claimRegistryNumber: asStringOrNull(raw.claimRegistryNumber),
             filingReference: asStringOrNull(raw.filingReference),
-            supersedes: asStringOrNull(raw.supersedes)
+            supersedes: asStringOrNull(raw.supersedes),
         },
-        gaps
+        gaps,
     };
 }
+
 function validateProceduralEvent(raw, index) {
     const path = `proceduralEvents[${index}]`;
     const gaps = [];
@@ -293,34 +326,151 @@ function validateProceduralEvent(raw, index) {
     };
 }
 
+/**
+ * Deterministically expands compact `tableRows[]` into canonical `amounts[]`
+ * (established claim as `line_item`, plus separate `paid` entry if payout present)
+ * and `documentParties[]` (when an explicit 11-digit OIB + quote exist).
+ */
+function expandTableRows(tableRows, { caseFilingReference = null } = {}) {
+    const amounts = [];
+    const documentParties = [];
+    if (!Array.isArray(tableRows) || tableRows.length === 0) {
+        return { amounts, documentParties };
+    }
 
-function validateStringArray(raw, path) {
-    if (raw === undefined || raw === null) return { value: [], gaps: [] };
-    if (!Array.isArray(raw)) return { value: [], gaps: [gap(path, 'schema-mismatch', 'expected an array')] };
-    return {
-        value: raw.map((item) => String(item || '').trim()).filter(Boolean),
-        gaps: []
-    };
+    for (const raw of tableRows) {
+        if (!raw || typeof raw !== 'object' || Array.isArray(raw)) continue;
+        const creditor = asStringOrNull(raw.creditor ?? raw.name ?? raw.description);
+        const description = asStringOrNull(raw.description) || creditor;
+        if (!description) continue;
+
+        const oib = asOibOrNull(raw.oib ?? raw.recipientOib);
+        const quote = asStringOrNull(raw.quote);
+        const role = asStringOrNull(raw.role) || 'vjerovnik';
+        const rbr = asStringOrNull(raw.rbr ?? raw.claimRegistryNumber);
+        const isplatniRed = asStringOrNull(raw.isplatniRed);
+        const filingReference = asStringOrNull(raw.filingReference) || caseFilingReference || null;
+        const date = asStringOrNull(raw.date);
+        const direction = asEnumOrNull(raw.direction, AMOUNT_DIRECTIONS) || 'obveza';
+
+        if (oib && quote) {
+            documentParties.push({
+                name: creditor,
+                oib,
+                role,
+                quote,
+            });
+        }
+
+        const estEur = asFiniteNumberOrNull(raw.establishedEur ?? raw.amountEur);
+        const estHrk = asFiniteNumberOrNull(raw.establishedHrk ?? raw.amountHrk);
+        const contestedEur = asFiniteNumberOrNull(raw.contestedEur);
+        const explicitCurrency = asEnumOrNull(raw.currency, CURRENCIES);
+        const primaryAmount = estEur ?? asFiniteNumberOrNull(raw.amount) ?? estHrk;
+        const primaryCurrency = explicitCurrency || (estEur !== null ? 'EUR' : (estHrk !== null ? 'HRK' : 'EUR'));
+
+        if (primaryAmount !== null) {
+            amounts.push({
+                description,
+                amount: primaryAmount,
+                currency: primaryCurrency,
+                date,
+                direction,
+                amountRole: 'line_item',
+                eventType: 'prijava',
+                legalEffect: null,
+                references: [],
+                relationshipBasis: null,
+                payerName: null,
+                payerOib: null,
+                recipientName: creditor,
+                recipientOib: oib,
+                amountEur: estEur,
+                amountHrk: estHrk,
+                isplatniRed,
+                claimRegistryNumber: rbr,
+                filingReference,
+                quote,
+            });
+        }
+
+        if (contestedEur !== null && contestedEur > 0) {
+            amounts.push({
+                description: `${description} (osporeno)`,
+                amount: contestedEur,
+                currency: 'EUR',
+                date,
+                direction: 'rejected',
+                amountRole: 'line_item',
+                eventType: 'drugo',
+                legalEffect: null,
+                references: [],
+                relationshipBasis: null,
+                payerName: null,
+                payerOib: null,
+                recipientName: creditor,
+                recipientOib: oib,
+                amountEur: contestedEur,
+                amountHrk: null,
+                isplatniRed,
+                claimRegistryNumber: rbr,
+                filingReference,
+                quote,
+            });
+        }
+
+        const paidEur = asFiniteNumberOrNull(raw.paidEur ?? raw.payoutEur);
+        const paidHrk = asFiniteNumberOrNull(raw.paidHrk ?? raw.payoutHrk);
+        const paidAmount = paidEur ?? paidHrk;
+        if (paidAmount !== null && paidAmount > 0) {
+            amounts.push({
+                description: `${description} (namirenje)`,
+                amount: paidAmount,
+                currency: paidEur !== null ? 'EUR' : 'HRK',
+                date,
+                direction: 'obveza',
+                amountRole: 'paid',
+                eventType: 'namirenje',
+                legalEffect: 'implements',
+                references: [],
+                relationshipBasis: null,
+                payerName: null,
+                payerOib: null,
+                recipientName: creditor,
+                recipientOib: oib,
+                amountEur: paidEur,
+                amountHrk: paidHrk,
+                isplatniRed,
+                claimRegistryNumber: rbr,
+                filingReference,
+                quote,
+            });
+        }
+    }
+
+    return { amounts, documentParties };
 }
 
-/**
- * Validates + sanitizes one extraction output object.
- * @param {*} parsed - JSON-parsed model output (or null when unparseable).
- * @returns {{ valid: boolean, value: object|null, gaps: Array }}
- *   `value` is null only when nothing salvageable exists (null input or a
- *   non-object root). Otherwise every field is present and safe for
- *   downstream consumers, with all damage recorded in `gaps`.
- */
+function validateKeyClaims(raw) {
+    if (!Array.isArray(raw)) return [];
+    return raw
+        .map((item) => asStringOrNull(item))
+        .filter(Boolean)
+        .map((s) => (s.length > 240 ? s.slice(0, 240) : s))
+        .slice(0, 8);
+}
+
 function validateExtraction(parsed) {
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
         return { valid: false, value: null, gaps: [gap('$', 'malformed-json', 'root is not a JSON object')] };
     }
     const gaps = [];
-    const { value: documentParties, gaps: partyGaps } = validateDocumentParties(parsed.documentParties);
+    const { value: explicitParties, gaps: partyGaps } = validateDocumentParties(parsed.documentParties);
     gaps.push(...partyGaps);
+
     const amounts = [];
     if (parsed.amounts === undefined || parsed.amounts === null) {
-        // absent → empty, no gap (document may genuinely state no amounts)
+        // absent -> empty, no gap
     } else if (!Array.isArray(parsed.amounts)) {
         gaps.push(gap('amounts', 'schema-mismatch', 'expected an array'));
     } else {
@@ -330,9 +480,32 @@ function validateExtraction(parsed) {
             if (value) amounts.push(value);
         });
     }
+
+    const expanded = expandTableRows(parsed.tableRows, {
+        caseFilingReference: asStringOrNull(parsed.caseNumber),
+    });
+    const documentParties = [...explicitParties];
+    const seenPartyOibs = new Set(documentParties.map((p) => p.oib));
+    for (const tp of expanded.documentParties) {
+        if (!seenPartyOibs.has(tp.oib)) {
+            seenPartyOibs.add(tp.oib);
+            documentParties.push(tp);
+        }
+    }
+    const existingAmountKeys = new Set(
+        amounts.map((a) => `${a.claimRegistryNumber || ''}|${a.recipientOib || ''}|${a.amount}|${a.amountRole || ''}`),
+    );
+    for (const ta of expanded.amounts) {
+        const key = `${ta.claimRegistryNumber || ''}|${ta.recipientOib || ''}|${ta.amount}|${ta.amountRole || ''}`;
+        if (!existingAmountKeys.has(key)) {
+            existingAmountKeys.add(key);
+            amounts.push(ta);
+        }
+    }
+
     const propertyFlow = [];
     if (parsed.propertyFlow === undefined || parsed.propertyFlow === null) {
-        // absent → empty, no gap
+        // absent -> empty, no gap
     } else if (!Array.isArray(parsed.propertyFlow)) {
         gaps.push(gap('propertyFlow', 'schema-mismatch', 'expected an array'));
     } else {
@@ -342,9 +515,10 @@ function validateExtraction(parsed) {
             if (value) propertyFlow.push(value);
         });
     }
+
     const proceduralEvents = [];
     if (parsed.proceduralEvents === undefined || parsed.proceduralEvents === null) {
-        // Pre-migration analyses omit this optional field.
+        // absent -> empty, no gap
     } else if (!Array.isArray(parsed.proceduralEvents)) {
         gaps.push(gap('proceduralEvents', 'schema-mismatch', 'expected an array'));
     } else {
@@ -354,6 +528,7 @@ function validateExtraction(parsed) {
             if (value) proceduralEvents.push(value);
         });
     }
+
     const normalizedOutcome = asEnumOrNull(parsed.decisionOutcome, PROCEDURAL_OUTCOMES);
     if (parsed.decisionOutcome !== undefined
         && parsed.decisionOutcome !== null
@@ -365,30 +540,53 @@ function validateExtraction(parsed) {
     const { value: citedFilingReferences, gaps: refGaps } = validateStringArray(parsed.citedFilingReferences, 'citedFilingReferences');
     gaps.push(...refGaps);
 
+    const keyClaims = validateKeyClaims(parsed.keyClaims);
+    const summary = asStringOrNull(parsed.summary) || (keyClaims.length > 0 ? keyClaims.join(' ') : null);
+
     return {
         valid: gaps.length === 0,
         value: {
             caseNumber: asStringOrNull(parsed.caseNumber),
             decisionDate: asStringOrNull(parsed.decisionDate),
-            summary: asStringOrNull(parsed.summary),
+            summary,
+            ...(keyClaims.length > 0 ? { keyClaims } : {}),
             decisionOutcome: normalizedOutcome,
             documentParties,
             amounts,
             propertyFlow,
             citedFilingReferences,
-            proceduralEvents
+            proceduralEvents,
         },
-        gaps
+        gaps,
     };
 }
 
-/**
- * Parses one field-repair response. Protocol: `{"value": <field value>,
- * "absent": true|false}`. `absent: true` accepts as empty (source does not
- * state the field) with no gap. Anything else is re-validated with the same
- * validators — a repair may return `unknown`/`not present` for a scalar, but
- * it must not invent a missing fact.
- */
+function hasUsableExtraction(value) {
+    if (!value || typeof value !== 'object') return false;
+    return Boolean(
+        value.summary
+        || value.caseNumber
+        || value.decisionDate
+        || value.decisionOutcome
+        || (Array.isArray(value.keyClaims) && value.keyClaims.length > 0)
+        || (Array.isArray(value.documentParties) && value.documentParties.length > 0)
+        || (Array.isArray(value.amounts) && value.amounts.length > 0)
+        || (Array.isArray(value.propertyFlow) && value.propertyFlow.length > 0)
+        || (Array.isArray(value.citedFilingReferences) && value.citedFilingReferences.length > 0)
+        || (Array.isArray(value.proceduralEvents) && value.proceduralEvents.length > 0),
+    );
+}
+
+function hasReceivableAssignmentCue(sourceText) {
+    const normalized = String(sourceText || '')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase();
+    const assignment = /\b(?:ugovor(?:om|a|u|e)?\s+o\s+(?:ustupu|prijenosu)|ustup(?:a|u|om|anje|ljena|ljen|iti)?|cesij(?:a|om|e|u)?|cesion(?:ar)?)\b/.test(normalized);
+    const receivable = /\b(?:trazbin|potrazivan)/.test(normalized);
+    return assignment && receivable;
+}
+
 function parseFieldRepairResponse(content, field) {
     const { extractJsonBlock } = require('../../../helpers/jsonExtract');
     const parsed = extractJsonBlock(content);
@@ -396,7 +594,21 @@ function parseFieldRepairResponse(content, field) {
         return { ok: false, reason: 'repair response is not a JSON object' };
     }
     if (parsed.absent === true) {
-        return { ok: true, absent: true, value: ['documentParties', 'amounts', 'propertyFlow', 'proceduralEvents'].includes(field) ? [] : null };
+        return {
+            ok: true,
+            absent: true,
+            value: ['documentParties', 'amounts', 'propertyFlow', 'proceduralEvents'].includes(field) ? [] : null,
+        };
+    }
+    if (field === 'decisionOutcome') {
+        if (parsed.value === null) {
+            return { ok: true, absent: false, value: null };
+        }
+        const outcome = asEnumOrNull(parsed.value, PROCEDURAL_OUTCOMES);
+        if (!outcome) {
+            return { ok: false, reason: 'repaired decisionOutcome is not a valid procedural outcome' };
+        }
+        return { ok: true, absent: false, value: outcome };
     }
     if (['documentParties', 'amounts', 'propertyFlow', 'proceduralEvents'].includes(field)) {
         if (!Array.isArray(parsed.value)) {
@@ -424,27 +636,16 @@ const FIELD_SPECS = {
     documentParties: 'a "documentParties" array of source-explicit party identities. Include only an OIB explicitly printed as a party tax identifier in this document, not OIBs inferred from supplied participant/registry context. One item per distinct OIB: {"name" (string or null if the source does not identify it), "oib" (exactly 11 digits), "role" (string or null; only if explicitly stated, otherwise null), "quote" (verbatim source text containing the OIB and enough nearby context to support the association)}. Do not guess roles or join an OIB to a name unless the quoted source makes the association clear; [] when none.',
     amounts: 'an "amounts" array with ONE item per table row — if the document contains an itemized table, register, invoice ("račun"), cost schedule ("troškovnik"), claim specification ("specifikacija"), bank account statement ("izvod"), or list (popis tražbina, diobeni popis, obračun), extract one item per row and never merge rows into a summary. Every individual data row/transaction in any markdown or plain-text table, invoice, cost schedule, specification, or statement MUST use amountRole "line_item" (never invent "other"); ONLY summary/footer rows explicitly labeled "UKUPNO", "SVEGA", or "SALDO" use "total". For a distribution row containing both an established claim ("utvrđena tražbina" HRK/EUR) and payout ("iznos namirenja"/"za isplatu"), emit separate facts: established claim as "line_item" with amountEur/amountHrk only for that claim\'s dual-currency values, and payout separately as "paid", never mixing payout into amountEur; each item: {"description" (Croatian, required), "amount" (number), "currency" ("EUR"|"HRK"), "date", "direction" ("potraživanje"|"obveza"|"awarded"|"rejected"|"netted"), "amountRole" (one of "total"|"line_item"|"principal"|"cost"|"paid"|"fee"), "eventType" ("prijava"|"ustup"|"namirenje"|"drugo", when the amount records a lifecycle event), "legalEffect" (one of "creates"|"modifies"|"supersedes"|"resolves"|"implements"|"unknown" — what this entry\'s document does to the claim/right; omit when unclear), "references" (array of registry/filing identifiers this entry explicitly cites besides its own filingReference; [] when none), "relationshipBasis" (one of "explicit_identifier"|"explicit_text"|"inferred" — how a "supersedes" link is evidenced; omit without supersedes), "payerName", "payerOib" (11 digits), "recipientName", "recipientOib", "amountEur"/"amountHrk" (only when the source states BOTH, verbatim), "isplatniRed", "claimRegistryNumber" ("redni broj"), "filingReference" ("poslovni broj"), "quote" (verbatim 1-2 sentences from the source text below, word-for-word, never paraphrased)}',
     propertyFlow: 'a "propertyFlow" array with ONE item per table row under the same row rule as amounts; also extract an operative receivable assignment/cession stated in prose ("Ugovor o ustupu", "cesija", assignment/transfer of a "tražbina") as at least one assetType "tražbina", eventType "ustup" entry — it is never absent merely because it has no table; each item: {"description" (Croatian, required), "identifier", "assetType" ("nekretnina"|"pokretnina"|"tražbina"|"drugo"), "transferor", "transferee", "value" (number), "currency" ("EUR"|"HRK"), "date", "quote" (verbatim as above), "legalEffect" and "references" and "relationshipBasis" (same meanings as for amounts); for "tražbina" also "eventType" ("prijava"|"ustup"|"namirenje"|"drugo"), "isplatniRed", "claimRegistryNumber", "filingReference", "supersedes" (short textual reference to the earlier lifecycle entry as cited in the source text)}',
-    proceduralEvents: 'a "proceduralEvents" array with one explicit court-procedure event per item: {"eventType" ("decision"|"appeal"|"appeal-response"|"appellate-decision"|"correction"|"postponement"|"hearing"|"motion"|"other"), "instance" (court name or "first-instance"|"second-instance" when stated), "outcome" ("granted"|"dismissed"|"rejected"|"upheld"|"overturned"|"modified"|"remanded"|"pending"|"unknown"), "finalityStated" ("final"|"appealable"|"appealed"|"unknown"; assert final/appealable/appealed only when the source explicitly states this legal status, otherwise "unknown"), "date", "filingReference" (this document\'s own poslovni broj, only when explicit), "targetFilingReference" (the earlier filing this decision, appeal, response, or correction concerns, only when explicit), "description" (brief Croatian procedural action, required), and "quote" (verbatim source text supporting this event). Do not infer event, outcome, or finality from case posture or descriptions; [] when none.'
+    proceduralEvents: 'a "proceduralEvents" array with one explicit court-procedure event per item: {"eventType" ("decision"|"appeal"|"appeal-response"|"appellate-decision"|"correction"|"postponement"|"hearing"|"motion"|"other"), "instance" (court name or "first-instance"|"second-instance" when stated), "outcome" ("granted"|"dismissed"|"rejected"|"upheld"|"overturned"|"modified"|"remanded"|"pending"|"unknown"), "finalityStated" ("final"|"appealable"|"appealed"|"unknown"; assert final/appealable/appealed only when the source explicitly states this legal status, otherwise "unknown"), "date", "filingReference" (this document\'s own poslovni broj, only when explicit), "targetFilingReference" (the earlier filing this decision, appeal, response, or correction concerns, only when explicit), "description" (brief Croatian procedural action, required), and "quote" (verbatim source text supporting this event). Do not infer event, outcome, or finality from case posture or descriptions; [] when none.',
+    decisionOutcome: DECISION_OUTCOME_RULE,
 };
 
-/**
- * Builds the targeted single-field repair prompt against the ORIGINAL source
- * excerpt — never an earlier model summary.
- */
 function buildFieldRepairPrompt({ field, sourceText }) {
-    const spec = FIELD_SPECS[field];
-    if (!spec) throw new Error(`Field ${field} is not repairable`);
-    const excerpt = String(sourceText || '');
-    return `FIELD REPAIR. A previous extraction of the court document below produced an unusable "${field}" value. Re-extract ONLY that field from the source text below.\n\nReturn ONLY a JSON object of the form {"value": <the re-extracted ${field} value per this spec>, "absent": true|false}. Set "absent" to true (with "value" null, or [] for arrays) when the source text does not state this field at all — never invent a missing fact. "value" must follow this spec: ${spec}${field === 'propertyFlow' ? ` ${VALUE_ROLE_GUIDANCE}` : ''}\n\nProvide ONLY the json object and nothing else. Text:\n\n${excerpt}`;
+    return require('../../extraction/prompts').buildFieldRepairPrompt({ field, sourceText });
 }
 
-/**
- * Builds the full-extraction repair prompt used when the main completion was
- * entirely unparseable. Same schema, same source excerpt, tighter instruction.
- */
 function buildFullRepairPrompt({ sourceText }) {
-    const excerpt = String(sourceText || '');
-    return `EXTRACTION REPAIR. A previous extraction of the court document produced no usable JSON. Extract key information from the source text below as a JSON object with keys: "caseNumber", "decisionDate", "summary" (one medium paragraph, Croatian), "decisionOutcome" (${PROCEDURAL_OUTCOMES.join(' | ')} or null), ${FIELD_SPECS.documentParties} (as "documentParties"; [] when none), ${FIELD_SPECS.amounts} (as "amounts"; [] when none), ${FIELD_SPECS.propertyFlow} (as "propertyFlow"; [] when none), ${FIELD_SPECS.proceduralEvents} (as "proceduralEvents"; [] when none). ${VALUE_ROLE_GUIDANCE} Also extract "citedFilingReferences" (array of "poslovni broj" values explicitly referenced; [] when none).\n\nProvide ONLY the json object and nothing else. Text:\n\n${excerpt}`;
+    return require('../../extraction/prompts').buildFullRepairPrompt({ sourceText });
 }
 
 module.exports = {
@@ -462,12 +663,18 @@ module.exports = {
     PROCEDURAL_EVENT_TYPES,
     PROCEDURAL_OUTCOMES,
     PROCEDURAL_FINALITY,
-    validateProceduralEvent,
+    VALUE_ROLE_GUIDANCE,
+    DECISION_OUTCOME_RULE,
     FIELD_SPECS,
+    asFiniteNumberOrNull,
+    expandTableRows,
+    hasUsableExtraction,
+    hasReceivableAssignmentCue,
+    validateProceduralEvent,
     validateExtraction,
     validateAmount,
     validatePropertyItem,
     parseFieldRepairResponse,
     buildFieldRepairPrompt,
-    buildFullRepairPrompt
+    buildFullRepairPrompt,
 };

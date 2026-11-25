@@ -4,6 +4,9 @@ const {
     REPAIRABLE_FIELDS,
     validateExtraction,
     validateAmount,
+    asFiniteNumberOrNull,
+    hasUsableExtraction,
+    hasReceivableAssignmentCue,
     parseFieldRepairResponse,
     buildFieldRepairPrompt,
     buildFullRepairPrompt
@@ -286,8 +289,53 @@ describe('validateExtraction', () => {
     });
 
     test('schema version and repairable set are published', () => {
-        expect(EXTRACTION_SCHEMA_VERSION).toBe(4);
-        expect(REPAIRABLE_FIELDS).toEqual(['documentParties', 'amounts', 'propertyFlow', 'proceduralEvents']);
+        expect(EXTRACTION_SCHEMA_VERSION).toBe(5);
+        expect(REPAIRABLE_FIELDS).toEqual(['documentParties', 'amounts', 'propertyFlow', 'proceduralEvents', 'decisionOutcome']);
+    });
+
+    test('parses Croatian thousands and decimal formatting cleanly and expands compact tableRows', () => {
+        expect(asFiniteNumberOrNull('1.200.000,00')).toBe(1200000);
+        expect(asFiniteNumberOrNull('27.682.562,91')).toBe(27682562.91);
+        expect(asFiniteNumberOrNull('-1.500,25')).toBe(-1500.25);
+        expect(asFiniteNumberOrNull('1.200.000')).toBe(1200000);
+
+        const validated = validateExtraction({
+            caseNumber: 'St-2/2013',
+            decisionOutcome: 'granted',
+            tableRows: [
+                {
+                    rbr: '98',
+                    creditor: 'HEP d.d.',
+                    oib: '12345678901',
+                    isplatniRed: 'viši isplatni red II',
+                    establishedEur: '1.200.000,00',
+                    establishedHrk: '9.041.400,00',
+                    paidEur: '100.000,50',
+                    quote: '98. HEP d.d. OIB 12345678901 utvrđeno 1.200.000,00 EUR / namireno 100.000,50 EUR',
+                },
+            ],
+        });
+        expect(validated.valid).toBe(true);
+        expect(validated.value.documentParties).toEqual([
+            expect.objectContaining({ name: 'HEP d.d.', oib: '12345678901' }),
+        ]);
+        expect(validated.value.amounts).toHaveLength(2);
+        expect(validated.value.amounts[0]).toMatchObject({
+            description: 'HEP d.d.',
+            amount: 1200000,
+            amountEur: 1200000,
+            amountHrk: 9041400,
+            amountRole: 'line_item',
+            claimRegistryNumber: '98',
+            isplatniRed: 'viši isplatni red II',
+        });
+        expect(validated.value.amounts[1]).toMatchObject({
+            amount: 100000.5,
+            amountRole: 'paid',
+            eventType: 'namirenje',
+        });
+        expect(hasUsableExtraction({ decisionOutcome: 'rejected' })).toBe(true);
+        expect(hasReceivableAssignmentCue('Ugovorom o ustupu prenosi se potraživanje.')).toBe(true);
     });
 });
 
