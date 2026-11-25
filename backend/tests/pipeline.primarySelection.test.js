@@ -167,6 +167,31 @@ describe('stratified reasoning input (TS-2)', () => {
         // Strata are tagged for provenance consumers.
         expect(result.clusters[0].entries.every((e) => typeof e.acquisition.stratum === 'string')).toBe(true);
     });
+    test('Puppeteer primary pools use the same analysis budget and coverage ledger', () => {
+        const pool = Array.from({ length: 120 }, (_, index) => (
+            poolEntry(index, `2020-${String((index % 12) + 1).padStart(2, '0')}-15`, `Podnesak ${index}`)
+        ));
+        const result = buildDiscoveryResult(pool, {
+            query: { type: 'case_number', value: 'ST-2/2013' },
+            discoveryMetadata: {
+                discoveryMode: 'search-window',
+                selection: {
+                    selectedCaseKey: 'ST-2/2013',
+                    rule: 'primary-case-pool',
+                    scanDepth: 'balanced',
+                    allocation: 'stratified',
+                    analysisBudget: 100
+                }
+            }
+        });
+
+        expect(result.clusters[0].entries).toHaveLength(100);
+        expect(result.discoverySummary.coverageLedger).toEqual(expect.objectContaining({
+            budget: 100,
+            available: 120,
+            selected: 100
+        }));
+    });
 
     test('no budget means no stratification (legacy paths pass through)', () => {
         const pool = Array.from({ length: 10 }, (_, i) => poolEntry(i, `2025-0${(i % 9) + 1}-15`, `Podnesak ${i}`));

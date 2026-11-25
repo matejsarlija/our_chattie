@@ -132,23 +132,21 @@ describe('CourtSearchPuppeteer discovery metadata', () => {
         expect(aggregated.searchWindows[2]).toEqual(expect.objectContaining({ mode: 'search-window', currentPage: 3, hasNextPage: false }));
     });
 
-    test('aggregateSearchWindows describes the forward window when tail pages are appended', () => {
+    test('aggregateSearchWindows aggregates forward pages without a legacy tail window', () => {
         const aggregated = scraper.aggregateSearchWindows([
-            { currentPage: 1, hasNextPage: true, totalResults: 381, totalPages: 39, rawParsedEntryCount: 10 },
-            { currentPage: 5, hasNextPage: true, totalResults: 381, totalPages: 39, rawParsedEntryCount: 10 },
-            { currentPage: 39, hasNextPage: false, totalResults: 381, totalPages: 39, rawParsedEntryCount: 1, tailWindow: true },
-            { currentPage: 38, hasNextPage: true, totalResults: 381, totalPages: 39, rawParsedEntryCount: 10, tailWindow: true },
-        ], 61);
+            { currentPage: 1, hasNextPage: true, totalResults: 42, totalPages: 5, rawParsedEntryCount: 10 },
+            { currentPage: 2, hasNextPage: false, totalResults: 42, totalPages: 5, rawParsedEntryCount: 10 },
+        ], 20);
 
-        // Top-level fields describe the FORWARD window, not the tail walkback.
         expect(aggregated.pagesScanned).toBe(2);
-        expect(aggregated.currentPage).toBe(5);
-        expect(aggregated.hasNextPage).toBe(true);
-        expect(aggregated.totalPages).toBe(39);
-        expect(aggregated.tailPagesScanned).toBe(2);
-        expect(aggregated.acquisitionModes).toEqual(['search-window', 'search-window-tail']);
-        expect(aggregated.searchWindows).toHaveLength(4);
-        expect(aggregated.searchWindows[2]).toEqual(expect.objectContaining({ mode: 'search-window-tail', currentPage: 39 }));
+        expect(aggregated.currentPage).toBe(2);
+        expect(aggregated.hasNextPage).toBe(false);
+        expect(aggregated.totalResults).toBe(42);
+        expect(aggregated.rawParsedEntryCount).toBe(20);
+        expect(aggregated.acquisitionModes).toEqual(['search-window']);
+        expect(aggregated.searchWindows).toHaveLength(2);
+        expect(aggregated.searchWindows.every((window) => window.mode === 'search-window')).toBe(true);
+        expect(aggregated).not.toHaveProperty('tailPagesScanned');
     });
 
     test('performSearchAcrossPages stops at the maxPages limit even when hasNextPage remains true', async () => {
@@ -196,87 +194,87 @@ describe('CourtSearchPuppeteer discovery metadata', () => {
         expect(searchMetadata.hasNextPage).toBe(false);
     });
 
-    test('searchAndGetLatestCasesWithDocuments captures the full window when limit is null (3b full history)', async () => {
+    test('searchAndGetLatestCasesWithDocuments selects a primary-case pool and catalogs secondary cases', async () => {
         scraper.performSearchAcrossPages = jest.fn().mockResolvedValue({
             results: [
                 { caseNumber: 'St-1/2013', documentDownloadLink: 'http://d1' },
-                { caseNumber: 'St-2/2013', documentDownloadLink: 'http://d2' },
-                { caseNumber: 'St-3/2013', documentDownloadLink: 'http://d3' },
-                { caseNumber: 'St-4/2013', documentDownloadLink: null },
-                { caseNumber: 'St-5/2013', documentDownloadLink: 'http://d5' },
+                { caseNumber: 'St-1/2013', documentDownloadLink: 'http://d2' },
+                { caseNumber: 'St-2/2013', documentDownloadLink: 'http://d3' },
+                { caseNumber: 'St-2/2013', documentDownloadLink: 'http://d4' },
+                { caseNumber: 'St-2/2013', documentDownloadLink: 'http://d5' }
             ],
             searchMetadata: { pagesScanned: 1, currentPage: 1, hasNextPage: false, totalResults: 5, totalPages: 1 }
         });
-        scraper.mapSearchResultsToPipelineEntries = jest.fn().mockReturnValue([]);
 
-        await scraper.searchAndGetLatestCasesWithDocuments('ST-1/2013', null);
+        const result = await scraper.searchAndGetLatestCasesWithDocuments(
+            'St-1/2013',
+            400,
+            3,
+            true,
+            null,
+            { type: 'case_number', value: 'St-1/2013' },
+            'balanced'
+        );
 
-        const captured = scraper.mapSearchResultsToPipelineEntries.mock.calls[0][0];
-        expect(captured).toHaveLength(4);
-        expect(captured.map(c => c.caseNumber)).toEqual(['St-1/2013', 'St-2/2013', 'St-3/2013', 'St-5/2013']);
-    });
-
-    test('searchAndGetLatestCasesWithDocuments still truncates to a numeric limit', async () => {
-        scraper.performSearchAcrossPages = jest.fn().mockResolvedValue({
-            results: [
-                { caseNumber: 'St-1/2013', documentDownloadLink: 'http://d1' },
-                { caseNumber: 'St-2/2013', documentDownloadLink: 'http://d2' },
-                { caseNumber: 'St-3/2013', documentDownloadLink: 'http://d3' },
-            ],
-            searchMetadata: { pagesScanned: 1, currentPage: 1, hasNextPage: false, totalResults: 3, totalPages: 1 }
+        expect(scraper.performSearchAcrossPages).toHaveBeenCalledWith('St-1/2013', 40, { batchSize: 4 });
+        expect(result.casesToProcess).toHaveLength(2);
+        expect(result.casesToProcess.every((entry) => entry.caseInfo.caseNumber === 'St-1/2013')).toBe(true);
+        expect(result.discoveryMetadata.selection).toMatchObject({
+            selectedCaseKey: 'ST-1/2013',
+            rule: 'primary-case-pool',
+            allocation: 'stratified',
+            analysisBudget: 100,
+            poolCap: 400,
+            maxPoolPages: 40,
+            batchSize: 4,
+            primaryEntryCount: 2
         });
-        scraper.mapSearchResultsToPipelineEntries = jest.fn().mockReturnValue([]);
-
-        await scraper.searchAndGetLatestCasesWithDocuments('ST-1/2013', 2);
-
-        const captured = scraper.mapSearchResultsToPipelineEntries.mock.calls[0][0];
-        expect(captured).toHaveLength(2);
-        expect(captured.map(c => c.caseNumber)).toEqual(['St-1/2013', 'St-2/2013']);
+        expect(result.discoveryMetadata.selection.candidates.map((candidate) => candidate.key)).toContain('ST-2/2013');
+        expect(result.discoveryMetadata.rawParsedEntryCount).toBe(2);
     });
 
-    test('numeric scrape limits truncate the forward window but keep the tail', async () => {
+    test('numeric pool limit applies after selecting the primary case', async () => {
         scraper.performSearchAcrossPages = jest.fn().mockResolvedValue({
             results: [
-                ...Array.from({ length: 7 }, (_, i) => ({ caseNumber: `St-${i + 1}/2026`, documentDownloadLink: `http://d${i}` })),
-                ...Array.from({ length: 10 }, (_, i) => ({
-                    caseNumber: `St-${i}/2013`,
-                    documentDownloadLink: `http://t${i}`,
-                    acquisition: { mode: 'search-window-tail', currentPage: 38, sampling: 'tail' }
+                ...Array.from({ length: 5 }, (_, index) => ({
+                    caseNumber: 'St-1/2013',
+                    documentDownloadLink: `http://primary-${index}`
                 })),
+                { caseNumber: 'St-2/2013', documentDownloadLink: 'http://secondary' }
             ],
-            searchMetadata: {
-                pagesScanned: 5,
-                tailPagesScanned: 2,
-                currentPage: 5,
-                hasNextPage: true,
-                totalResults: 381,
-                totalPages: 39,
-                tailSampling: { enabled: true, entriesKept: 10, entriesKeptWithDocuments: 10 }
-            }
+            searchMetadata: { pagesScanned: 1, currentPage: 1, hasNextPage: false, totalResults: 6, totalPages: 1 }
         });
 
-        // ANALYSIS_SCRAPE_LIMIT shape: numeric cap on top of balanced depth.
-        const out = await scraper.searchAndGetLatestCasesWithDocuments('KERUM', 7, null, true);
+        const result = await scraper.searchAndGetLatestCasesWithDocuments(
+            'St-1/2013',
+            2,
+            null,
+            false,
+            null,
+            { type: 'case_number', value: 'St-1/2013' },
+            'balanced'
+        );
 
-        expect(scraper.performSearchAcrossPages).toHaveBeenCalledWith('KERUM', null, { tailSample: true });
-        expect(out.casesToProcess).toHaveLength(17);
-        expect(out.casesToProcess.slice(0, 7).every((c) => c.acquisition.mode === 'search-window')).toBe(true);
-        expect(out.casesToProcess.filter((c) => c.acquisition.mode === 'search-window-tail')).toHaveLength(10);
+        expect(result.casesToProcess).toHaveLength(2);
+        expect(result.casesToProcess.every((entry) => entry.caseInfo.caseNumber === 'St-1/2013')).toBe(true);
+        expect(result.discoveryMetadata.selection).toMatchObject({
+            primaryEntryCount: 5,
+            selectedPoolCap: 2,
+            omittedPrimaryEntryCount: 3
+        });
     });
 
-    test('mapSearchResultsToPipelineEntries applies numeric limits to the forward window only', () => {
+    test('mapSearchResultsToPipelineEntries applies a numeric entry cap', () => {
         const results = [
             { caseNumber: 'St-1/2026', documentDownloadLink: 'http://d1' },
             { caseNumber: 'St-2/2026', documentDownloadLink: 'http://d2' },
-            { caseNumber: 'St-9/2013', documentDownloadLink: 'http://t1', acquisition: { mode: 'search-window-tail', currentPage: 39 } },
+            { caseNumber: 'St-3/2026', documentDownloadLink: 'http://d3' }
         ];
 
-        const entries = scraper.mapSearchResultsToPipelineEntries(results, { currentPage: 1 }, 1);
+        const entries = scraper.mapSearchResultsToPipelineEntries(results, { currentPage: 1 }, 2);
 
         expect(entries).toHaveLength(2);
-        expect(entries[0].caseInfo.caseNumber).toBe('St-1/2026');
-        expect(entries[0].acquisition.mode).toBe('search-window');
-        expect(entries[1].acquisition.mode).toBe('search-window-tail');
+        expect(entries.map((entry) => entry.caseInfo.caseNumber)).toEqual(['St-1/2026', 'St-2/2026']);
     });
 
     test('searchCaseNumberFollowUp returns only entries matching the normalized case lineage', async () => {
@@ -326,70 +324,31 @@ describe('CourtSearchPuppeteer discovery metadata', () => {
         expect(result.entries[0].caseInfo.caseNumber).toBe('ST-700/2024');
     });
 
-    test('performSearchAcrossPages tail-samples the oldest entries when the last page is partial', async () => {
+    test('performSearchAcrossPages harvests HTML pages in bounded batches', async () => {
         scraper.performSearch = jest.fn().mockResolvedValue(undefined);
-        scraper.parseSearchResultsPage = jest.fn()
-            .mockResolvedValueOnce({
-                results: [{ caseNumber: 'St-50/2026', documentDownloadLink: 'http://d-new' }],
-                searchMetadata: { currentPage: 1, hasNextPage: true, totalResults: 381, totalPages: 39 }
-            })
-            // Page 39 (oldest) is partial: a single entry, as on the real KERUM window.
-            .mockResolvedValueOnce({
-                results: [{ caseNumber: 'St-1/2013', documentDownloadLink: 'http://d-oldest' }],
-                searchMetadata: { currentPage: 39, hasNextPage: false, totalResults: 381, totalPages: 39 }
-            })
-            // Page 38 holds the standard 10 entries again.
-            .mockResolvedValueOnce({
-                results: Array.from({ length: 10 }, (_, i) => ({ caseNumber: `St-${2 + i}/2013`, documentDownloadLink: `http://d-38-${i}` })),
-                searchMetadata: { currentPage: 38, hasNextPage: true, totalResults: 381, totalPages: 39 }
+        scraper.parseSearchResultsPage = jest.fn().mockImplementation(() => {
+            const currentPage = scraper.parseSearchResultsPage.mock.calls.length;
+            return Promise.resolve({
+                results: [{ caseNumber: `St-${currentPage}/2020` }],
+                searchMetadata: {
+                    currentPage,
+                    hasNextPage: currentPage < 5,
+                    totalResults: 50,
+                    totalPages: 5
+                }
             });
+        });
         scraper.navigateToSearchResultsPage = jest.fn().mockResolvedValue(undefined);
 
-        const { results, searchMetadata } = await scraper.performSearchAcrossPages('KERUM', 1, { tailSample: true });
+        const { results, searchMetadata } = await scraper.performSearchAcrossPages('KERUM', 5, { batchSize: 2 });
 
-        expect(results).toHaveLength(11);
-        expect(searchMetadata.tailSampling).toEqual(expect.objectContaining({
-            enabled: true,
-            entriesCollected: 11,
-            entriesKept: 10,
-            entriesKeptWithDocuments: 10,
-            pages: 2
-        }));
-        expect(searchMetadata.acquisitionModes).toEqual(expect.arrayContaining(['search-window-tail']));
-
-        // Tail pages must not distort the forward-window frontier.
-        expect(searchMetadata.pagesScanned).toBe(1);
-        expect(searchMetadata.tailPagesScanned).toBe(2);
-        expect(searchMetadata.currentPage).toBe(1);
-        expect(searchMetadata.hasNextPage).toBe(true);
-
-        const tailResults = results.filter((r) => r.acquisition?.mode === 'search-window-tail');
-        expect(tailResults).toHaveLength(10);
-        expect(tailResults.map((r) => r.caseNumber)).toContain('St-1/2013');
-        expect(scraper.navigateToSearchResultsPage).toHaveBeenCalledTimes(2);
-    });
-
-    test('performSearchAcrossPages reports doc-less kept tail entries honestly', async () => {
-        scraper.performSearch = jest.fn().mockResolvedValue(undefined);
-        scraper.parseSearchResultsPage = jest.fn()
-            .mockResolvedValueOnce({
-                results: [{ caseNumber: 'St-50/2026', documentDownloadLink: 'http://d-new' }],
-                searchMetadata: { currentPage: 1, hasNextPage: true, totalResults: 381, totalPages: 39 }
-            })
-            .mockResolvedValueOnce({
-                // Oldest filings often have no direct download link.
-                results: Array.from({ length: 10 }, (_, i) => ({ caseNumber: `St-${i}/2013`, documentDownloadLink: null })),
-                searchMetadata: { currentPage: 39, hasNextPage: false, totalResults: 381, totalPages: 39 }
-            });
-        scraper.navigateToSearchResultsPage = jest.fn().mockResolvedValue(undefined);
-
-        const { searchMetadata } = await scraper.performSearchAcrossPages('KERUM', 1, { tailSample: true });
-
-        expect(searchMetadata.tailSampling).toEqual(expect.objectContaining({
-            enabled: true,
-            entriesKept: 10,
-            entriesKeptWithDocuments: 0
-        }));
+        expect(results).toHaveLength(5);
+        expect(searchMetadata.pagesScanned).toBe(5);
+        expect(searchMetadata.pageBatchSize).toBe(2);
+        expect(searchMetadata.pageBatchesScanned).toBe(3);
+        expect(searchMetadata.acquisitionModes).toEqual(['search-window']);
+        expect(searchMetadata).not.toHaveProperty('tailSampling');
+        expect(scraper.navigateToSearchResultsPage).toHaveBeenCalledTimes(4);
     });
 
     test('performSearchAcrossPages caps a full scan at FULL_SCAN_MAX_PAGES', async () => {
@@ -411,9 +370,11 @@ describe('CourtSearchPuppeteer discovery metadata', () => {
                 });
             scraper.navigateToSearchResultsPage = jest.fn().mockResolvedValue(undefined);
 
-            const { searchMetadata } = await scraper.performSearchAcrossPages('KERUM', Infinity, { tailSample: false });
+            const { searchMetadata } = await scraper.performSearchAcrossPages('KERUM', Infinity, { batchSize: 4 });
 
             expect(searchMetadata.pagesScanned).toBe(3);
+            expect(searchMetadata.pageBatchSize).toBe(4);
+            expect(searchMetadata.pageBatchesScanned).toBe(1);
             expect(searchMetadata.hasNextPage).toBe(true);
             expect(searchMetadata.fullScanCapped).toBe(true);
             expect(scraper.navigateToSearchResultsPage).toHaveBeenCalledTimes(2);
@@ -422,7 +383,7 @@ describe('CourtSearchPuppeteer discovery metadata', () => {
         }
     });
 
-    test('a default full scan stops after the 400-court-entry page budget', async () => {
+    test('a default full scan stops after the 200-page cap', async () => {
         delete process.env.FULL_SCAN_MAX_PAGES;
         try {
             let parsedPage = 0;
@@ -431,22 +392,22 @@ describe('CourtSearchPuppeteer discovery metadata', () => {
                 parsedPage += 1;
                 return Promise.resolve({
                     results: [{ caseNumber: `St-${parsedPage}/2020`, documentDownloadLink: 'http://d1' }],
-                    searchMetadata: { currentPage: parsedPage, hasNextPage: true, totalResults: 500, totalPages: 50 }
+                    searchMetadata: { currentPage: parsedPage, hasNextPage: true, totalResults: 500, totalPages: 200 }
                 });
             });
             scraper.navigateToSearchResultsPage = jest.fn().mockResolvedValue(undefined);
 
-            const { results, searchMetadata } = await scraper.performSearchAcrossPages('KERUM', Infinity, { tailSample: false });
+            const { results, searchMetadata } = await scraper.performSearchAcrossPages('KERUM', Infinity, { batchSize: 4 });
 
-            expect(results).toHaveLength(40);
-            expect(searchMetadata.pagesScanned).toBe(40);
+            expect(results).toHaveLength(200);
+            expect(searchMetadata.pagesScanned).toBe(200);
+            expect(searchMetadata.pageBatchesScanned).toBe(50);
             expect(searchMetadata.fullScanCapped).toBe(true);
-            expect(scraper.navigateToSearchResultsPage).toHaveBeenCalledTimes(39);
+            expect(scraper.navigateToSearchResultsPage).toHaveBeenCalledTimes(199);
         } finally {
             delete process.env.FULL_SCAN_MAX_PAGES;
         }
     });
-
     test('searchAndGetLatestCasesWithDocuments keeps the debtorOib slot without filtering on Puppeteer', async () => {
         scraper.performSearchAcrossPages = jest.fn().mockResolvedValue({
             results: [{ caseNumber: 'St-1/2013', documentDownloadLink: 'http://d1' }],
@@ -455,12 +416,47 @@ describe('CourtSearchPuppeteer discovery metadata', () => {
 
         const result = await scraper.searchAndGetLatestCasesWithDocuments('ST-1/2013', 5, 3, true, '66124057408');
 
-        expect(scraper.performSearchAcrossPages).toHaveBeenCalledWith('ST-1/2013', 3, { tailSample: true });
+        expect(scraper.performSearchAcrossPages).toHaveBeenCalledWith('ST-1/2013', 40, { batchSize: 4 });
         expect(result.casesToProcess).toHaveLength(1);
         expect(result.casesToProcess[0].caseInfo.caseNumber).toBe('St-1/2013');
     });
 
-    test('performSearchAcrossPages scans every page when maxPages is Infinity (full depth)', async () => {
+    test('full depth selects the complete primary pool and records allocation metadata', async () => {
+        process.env.FULL_SCAN_MAX_PAGES = '2';
+        try {
+            scraper.performSearchAcrossPages = jest.fn().mockResolvedValue({
+                results: [
+                    { caseNumber: 'St-1/2013', documentDownloadLink: 'http://d1' },
+                    { caseNumber: 'St-1/2013', documentDownloadLink: 'http://d2' },
+                    { caseNumber: 'St-2/2013', documentDownloadLink: 'http://d3' }
+                ],
+                searchMetadata: { pagesScanned: 2, currentPage: 2, hasNextPage: true }
+            });
+
+            const result = await scraper.searchAndGetLatestCasesWithDocuments(
+                'St-1/2013',
+                null,
+                null,
+                false,
+                null,
+                { type: 'case_number', value: 'St-1/2013' },
+                'full'
+            );
+
+            expect(scraper.performSearchAcrossPages).toHaveBeenCalledWith('St-1/2013', Infinity, { batchSize: 4 });
+            expect(result.casesToProcess).toHaveLength(2);
+            expect(result.discoveryMetadata.selection).toMatchObject({
+                allocation: 'all',
+                analysisBudget: null,
+                maxPoolPages: 2,
+                selectedPoolCap: 1000
+            });
+            expect(result.discoveryMetadata.selection.candidates.map((candidate) => candidate.key)).toContain('ST-2/2013');
+        } finally {
+            delete process.env.FULL_SCAN_MAX_PAGES;
+        }
+    });
+    test('performSearchAcrossPages scans each page once and omits legacy tail metadata', async () => {
         scraper.performSearch = jest.fn().mockResolvedValue(undefined);
         scraper.parseSearchResultsPage = jest.fn()
             .mockResolvedValueOnce({
@@ -469,59 +465,17 @@ describe('CourtSearchPuppeteer discovery metadata', () => {
             })
             .mockResolvedValueOnce({
                 results: [{ caseNumber: 'St-2/2020' }],
-                searchMetadata: { currentPage: 2, hasNextPage: true, totalResults: 50, totalPages: 5 }
-            })
-            .mockResolvedValueOnce({
-                results: [{ caseNumber: 'St-3/2020' }],
-                searchMetadata: { currentPage: 3, hasNextPage: true, totalResults: 50, totalPages: 5 }
-            })
-            .mockResolvedValueOnce({
-                results: [{ caseNumber: 'St-4/2020' }],
-                searchMetadata: { currentPage: 4, hasNextPage: true, totalResults: 50, totalPages: 5 }
-            })
-            .mockResolvedValueOnce({
-                results: [{ caseNumber: 'St-5/2020' }],
-                searchMetadata: { currentPage: 5, hasNextPage: false, totalResults: 50, totalPages: 5 }
+                searchMetadata: { currentPage: 2, hasNextPage: false, totalResults: 50, totalPages: 5 }
             });
         scraper.navigateToSearchResultsPage = jest.fn().mockResolvedValue(undefined);
 
-        const { results, searchMetadata } = await scraper.performSearchAcrossPages('KERUM', Infinity, { tailSample: false });
+        const { results, searchMetadata } = await scraper.performSearchAcrossPages('KERUM', Infinity, { batchSize: 4 });
 
-        expect(results).toHaveLength(5);
-        expect(searchMetadata.pagesScanned).toBe(5);
-        // T0-3: disabled tail still discloses that no tail rule applied.
-        expect(searchMetadata.tailSampling).toEqual({ enabled: false, tailRule: null });
-        expect(scraper.navigateToSearchResultsPage).toHaveBeenCalledTimes(4);
-    });
-
-    test('performSearchAcrossPages skips the tail when the window already covers the whole case', async () => {
-        scraper.performSearch = jest.fn().mockResolvedValue(undefined);
-        scraper.parseSearchResultsPage = jest.fn()
-            .mockResolvedValueOnce({
-                results: [{ caseNumber: 'St-1/2020' }],
-                searchMetadata: { currentPage: 1, hasNextPage: false, totalResults: 10, totalPages: 1 }
-            });
-        scraper.navigateToSearchResultsPage = jest.fn().mockResolvedValue(undefined);
-
-        const { results, searchMetadata } = await scraper.performSearchAcrossPages('KERUM', 5, { tailSample: true });
-
-        expect(results).toHaveLength(1);
-        expect(scraper.navigateToSearchResultsPage).not.toHaveBeenCalled();
-        expect(searchMetadata.tailSampling).toEqual(expect.objectContaining({
-            enabled: true,
-            reason: 'window-fully-scanned'
-        }));
-    });
-
-    test('searchAndGetLatestCasesWithDocuments threads tailSample to the page walk', async () => {
-        scraper.performSearchAcrossPages = jest.fn().mockResolvedValue({
-            results: [{ caseNumber: 'St-1/2013', documentDownloadLink: 'http://d1' }],
-            searchMetadata: { pagesScanned: 1, currentPage: 1, hasNextPage: false, totalResults: 1, totalPages: 1 }
-        });
-        scraper.mapSearchResultsToPipelineEntries = jest.fn().mockReturnValue([]);
-
-        await scraper.searchAndGetLatestCasesWithDocuments('ST-1/2013', null, null, true);
-
-        expect(scraper.performSearchAcrossPages).toHaveBeenCalledWith('ST-1/2013', null, { tailSample: true });
+        expect(results).toHaveLength(2);
+        expect(searchMetadata.pagesScanned).toBe(2);
+        expect(searchMetadata.pageBatchesScanned).toBe(1);
+        expect(searchMetadata.hasNextPage).toBe(false);
+        expect(searchMetadata).not.toHaveProperty('tailSampling');
+        expect(scraper.navigateToSearchResultsPage).toHaveBeenCalledTimes(1);
     });
 });

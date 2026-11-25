@@ -18,17 +18,19 @@
 
 const { parseCaseDateToTimestamp } = require('./caseDate');
 const { classifyDocRole } = require('./docRoles');
-const {
-    SCAN_DEPTH_BALANCED_FORWARD_ENTRIES,
-    SCAN_DEPTH_TAIL_ENTRIES
-} = require('./scanDepth');
+const { SCAN_DEPTH_POLICIES } = require('./scanDepth');
 
-const STRAT_ORIGIN_KEEP = 8;
-const STRAT_RECENT_KEEP = 22;
-const STRAT_OTHER_FLOOR = 2;
-const STRAT_ADMIN_CAP = 4;
-const STRAT_BUDGET_DEFAULT = SCAN_DEPTH_BALANCED_FORWARD_ENTRIES + SCAN_DEPTH_TAIL_ENTRIES;
+const STRAT_BUDGET_DEFAULT = SCAN_DEPTH_POLICIES.balanced.maxEntries;
 const YEAR_MS = 365 * 24 * 60 * 60 * 1000;
+
+function computeStratificationQuotas(budget) {
+    return {
+        origin: Math.max(8, Math.round(budget * 0.15)),
+        recent: Math.max(22, Math.round(budget * 0.40)),
+        exploratory: Math.max(2, Math.round(budget * 0.08)),
+        adminCap: Math.max(4, Math.round(budget * 0.08))
+    };
+}
 
 function entryTimestamp(entry) {
     const raw = entry?.caseInfo?.date || entry?.caseInfo?.datePublished || entry?.date || null;
@@ -51,7 +53,7 @@ function tag(entry, sampling, stratum, stratumReason) {
  * Allocates `budget` entry slots across role/time strata.
  *
  * @param {Array<object>} clusterEntries - One case's discovery entries (any order).
- * @param {object} [options] - `{ budget }` (default 40).
+ * @param {object} [options] - `{ budget }` (default 100).
  * @returns {{ entries: Array, ledger: object, capped: boolean }}
  *   `entries` are tagged copies in pick order (ledger, origin, recent,
  *   exploratory, middle, spread, undated, admin, fill); `ledger` is the
@@ -62,6 +64,7 @@ function stratifyClusterEntries(clusterEntries, options = {}) {
     const budget = Number.isFinite(options.budget) && options.budget >= 0
         ? Math.floor(options.budget)
         : STRAT_BUDGET_DEFAULT;
+    const quotas = computeStratificationQuotas(budget);
     const pool = Array.isArray(clusterEntries) ? clusterEntries : [];
     const taken = new Set();
     const picks = [];
@@ -119,34 +122,45 @@ function stratifyClusterEntries(clusterEntries, options = {}) {
     } else {
         for (const item of ledger) take(item, 'ledger', 'vital document: register, distribution list, or final account');
     }
+    const middleCandidates = dated.filter((item) =>
+        item.role === 'decision' || item.role === 'transfer'
+    );
+    const firstYear = dated.length > 0 ? new Date(dated[0].timestamp).getUTCFullYear() : null;
+    const lastYear = dated.length > 0 ? new Date(dated[dated.length - 1].timestamp).getUTCFullYear() : null;
+    const middleWitness = middleCandidates.find((item) => {
+        const year = new Date(item.timestamp).getUTCFullYear();
+        return year > firstYear && year < lastYear;
+    }) || middleCandidates[0] || null;
+    const middleReserve = middleWitness && remaining() > 0 ? 1 : 0;
+    const remainingBeforeMiddle = () => Math.max(0, remaining() - middleReserve);
+
 
     // 2. Origin: oldest dated entries (the Track-0 tail, now explicit).
     // Ambiguous `other` entries are skipped here and in recent: the
     // exploratory floor below owns them, otherwise recent windows swallow
     // them and the floor starves exactly when ambiguous titles are newest.
     for (const item of dated) {
-        if (remaining() <= 0 || originTaken(picks) >= STRAT_ORIGIN_KEEP) break;
-        if (item.role === 'other' || isAdmin(item)) continue;
+        if (remainingBeforeMiddle() <= 0 || originTaken(picks) >= quotas.origin) break;
+        if (item.position === middleWitness?.position || item.role === 'other' || isAdmin(item)) continue;
         take(item, 'origin', 'origin context: oldest filings of the case');
     }
 
     // 3. Recent: newest dated entries (current-state lens).
     for (const item of [...dated].reverse()) {
-        if (remaining() <= 0 || recentTaken(picks) >= STRAT_RECENT_KEEP) break;
-        if (item.role === 'other' || isAdmin(item)) continue;
+        if (remainingBeforeMiddle() <= 0 || recentTaken(picks) >= quotas.recent) break;
+        if (item.position === middleWitness?.position || item.role === 'other' || isAdmin(item)) continue;
         take(item, 'recent', 'current state: newest filings of the case');
     }
 
-    // 4. Exploratory reserve floor: ambiguous `other` entries, newest + oldest
-    // first for spread. Post-acquisition excerpt classification spends
-    // against this reserve (seam documented in docRoles.js).
+    // 4. Exploratory reserve: evenly sample ambiguous `other` entries across
+    // the dated pool, up to the budget-scaled quota. Post-acquisition excerpt
+    // classification spends against this reserve (seam documented in docRoles.js).
     const others = dated.filter((item) => item.role === 'other' && !taken.has(item.position));
-    if (others.length > 0 && remaining() > 0) {
-        const candidates = [others[others.length - 1], others[0]].filter(Boolean);
-        for (const item of candidates.slice(0, STRAT_OTHER_FLOOR)) {
-            if (remaining() <= 0) break;
-            take(item, 'exploratory', 'exploratory reserve: ambiguous metadata, pending excerpt classification');
-        }
+    const exploratoryCount = Math.min(others.length, quotas.exploratory, remainingBeforeMiddle());
+    for (let i = 0; i < exploratoryCount; i += 1) {
+        const index = Math.floor(((i + 0.5) * others.length) / exploratoryCount);
+        const item = others[index];
+        take(item, 'exploratory', 'exploratory reserve: ambiguous metadata, pending excerpt classification');
     }
 
     // 5. Middle round-robin: decisions + transfers per calendar year, no
@@ -161,6 +175,11 @@ function stratifyClusterEntries(clusterEntries, options = {}) {
         byYear.get(year).push(item);
     }
     const years = [...byYear.keys()].sort((a, b) => a - b);
+    if (middleWitness && remaining() > 0 && !taken.has(middleWitness.position)) {
+        const witnessYear = new Date(middleWitness.timestamp).getUTCFullYear();
+        take(middleWitness, 'middle', `chain witness: ${middleWitness.role} from ${witnessYear}`);
+    }
+
     let progressed = true;
     while (remaining() > 0 && progressed) {
         progressed = false;
@@ -195,7 +214,7 @@ function stratifyClusterEntries(clusterEntries, options = {}) {
         .filter((item) => item.role === 'admin' && !taken.has(item.position));
     let adminTakenCount = 0;
     for (const item of admins) {
-        if (remaining() <= 0 || adminTakenCount >= STRAT_ADMIN_CAP) break;
+        if (remaining() <= 0 || adminTakenCount >= quotas.adminCap) break;
         if (take(item, 'admin', 'administrative filing within cap')) adminTakenCount += 1;
     }
     const poolNewestFirst = pool
@@ -325,9 +344,6 @@ function buildCoverageLedger(pool, dated, undated, picks, budget, vitalOverflow)
 
 module.exports = {
     stratifyClusterEntries,
-    STRAT_ORIGIN_KEEP,
-    STRAT_RECENT_KEEP,
-    STRAT_OTHER_FLOOR,
-    STRAT_ADMIN_CAP,
+    computeStratificationQuotas,
     STRAT_BUDGET_DEFAULT
 };

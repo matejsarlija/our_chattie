@@ -1,9 +1,6 @@
 const {
     stratifyClusterEntries,
-    STRAT_ORIGIN_KEEP,
-    STRAT_RECENT_KEEP,
-    STRAT_OTHER_FLOOR,
-    STRAT_ADMIN_CAP,
+    computeStratificationQuotas,
     STRAT_BUDGET_DEFAULT
 } = require('../court-analysis/utils/stratify');
 
@@ -41,12 +38,31 @@ function fixedEntry(index, date, title, links = true) {
 }
 
 describe('stratifyClusterEntries (TS-2 allocator)', () => {
-    test('publishes the quota constants and the default budget', () => {
-        expect(STRAT_ORIGIN_KEEP).toBe(8);
-        expect(STRAT_RECENT_KEEP).toBe(22);
-        expect(STRAT_OTHER_FLOOR).toBe(2);
-        expect(STRAT_ADMIN_CAP).toBe(4);
-        expect(STRAT_BUDGET_DEFAULT).toBe(40);
+    test('computes proportional quotas and defaults to the balanced 100-entry budget', () => {
+        expect(computeStratificationQuotas(100)).toEqual({
+            origin: 15,
+            recent: 40,
+            exploratory: 8,
+            adminCap: 8
+        });
+        expect(computeStratificationQuotas(40)).toEqual({
+            origin: 8,
+            recent: 22,
+            exploratory: 3,
+            adminCap: 4
+        });
+        expect(computeStratificationQuotas(200)).toEqual({
+            origin: 30,
+            recent: 80,
+            exploratory: 16,
+            adminCap: 16
+        });
+        expect(STRAT_BUDGET_DEFAULT).toBe(100);
+        const pool = datedRange(120, 2010, (i) => `Rješenje ${i}`, 14);
+        const result = stratifyClusterEntries(pool);
+        expect(result.entries).toHaveLength(100);
+        expect(result.entries.filter((e) => e.acquisition.stratum === 'origin')).toHaveLength(15);
+        expect(result.entries.filter((e) => e.acquisition.stratum === 'recent')).toHaveLength(40);
     });
 
     test('under-budget pools pass through untouched with no tags', () => {
@@ -71,15 +87,15 @@ describe('stratifyClusterEntries (TS-2 allocator)', () => {
         expect(result.capped).toBe(true);
         expect(result.entries).toHaveLength(40);
         const strata = result.entries.map((e) => e.acquisition.stratum);
-        expect(strata.filter((s) => s === 'origin')).toHaveLength(STRAT_ORIGIN_KEEP);
-        expect(strata.filter((s) => s === 'recent')).toHaveLength(STRAT_RECENT_KEEP);
+        expect(strata.filter((s) => s === 'origin')).toHaveLength(computeStratificationQuotas(40).origin);
+        expect(strata.filter((s) => s === 'recent')).toHaveLength(computeStratificationQuotas(40).recent);
         expect(strata).toContain('middle');
         // Disjoint: every picked entry is unique.
         const identities = result.entries.map((e) => e.documentLinks[0].url);
         expect(new Set(identities).size).toBe(40);
         // Sampling vocabulary preserved for provenance consumers.
-        expect(result.entries.filter((e) => e.acquisition.sampling === 'tail')).toHaveLength(STRAT_ORIGIN_KEEP);
-        expect(result.entries.filter((e) => e.acquisition.sampling === 'forward')).toHaveLength(STRAT_RECENT_KEEP);
+        expect(result.entries.filter((e) => e.acquisition.sampling === 'tail')).toHaveLength(computeStratificationQuotas(40).origin);
+        expect(result.entries.filter((e) => e.acquisition.sampling === 'forward')).toHaveLength(computeStratificationQuotas(40).recent);
     });
 
     test('ledger documents are never dropped when they fit', () => {
@@ -117,8 +133,26 @@ describe('stratifyClusterEntries (TS-2 allocator)', () => {
         const exploratory = result.entries.filter((e) => e.acquisition.stratum === 'exploratory');
 
         expect(exploratory.length).toBeGreaterThanOrEqual(1);
-        expect(exploratory.length).toBeLessThanOrEqual(STRAT_OTHER_FLOOR);
+        expect(exploratory.length).toBeLessThanOrEqual(computeStratificationQuotas(40).exploratory);
     });
+    test('samples exploratory entries evenly across the ambiguous pool', () => {
+        const pool = [
+            ...datedRange(30, 2018, (i) => `Rješenje ${i}`, 3),
+            ...Array.from({ length: 40 }, (_, i) =>
+                fixedEntry(900 + i, new Date(Date.UTC(2020, 0, i + 1)).toISOString().slice(0, 10), `Prilog ${i}`))
+        ];
+        const result = stratifyClusterEntries(pool, { budget: 40 });
+        const exploratory = result.entries
+            .filter((e) => e.acquisition.stratum === 'exploratory')
+            .map((e) => Number(e.caseInfo.title.slice('Prilog '.length)));
+
+        expect(exploratory).toHaveLength(3);
+        expect(exploratory[0]).toBeGreaterThan(0);
+        expect(exploratory[1] - exploratory[0]).toBeGreaterThan(1);
+        expect(exploratory[2] - exploratory[1]).toBeGreaterThan(1);
+        expect(exploratory[2]).toBeLessThan(39);
+    });
+
 
     test('admin filings are capped and fill last', () => {
         const pool = [
@@ -128,7 +162,7 @@ describe('stratifyClusterEntries (TS-2 allocator)', () => {
         const result = stratifyClusterEntries(pool, { budget: 40 });
         const admins = result.entries.filter((e) => e.caseInfo.title.startsWith('Punomoć'));
 
-        expect(admins.length).toBeLessThanOrEqual(STRAT_ADMIN_CAP);
+        expect(admins.length).toBeLessThanOrEqual(computeStratificationQuotas(40).adminCap);
     });
 
     test('admin cap applies across origin, recent, spread, and remainder selection', () => {
@@ -136,7 +170,7 @@ describe('stratifyClusterEntries (TS-2 allocator)', () => {
             fixedEntry(800 + i, `2024-${String((i % 9) + 1).padStart(2, '0')}-01`, `Punomoć ${i}`));
         const result = stratifyClusterEntries(pool, { budget: 40 });
 
-        expect(result.entries).toHaveLength(STRAT_ADMIN_CAP);
+        expect(result.entries).toHaveLength(computeStratificationQuotas(40).adminCap);
         expect(result.entries.every((e) => e.caseInfo.title.startsWith('Punomoć'))).toBe(true);
     });
 
