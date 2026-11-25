@@ -967,6 +967,82 @@ function createSqliteStore(options = {}) {
       if (!contentHash) return false;
       return Boolean(db.prepare('SELECT 1 FROM segment_checkpoints WHERE content_hash = ? LIMIT 1').get(contentHash));
     },
+    setRunPartialReason({ id, partialReason }) {
+      if (!id) return false;
+      const result = db.prepare('UPDATE runs SET partial_reason = ? WHERE id = ?').run(partialReason || null, id);
+      return result.changes > 0;
+    },
+    upsertPromptRegistry({ promptHash, promptName, schemaVersion, systemPrompt }) {
+      if (!promptHash || !promptName) return false;
+      db.prepare(`INSERT INTO prompt_registry (prompt_hash, prompt_name, schema_version, system_prompt, created_at)
+        VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(prompt_hash) DO UPDATE SET
+          prompt_name = excluded.prompt_name,
+          schema_version = excluded.schema_version,
+          system_prompt = excluded.system_prompt`)
+        .run(promptHash, promptName, Number(schemaVersion || 1), String(systemPrompt || ''), nowIso());
+      return true;
+    },
+    insertLlmTrace({
+      id = crypto.randomUUID(),
+      runId = null,
+      taskType = null,
+      docHash = null,
+      segmentId = null,
+      promptHash = null,
+      userPrompt = null,
+      requestParams = null,
+      requestedModel = null,
+      actualModel = null,
+      actualProvider = null,
+      finishReason = null,
+      rawResponse = null,
+      validationErrors = null,
+      groundingStats = null,
+      ttftMs = null,
+      latencyMs = null,
+      inputTokens = null,
+      outputTokens = null,
+      cachedTokens = null,
+      reasoningTokens = null,
+      costUsd = null,
+      errorMessage = null,
+    } = {}) {
+      db.prepare(`INSERT INTO llm_traces (
+        id, run_id, task_type, doc_hash, segment_id, prompt_hash, user_prompt,
+        request_params_json, requested_model, actual_model, actual_provider,
+        finish_reason, raw_response, validation_errors_json, grounding_stats_json,
+        ttft_ms, latency_ms, input_tokens, output_tokens, cached_tokens,
+        reasoning_tokens, cost_usd, error_message, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+        .run(
+          id,
+          runId,
+          taskType,
+          docHash,
+          segmentId,
+          promptHash,
+          userPrompt,
+          stringify(requestParams),
+          requestedModel,
+          actualModel,
+          actualProvider,
+          finishReason,
+          rawResponse,
+          stringify(validationErrors),
+          stringify(groundingStats),
+          Number.isFinite(ttftMs) ? Math.round(ttftMs) : null,
+          Number.isFinite(latencyMs) ? Math.round(latencyMs) : null,
+          Number.isFinite(inputTokens) ? Math.round(inputTokens) : null,
+          Number.isFinite(outputTokens) ? Math.round(outputTokens) : null,
+          Number.isFinite(cachedTokens) ? Math.round(cachedTokens) : null,
+          Number.isFinite(reasoningTokens) ? Math.round(reasoningTokens) : null,
+          Number.isFinite(Number(costUsd)) ? Number(costUsd) : null,
+          errorMessage,
+          nowIso(),
+        );
+      return id;
+    },
     getLatestSnapshot(queryId) {
       const row = db.prepare('SELECT payload_json FROM change_snapshots WHERE query_id = ?').get(queryId);
       return row ? parseJson(row.payload_json) : null;
