@@ -89,63 +89,92 @@ describe('CSV export discovery → pipeline handoff', () => {
         });
     });
 
-    test('groups the complete export into a dominant primary cluster with secondary clusters', async () => {
+    test('full CSV scan selects the primary cluster and catalogs secondary candidates', async () => {
         const client = csvClient();
         const { casesToProcess, discoveryMetadata } = await client.searchAndGetLatestCasesWithDocuments(
-            '66124057408', null, Infinity, false
+            '66124057408',
+            1000,
+            Infinity,
+            false,
+            '66124057408',
+            { type: 'oib', value: '66124057408' },
+            'full'
         );
 
-        expect(casesToProcess).toHaveLength(381);
+        expect(casesToProcess).toHaveLength(343);
         expect(discoveryMetadata.discoveryMode).toBe('csv-export');
         expect(discoveryMetadata.totalResults).toBe(381);
+        expect(discoveryMetadata.selection).toEqual(expect.objectContaining({
+            selectedCaseKey: 'ST-2/2013',
+            rule: 'primary-case-pool',
+            allocation: 'all',
+            analysisBudget: null,
+            poolCap: 1000
+        }));
+        expect(discoveryMetadata.selection.candidates.map((candidate) => candidate.key)).toContain('ST-357/2013');
 
         const result = await processScrapedCases(casesToProcess, jest.fn(), {
             query: { type: 'oib', value: '66124057408' },
-            discoveryMetadata
+            discoveryMetadata,
+            scanDepth: 'full'
         });
 
         expect(result.discoverySummary.discoveryMode).toBe('csv-export');
         expect(result.discoverySummary.totalResults).toBe(381);
-        expect(result.discoverySummary.acquisitionModes).toEqual(['csv-export']);
-        expect(result.discoverySummary.rawEntryCount).toBe(381);
-        expect(result.discoverySummary.capturedDistinctCaseCount).toBeGreaterThan(1);
-
+        expect(result.discoverySummary.rawEntryCount).toBe(343);
+        expect(result.discoverySummary.capturedDistinctCaseCount).toBe(1);
         expect(result.discoverySummary.recommendedPrimaryClusterId).toBe('ST-2/2013');
 
-        const primary = result.discoverySummary.clusters.find((c) => c.clusterId === 'ST-2/2013');
+        const primary = result.discoverySummary.clusters.find((cluster) => cluster.clusterId === 'ST-2/2013');
         expect(primary).toBeDefined();
         expect(primary.entryCount).toBe(343);
         expect(primary.identityConsistency).toBe('consistent');
         expect(primary.participantOibs).toContain('66124057408');
         expect(primary.acquisitionModes).toEqual(['csv-export']);
         expect(primary.selectedForReasoning).toBe(true);
-
-
-        expect(result.processedCases).toHaveLength(1);
-        expect(result.processedCases[0].groupMetadata.clusterId).toBe('ST-2/2013');
-        expect(result.processedCases[0].groupMetadata.acquisitionModes).toEqual(['csv-export']);
-        expect(result.processedCases[0].caseResult.debtorOib).toBe('66124057408');
+        expect(result.discoverySummary.coverageLedger).toMatchObject({
+            budget: 343,
+            available: 343,
+            selected: 343
+        });
     });
 
-    test('bounded (default) discovery feeds a single-cluster window while totalResults stays complete', async () => {
+    test('balanced discovery supplies the capped primary pool for stratified analysis', async () => {
         const client = csvClient();
         const { casesToProcess, discoveryMetadata } = await client.searchAndGetLatestCasesWithDocuments(
-            '66124057408', null, null, false
+            '66124057408',
+            400,
+            40,
+            true,
+            '66124057408',
+            { type: 'oib', value: '66124057408' },
+            'balanced'
         );
 
-        expect(casesToProcess).toHaveLength(30);
+        expect(casesToProcess).toHaveLength(343);
         expect(discoveryMetadata.totalResults).toBe(381);
-        expect(discoveryMetadata.rawParsedEntryCount).toBe(30);
+        expect(discoveryMetadata.rawParsedEntryCount).toBe(343);
+        expect(discoveryMetadata.selection).toMatchObject({
+            rule: 'primary-case-pool',
+            allocation: 'stratified',
+            analysisBudget: 100,
+            poolCap: 400
+        });
 
         const result = await processScrapedCases(casesToProcess, jest.fn(), {
             query: { type: 'oib', value: '66124057408' },
-            discoveryMetadata
+            discoveryMetadata,
+            scanDepth: 'balanced'
         });
 
         expect(result.discoverySummary.totalResults).toBe(381);
-        expect(result.discoverySummary.rawEntryCount).toBe(30);
+        expect(result.discoverySummary.rawEntryCount).toBe(343);
         expect(result.discoverySummary.capturedDistinctCaseCount).toBe(1);
         expect(result.discoverySummary.recommendedPrimaryClusterId).toBe('ST-2/2013');
-        expect(result.discoverySummary.secondaryClusterIds).toEqual([]);
+        expect(result.discoverySummary.coverageLedger).toMatchObject({
+            budget: 100,
+            available: 343,
+            selected: 100
+        });
     });
 });

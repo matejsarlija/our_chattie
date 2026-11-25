@@ -15,7 +15,7 @@ describe('TS-2 Kerum stratification (real export fixture)', () => {
     beforeAll(async () => {
         const client = new CsvExportClient({ fetcher: async () => fixtureText() });
         const discovered = await client.searchAndGetLatestCasesWithDocuments(
-            '66124057408', 40, 3, true, '66124057408', { type: 'oib', value: '66124057408' }
+            '66124057408', 400, 3, true, '66124057408', { type: 'oib', value: '66124057408' }
         );
         pool = discovered.casesToProcess;
         result = stratifyClusterEntries(pool, { budget: 40 });

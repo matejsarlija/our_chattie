@@ -172,7 +172,7 @@ describe('pipeline run logging (runId correlation + run summary)', () => {
             durationMs: expect.any(Number),
             reportError: null,
         }));
-        expect(meta.scanDepth !== undefined).toBe(true);
+        expect(meta.scanDepth).toBe('balanced');
     });
 
     test('failure path emits a failed run summary and still throws PartialAnalysisError', async () => {

@@ -6,21 +6,18 @@ import { useSettings } from '../../hooks/useSettings';
 import Dialog from '../ui/Dialog';
 import ScanDepthSelect from './ScanDepthSelect';
 
-const oibSchema = z
-  .string()
-  .trim()
-  .regex(/^\d{11}$/, 'OIB mora sadržavati točno 11 znamenki.');
+const querySchema = z.string().trim().min(1, 'Upit ne smije biti prazan.');
 
 export default function NewAnalysisModal({ isOpen, onClose }) {
   const navigate = useNavigate();
   const streamingAPI = useCourtAnalysisStream();
   const { settings } = useSettings();
-  const oibInputRef = useRef(null);
+  const queryInputRef = useRef(null);
 
-  const [oib, setOib] = useState('');
+  const [query, setQuery] = useState('');
   const [scanDepth, setScanDepth] = useState('balanced');
   const [error, setError] = useState('');
-  const [oibInvalid, setOibInvalid] = useState(false);
+  const [queryInvalid, setQueryInvalid] = useState(false);
 
   useEffect(() => {
     if (isOpen) setScanDepth(settings.defaultScanDepth || 'balanced');
@@ -30,12 +27,12 @@ export default function NewAnalysisModal({ isOpen, onClose }) {
   const handleSubmit = async (event) => {
     event.preventDefault();
     setError('');
-    setOibInvalid(false);
+    setQueryInvalid(false);
 
-    const validated = oibSchema.safeParse(oib);
+    const validated = querySchema.safeParse(query);
     if (!validated.success) {
-      setError(validated.error.issues[0]?.message || 'Neispravan OIB.');
-      setOibInvalid(true);
+      setError(validated.error.issues[0]?.message || 'Upit ne smije biti prazan.');
+      setQueryInvalid(true);
       return;
     }
 
@@ -77,25 +74,24 @@ export default function NewAnalysisModal({ isOpen, onClose }) {
       isOpen={isOpen}
       onClose={onClose}
       title="Nova analiza"
-      description="Unesite OIB za pokretanje nove analize i praćenje kroz dashboard."
+      description="Unesite OIB, broj predmeta ili tekstualni upit za pokretanje nove analize."
       size="sm"
-      initialFocusRef={oibInputRef}
+      initialFocusRef={queryInputRef}
     >
       <form className="space-y-5" onSubmit={handleSubmit}>
         <div>
-          <label htmlFor="new-analysis-oib" className="block text-sm font-medium text-[var(--text)]">
-            OIB
+          <label htmlFor="new-analysis-query" className="block text-sm font-medium text-[var(--text)]">
+            Upit
           </label>
           <input
-            ref={oibInputRef}
-            id="new-analysis-oib"
-            value={oib}
-            onChange={(event) => setOib(event.target.value)}
+            ref={queryInputRef}
+            id="new-analysis-query"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
             className="mt-1 w-full rounded-lg border border-[var(--border-control)] bg-[var(--surface)] px-3 py-2 text-[var(--text)] outline-none focus:border-[var(--accent)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
-            placeholder="npr. 12345678901"
-            inputMode="numeric"
+            placeholder="npr. 12345678901, St-357/2013 ili pojam za pretragu"
             autoComplete="off"
-            aria-invalid={oibInvalid}
+            aria-invalid={queryInvalid}
             aria-describedby={error ? errorId : undefined}
           />
           {error ? (

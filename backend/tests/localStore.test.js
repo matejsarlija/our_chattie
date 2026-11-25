@@ -24,6 +24,7 @@ describe('localStore.createAnalysisRun', () => {
       oib: '66124057408',
       query_type: 'oib',
       query_value: '66124057408',
+      scan_depth: 'balanced',
       status: 'running',
       result_format: 'markdown',
     });
@@ -33,7 +34,20 @@ describe('localStore.createAnalysisRun', () => {
     const runsFile = JSON.parse(fs.readFileSync(path.join(dataDir, 'runs.json'), 'utf8'));
     expect(runsFile).toHaveLength(1);
     expect(runsFile[0].query_type).toBe('oib');
+    expect(runsFile[0].scan_depth).toBe('balanced');
   });
+  test('persists full scan depth when requested', async () => {
+    const { store } = makeStore();
+    const run = await store.createAnalysisRun({
+      oib: 'ST-357/2013',
+      queryType: 'case_number',
+      queryValue: 'ST-357/2013',
+      scanDepth: 'full',
+    });
+
+    expect(run.scan_depth).toBe('full');
+  });
+
 
   test('creates empty events bucket for the run', async () => {
     const { store } = makeStore();

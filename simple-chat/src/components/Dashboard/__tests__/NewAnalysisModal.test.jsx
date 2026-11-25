@@ -40,20 +40,19 @@ describe('NewAnalysisModal', () => {
     expect(screen.getByLabelText(/dubina pretrage/i)).toHaveValue('full');
   });
 
-  test('blocks invalid OIB before submit', async () => {
+  test('blocks an empty query before submit', async () => {
     render(<NewAnalysisModal isOpen onClose={jest.fn()} />);
 
-    fireEvent.change(screen.getByPlaceholderText(/12345678901/i), { target: { value: '123' } });
     fireEvent.click(screen.getByRole('button', { name: /pokreni/i }));
 
-    const oibInput = screen.getByLabelText('OIB');
-    expect(await screen.findByRole('alert')).toHaveTextContent(/točno 11 znamenki/i);
-    expect(oibInput).toHaveAttribute('aria-invalid', 'true');
-    expect(oibInput).toHaveAttribute('aria-describedby');
+    const queryInput = screen.getByLabelText('Upit');
+    expect(await screen.findByRole('alert')).toHaveTextContent(/upit ne smije biti prazan/i);
+    expect(queryInput).toHaveAttribute('aria-invalid', 'true');
+    expect(queryInput).toHaveAttribute('aria-describedby');
     expect(mockStreamCourtAnalysis).not.toHaveBeenCalled();
   });
 
-  test('focuses the OIB field and closes with Escape', () => {
+  test('focuses the query field and closes with Escape', () => {
     const onClose = jest.fn();
     render(
       <>
@@ -62,10 +61,11 @@ describe('NewAnalysisModal', () => {
       </>,
     );
 
-    expect(screen.getByLabelText('OIB')).toHaveFocus();
+    expect(screen.getByLabelText('Upit')).toHaveFocus();
     fireEvent.keyDown(document, { key: 'Escape' });
     expect(onClose).toHaveBeenCalled();
   });
+
 
   test('navigates to detail when analysisId arrives', async () => {
     const onClose = jest.fn();
@@ -75,7 +75,7 @@ describe('NewAnalysisModal', () => {
 
     render(<NewAnalysisModal isOpen onClose={onClose} />);
 
-    fireEvent.change(screen.getByPlaceholderText(/12345678901/i), { target: { value: '12345678901' } });
+    fireEvent.change(screen.getByLabelText('Upit'), { target: { value: '12345678901' } });
     fireEvent.click(screen.getByRole('button', { name: /pokreni/i }));
 
     await waitFor(() => {
@@ -85,12 +85,29 @@ describe('NewAnalysisModal', () => {
     });
   });
 
+  test.each(['12345678901', 'St-357/2013', 'građevinska dozvola'])(
+    'passes the query unchanged to streamCourtAnalysis: %s',
+    async (query) => {
+      mockStreamCourtAnalysis.mockResolvedValue(undefined);
+      render(<NewAnalysisModal isOpen onClose={jest.fn()} />);
+
+      fireEvent.change(screen.getByLabelText('Upit'), { target: { value: query } });
+      fireEvent.click(screen.getByRole('button', { name: /pokreni/i }));
+
+      await waitFor(() => {
+        expect(mockStreamCourtAnalysis).toHaveBeenCalledWith(query, expect.any(Object), {
+          scanDepth: 'balanced',
+        });
+      });
+    },
+  );
+
   test('threads the selected scan depth into the stream request', async () => {
     mockStreamCourtAnalysis.mockResolvedValue(undefined);
 
     render(<NewAnalysisModal isOpen onClose={jest.fn()} />);
 
-    fireEvent.change(screen.getByPlaceholderText(/12345678901/i), { target: { value: '12345678901' } });
+    fireEvent.change(screen.getByLabelText('Upit'), { target: { value: '12345678901' } });
     fireEvent.change(screen.getByLabelText(/dubina pretrage/i), { target: { value: 'full' } });
     fireEvent.click(screen.getByRole('button', { name: /pokreni/i }));
 
@@ -110,9 +127,10 @@ describe('NewAnalysisModal', () => {
 
     render(<NewAnalysisModal isOpen onClose={jest.fn()} />);
 
-    fireEvent.change(screen.getByPlaceholderText(/12345678901/i), { target: { value: '12345678901' } });
+    fireEvent.change(screen.getByLabelText('Upit'), { target: { value: '12345678901' } });
     fireEvent.click(screen.getByRole('button', { name: /pokreni/i }));
 
     expect(await screen.findByText(/neuspjelo pokretanje analize/i)).toBeInTheDocument();
   });
+
 });

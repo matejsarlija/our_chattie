@@ -11,7 +11,11 @@ const { selectPrimaryCase } = require('./utils/primaryCaseSelector');
 const { stratifyClusterEntries } = require('./utils/stratify');
 const { buildStageCounterEvent } = require('../http/analysisStage');
 const { normalizeCaseNumber } = require('./utils/caseNumber');
-const { resolveScanDepthEntries, COURT_ENTRIES_PER_PAGE } = require('./utils/scanDepth');
+const {
+    resolveScanDepthEntries,
+    COURT_ENTRIES_PER_PAGE,
+    SCAN_DEPTH_BALANCED_FORWARD_ENTRIES
+} = require('./utils/scanDepth');
 const { buildClusterEvidencePackage, attachAnalysesToEvidencePackage } = require('./reasoning/ledger/evidencePackage');
 const { generateClusterReport, composeOverviewMarkdown } = require('./reasoning/synthesis/reportService');
 const { createUsageTracker } = require('../llm/usage');
@@ -116,25 +120,22 @@ const DISCOVERY_HEURISTICS_DEFAULTS = {
     dominantClusterRatioThreshold: 0.65
 };
 
-function computeRawScrapeLimit(maxEntries) {
+function computeRawScrapeLimit(poolCap) {
     const envLimit = resolveAnalysisScrapeLimit();
-    if (envLimit !== null) return Math.min(envLimit, maxEntries);
-    return maxEntries;
+    if (envLimit !== null) return Math.min(envLimit, poolCap);
+    return poolCap;
 }
 
-// Resolves the scan-depth dial into court-entry counts, then derives the
-// page-based fields still required by the Puppeteer fallback. One court entry
-// is one e-Oglasna announcement row; a court case or cluster can span many
-// court entries.
+// Resolves the declarative policy and retains page-window fields only for the
+// Puppeteer adapter until R100-008 replaces that harvest.
 function resolveScanDepth(scanDepth) {
-    const depth = resolveScanDepthEntries(scanDepth);
+    const policy = resolveScanDepthEntries(scanDepth);
     return {
-        scanDepth: depth.scanDepth,
-        maxPagesScanned: depth.scanDepth === 'full'
+        ...policy,
+        maxPagesScanned: policy.scanDepth === 'full'
             ? Infinity
-            : Math.ceil(depth.forwardEntries / COURT_ENTRIES_PER_PAGE),
-        tailSample: depth.tailEntries > 0,
-        maxEntries: depth.maxEntries
+            : Math.ceil(SCAN_DEPTH_BALANCED_FORWARD_ENTRIES / COURT_ENTRIES_PER_PAGE),
+        tailSample: policy.scanDepth === 'balanced'
     };
 }
 
@@ -655,15 +656,21 @@ function buildDiscoveryResult(casesToProcess, options = {}, progressCallback) {
     // (summaries, spans) keep describing the pool; only the reasoning input
     // is bounded. Paths without a budget (puppeteer, mocks, legacy metadata)
     // pass through untouched.
-    const analysisBudget = options.discoveryMetadata?.selection?.analysisBudget;
+    const selection = options.discoveryMetadata?.selection || {};
+    const analysisBudget = selection.analysisBudget;
     let coverageLedger = null;
-    if (Number.isFinite(analysisBudget)) {
+    if (Number.isFinite(analysisBudget) || selection.allocation === 'all') {
         const primaryIndex = clusters.findIndex(
             (cluster) => (cluster?.clusterId || cluster?.caseNumber) === primarySelection.selectedCaseKey
         );
         if (primaryIndex >= 0) {
-            const stratified = stratifyClusterEntries(clusters[primaryIndex].entries, { budget: analysisBudget });
-            clusters[primaryIndex] = { ...clusters[primaryIndex], entries: stratified.entries };
+            const entries = clusters[primaryIndex].entries;
+            const stratified = stratifyClusterEntries(entries, {
+                budget: selection.allocation === 'all' ? entries.length : analysisBudget
+            });
+            if (selection.allocation !== 'all') {
+                clusters[primaryIndex] = { ...clusters[primaryIndex], entries: stratified.entries };
+            }
             coverageLedger = stratified.ledger;
         }
     }
@@ -726,7 +733,7 @@ function resolveAnalysisArgs(optionsOrProgressCallback, maybeProgressCallback) {
         : {};
     const depth = resolveScanDepth(options.scanDepth);
     return {
-        scrapeLimit: computeRawScrapeLimit(depth.maxEntries),
+        scrapeLimit: computeRawScrapeLimit(depth.poolCap),
         query: options.query || null,
         discoverySource: options.discoverySource || null,
         runId: options.runId || null,
@@ -753,6 +760,7 @@ async function runCourtAnalysis(searchTerm, optionsOrProgressCallback, progressC
         logger.info('pipeline.runCourtAnalysis', 'Starting court analysis', {
             runId: resolved.runId || null,
             queryType: resolved.query?.type || null,
+            scanDepth: resolved.scanDepth,
             scrapeLimit: resolved.scrapeLimit,
         });
         callback?.({ step: 'discovering', progress: 10, message: 'Pretražujem sudske zapise za nedavne objave...' });
@@ -763,7 +771,8 @@ async function runCourtAnalysis(searchTerm, optionsOrProgressCallback, progressC
             resolved.maxPagesScanned,
             resolved.tailSample,
             resolved.query?.type === 'oib' ? resolved.query.value : null,
-            resolved.query || null
+            resolved.query || null,
+            resolved.scanDepth
         );
         const { casesToProcess, discoveryMetadata } = normalizeScraperResult(scrapeResult);
 
@@ -780,15 +789,15 @@ async function runCourtAnalysis(searchTerm, optionsOrProgressCallback, progressC
             runId: resolved.runId || null,
             cases: casesToProcess.length,
             discoveryMode: discoveryMetadata?.discoveryMode || null,
+            scanDepth: resolved.scanDepth,
         });
 
         return await processScrapedCases(casesToProcess, callback, {
             query: resolved.query || { value: searchTerm },
             discoveryMetadata,
+            scanDepth: resolved.scanDepth,
             runId: resolved.runId || null,
         });
-
-
     } catch (error) {
         logger.error('pipeline.runCourtAnalysis', 'Court analysis failed', { runId: resolved.runId || null, error: error.message });
         callback?.({ step: 'error', progress: 100, message: error.message });
@@ -838,6 +847,7 @@ async function runCourtDiscovery(searchTerm, optionsOrProgressCallback, progress
 async function processScrapedCases(casesToProcess, progressCallback, options = {}) {
     const resolvedOptions = {
         ...options,
+        scanDepth: resolveScanDepthEntries(options.scanDepth).scanDepth,
     };
     // Run correlation: server.js mints a run id per analysis request and
     // threads it here via options (same plumbing shape as usageTracker).

@@ -35,13 +35,13 @@ describe('runCourtAnalysis primary-cluster reasoning scope', () => {
     await expect(
       runCourtAnalysis('66124057408', { scanDepth: 'balanced' }, jest.fn()),
     ).rejects.toThrow();
-    expect(mockSearchAndGetLatestCasesWithDocuments).toHaveBeenCalledWith('66124057408', 40, 3, true, null, null);
+    expect(mockSearchAndGetLatestCasesWithDocuments).toHaveBeenCalledWith('66124057408', 400, 3, true, null, null, 'balanced');
   });
 
   test('resolves scanDepth full into a capped entry scan', async () => {
     await expect(
       runCourtAnalysis('66124057408', { scanDepth: 'full' }, jest.fn()),
     ).rejects.toThrow();
-    expect(mockSearchAndGetLatestCasesWithDocuments).toHaveBeenCalledWith('66124057408', 400, Infinity, false, null, null);
+    expect(mockSearchAndGetLatestCasesWithDocuments).toHaveBeenCalledWith('66124057408', Number(process.env.ANALYSIS_FULL_MAX_ENTRIES) || 1000, Infinity, false, null, null, 'full');
   });
 });

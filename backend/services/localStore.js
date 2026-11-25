@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 
-const DEFAULT_SCAN_DEPTHS = ['standard', 'balanced', 'full'];
+const DEFAULT_SCAN_DEPTHS = ['balanced', 'full'];
 
 const { buildRunSummary, toRunListItem } = require('../court-analysis/utils/runSummary');
 
@@ -72,7 +72,9 @@ function createLocalStore(options = {}) {
   function readSettings() {
     const settings = readJson(settingsFile, {});
     const result = {};
-    if (DEFAULT_SCAN_DEPTHS.includes(settings.defaultScanDepth)) {
+    if (settings.defaultScanDepth === 'standard') {
+      result.defaultScanDepth = 'balanced';
+    } else if (DEFAULT_SCAN_DEPTHS.includes(settings.defaultScanDepth)) {
       result.defaultScanDepth = settings.defaultScanDepth;
     }
     if (settings.uiPreferences && typeof settings.uiPreferences === 'object' && !Array.isArray(settings.uiPreferences)) {
@@ -93,7 +95,7 @@ function createLocalStore(options = {}) {
     return run;
   }
 
-  async function createAnalysisRun({ oib, queryType = null, queryValue = null, status = 'running' }) {
+  async function createAnalysisRun({ oib, queryType = null, queryValue = null, scanDepth = 'balanced', status = 'running' }) {
     return enqueue(() => {
       const runs = readRuns();
       const run = {
@@ -101,6 +103,7 @@ function createLocalStore(options = {}) {
         oib: oib ?? null,
         query_type: queryType || null,
         query_value: queryValue || null,
+        scan_depth: scanDepth === 'full' ? 'full' : 'balanced',
         status,
         result_format: 'markdown',
         token_usage: null,
@@ -262,7 +265,7 @@ function createLocalStore(options = {}) {
       const next = readSettings();
       if (patch && typeof patch === 'object' && patch.defaultScanDepth !== undefined) {
         if (!DEFAULT_SCAN_DEPTHS.includes(patch.defaultScanDepth)) {
-          const err = new Error('Invalid defaultScanDepth. Expected "standard", "balanced" or "full".');
+          const err = new Error('Invalid defaultScanDepth. Expected "balanced" or "full".');
           err.statusCode = 400;
           throw err;
         }

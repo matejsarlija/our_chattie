@@ -141,9 +141,10 @@ describe('CsvExportClient', () => {
         expect(result.discoveryMetadata.acquisitionModes).toEqual(['csv-export']);
         expect(result.discoveryMetadata.csv.rowCount).toBe(381);
 
-        // Standard court-entry budget — bounded, not the full 381.
-        expect(result.casesToProcess).toHaveLength(30);
-        expect(result.discoveryMetadata.rawParsedEntryCount).toBe(30);
+        // Balanced analysis discovers the selected primary pool.
+        // Allocation occurs later in the pipeline.
+        expect(result.casesToProcess).toHaveLength(343);
+        expect(result.discoveryMetadata.rawParsedEntryCount).toBe(343);
         expect(result.casesToProcess[0].acquisition.mode).toBe('csv-export');
         expect(result.casesToProcess[0].caseInfo.caseNumber).toBe('ST-2/2013');
     });
@@ -161,7 +162,7 @@ describe('CsvExportClient', () => {
         expect(result.discoveryMetadata.selection).toEqual(expect.objectContaining({
             selectedCaseKey: 'ST-2/2013',
             rule: 'primary-case-pool',
-            analysisBudget: 40,
+            analysisBudget: 100,
             primaryEntryCount: 343
         }));
         // Side-cases are considered but untaken.
@@ -177,19 +178,19 @@ describe('CsvExportClient', () => {
     test('balanced pool belongs to the selected primary case, not global side-cases (T0-1/TS-2)', async () => {
         const client = makeClient('oib-66124057408.csv');
         const result = await client.searchAndGetLatestCasesWithDocuments(
-            '66124057408', 40, 3, true, '66124057408', { type: 'oib', value: '66124057408' }
+            '66124057408', null, null, true, '66124057408', { type: 'oib', value: '66124057408' }
         );
         const keys = result.casesToProcess.map((entry) => entry.caseInfo.caseNumber);
 
         // Whole selected case; the 2016–2018 side-cases are present in the
         // selection metadata but untaken. Bounding happens post-grouping.
-        expect(result.casesToProcess.length).toBeGreaterThan(40);
+        expect(result.casesToProcess).toHaveLength(343);
         expect(new Set(keys)).toEqual(new Set(['ST-2/2013']));
         expect(result.discoveryMetadata.selection).toEqual(expect.objectContaining({
             selectedCaseKey: 'ST-2/2013',
             method: 'document-coverage',
             rule: 'primary-case-pool',
-            analysisBudget: 40
+            analysisBudget: 100,
         }));
         expect(result.discoveryMetadata.selection.candidates.map((c) => c.key)).toContain('ST-357/2013');
     });
@@ -210,14 +211,17 @@ describe('CsvExportClient', () => {
         expect(result.casesToProcess.every((entry) => entry.caseInfo.caseNumber === 'ST-357/2013')).toBe(true);
     });
 
-    test('standard path keeps the global window but still discloses the selection (T0-1)', async () => {
+    test('balanced mode uses the selected primary pool rather than a global window', async () => {
         const client = makeClient('oib-66124057408.csv');
         const result = await client.searchAndGetLatestCasesWithDocuments('66124057408', null, null, false);
 
-        expect(result.casesToProcess).toHaveLength(30);
+        expect(result.casesToProcess).toHaveLength(343);
         expect(result.discoveryMetadata.selection).toEqual(expect.objectContaining({
             selectedCaseKey: 'ST-2/2013',
-            rule: 'global'
+            rule: 'primary-case-pool',
+            allocation: 'stratified',
+            analysisBudget: 100,
+            poolCap: 400
         }));
     });
 
@@ -290,10 +294,27 @@ describe('CsvExportClient', () => {
         expect(result.discoveryMetadata.rawParsedEntryCount).toBe(400);
     });
 
-    test('full scan (maxPages Infinity) returns the complete set', async () => {
+    test('full scan returns the complete selected primary pool and catalogs secondary clusters', async () => {
         const client = makeClient('oib-66124057408.csv');
-        const result = await client.searchAndGetLatestCasesWithDocuments('66124057408', null, Infinity, false);
-        expect(result.casesToProcess).toHaveLength(381);
+        const result = await client.searchAndGetLatestCasesWithDocuments(
+            '66124057408',
+            1000,
+            Infinity,
+            false,
+            '66124057408',
+            { type: 'oib', value: '66124057408' },
+            'full'
+        );
+
+        expect(result.casesToProcess).toHaveLength(343);
+        expect(result.discoveryMetadata.selection).toEqual(expect.objectContaining({
+            selectedCaseKey: 'ST-2/2013',
+            rule: 'primary-case-pool',
+            allocation: 'all',
+            analysisBudget: null,
+            poolCap: 1000
+        }));
+        expect(result.discoveryMetadata.selection.candidates.map((candidate) => candidate.key)).toContain('ST-357/2013');
     });
 
     test('searchAndGetLatestCases returns entries without the document filter', async () => {

@@ -28,6 +28,16 @@ describe('localStore lawyer preferences', () => {
             uiPreferences: { compact: true },
         });
     });
+    test('normalizes a legacy standard scan depth to balanced when read', () => {
+        fs.writeFileSync(path.join(dataDir, 'settings.json'), JSON.stringify({
+            defaultScanDepth: 'standard',
+        }));
+
+        expect(createLocalStore({ dataDir }).getSettings()).toEqual({
+            defaultScanDepth: 'balanced',
+        });
+    });
+
 
     test('persists supported lawyer preferences and rejects invalid scan depths', async () => {
         const store = createLocalStore({ dataDir });

@@ -63,12 +63,17 @@ describe('lawyer settings store + API', () => {
     expect(res.body.settings).toEqual({});
   });
 
-  test('PUT updates and persists a lawyer preference', async () => {
-    const res = await request(app).put('/api/settings').send({ defaultScanDepth: 'standard' });
+  test('PUT updates and persists a supported scan-depth preference', async () => {
+    const res = await request(app).put('/api/settings').send({ defaultScanDepth: 'balanced' });
     expect(res.status).toBe(200);
-    expect(res.body.settings).toEqual({ defaultScanDepth: 'standard' });
-    expect(store.getSettings()).toEqual({ defaultScanDepth: 'standard' });
+    expect(res.body.settings).toEqual({ defaultScanDepth: 'balanced' });
+    expect(store.getSettings()).toEqual({ defaultScanDepth: 'balanced' });
   });
+  test('PUT rejects retired standard scan depth with 400', async () => {
+    const res = await request(app).put('/api/settings').send({ defaultScanDepth: 'standard' });
+    expect(res.status).toBe(400);
+  });
+
 
   test('PUT rejects an invalid scan depth with 400', async () => {
     const res = await request(app).put('/api/settings').send({ defaultScanDepth: 'gold' });

@@ -6,11 +6,9 @@
 // COMPLETE result set, the client replaces the paginated crawl, tail sampling,
 // and cluster-expansion follow-ups with a single GET + parse.
 //
-// Bounding: the export can be far larger than the analysis budget, so the
-// client applies scan-depth court-entry budgets. A finite `limit` is the total
-// court-entry maximum; `maxPages === Infinity` maps full depth to the defensive
-// 400-entry ceiling. `tailSample` reserves the oldest court entries within that
-// maximum so balanced depth keeps its "origin context".
+// Bounding: the export can be far larger than the analysis budget, so the client
+// first selects a primary-case discovery pool under the scan-depth policy cap.
+// The pipeline then applies the analysis allocation after grouping.
 //
 // Deliberately does NOT implement `searchCaseNumberFollowUp` / `followDetailLinks`
 // so the deterministic cluster-expansion path (`executeClusterExpansionSearches`)
@@ -27,8 +25,10 @@ const {
     COURT_ENTRIES_PER_PAGE,
     SCAN_DEPTH_BALANCED_FORWARD_ENTRIES,
     SCAN_DEPTH_TAIL_ENTRIES,
-    SCAN_DEPTH_MAX_ENTRIES
+    SCAN_DEPTH_MAX_ENTRIES,
+    resolveScanDepthEntries
 } = require('../court-analysis/utils/scanDepth');
+
 
 const BASE_URL = 'https://e-oglasna.pravosudje.hr';
 const EXPORT_PATH = '/objave/izvoz/csv';
@@ -209,54 +209,38 @@ class CsvExportClient {
         return { type: 'text', value: searchTerm };
     }
 
-    async searchAndGetLatestCasesWithDocuments(searchTerm, limit = null, maxPages = null, tailSample = false, debtorOib = null, query = null) {
+    async searchAndGetLatestCasesWithDocuments(searchTerm, limit = null, maxPages = null, tailSample = false, debtorOib = null, query = null, scanDepth = 'balanced') {
         const { entries, ...fetchInfo } = await this.fetchExport(searchTerm);
         const effectiveQuery = this.resolveEffectiveQuery(searchTerm, debtorOib, query);
         const identityMatching = applyDebtorOibFilter(entries, debtorOib);
         const withDocuments = identityMatching.filter((entry) => entry.caseInfo.documentDownloadLink);
-
-        if (tailSample) {
-            // Balanced depth discovers the whole selected case as an
-            // untagged pool (capped at the defensive 400-entry ceiling); the
-            // stratified allocator in the pipeline bounds ANALYSIS scope
-            // after grouping (spec §6, TS-2). A zero budget short-circuits to
-            // empty, preserving the historical no-results error path.
-            const cap = computeCourtEntryCap(limit, maxPages, tailSample);
-            const selection = selectPrimaryCase(withDocuments, effectiveQuery);
-            const key = selection.selectedCaseKey;
-            const pool = cap <= 0 || !key
-                ? []
-                : withDocuments
-                    .filter((entry) => entryCaseKey(entry) === key)
-                    .slice(0, SCAN_DEPTH_MAX_ENTRIES);
-            return {
-                casesToProcess: pool,
-                discoveryMetadata: this.buildDiscoveryMetadata(fetchInfo, pool.length, {
-                    selectedCaseKey: key,
-                    method: selection.method,
-                    rule: 'primary-case-pool',
-                    analysisBudget: cap,
-                    candidates: selection.candidates,
-                    unkeyedEntries: selection.unkeyedEntries,
-                    unboundedEntryCount: withDocuments.length,
-                    primaryEntryCount: pool.length
-                })
-            };
-        }
-
-        const bounded = applyBounding(withDocuments, limit, maxPages, tailSample);
+        const policy = resolveScanDepthEntries(scanDepth);
+        const requestedLimit = Number.isFinite(limit)
+            ? Math.max(0, Math.floor(limit))
+            : policy.poolCap;
+        const poolCap = Math.min(policy.poolCap, requestedLimit);
         const selection = selectPrimaryCase(withDocuments, effectiveQuery);
+        const selectedPrimaryEntries = selection.selectedCaseKey
+            ? withDocuments.filter((entry) => entryCaseKey(entry) === selection.selectedCaseKey)
+            : [];
+        const pool = selectedPrimaryEntries.slice(0, poolCap);
+
         return {
-            casesToProcess: bounded,
-            discoveryMetadata: this.buildDiscoveryMetadata(fetchInfo, bounded.length, {
+            casesToProcess: pool,
+            discoveryMetadata: this.buildDiscoveryMetadata(fetchInfo, pool.length, {
                 selectedCaseKey: selection.selectedCaseKey,
                 method: selection.method,
-                rule: 'global',
-                analysisBudget: computeCourtEntryCap(limit, maxPages, tailSample),
+                rule: 'primary-case-pool',
+                scanDepth: policy.scanDepth,
+                allocation: policy.allocation,
+                analysisBudget: policy.maxEntries,
+                poolCap: policy.poolCap,
+                selectedPoolCap: poolCap,
                 candidates: selection.candidates,
                 unkeyedEntries: selection.unkeyedEntries,
                 unboundedEntryCount: withDocuments.length,
-                primaryEntryCount: selection.candidates.find((c) => c.key === selection.selectedCaseKey)?.entryCount ?? 0
+                primaryEntryCount: selectedPrimaryEntries.length,
+                omittedPrimaryEntryCount: Math.max(0, selectedPrimaryEntries.length - pool.length)
             })
         };
     }

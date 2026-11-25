@@ -242,6 +242,7 @@ function buildRunSummary({ run, resultJson } = {}) {
             participantOibs: identity.participantOibs,
             queryType: typeof safeRun.query_type === 'string' ? safeRun.query_type : null,
             queryValue: typeof safeRun.query_value === 'string' ? safeRun.query_value : null,
+            scanDepth: safeRun.scan_depth === 'full' ? 'full' : 'balanced',
             coverage: deriveCoverage(safeResult),
             amounts: deriveAmounts(safeResult),
         };
@@ -255,6 +256,7 @@ function buildRunSummary({ run, resultJson } = {}) {
             participantOibs: [],
             queryType: null,
             queryValue: null,
+            scanDepth: 'balanced',
             coverage: null,
             amounts: null,
         };

@@ -1,17 +1,15 @@
 import { useId } from 'react';
 
-export const SCAN_DEPTHS = ['standard', 'balanced', 'full'];
+export const SCAN_DEPTHS = ['balanced', 'full'];
 
 export const SCAN_DEPTH_LABELS = {
-  standard: 'Standardno',
   balanced: 'Uravnoteženo',
-  full: 'Sve dostupne',
+  full: 'Sve',
 };
 
 const HELPERS = {
-  standard: '30 najnovijih objava',
-  balanced: '30 najnovijih + 10 najstarijih objava',
-  full: 'Sve dostupne objave (do 400)',
+  balanced: 'Do 100 objava: najnovije i najstarije.',
+  full: 'Sve dostupne objave.',
 };
 
 export default function ScanDepthSelect({ value = 'balanced', onChange, disabled = false }) {

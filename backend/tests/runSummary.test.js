@@ -45,13 +45,17 @@ describe('buildRunSummary — canonical full package', () => {
     // Build the canonical flow surface from the fixture's extracted analyses;
     // the frozen Lab artifact itself remains an immutable historical replay.
     const summary = buildRunSummary({
-        run: { id: 'lab', query_type: 'oib', query_value: '11111111111' },
+        run: { id: 'lab', query_type: 'oib', query_value: '11111111111', scan_depth: 'full' },
         resultJson: { clusterEvidencePackage: LAB_PKG },
     });
 
     test('resolves the case number from the package', () => {
         expect(summary.caseNumber).toBe('St-2/2013');
     });
+    test('projects persisted scan depth', () => {
+        expect(summary.scanDepth).toBe('full');
+    });
+
 
     test('resolves participant names and OIBs from package identity', () => {
         expect(summary.participantNames).toEqual(['PROKURATOR d.o.o.', 'COAST d.o.o.', 'CRO-GO d.o.o.']);

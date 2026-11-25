@@ -21,15 +21,15 @@ function StatefulScanDepthSelect({ value: initialValue, onChange, ...props }) {
 }
 
 describe('ScanDepthSelect', () => {
-  test('renders the three depth options with balanced selected by default', () => {
+  test('renders exactly the two depth options with balanced selected by default', () => {
     render(<ScanDepthSelect value="balanced" onChange={jest.fn()} />);
 
     const combo = screen.getByLabelText(/dubina pretrage/i);
     expect(combo).toHaveValue('balanced');
-    expect(screen.getByRole('option', { name: 'Standardno' })).toBeInTheDocument();
+    expect(screen.getAllByRole('option')).toHaveLength(2);
     expect(screen.getByRole('option', { name: 'Uravnoteženo' })).toBeInTheDocument();
-    expect(screen.getByRole('option', { name: 'Sve dostupne' })).toBeInTheDocument();
-    expect(screen.getByText('30 najnovijih + 10 najstarijih objava')).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'Sve' })).toBeInTheDocument();
+    expect(screen.getByText(/100 objava/i)).toBeInTheDocument();
   });
 
   test('selecting an option emits and renders the depth value', () => {
@@ -40,14 +40,14 @@ describe('ScanDepthSelect', () => {
 
     expect(onChange).toHaveBeenCalledWith('full');
     expect(screen.getByLabelText(/dubina pretrage/i)).toHaveValue('full');
-    expect(screen.getByText('Sve dostupne objave (do 400)')).toBeInTheDocument();
+    expect(screen.getByText('Sve dostupne objave.')).toBeInTheDocument();
   });
 
   test('falls back to balanced for an invalid value', () => {
     render(<ScanDepthSelect value="deep" onChange={jest.fn()} />);
 
     expect(screen.getByLabelText(/dubina pretrage/i)).toHaveValue('balanced');
-    expect(screen.getByText(/najstarijih objava/i)).toBeInTheDocument();
+    expect(screen.getByText(/najnovije i najstarije/i)).toBeInTheDocument();
   });
 
   test('does not emit when disabled', () => {

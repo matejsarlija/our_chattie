@@ -79,8 +79,8 @@ class AutoDiscoveryClient {
         }
     }
 
-    searchAndGetLatestCasesWithDocuments(searchTerm, limit, maxPages, tailSample, debtorOib, query = null) {
-        return this._run('searchAndGetLatestCasesWithDocuments', [searchTerm, limit, maxPages, tailSample, debtorOib, query]);
+    searchAndGetLatestCasesWithDocuments(searchTerm, limit, maxPages, tailSample, debtorOib, query = null, scanDepth = 'balanced') {
+        return this._run('searchAndGetLatestCasesWithDocuments', [searchTerm, limit, maxPages, tailSample, debtorOib, query, scanDepth]);
     }
 
     searchAndGetLatestCases(searchTerm, limit, maxPages, tailSample, debtorOib, query = null) {

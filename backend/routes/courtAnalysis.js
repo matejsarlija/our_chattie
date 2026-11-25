@@ -38,6 +38,7 @@ function createCourtAnalysisRouter({ analysisStore, courtAnalysisQueue, writeLim
           oib: parsedRequest.query.value,
           queryType: parsedRequest.query.type,
           queryValue: parsedRequest.query.value,
+          scanDepth: parsedRequest.options.scanDepth,
           status: 'running',
         });
 
