@@ -253,6 +253,13 @@ function normalizeScanDepth(value) {
   if (value === 'standard') return 'balanced';
   return value === 'full' ? 'full' : 'balanced';
 }
+function buildFtsMatchQuery(value, operator = 'AND') {
+  const normalized = String(value || '').toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g, '');
+  const terms = normalized.match(/[a-z0-9]+/g) || [];
+  const joiner = operator === 'OR' ? ' OR ' : ' AND ';
+  return terms.map((term) => `"${term.replace(/"/g, '""')}"`).join(joiner);
+}
+
 
 function stripDuplicateAiResults(resultJson) {
   if (!resultJson || typeof resultJson !== 'object' || Array.isArray(resultJson)) return resultJson;
@@ -695,6 +702,173 @@ function createSqliteStore(options = {}) {
     },
     insertRunChunks({ runId, chunks }) {
       return insertChunks(runId, chunks || []);
+    },
+    listRunFacts({ runId, kind, partyId, grounded, q, limit = 20, offset = 0 }) {
+      requireRun(runId);
+      const clauses = ['run_id = ?'];
+      const params = [runId];
+      if (kind) {
+        clauses.push('kind = ?');
+        params.push(kind);
+      }
+      if (partyId) {
+        clauses.push('canonical_party_id = ?');
+        params.push(partyId);
+      }
+      if (grounded !== undefined && grounded !== null) {
+        clauses.push('grounded = ?');
+        params.push(grounded ? 1 : 0);
+      }
+      if (q) {
+        clauses.push("(COALESCE(description, '') LIKE ? OR raw_json LIKE ?)");
+        params.push(`%${q}%`, `%${q}%`);
+      }
+      const where = clauses.join(' AND ');
+      const total = db.prepare(`SELECT COUNT(*) AS total FROM run_facts WHERE ${where}`).get(...params).total;
+      const rows = db.prepare(`SELECT * FROM run_facts WHERE ${where} ORDER BY rowid LIMIT ? OFFSET ?`)
+        .all(...params, limit, offset)
+        .map((row) => ({
+          id: row.id,
+          kind: row.kind,
+          description: row.description,
+          value: row.value,
+          valueEur: row.value_eur,
+          valueHrk: row.value_hrk,
+          currency: row.currency,
+          date: row.date,
+          direction: row.direction,
+          amountRole: row.amount_role,
+          eventType: row.event_type,
+          valueRole: row.value_role,
+          legalEffect: row.legal_effect,
+          isplatniRed: row.isplatni_red,
+          supersedes: row.supersedes,
+          claimRegistryNumber: row.claim_registry_number,
+          filingReference: row.filing_reference,
+          canonicalPartyId: row.canonical_party_id,
+          payerOib: row.payer_oib,
+          recipientOib: row.recipient_oib,
+          grounded: Boolean(row.grounded),
+          docHash: row.doc_hash,
+          sourceEntryIndex: row.source_entry_index,
+          sourceChunkId: row.source_chunk_id,
+          sourceStartIndex: row.source_start_index,
+          sourceEndIndex: row.source_end_index,
+          sourcePages: parseJson(row.source_pages_json, []),
+          raw: parseJson(row.raw_json, {}),
+        }));
+      return { facts: rows, total };
+    },
+    getRunChunk({ runId, chunkId }) {
+      requireRun(runId);
+      const row = db.prepare(`SELECT chunk_id, doc_id, file_name, case_number, source_entry_index,
+        page_numbers_json, start_index, end_index, text FROM run_chunks WHERE run_id = ? AND chunk_id = ? ORDER BY rowid LIMIT 1`)
+        .get(runId, chunkId);
+      if (!row) return null;
+      return {
+        chunkId: row.chunk_id,
+        docId: row.doc_id,
+        fileName: row.file_name,
+        caseNumber: row.case_number,
+        sourceEntryIndex: row.source_entry_index,
+        pageNumbers: parseJson(row.page_numbers_json, []),
+        startIndex: row.start_index,
+        endIndex: row.end_index,
+        text: row.text,
+      };
+    },
+    searchRunChunks({ runId, query, operator = 'AND', limit = 20, offset = 0 }) {
+      requireRun(runId);
+      const match = buildFtsMatchQuery(query, operator);
+      if (!match) return { chunks: [], total: 0 };
+      const where = 'run_chunks_fts MATCH ? AND c.run_id = ?';
+      const total = db.prepare(`SELECT COUNT(*) AS total FROM run_chunks_fts
+        JOIN run_chunks c ON c.rowid = run_chunks_fts.rowid WHERE ${where}`).get(match, runId).total;
+      const rows = db.prepare(`SELECT c.chunk_id, c.doc_id, c.file_name, c.case_number, c.source_entry_index,
+        c.page_numbers_json, c.start_index, c.end_index, c.text, c.normalized_text,
+        snippet(run_chunks_fts, 0, '<mark>', '</mark>', '…', 18) AS snippet,
+        bm25(run_chunks_fts) AS rank
+        FROM run_chunks_fts JOIN run_chunks c ON c.rowid = run_chunks_fts.rowid
+        WHERE ${where} ORDER BY rank ASC, c.rowid ASC LIMIT ? OFFSET ?`)
+        .all(match, runId, limit, offset)
+        .map((row) => ({
+          chunkId: row.chunk_id,
+          docId: row.doc_id,
+          fileName: row.file_name,
+          caseNumber: row.case_number,
+          sourceEntryIndex: row.source_entry_index,
+          pageNumbers: parseJson(row.page_numbers_json, []),
+          startIndex: row.start_index,
+          endIndex: row.end_index,
+          text: row.text,
+          normalizedText: row.normalized_text,
+          snippet: row.snippet,
+          rank: row.rank,
+        }));
+      return { chunks: rows, total };
+    },
+    listRunTraces({ runId, limit = 20, offset = 0 }) {
+      requireRun(runId);
+      const total = db.prepare('SELECT COUNT(*) AS total FROM llm_traces WHERE run_id = ?').get(runId).total;
+      const traces = db.prepare(`SELECT id, task_type, doc_hash, segment_id, prompt_hash, requested_model,
+        actual_model, actual_provider, finish_reason, validation_errors_json, grounding_stats_json, ttft_ms,
+        latency_ms, input_tokens, output_tokens, cached_tokens, reasoning_tokens, cost_usd, error_message, created_at
+        FROM llm_traces WHERE run_id = ? ORDER BY created_at DESC, id LIMIT ? OFFSET ?`)
+        .all(runId, limit, offset)
+        .map((row) => ({
+          id: row.id,
+          taskType: row.task_type,
+          docHash: row.doc_hash,
+          segmentId: row.segment_id,
+          promptHash: row.prompt_hash,
+          requestedModel: row.requested_model,
+          actualModel: row.actual_model,
+          actualProvider: row.actual_provider,
+          finishReason: row.finish_reason,
+          validationErrors: parseJson(row.validation_errors_json, []),
+          groundingStats: parseJson(row.grounding_stats_json, null),
+          ttftMs: row.ttft_ms,
+          latencyMs: row.latency_ms,
+          inputTokens: row.input_tokens,
+          outputTokens: row.output_tokens,
+          cachedTokens: row.cached_tokens,
+          reasoningTokens: row.reasoning_tokens,
+          costUsd: row.cost_usd,
+          errorMessage: row.error_message,
+          createdAt: row.created_at,
+        }));
+      return { traces, total };
+    },
+    getRunTrace({ runId, traceId }) {
+      requireRun(runId);
+      const row = db.prepare('SELECT * FROM llm_traces WHERE run_id = ? AND id = ?').get(runId, traceId);
+      if (!row) return null;
+      return {
+        id: row.id,
+        runId: row.run_id,
+        taskType: row.task_type,
+        docHash: row.doc_hash,
+        segmentId: row.segment_id,
+        promptHash: row.prompt_hash,
+        userPrompt: row.user_prompt,
+        requestParams: parseJson(row.request_params_json, null),
+        requestedModel: row.requested_model,
+        actualModel: row.actual_model,
+        actualProvider: row.actual_provider,
+        finishReason: row.finish_reason,
+        rawResponse: row.raw_response,
+        validationErrors: parseJson(row.validation_errors_json, []),
+        groundingStats: parseJson(row.grounding_stats_json, null),
+        ttftMs: row.ttft_ms,
+        latencyMs: row.latency_ms,
+        inputTokens: row.input_tokens,
+        outputTokens: row.output_tokens,
+        cachedTokens: row.cached_tokens,
+        reasoningTokens: row.reasoning_tokens,
+        costUsd: row.cost_usd,
+        errorMessage: row.error_message,
+        createdAt: row.created_at,
+      };
     },
     getOcrPage(contentHash, pageNumber, options = {}) {
       const row = db.prepare(`SELECT text FROM ocr_transcripts WHERE content_hash = ? AND engine = ? AND task_type = ? AND prompt_version = ? AND model_id = ?`)

@@ -289,6 +289,8 @@ function attachAnalysesToEvidencePackage(pkg, processedCases, clusterId = null) 
                 id: chunk.id,
                 text: chunk.text,
                 metadata: {
+                    docId: chunk.metadata?.docId || chunk.id,
+                    pageNumbers: Array.isArray(chunk.metadata?.pageNumbers) ? chunk.metadata.pageNumbers : [],
                     fileName: itemFileName,
                     caseNumber: pkg.clusterId || null,
                     startIndex: chunk.metadata?.startIndex ?? null,
@@ -322,6 +324,7 @@ function attachAnalysesToEvidencePackage(pkg, processedCases, clusterId = null) 
             filePath: item.filePath || null,
             caseNumber: item.aiResult.caseNumber || pkg.clusterId || null,
             decisionDate: item.aiResult.decisionDate || entryDate || null,
+            decisionOutcome: item.aiResult.decisionOutcome || null,
             entryDate: entryDate || null,
             sourceEntryIndex,
             sourceDocumentLinkId,

@@ -1165,11 +1165,27 @@ async function analyzeClusterDocuments(input) {
                     logger.agent.warn(`[Analyzer] Could not hash source bytes for ${file.text}: ${hashErr.message}`);
                 }
 
-                // Full text exists — capture the capped ground-truth chunk set
-                // now while the document content is in hand.
-                retrievalChunks = buildRetrievalChunks(text, {
-                    docId: path.basename(file?.filePath || file?.text || "analysis-doc"),
-                });
+                const retrievalPageRanges = Array.isArray(extraction.pageRanges)
+                    ? extraction.pageRanges
+                    : pageRangesFromMarkedText(text);
+                const retrievalDocId = crypto.createHash('sha256')
+                    .update([
+                        contentHash || file?.filePath || path.basename(file?.text || 'analysis-doc'),
+                        file?.sourceDocumentLinkId || file?.documentLinkId || '',
+                        file?.sourceEntryIndex ?? file?.entryIndex ?? '',
+                    ].join('\0'))
+                    .digest('hex');
+                retrievalChunks = buildRetrievalChunks(text, { docId: retrievalDocId }).map((chunk) => ({
+                    ...chunk,
+                    metadata: {
+                        ...chunk.metadata,
+                        pageNumbers: pageNumbersForRange(
+                            retrievalPageRanges,
+                            chunk.metadata.startIndex,
+                            chunk.metadata.endIndex,
+                        ),
+                    },
+                }));
 
                 //console.log('Case info for analysis:', caseInfo);
 

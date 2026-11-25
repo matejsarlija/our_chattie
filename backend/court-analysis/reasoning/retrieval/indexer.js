@@ -10,10 +10,14 @@ function normalizeText(value) {
 }
 
 function tokenize(value) {
-    return normalizeText(value)
-        .split(/[^a-z0-9čćđšž]+/i)
-        .map((token) => token.trim())
-        .filter((token) => token.length >= 3 && !CROATIAN_STOP_WORDS.has(token));
+    const normalized = normalizeText(value);
+    return [...normalized.matchAll(/[a-z0-9]+/g)]
+        .map((match) => ({ token: match[0].trim(), index: match.index }))
+        .filter(({ token, index }) => (
+            (token.length >= 3 && !CROATIAN_STOP_WORDS.has(token))
+            || (/^\d{1,2}$/.test(token) && /redni\s+broj\s*[:#-]?\s*$/u.test(normalized.slice(0, index)))
+        ))
+        .map(({ token }) => token);
 }
 
 function createSource(id, text, metadata = {}) {
@@ -26,6 +30,13 @@ function createSource(id, text, metadata = {}) {
         metadata
     };
 }
+function flattenIndexText(value) {
+    if (value === null || value === undefined) return '';
+    if (Array.isArray(value)) return value.map(flattenIndexText).filter(Boolean).join(' ');
+    if (typeof value === 'object') return Object.values(value).map(flattenIndexText).filter(Boolean).join(' ');
+    return String(value);
+}
+
 
 function collectSources(evidencePackage) {
     const sources = [];
@@ -80,11 +91,17 @@ function collectSources(evidencePackage) {
     // content instead of only structural metadata.
     for (const analysis of evidencePackage?.analyses || []) {
         const amountText = (Array.isArray(analysis.amounts) ? analysis.amounts : [])
-            .map((amount) => `${amount.amount || ''} ${amount.currency || ''} ${amount.description || ''}`.trim())
+            .map((amount) => [
+                amount.amount, amount.currency, amount.description, amount.claimRegistryNumber,
+                amount.filingReference, amount.isplatniRed ? `redni broj ${amount.isplatniRed}` : ''
+            ].filter(Boolean).join(' '))
             .filter(Boolean)
             .join(' ');
         const propertyText = (Array.isArray(analysis.propertyFlow) ? analysis.propertyFlow : [])
-            .map((item) => `${item.value ?? ''} ${item.currency || ''} ${item.description || ''} ${item.transferor || ''} ${item.transferee || ''}`.trim())
+            .map((item) => [
+                item.value, item.currency, item.description, item.transferor, item.transferee,
+                item.claimRegistryNumber, item.filingReference, item.isplatniRed ? `redni broj ${item.isplatniRed}` : ''
+            ].filter(Boolean).join(' '))
             .filter(Boolean)
             .join(' ');
         const documentPartyText = (Array.isArray(analysis.documentParties) ? analysis.documentParties : [])
@@ -93,9 +110,19 @@ function collectSources(evidencePackage) {
             .join(' ');
         const source = createSource(
             analysis.id || analysis.filePath || analysis.fileName,
-            [analysis.summary, analysis.fileName, analysis.caseNumber, analysis.decisionDate, amountText, propertyText, documentPartyText]
-                .filter(Boolean)
-                .join(' '),
+            [
+                analysis.summary,
+                analysis.fileName,
+                analysis.caseNumber,
+                analysis.decisionDate,
+                analysis.decisionOutcome,
+                amountText,
+                propertyText,
+                documentPartyText,
+                flattenIndexText(analysis.proceduralEvents),
+                flattenIndexText(analysis.metadataProceduralEvents),
+                flattenIndexText(analysis.citedFilingReferences),
+            ].filter(Boolean).join(' '),
             {
                 sourceType: 'analysis',
                 caseNumber: analysis.caseNumber || null,
@@ -103,6 +130,28 @@ function collectSources(evidencePackage) {
                 decisionDate: analysis.decisionDate || null
             }
         );
+        if (source) sources.push(source);
+    }
+
+    for (const [index, fact] of (evidencePackage?.factLedger || []).entries()) {
+        const source = createSource(`fact-${index + 1}`, [
+            fact.kind,
+            fact.description,
+            fact.quote,
+            fact.value,
+            fact.currency,
+            fact.isplatniRed ? `redni broj ${fact.isplatniRed}` : '',
+            fact.claimRegistryNumber,
+            fact.filingReference,
+            fact.references,
+            fact.parties,
+        ].map(flattenIndexText).filter(Boolean).join(' '), {
+            sourceType: 'fact',
+            fileName: fact.doc?.fileName || null,
+            caseNumber: fact.doc?.caseNumber || evidencePackage.clusterId || null,
+            sourceEntryIndex: fact.doc?.sourceEntryIndex ?? null,
+            docId: fact.doc?.analysisId || null,
+        });
         if (source) sources.push(source);
     }
 

@@ -246,14 +246,14 @@ describe('buildCourtAnalysisPayload', () => {
                     coverage: { analyzed: 1, failed: 0 }
                 }
             }],
-            clusterEvidencePackage: { facts: [{ id: 'fact-1' }] },
+            clusterEvidencePackage: { facts: [{ id: 'fact-1' }], chunks: [{ id: 'chunk-1', text: 'x'.repeat(600_000) }] },
             report: { summary: 'kept' },
             comparativeAnalysis: 'kept'
         });
 
         expect(payload.processedCases[0].analysis.individualAnalyses[0]).toEqual({ fileName: 'large.pdf', error: undefined });
         expect(payload.processedCases[0].analysis.coverage).toEqual({ analyzed: 1, failed: 0 });
-        expect(payload.clusterEvidencePackage).toEqual({ facts: [{ id: 'fact-1' }] });
+        expect(payload.clusterEvidencePackage).toEqual({ facts: [{ id: 'fact-1' }], chunkCount: 1 });
         expect(payload.report).toEqual({ summary: 'kept' });
         expect(Buffer.byteLength(JSON.stringify(payload))).toBeLessThan(500 * 1024);
     });

@@ -47,6 +47,7 @@ describe('indexer', () => {
             'document-link'
         ]);
     });
+
     test('document-extracted party identifiers are searchable in analysis sources', () => {
         const index = buildLexicalIndex({
             ...evidencePackage,
@@ -68,5 +69,43 @@ describe('indexer', () => {
             'stecaja',
             'trosak'
         ]);
+    });
+
+    test('preserves short redni-broj tokens but excludes unrelated short numbers', () => {
+        expect(tokenize('redni broj 98')).toContain('98');
+        expect(tokenize('predmet 98')).not.toContain('98');
+    });
+
+    test('indexes outcomes, procedural events, citations, and ledger references', () => {
+        const sources = collectSources({
+            clusterId: 'St-2/2013',
+            entries: [],
+            documentLinks: [],
+            chunks: [],
+            analyses: [{
+                id: 'analysis-1',
+                summary: 'Podnesak vjerovnika.',
+                decisionOutcome: 'odbija se prijedlog',
+                proceduralEvents: [{ description: 'pravomoćno rješenje', filingReference: 'St-2/2013-1155' }],
+                citedFilingReferences: ['Ovrv-305/12'],
+                amounts: [{ claimRegistryNumber: '98', filingReference: 'St-2/2013-1155', isplatniRed: '98' }],
+            }],
+            factLedger: [{
+                kind: 'amount',
+                description: 'prijavljena tražbina',
+                claimRegistryNumber: '98',
+                filingReference: 'St-2/2013-1155',
+                isplatniRed: '98',
+                doc: { analysisId: 'analysis-1', fileName: 'Podnesak.pdf' },
+            }],
+        });
+        const analysis = sources.find((source) => source.metadata.sourceType === 'analysis');
+        const fact = sources.find((source) => source.metadata.sourceType === 'fact');
+
+        expect(analysis.text).toContain('odbija se prijedlog');
+        expect(analysis.text).toContain('pravomoćno rješenje');
+        expect(analysis.text).toContain('Ovrv-305/12');
+        expect(analysis.text).toContain('St-2/2013-1155');
+        expect(fact.text).toContain('redni broj 98');
     });
 });

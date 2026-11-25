@@ -5,11 +5,8 @@ const crypto = require('crypto');
 const DEFAULT_CHUNK_SIZE = 1000;
 const DEFAULT_CHUNK_OVERLAP = 200;
 
-// Retrieval-chunk budget per document (Phase 0.1). Chunks ride on
-// individualAnalyses results and end up persisted in runs.json, so the cap
-// bounds persistence weight (~8KB/doc at default sizes) while stride sampling
-// keeps coverage spread across the whole document instead of head-biased.
-const RETRIEVAL_CHUNK_LIMIT = 8;
+// Retrieval chunks are indexed in full. Callers may request a smaller sample
+// explicitly, but normal indexing has no persistence cap.
 const RETRIEVAL_MIN_CHUNK_CHARS = 120;
 
 /**
@@ -59,7 +56,6 @@ function splitTextIntoChunks(text, options = {}) {
     }
 
     const chunks = [];
-    const stride = Math.max(1, chunkSize - chunkOverlap);
     let start = 0;
     let chunkIndex = 0;
 
@@ -114,17 +110,15 @@ function splitTextIntoChunks(text, options = {}) {
 }
 
 /**
- * Builds the capped, deterministic chunk set a document contributes to the
- * reasoning index (Phase 0.1 — ground-truth chunks).
+ * Builds the full deterministic chunk set a document contributes to the
+ * reasoning index.
  *
  * Strategy:
  * - Reuses splitTextIntoChunks so offsets stay citation-grade.
  * - Drops fragments below RETRIEVAL_MIN_CHUNK_CHARS: tiny boundary slivers
  *   add index noise, not signal.
- * - When more eligible chunks remain than the limit, stride-samples evenly
- *   across the document (same philosophy as balanced scan-depth tail
- *   sampling): head-biased truncation would systematically miss dispositions
- *   stated at the end of court records.
+ * - Supports an optional explicit limit with even sampling; there is no
+ *   default cap, so every eligible chunk is indexed.
  *
  * @param {string} text - Full document text (direct-read or OCR pages joined).
  * @param {object} [options] - { docId, chunkSize, chunkOverlap, limit }
@@ -134,7 +128,7 @@ function buildRetrievalChunks(text, options = {}) {
     if (!text || typeof text !== 'string' || text.trim().length === 0) return [];
 
     const docId = options.docId || 'unknown-doc';
-    const limit = Math.max(1, Number.isFinite(options.limit) ? options.limit : RETRIEVAL_CHUNK_LIMIT);
+    const limit = Number.isFinite(options.limit) ? Math.max(1, Math.floor(options.limit)) : Infinity;
 
     const allChunks = splitTextIntoChunks(text, {
         chunkSize: options.chunkSize,
@@ -144,6 +138,7 @@ function buildRetrievalChunks(text, options = {}) {
 
     const eligible = allChunks.filter((chunk) => chunk.text.length >= RETRIEVAL_MIN_CHUNK_CHARS);
     if (eligible.length <= limit) return eligible;
+    if (limit === 1) return [eligible[Math.floor((eligible.length - 1) / 2)]];
 
     const step = (eligible.length - 1) / (limit - 1);
     const sampled = [];
@@ -157,6 +152,5 @@ module.exports = {
     splitTextIntoChunks,
     computeChunkId,
     buildRetrievalChunks,
-    RETRIEVAL_CHUNK_LIMIT,
     RETRIEVAL_MIN_CHUNK_CHARS
 };

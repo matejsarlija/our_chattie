@@ -27,6 +27,12 @@ function mapProcessedCase(processedCase) {
         groupMetadata: processedCase?.groupMetadata || null
     };
 }
+function mapClusterEvidencePackage(pkg) {
+    if (!pkg || typeof pkg !== 'object' || !Array.isArray(pkg.chunks) || pkg.chunks.length === 0) return pkg || null;
+    const { chunks, ...metadata } = pkg;
+    return { ...metadata, chunkCount: chunks.length };
+}
+
 
 function buildCourtAnalysisPayload(finalResult) {
     const sanitizedComparativeAnalysis = sanitizeMarkdown(finalResult?.comparativeAnalysis || '');
@@ -41,7 +47,7 @@ function buildCourtAnalysisPayload(finalResult) {
         secondaryClusters: Array.isArray(finalResult?.secondaryClusters)
             ? finalResult.secondaryClusters
             : [],
-        clusterEvidencePackage: finalResult?.clusterEvidencePackage || null,
+        clusterEvidencePackage: mapClusterEvidencePackage(finalResult?.clusterEvidencePackage),
         report: finalResult?.report || null,
         // Present only when generateClusterReport failed but per-document analyses
         // still succeeded (see pipeline.js processScrapedCases); null on the

@@ -37,6 +37,7 @@ describe('deterministic retrieval queries', () => {
             'procedural-status',
             'party-roles',
             'property-flow',
+            'ledger-parties',
         ]);
         expect(queries[0]).toEqual(expect.objectContaining({
             queryType: 'oib',

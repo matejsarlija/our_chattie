@@ -18,6 +18,7 @@ const {
 } = require('./utils/scanDepth');
 const { buildClusterEvidencePackage, attachAnalysesToEvidencePackage } = require('./reasoning/ledger/evidencePackage');
 const { generateClusterReport, composeOverviewMarkdown } = require('./reasoning/synthesis/reportService');
+const { normalizeText } = require('./reasoning/retrieval/indexer');
 const { createUsageTracker } = require('../llm/usage');
 const crypto = require('crypto');
 const fs = require('fs');
@@ -1193,6 +1194,54 @@ async function processScrapedCases(casesToProcess, progressCallback, options = {
             primaryClusterId || null
         );
         partialResult.clusterEvidencePackage = enrichedEvidencePackage;
+        if (runId && resolvedOptions.analysisStore?.insertRunChunks) {
+            resolvedOptions.analysisStore.insertRunChunks({
+                runId,
+                chunks: (enrichedEvidencePackage.chunks || []).map((chunk) => ({
+                    chunkId: chunk.id,
+                    docId: chunk.metadata?.docId || chunk.id,
+                    fileName: chunk.metadata?.fileName || null,
+                    caseNumber: chunk.metadata?.caseNumber || null,
+                    sourceEntryIndex: chunk.metadata?.sourceEntryIndex ?? null,
+                    sourceLinkId: chunk.metadata?.sourceDocumentLinkId || null,
+                    pageNumbers: chunk.metadata?.pageNumbers || [],
+                    startIndex: chunk.metadata?.startIndex ?? null,
+                    endIndex: chunk.metadata?.endIndex ?? null,
+                    text: chunk.text,
+                    normalizedText: normalizeText(chunk.text),
+                })),
+            });
+        }
+        if (runId && resolvedOptions.analysisStore?.insertRunFacts) {
+            resolvedOptions.analysisStore.insertRunFacts({
+                runId,
+                facts: (enrichedEvidencePackage.factLedger || []).map((fact, index) => ({
+                    id: `${runId}:fact:${index + 1}`,
+                    kind: fact.kind,
+                    description: fact.description,
+                    value: fact.value,
+                    valueEur: fact.valueEur,
+                    currency: fact.currency,
+                    date: fact.date,
+                    direction: fact.direction,
+                    amountRole: fact.amountRole,
+                    eventType: fact.eventType,
+                    legalEffect: fact.legalEffect,
+                    isplatniRed: fact.isplatniRed,
+                    claimRegistryNumber: fact.claimRegistryNumber,
+                    filingReference: fact.filingReference,
+                    canonicalPartyId: fact.canonicalPartyId,
+                    payerOib: fact.parties?.payerOib,
+                    recipientOib: fact.parties?.recipientOib,
+                    grounded: fact.grounded,
+                    docHash: fact.doc?.contentHash,
+                    sourceEntryIndex: fact.doc?.sourceEntryIndex,
+                    sourceChunkId: fact.sourceChunkId,
+                    sourcePages: fact.sourcePages,
+                    rawJson: fact,
+                })),
+            });
+        }
 
         stageAwareProgress?.({ step: 'reasoning', progress: 85, message: 'Generiram stručni izvještaj i zaključak...' });
         // Report generation gets its OWN try/catch, deliberately separate from the
@@ -1209,7 +1258,8 @@ async function processScrapedCases(casesToProcess, progressCallback, options = {
                 onStage: (event) => stageAwareProgress?.(event),
                 tracker: usageTracker,
                 onUsage: emitUsage,
-                runId
+                runId,
+                analysisStore: resolvedOptions.analysisStore,
             });
         } catch (err) {
             reportError = err.message;

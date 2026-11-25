@@ -15,7 +15,11 @@ async function generateClusterReport(clusterEvidencePackage, options = {}) {
     const runId = options.runId || null;
     const sharedUpstream = options.sharedUpstream || null;
     const retrieval = sharedUpstream?.retrieval
-        || retrieveEvidence(clusterEvidencePackage, options.retrieval || {});
+        || retrieveEvidence(clusterEvidencePackage, {
+            ...(options.retrieval || {}),
+            analysisStore: options.analysisStore,
+            runId,
+        });
     logger.info('reportService.retrieve', 'Evidence retrieval completed', {
         runId,
         queries: Array.isArray(retrieval?.queries) ? retrieval.queries.length : 0,

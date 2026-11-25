@@ -1,4 +1,4 @@
-const { buildRetrievalChunks, RETRIEVAL_CHUNK_LIMIT, RETRIEVAL_MIN_CHUNK_CHARS } = require('../../court-analysis/reasoning/retrieval/chunker');
+const { buildRetrievalChunks, RETRIEVAL_MIN_CHUNK_CHARS } = require('../../court-analysis/reasoning/retrieval/chunker');
 
 function longText(paragraphs) {
     return Array.from({ length: paragraphs }, (_, i) => `Odluka broj ${i + 1}: sud je doneo rješenje u predmetu i odredio rok za prijavu tražbina vjerovnika u postupku. `.repeat(8)).join('\n\n');
@@ -17,23 +17,31 @@ describe('buildRetrievalChunks', () => {
         expect(buildRetrievalChunks('Kratka odluka suda o stečaju.')).toEqual([]);
     });
 
-    test('caps output at RETRIEVAL_CHUNK_LIMIT for very long documents', () => {
-        const chunks = buildRetrievalChunks(longText(80), { docId: 'long' });
-        expect(chunks.length).toBe(RETRIEVAL_CHUNK_LIMIT);
+    test('indexes every eligible chunk across a 40-page document', () => {
+        const text = longText(40);
+        const chunks = buildRetrievalChunks(text, { docId: 'long' });
+
+        expect(chunks.length).toBeGreaterThan(8);
+        expect(chunks.at(-1).metadata.endIndex).toBeGreaterThanOrEqual(text.length - 2);
     });
 
-    test('stride sampling spreads coverage across the document, not just the head', () => {
-        const chunks = buildRetrievalChunks(longText(80), { docId: 'spread' });
+    test('supports a one-chunk explicit sample without dividing by zero', () => {
+        const chunks = buildRetrievalChunks(longText(40), { docId: 'one', limit: 1 });
+
+        expect(chunks).toHaveLength(1);
+        expect(chunks[0].metadata.startIndex).toBeGreaterThan(0);
+    });
+
+    test('an explicit sample spreads coverage across the document', () => {
+        const chunks = buildRetrievalChunks(longText(80), { docId: 'spread', limit: 4 });
         const first = chunks[0];
-        const last = chunks[chunks.length - 1];
-        // Last sampled chunk must come from well beyond the document head —
-        // head-biased truncation would systematically miss end-of-record facts.
+        const last = chunks.at(-1);
         expect(last.metadata.startIndex).toBeGreaterThan(first.metadata.endIndex);
-        // Sampled positions must be strictly increasing.
         for (let i = 1; i < chunks.length; i++) {
             expect(chunks[i].metadata.startIndex).toBeGreaterThanOrEqual(chunks[i - 1].metadata.startIndex);
         }
     });
+
 
     test('deterministic for identical inputs', () => {
         const text = longText(40);

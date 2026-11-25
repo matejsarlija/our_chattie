@@ -6,9 +6,66 @@ const { buildLexicalIndex, collectSources, normalizeText, tokenize } = require('
 // demotes generic vocabulary that appears in nearly every source.
 const EXACT_TOKEN_WEIGHT = 1;
 const STEM_MATCH_WEIGHT = 0.4;
+function uniqueSorted(values) {
+    return [...new Set(values.filter((value) => typeof value === 'string' && value.trim()).map((value) => value.trim()))].sort();
+}
+
+function createLedgerQueries(evidencePackage) {
+    const facts = Array.isArray(evidencePackage?.factLedger) ? evidencePackage.factLedger : [];
+    const partyAnchors = uniqueSorted([
+        ...(evidencePackage?.identity?.participantOibs || []),
+        ...(evidencePackage?.identity?.participantNames || []),
+        ...(evidencePackage?.analyses || []).flatMap((analysis) => (
+            Array.isArray(analysis.documentParties)
+                ? analysis.documentParties.flatMap((party) => [party.oib, party.name])
+                : []
+        )),
+        ...facts.flatMap((fact) => Object.values(fact.parties || {}).filter((value) => typeof value === 'string')),
+    ]);
+    const filingAnchors = uniqueSorted([
+        ...facts.flatMap((fact) => [
+            fact.claimRegistryNumber,
+            fact.filingReference,
+            ...(Array.isArray(fact.references) ? fact.references : []),
+        ]),
+        ...(evidencePackage?.analyses || []).flatMap((analysis) => [
+            ...(Array.isArray(analysis.citedFilingReferences) ? analysis.citedFilingReferences : []),
+            ...(Array.isArray(analysis.proceduralEvents) ? analysis.proceduralEvents.flatMap((event) => [
+                event.filingReference,
+                ...(Array.isArray(event.citedFilingReferences) ? event.citedFilingReferences : []),
+            ]) : []),
+        ]),
+    ]);
+    const conflicts = [
+        ...(evidencePackage?.reconciliation?.conflicts || []),
+        ...(evidencePackage?.reconciliation?.openQuestions || []),
+    ];
+    const conflictTerms = uniqueSorted(conflicts.flatMap((conflict) => [
+        conflict.finding,
+        conflict.reason,
+        conflict.text,
+        ...(Array.isArray(conflict.unresolvedReferences) ? conflict.unresolvedReferences : []),
+        ...(Array.isArray(conflict.sources) ? conflict.sources : []),
+    ]));
+    const queryType = ['oib', 'case_number', 'text'].includes(evidencePackage?.query?.type)
+        ? evidencePackage.query.type
+        : 'text';
+    return [
+        ...(partyAnchors.length ? [{
+            id: 'ledger-parties', purpose: 'ledger-party-identities', text: partyAnchors.join(' '), anchors: partyAnchors, queryType,
+        }] : []),
+        ...(filingAnchors.length ? [{
+            id: 'ledger-filings', purpose: 'ledger-filing-identifiers', text: filingAnchors.join(' '), anchors: filingAnchors, queryType,
+        }] : []),
+        ...(conflictTerms.length ? [{
+            id: 'ledger-conflicts', purpose: 'unresolved-ledger-conflicts', text: conflictTerms.join(' '), anchors: filingAnchors, queryType,
+        }] : []),
+    ];
+}
+
 
 function scoreSource(source, retrievalQuery, evidencePackage, idfStats = null) {
-    const normalizedSource = normalizeText(source.text);
+    const normalizedSource = source.normalizedText || normalizeText(source.text);
     const sourceTokenSet = new Set(source.tokens || []);
     const queryTokens = tokenize(retrievalQuery.text);
     const reasons = [];
@@ -105,19 +162,22 @@ function createRetrievalQueries({ query = null, clusterId = null, primaryCaseNum
 
 
 function retrieveEvidence(evidencePackage, options = {}) {
+    const templates = createRetrievalQueries({
+        query: evidencePackage?.query,
+        clusterId: evidencePackage?.clusterId,
+        primaryCaseNumber: evidencePackage?.primaryCaseNumber,
+        identity: evidencePackage?.identity
+    });
     const queries = Array.isArray(options.queries) && options.queries.length > 0
         ? options.queries
-        : createRetrievalQueries({
-            query: evidencePackage?.query,
-            clusterId: evidencePackage?.clusterId,
-            primaryCaseNumber: evidencePackage?.primaryCaseNumber,
-            identity: evidencePackage?.identity
-        });
-    const topK = options.topK || 5;
+        : [...templates, ...createLedgerQueries(evidencePackage)];
+    const topK = options.topK ?? 5;
     const index = options.index || buildLexicalIndex(evidencePackage);
+    const useFts = Boolean(options.runId && typeof options.analysisStore?.searchRunChunks === 'function');
 
     const results = queries.map((query) => {
-        const matches = index.sources
+        const lexicalMatches = index.sources
+            .filter((source) => !useFts || source.metadata?.sourceType !== 'chunk')
             .map((source, sourceIndex) => {
                 const scored = scoreSource(source, query, evidencePackage, index.idfStats || null);
                 return {
@@ -129,15 +189,59 @@ function retrieveEvidence(evidencePackage, options = {}) {
                     sourceIndex
                 };
             })
-            .filter((match) => match.score > 0)
-            .sort((a, b) => b.score - a.score || a.sourceIndex - b.sourceIndex)
+            .filter((match) => match.score > 0);
+
+        const ftsResult = useFts
+            ? options.analysisStore.searchRunChunks({
+                runId: options.runId,
+                query: query.text,
+                operator: 'OR',
+                limit: topK,
+                offset: 0,
+            })
+            : { chunks: [] };
+        const ftsMatches = ftsResult.chunks.map((chunk) => {
+            const normalizedText = normalizeText(chunk.normalizedText || chunk.text).replace(/[^a-z0-9]+/g, ' ').trim();
+            const reasons = ['fts5-bm25'];
+            let anchorBoost = 0;
+            for (const anchor of query.anchors || []) {
+                const normalizedAnchor = normalizeText(anchor).replace(/[^a-z0-9]+/g, ' ').trim();
+                if (!normalizedAnchor) continue;
+                const matched = /^\d{11}$/.test(String(anchor))
+                    ? new RegExp(`(^|\\D)${String(anchor)}(?!\\d)`).test(normalizedText)
+                    : normalizedText.includes(normalizedAnchor);
+                if (!matched) continue;
+                const boost = /^\d{11}$/.test(String(anchor)) ? 5 : (/[a-z].*[/-]\d|\d.*[/-]\d/i.test(String(anchor)) ? 3 : 1);
+                anchorBoost += boost;
+                reasons.push(`anchor:${anchor}`);
+            }
+            const rank = Number.isFinite(chunk.rank) ? chunk.rank : 0;
+            return {
+                sourceId: chunk.chunkId,
+                text: chunk.text,
+                snippet: chunk.snippet,
+                score: 20 + Math.max(0, -rank) + anchorBoost,
+                rank,
+                reasons,
+                metadata: {
+                    sourceType: 'chunk',
+                    docId: chunk.docId,
+                    fileName: chunk.fileName,
+                    caseNumber: chunk.caseNumber,
+                    sourceEntryIndex: chunk.sourceEntryIndex,
+                    pageNumbers: chunk.pageNumbers,
+                    startIndex: chunk.startIndex,
+                    endIndex: chunk.endIndex,
+                },
+            };
+        });
+
+        const matches = [...lexicalMatches, ...ftsMatches]
+            .sort((a, b) => b.score - a.score || (a.rank ?? 0) - (b.rank ?? 0) || (a.sourceIndex ?? 0) - (b.sourceIndex ?? 0))
             .slice(0, topK)
             .map(({ sourceIndex, ...match }) => match);
 
-        return {
-            query,
-            matches
-        };
+        return { query, matches };
     });
 
     return {
@@ -157,5 +261,7 @@ function retrieveEvidence(evidencePackage, options = {}) {
 module.exports = {
     collectSources,
     retrieveEvidence,
+    createLedgerQueries,
     tokenize
 };
+
