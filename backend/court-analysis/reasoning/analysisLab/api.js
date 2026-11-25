@@ -31,10 +31,10 @@ const { PROFILE_IDS, isKnownProfile } = require('./profiles');
 const {
     evidencePackageDigest,
     cloneEvidencePackage,
-} = require('./evidenceIdentity');
+} = require('../../../services/canonicalJson');
 const { validateClusterEvidencePackage } = require('../evidencePackage');
 const { buildComparisonViewModel } = require('./scorecard');
-const { boundExperimentForResponse } = require('./traceBounds');
+const { boundExperimentForResponse } = require('../traceBounds');
 const { buildInputSummary } = require('./runExperiment');
 const { parsePagination } = require('../../../helpers/pagination');
 const { collectContextFacts } = require('../caseContextBuilder');

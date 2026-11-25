@@ -12,7 +12,7 @@
 // changing node identity.
 
 const crypto = require('crypto');
-const { stableStringify } = require('./analysisLab/evidenceIdentity');
+const { stableStringify } = require('../../services/canonicalJson');
 
 const CONTEXT_NODE_KINDS = [
     'case-root',

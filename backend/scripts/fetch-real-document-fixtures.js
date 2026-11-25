@@ -27,7 +27,6 @@ const path = require('path');
 const crypto = require('crypto');
 const axios = require('axios');
 const AdmZip = require('adm-zip');
-const agentLog = require('../helpers/agentLog');
 
 // The scraper launches headful in local dev; scripts/CI hosts have no display.
 process.env.PUPPETEER_HEADLESS = process.env.PUPPETEER_HEADLESS || '1';
@@ -172,7 +171,7 @@ async function extractAndProbe(manifest) {
                             : result.error ? 'error'
                                 : 'none',
             };
-            agentLog.log(
+            console.log(
                 `[Fixtures] file ${fileCounter}/${totalFiles} ` +
                 `(entry ${entry.index}/${manifest.entries.length}) ${file.entryName} -> ` +
                 `method=${file.extraction.method} pages=${file.extraction.pages} ` +
@@ -223,7 +222,7 @@ function demotePdfjsFontWarnings() {
     return () => {
         methods.forEach((method, i) => { console[method] = originals[i]; });
         if (suppressed > 0) {
-            agentLog.log(`[Fixtures] Suppressed ${suppressed} repetitive pdfjs font warning(s) ("Warning: TT: ...").`);
+            console.log(`[Fixtures] Suppressed ${suppressed} repetitive pdfjs font warning(s) ("Warning: TT: ...").`);
         }
     };
 }
@@ -259,7 +258,7 @@ async function probeRenderPath(pdfPath) {
         await doc.destroy();
 
         const ratio = sampled > 0 ? Number((nonBlank / sampled).toFixed(4)) : 0;
-        agentLog.log(
+        console.log(
             `[Fixtures] Render probe on ${path.basename(pdfPath)}: ` +
             `pngBytes=${pngBuffer.length} nonBlankRatio=${ratio}`,
         );
@@ -270,7 +269,7 @@ async function probeRenderPath(pdfPath) {
             nonBlankRatio: ratio,
         };
     } catch (err) {
-        agentLog.error(`[Fixtures] Render probe failed for ${pdfPath}:`, err.message);
+        console.error(`[Fixtures] Render probe failed for ${pdfPath}:`, err.message);
         return { probed: true, ok: false, error: err.message };
     }
 }
@@ -299,7 +298,7 @@ async function fetchFixtures({ oib, limit }) {
     if (selected.length === 0) {
         throw new Error(`No entries with documentDownloadLink found in the first ${DISCOVERY_MAX_PAGES} pages for ${oib}.`);
     }
-    agentLog.log(
+    console.log(
         `[Fixtures] Discovery: ${rowsSeen} row(s) over ` +
         `${searchMetadata?.pagesScanned ?? '?'} page(s), ` +
         `${rowsSeen - withLink.length} without a download link, ` +
@@ -355,7 +354,7 @@ async function fetchFixtures({ oib, limit }) {
 
 async function downloadEntryArchive({ result, index, zipsDir, entriesDir }) {
     const slug = `${index}-${slugify(result.caseNumber || result.title)}`;
-    agentLog.log(`[Fixtures] Downloading entry ${index}: ${result.documentDownloadLink}`);
+    console.log(`[Fixtures] Downloading entry ${index}: ${result.documentDownloadLink}`);
     const response = await axios({
         url: result.documentDownloadLink,
         method: 'GET',
@@ -419,7 +418,7 @@ async function downloadEntryArchive({ result, index, zipsDir, entriesDir }) {
         archiveSha256: await sha256File(downloadPath),
         files,
     };
-    agentLog.log(
+    console.log(
         `[Fixtures] Entry ${index}: "${result.title}" (${ext}) -> ${files.length} file(s).`,
     );
     return entryRecord;
@@ -455,7 +454,7 @@ async function fetchCsvRowFixtures({ oib, rows, csvPath }) {
 
     for (const result of selected) {
         if (!result.documentDownloadLink) {
-            agentLog.warn(`[Fixtures] Row ${result.index} has no documentDownloadLink; skipping.`);
+            console.warn(`[Fixtures] Row ${result.index} has no documentDownloadLink; skipping.`);
             continue;
         }
         const entryRecord = await downloadEntryArchive({
@@ -588,7 +587,7 @@ async function main() {
     fs.mkdirSync(outDir, { recursive: true });
     fs.writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
 
-    agentLog.log(
+    console.log(
         `[Fixtures] Coverage: ${coverage.entryCount} entr(y/ies)` +
         `${coverage.caseNumbers?.length ? `, cases: ${coverage.caseNumbers.join(', ')}` : ''}` +
         `${coverage.oldestDate ? `, span: ${coverage.oldestDate} → ${coverage.newestDate}` : ''} ` +
@@ -596,8 +595,8 @@ async function main() {
         `| phases ms: discovery=${timings.discoveryMs ?? '?'} ` +
         `download=${timings.downloadMs ?? '?'} extraction=${timings.extractionMs ?? '?'}`
     );
-    agentLog.log('[Fixtures] Summary:', JSON.stringify(summary));
-    agentLog.log(`[Fixtures] Manifest written: ${manifestPath}`);
+    console.log('[Fixtures] Summary:', JSON.stringify(summary));
+    console.log(`[Fixtures] Manifest written: ${manifestPath}`);
 
     const report = {
         manifestPath,
@@ -619,7 +618,7 @@ async function main() {
 
     if (args.reportOut) {
         fs.writeFileSync(args.reportOut, `${JSON.stringify(report, null, 2)}\n`);
-        agentLog.log(`[Fixtures] Report written: ${args.reportOut}`);
+        console.log(`[Fixtures] Report written: ${args.reportOut}`);
     } else {
         console.log('\n=== FIXTURE REPORT (JSON) ===');
         console.log(JSON.stringify(report, null, 2));
@@ -630,7 +629,7 @@ async function main() {
 
 if (require.main === module) {
     main().catch((err) => {
-        agentLog.error('[Fixtures] Failed:', err.message);
+        console.error('[Fixtures] Failed:', err.message);
         process.exit(1);
     });
 }

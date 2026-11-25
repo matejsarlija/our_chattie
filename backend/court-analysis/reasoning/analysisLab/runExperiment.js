@@ -30,10 +30,10 @@ const {
     stableStringify,
     evidencePackageDigest,
     cloneEvidencePackage,
-} = require('./evidenceIdentity');
+} = require('../../../services/canonicalJson');
 const { validateClusterEvidencePackage } = require('../evidencePackage');
 const { retrieveEvidence } = require('../retriever');
-const { computeVariantScorecard } = require('./scorecard');
+const { computeVariantScorecard } = require('../runScorecard');
 const { rerankEvidence, isAmbiguous } = require('../reranker');
 const { shouldAttemptRerank, resolveRerankMode } = require('../rerankerClient');
 const {

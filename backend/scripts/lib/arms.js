@@ -6,7 +6,14 @@ const path = require('path');
 const { extractTextFromFile, extractTextViaOCR, renderPageToJpeg, buildOcrBatchInstruction, buildAnalysisPrompt } = require('../../court-analysis/agents/analysis-agent');
 const { buildPdfMessage, buildImageMessage, requestChat, extractAssistantText, extractParsedFileText, ANALYSIS_MAX_TOKENS } = require('./openrouter-client');
 const { jsonValidity, scoreJsonConditions, scoreJsonRequestConditions } = require('./metrics');
-const { buildNativePdfTranscriptInstruction } = require('../../helpers/nativePdfDocument');
+function buildNativePdfTranscriptInstruction(pageCount) {
+    return [
+        'Transcribe this Croatian court PDF faithfully, page by page.',
+        'Preserve amounts, dates, identifiers, OIBs, tables, and visible headings exactly as written.',
+        `For every page from 1 through ${pageCount}, begin with a line exactly '=== STRANICA N ===' using that PDF page number.`,
+        'Put the text from that page below its marker. Return no commentary, summary, or interpretation.',
+    ].join(' ');
+}
 const { createUsageTracker } = require('../../helpers/geminiUsage');
 const { shouldBoundAnalysis, runBoundedAnalysis, checkpointKey, DEFAULT_CHECKPOINT_DIR, persistRawRequest } = require('./bounded-analysis');
 
