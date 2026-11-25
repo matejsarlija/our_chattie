@@ -19,23 +19,23 @@ jest.mock('../../llm/openrouterClient.js', () => ({
     createOpenRouterClient: () => ({ invoke: jest.fn() }),
 }));
 
-jest.mock('../../helpers/geminiRetry', () => ({
+jest.mock('../../llm/retry', () => ({
     withGeminiRetry: (fn) => fn(),
     withGeminiTimeout: (fn) => fn(),
 }));
 
-jest.mock('../../helpers/geminiUsage', () => ({
+jest.mock('../../llm/usage', () => ({
     trackUsageInvoke: jest.fn(),
 }));
 
 const fs = require('fs');
 const path = require('path');
-const { collectFlows } = require('../../court-analysis/reasoning/flow');
-const { reconcileFlows } = require('../../court-analysis/reasoning/reconciliation');
-const { hrkToEur } = require('../../court-analysis/reasoning/currencyConversion');
-const { buildCitationGraph } = require('../../court-analysis/reasoning/citationGraph');
-const { applyGroundingToAnalysis } = require('../../court-analysis/reasoning/grounding');
-const { collectProceduralEvents, reconcileProceduralEvents } = require('../../court-analysis/reasoning/proceduralFlow');
+const { collectFlows } = require('../../court-analysis/reasoning/ledger/flow');
+const { reconcileFlows } = require('../../court-analysis/reasoning/ledger/reconciliation');
+const { hrkToEur } = require('../../court-analysis/reasoning/ledger/currencyConversion');
+const { buildCitationGraph } = require('../../court-analysis/reasoning/ledger/citationGraph');
+const { applyGroundingToAnalysis } = require('../../court-analysis/reasoning/ledger/grounding');
+const { collectProceduralEvents, reconcileProceduralEvents } = require('../../court-analysis/reasoning/ledger/proceduralFlow');
 
 const ENTRY_DIR = path.resolve(
     __dirname,

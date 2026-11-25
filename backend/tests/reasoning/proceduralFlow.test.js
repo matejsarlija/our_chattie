@@ -1,7 +1,7 @@
 const {
     collectProceduralEvents,
     reconcileProceduralEvents,
-} = require('../../court-analysis/reasoning/proceduralFlow');
+} = require('../../court-analysis/reasoning/ledger/proceduralFlow');
 
 function analysis(id, proceduralEvents, citedFilingReferences = []) {
     return {

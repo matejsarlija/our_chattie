@@ -12,8 +12,8 @@
 // Empty lifecycle input returns an empty result without throwing.
 
 const { findCitationLinkedPairs } = require('./citationGraph');
-const { normalizeText } = require('./indexer');
-const { parseDate } = require('./timelineBuilder');
+const { normalizeText } = require('../retrieval/indexer');
+const { parseDate } = require('../synthesis/timelineBuilder');
 const { normalizeClaimRegistryNumber } = require('./claimRegistry');
 
 // Normalize + collect moved to flow.js (flow-consolidation PR2): the unified

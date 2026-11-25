@@ -16,12 +16,12 @@ jest.mock('../llm/openrouterClient.js', () => ({
   }),
 }));
 
-jest.mock('../helpers/geminiRetry', () => ({
+jest.mock('../llm/retry', () => ({
   withGeminiRetry: (...args) => mockWithGeminiRetry(...args),
   withGeminiTimeout: (callable) => callable(undefined),
 }));
 
-jest.mock('../court-analysis/reasoning/chunker', () => ({
+jest.mock('../court-analysis/reasoning/retrieval/chunker', () => ({
   splitTextIntoChunks: (...args) => mockSplitTextIntoChunks(...args),
   buildRetrievalChunks: jest.fn(() => []),
 }));

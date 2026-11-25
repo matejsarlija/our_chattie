@@ -1,4 +1,4 @@
-const { reconcileFlows } = require('../../court-analysis/reasoning/reconciliation');
+const { reconcileFlows } = require('../../court-analysis/reasoning/ledger/reconciliation');
 
 // sourceId is required (no shared default): entries that are supposed to
 // represent different files must carry different ids, otherwise multi-entry
@@ -295,7 +295,7 @@ describe('reconcileFlows for amount entries', () => {
     });
 
     test('isSameDocument: same display name on different files is not the same document', () => {
-        const { isSameDocument } = require('../../court-analysis/reasoning/reconciliation');
+        const { isSameDocument } = require('../../court-analysis/reasoning/ledger/reconciliation');
         expect(isSameDocument(
             entry({ fileName: 'Podnesak.pdf', sourceId: '/tmp/a.pdf' }),
             entry({ fileName: 'Podnesak.pdf', sourceId: '/tmp/b.pdf' })
@@ -321,7 +321,7 @@ describe('reconcileFlows for amount entries', () => {
 });
 
 describe('dedupeQuestions (TD-3)', () => {
-    const { dedupeQuestions } = require('../../court-analysis/reasoning/reconciliation');
+    const { dedupeQuestions } = require('../../court-analysis/reasoning/ledger/reconciliation');
 
     test('folds the same totals pair repeated across filings into one question with provenance', () => {
         const docs = ['Zalba-1.pdf', 'Rjesenje-2.pdf', 'Podnesak-3.pdf', 'Zalba-4.pdf', 'Rjesenje-5.pdf'];
@@ -362,8 +362,8 @@ describe('dedupeQuestions (TD-3)', () => {
 });
 
 describe('reconcileFlows (unified engine)', () => {
-    const { reconcileFlows } = require('../../court-analysis/reasoning/reconciliation');
-    const { collectFlows } = require('../../court-analysis/reasoning/flow');
+    const { reconcileFlows } = require('../../court-analysis/reasoning/ledger/reconciliation');
+    const { collectFlows } = require('../../court-analysis/reasoning/ledger/flow');
 
     const flowAnalyses = [
         {

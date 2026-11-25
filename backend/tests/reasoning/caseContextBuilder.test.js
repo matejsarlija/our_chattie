@@ -1,8 +1,8 @@
-const { buildCaseContext } = require('../../court-analysis/reasoning/caseContextBuilder');
+const { buildCaseContext } = require('../../court-analysis/reasoning/ledger/caseContextBuilder');
 const {
     createContextNode,
     validateContextGraph,
-} = require('../../court-analysis/reasoning/contextNode');
+} = require('../../court-analysis/reasoning/ledger/contextNode');
 const {
     stableStringify,
     evidencePackageDigest,

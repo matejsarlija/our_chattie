@@ -4,12 +4,12 @@ jest.mock('../../llm/openrouterClient.js', () => ({
     createOpenRouterClient: () => ({ invoke: mockInvoke }),
 }));
 
-jest.mock('../../helpers/geminiRetry', () => ({
+jest.mock('../../llm/retry', () => ({
     withGeminiRetry: jest.fn((fn) => fn()),
     withGeminiTimeout: jest.fn((callable) => callable(undefined))
 }));
 
-const { verifyReport } = require('../../court-analysis/reasoning/verifier');
+const { verifyReport } = require('../../court-analysis/reasoning/synthesis/verifier');
 
 describe('verifier evidence char budget (refinement 4)', () => {
     beforeEach(() => {

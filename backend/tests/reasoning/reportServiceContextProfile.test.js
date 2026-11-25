@@ -3,17 +3,17 @@ const mockNormalizeReasoningEvidence = jest.fn();
 const mockVerifyReport = jest.fn();
 
 
-jest.mock('../../court-analysis/reasoning/synthesizer', () => ({
+jest.mock('../../court-analysis/reasoning/synthesis/synthesizer', () => ({
     synthesizeReport: mockSynthesizeReport,
     normalizeReasoningEvidence: mockNormalizeReasoningEvidence
 }));
 
-jest.mock('../../court-analysis/reasoning/verifier', () => ({
+jest.mock('../../court-analysis/reasoning/synthesis/verifier', () => ({
     verifyReport: mockVerifyReport
 }));
 
 
-const { generateClusterReport } = require('../../court-analysis/reasoning/reportService');
+const { generateClusterReport } = require('../../court-analysis/reasoning/synthesis/reportService');
 const {
     evidencePackageDigest,
     cloneEvidencePackage,

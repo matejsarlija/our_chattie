@@ -1,6 +1,6 @@
 'use strict';
 
-const { isQuoteGrounded } = require('../../court-analysis/reasoning/grounding');
+const { isQuoteGrounded } = require('../../court-analysis/reasoning/ledger/grounding');
 
 function collectQuotes(extraction) {
     return ['amounts', 'propertyFlow', 'proceduralEvents'].flatMap((field) => (

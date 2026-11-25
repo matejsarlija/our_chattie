@@ -2,7 +2,7 @@ const {
     buildClusterEvidencePackage,
     attachAnalysesToEvidencePackage,
     validateClusterEvidencePackage,
-} = require('../../court-analysis/reasoning/evidencePackage');
+} = require('../../court-analysis/reasoning/ledger/evidencePackage');
 
 const basePackage = () => ({
     packageType: 'ClusterEvidencePackage',

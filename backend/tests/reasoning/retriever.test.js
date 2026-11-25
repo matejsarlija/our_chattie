@@ -1,4 +1,4 @@
-const { collectSources, retrieveEvidence } = require('../../court-analysis/reasoning/retriever');
+const { collectSources, retrieveEvidence } = require('../../court-analysis/reasoning/retrieval/retriever');
 
 describe('retriever', () => {
     const evidencePackage = {

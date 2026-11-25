@@ -1,4 +1,4 @@
-const { parseCourtAnalysisRequest } = require('../helpers/courtAnalysisRequest');
+const { parseCourtAnalysisRequest } = require('../http/courtAnalysisRequest');
 
 describe('parseCourtAnalysisRequest', () => {
   test('accepts explicit typed query and scan options', () => {

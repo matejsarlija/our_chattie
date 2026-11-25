@@ -1,10 +1,10 @@
 require("dotenv").config();
-const { withGeminiRetry, withGeminiTimeout } = require("../../helpers/geminiRetry");
-const { trackUsageInvoke } = require("../../helpers/geminiUsage");
-const { createOpenRouterRoleClient, outputCapWarning } = require("../../llm/openrouterConfig");
-const { extractJsonArray, modelContentToText } = require("../../helpers/jsonExtract");
-const agentLog = require("../../helpers/agentLog");
-const { isPoorDocumentCoverage, hasPartialDocumentCoverage, coverageOpenQuestion, applyCoverageConfidenceGuard } = require('./coverageGuard');
+const { withGeminiRetry, withGeminiTimeout } = require("../../../llm/retry");
+const { trackUsageInvoke } = require("../../../llm/usage");
+const { createOpenRouterRoleClient, outputCapWarning } = require("../../../llm/openrouterConfig");
+const { extractJsonArray, modelContentToText } = require("../../../helpers/jsonExtract");
+const logger = require("../../../services/logger");
+const { isPoorDocumentCoverage, hasPartialDocumentCoverage, coverageOpenQuestion, applyCoverageConfidenceGuard } = require('../ledger/coverageGuard');
 
 const gemini = createOpenRouterRoleClient("verify");
 
@@ -262,11 +262,11 @@ async function verifyReport(report, evidencePackage, options = {}) {
             ));
             const parsed = extractJsonArray(response.content);
             if (parsed?.truncated) {
-                agentLog.warn(`Verification batch ${batchNumber} returned a truncated JSON array; using its ${parsed.items.length}/${batch.length} complete results.`);
+                logger.agent.warn(`Verification batch ${batchNumber} returned a truncated JSON array; using its ${parsed.items.length}/${batch.length} complete results.`);
             }
             if (!parsed || parsed.items.length === 0) {
-                agentLog.warn(outputCapWarning('verify'));
-                agentLog.warn(`Verification batch ${batchNumber} response preview: ${responsePreview(response.content)}`);
+                logger.agent.warn(outputCapWarning('verify'));
+                logger.agent.warn(`Verification batch ${batchNumber} response preview: ${responsePreview(response.content)}`);
                 throw new Error('Verifier returned invalid JSON.');
             }
             for (let index = 0; index < batch.length; index += 1) {
@@ -281,7 +281,7 @@ async function verifyReport(report, evidencePackage, options = {}) {
                 });
             }
         } catch (error) {
-            agentLog.error(`Verification batch ${batchNumber} failed: ${error.message}`);
+            logger.agent.error(`Verification batch ${batchNumber} failed: ${error.message}`);
             for (let index = 0; index < batch.length; index += 1) failedPositions.add(start + index);
         }
     }

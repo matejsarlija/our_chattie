@@ -15,7 +15,7 @@
 // normalized without throwing.
 
 const { buildRunSummary } = require('../court-analysis/utils/runSummary');
-const { collectFlows } = require('../court-analysis/reasoning/flow');
+const { collectFlows } = require('../court-analysis/reasoning/ledger/flow');
 const LAB_FIXTURE = require('./fixtures/replays/analysis-lab/kerum-lab.json');
 const LAB_PKG = { ...LAB_FIXTURE, flows: collectFlows(LAB_FIXTURE.analyses.slice(0, 1)) };
 

@@ -1,4 +1,4 @@
-const { buildCaseContext, collectContextFacts } = require('../../court-analysis/reasoning/caseContextBuilder');
+const { buildCaseContext, collectContextFacts } = require('../../court-analysis/reasoning/ledger/caseContextBuilder');
 const {
     SUMMARY_ELIGIBLE_KINDS,
     buildNodeSourcePacket,

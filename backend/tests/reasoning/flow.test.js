@@ -6,7 +6,7 @@ const {
     parseAmount,
     normalizeDirection,
     normalizeOib,
-} = require('../../court-analysis/reasoning/flow');
+} = require('../../court-analysis/reasoning/ledger/flow');
 
 const analysis = (overrides = {}) => ({
     id: 'a-1',

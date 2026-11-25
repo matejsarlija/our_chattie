@@ -1,14 +1,14 @@
-const { SCHEMA_VERSION } = require('../../court-analysis/reasoning/schema');
+const { SCHEMA_VERSION } = require('../../court-analysis/reasoning/schema/schema');
 
 const mockInvoke = jest.fn();
 jest.mock('../../llm/openrouterClient.js', () => ({
     createOpenRouterClient: () => ({ invoke: mockInvoke })
 }));
 
-const { verifyReport } = require('../../court-analysis/reasoning/verifier');
+const { verifyReport } = require('../../court-analysis/reasoning/synthesis/verifier');
 
 // Mock retry helper
-jest.mock("../../helpers/geminiRetry", () => ({
+jest.mock("../../llm/retry", () => ({
     withGeminiRetry: jest.fn((fn) => fn()),
     withGeminiTimeout: jest.fn((callable) => callable(undefined))
 }));

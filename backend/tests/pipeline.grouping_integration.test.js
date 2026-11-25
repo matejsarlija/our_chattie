@@ -25,12 +25,12 @@ jest.mock('../court-registry/enricher', () => ({
     enrichParticipants: jest.fn().mockImplementation(p => Promise.resolve(p))
 }));
 
-jest.mock('../court-analysis/reasoning/synthesizer', () => ({
+jest.mock('../court-analysis/reasoning/synthesis/synthesizer', () => ({
     synthesizeReport: mockSynthesizeReport,
     normalizeReasoningEvidence: mockNormalizeReasoningEvidence
 }));
 
-jest.mock('../court-analysis/reasoning/verifier', () => ({
+jest.mock('../court-analysis/reasoning/synthesis/verifier', () => ({
     verifyReport: mockVerifyReport
 }));
 

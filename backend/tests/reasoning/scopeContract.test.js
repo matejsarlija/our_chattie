@@ -1,4 +1,4 @@
-const { buildScopeContract, CONCLUSION_CATEGORIES } = require('../../court-analysis/reasoning/scopeContract');
+const { buildScopeContract, CONCLUSION_CATEGORIES } = require('../../court-analysis/reasoning/ledger/scopeContract');
 
 function kerumLike({ analyzed = 57, failed = 6, total = 63, totalClaims = 375 } = {}) {
     return {

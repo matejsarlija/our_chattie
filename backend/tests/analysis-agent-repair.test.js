@@ -8,12 +8,12 @@ jest.mock('../llm/openrouterClient.js', () => ({
     createOpenRouterClient: () => ({ invoke: mockGeminiInvoke }),
 }));
 
-jest.mock('../helpers/geminiRetry', () => ({
+jest.mock('../llm/retry', () => ({
     withGeminiRetry: (fn) => fn(),
     withGeminiTimeout: (fn) => fn(),
 }));
 
-jest.mock('../helpers/geminiUsage', () => ({
+jest.mock('../llm/usage', () => ({
     trackUsageInvoke: (_client, prompt, _opts) => mockGeminiInvoke(Array.isArray(prompt) && prompt.length === 1 && typeof prompt[0]?.content === 'string' ? prompt[0].content : prompt),
 }));
 

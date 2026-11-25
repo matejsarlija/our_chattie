@@ -8,10 +8,10 @@
 // - descriptionKey / propertyGroupKey: invariant under word reordering,
 //   case changes, and Croatian diacritic normalization.
 const fc = require('fast-check');
-const { parseAmount } = require('../../court-analysis/reasoning/flow');
-const { parseDate } = require('../../court-analysis/reasoning/timelineBuilder');
-const { descriptionKey } = require('../../court-analysis/reasoning/reconciliation');
-const { propertyGroupKey } = require('../../court-analysis/reasoning/propertyFlow');
+const { parseAmount } = require('../../court-analysis/reasoning/ledger/flow');
+const { parseDate } = require('../../court-analysis/reasoning/synthesis/timelineBuilder');
+const { descriptionKey } = require('../../court-analysis/reasoning/ledger/reconciliation');
+const { propertyGroupKey } = require('../../court-analysis/reasoning/ledger/propertyFlow');
 
 function formatGrouped(intPart, thousandsSep, decimalSep) {
     const grouped = String(intPart).replace(/\B(?=(\d{3})+(?!\d))/g, thousandsSep);

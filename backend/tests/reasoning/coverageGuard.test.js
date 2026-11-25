@@ -1,7 +1,7 @@
 const {
     hasPartialDocumentCoverage,
     coverageOpenQuestion,
-} = require('../../court-analysis/reasoning/coverageGuard');
+} = require('../../court-analysis/reasoning/ledger/coverageGuard');
 
 describe('document coverage warnings', () => {
     test('reports successfully analyzed but partial documents as an explicit gap', () => {

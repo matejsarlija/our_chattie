@@ -39,12 +39,12 @@ jest.mock('../court-analysis/agents/analysis-agent', () => ({
   analyzeClusterDocuments: mockAnalyzeCall,
 }));
 
-jest.mock('../court-analysis/reasoning/synthesizer', () => ({
+jest.mock('../court-analysis/reasoning/synthesis/synthesizer', () => ({
   synthesizeReport: mockSynthesizeReport,
   normalizeReasoningEvidence: mockNormalizeReasoningEvidence,
 }));
 
-jest.mock('../court-analysis/reasoning/verifier', () => ({
+jest.mock('../court-analysis/reasoning/synthesis/verifier', () => ({
   verifyReport: mockVerifyReport,
 }));
 
@@ -69,10 +69,10 @@ jest.mock('fs', () => ({
 }));
 
 const { runCourtAnalysis } = require('../court-analysis/pipeline');
-const { buildClusterEvidencePackage, attachAnalysesToEvidencePackage } = require('../court-analysis/reasoning/evidencePackage');
-const { collectSources } = require('../court-analysis/reasoning/indexer');
-const { TIMEOUT_MESSAGE } = require('../helpers/friendlyAnalysisError');
-const realSynthesizer = jest.requireActual('../court-analysis/reasoning/synthesizer');
+const { buildClusterEvidencePackage, attachAnalysesToEvidencePackage } = require('../court-analysis/reasoning/ledger/evidencePackage');
+const { collectSources } = require('../court-analysis/reasoning/retrieval/indexer');
+const { TIMEOUT_MESSAGE } = require('../http/friendlyAnalysisError');
+const realSynthesizer = jest.requireActual('../court-analysis/reasoning/synthesis/synthesizer');
 
 function buildBaseCluster() {
   return {

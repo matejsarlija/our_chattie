@@ -18,8 +18,8 @@ require('dotenv').config();
 
 const { createChangeCheckService } = require('../change-detection/service');
 const { hasChanges } = require('../change-detection/diff');
-const { parseCourtAnalysisRequest } = require('../helpers/courtAnalysisRequest');
-const { friendlyAnalysisErrorMessage } = require('../helpers/friendlyAnalysisError');
+const { parseCourtAnalysisRequest } = require('../http/courtAnalysisRequest');
+const { friendlyAnalysisErrorMessage } = require('../http/friendlyAnalysisError');
 
 const USAGE = `Usage: npm run check:changes -- [--json] <--oib=<value> | --case=<value> | --text=<value>>
 

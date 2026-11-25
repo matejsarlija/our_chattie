@@ -38,7 +38,7 @@
 
     const { createCanvas } = require('canvas');
     const { extractTextViaOCR } = require('../court-analysis/agents/analysis-agent');
-    const { createUsageTracker } = require('../helpers/geminiUsage');
+    const { createUsageTracker } = require('../llm/usage');
 
     // --- Minimal image-only PDF writer (JPEG/DCTDecode, no deps) ------------
 

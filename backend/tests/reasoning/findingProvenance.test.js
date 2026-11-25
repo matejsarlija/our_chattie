@@ -1,4 +1,4 @@
-const { annotateFindingsWithRetrieval } = require('../../court-analysis/reasoning/findingProvenance');
+const { annotateFindingsWithRetrieval } = require('../../court-analysis/reasoning/retrieval/findingProvenance');
 
 function retrieval(queryId, queryText, matches, purpose = 'trazbina') {
     return {

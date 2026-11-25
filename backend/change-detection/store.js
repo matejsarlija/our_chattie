@@ -16,7 +16,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const logger = require('../helpers/logger');
+const logger = require('../services/logger');
 
 const DEFAULT_BASE_DIR = path.join(__dirname, '..', 'data', 'change-detection');
 const SCOPE = 'change-detection-store';

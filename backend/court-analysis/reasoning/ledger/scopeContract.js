@@ -12,8 +12,8 @@
 // Pure function over already-computed run artifacts (coverage, discovery
 // summary, analyses, entries). No model calls, no I/O.
 
-const { normalizeText } = require('./indexer');
-const { parseCaseDateToTimestamp } = require('../utils/caseDate');
+const { normalizeText } = require('../retrieval/indexer');
+const { parseCaseDateToTimestamp } = require('../../utils/caseDate');
 
 const CONCLUSION_CATEGORIES = [
     'docket_timeline',

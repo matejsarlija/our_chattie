@@ -1,4 +1,4 @@
-const { buildStageCounterEvent } = require('../helpers/analysisStage');
+const { buildStageCounterEvent } = require('../http/analysisStage');
 
 describe('buildStageCounterEvent', () => {
   test('builds a discovering announcement with zero progress', () => {

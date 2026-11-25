@@ -9,8 +9,8 @@
 //          approximation of it.
 
 const fs = require('fs');
-const { attachAnalysesToEvidencePackage, validateClusterEvidencePackage } = require('../evidencePackage');
-const { buildRetrievalChunks } = require('../chunker');
+const { attachAnalysesToEvidencePackage, validateClusterEvidencePackage } = require('../ledger/evidencePackage');
+const { buildRetrievalChunks } = require('../retrieval/chunker');
 const { validateGoldLabels } = require('./goldSchema');
 
 /**

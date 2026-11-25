@@ -1,18 +1,18 @@
 require("dotenv").config();
-const { withGeminiRetry, withGeminiTimeout } = require("../../helpers/geminiRetry");
-const { trackUsageInvoke } = require("../../helpers/geminiUsage");
-const { createOpenRouterRoleClient, outputCapWarning } = require("../../llm/openrouterConfig");
-const { extractJsonBlock } = require("../../helpers/jsonExtract");
-const agentLog = require("../../helpers/agentLog");
-const { SCHEMA_VERSION, validateReport } = require("./schema");
-const { validateClusterEvidencePackage } = require("./evidencePackage");
+const { withGeminiRetry, withGeminiTimeout } = require("../../../llm/retry");
+const { trackUsageInvoke } = require("../../../llm/usage");
+const { createOpenRouterRoleClient, outputCapWarning } = require("../../../llm/openrouterConfig");
+const { extractJsonBlock } = require("../../../helpers/jsonExtract");
+const logger = require("../../../services/logger");
+const { SCHEMA_VERSION, validateReport } = require("../schema/schema");
+const { validateClusterEvidencePackage } = require("../ledger/evidencePackage");
 const { buildTimeline, parseDate } = require("./timelineBuilder");
 const {
     isPoorDocumentCoverage,
     hasPartialDocumentCoverage,
     coverageOpenQuestion,
     applyCoverageConfidenceGuard
-} = require("./coverageGuard");
+} = require("../ledger/coverageGuard");
 
 const gemini = createOpenRouterRoleClient("synthesis");
 const MAX_REPORT_FINDINGS = 12;
@@ -169,8 +169,8 @@ async function synthesizeReport(evidencePackage, options = {}) {
         const parsed = extractJsonBlock(response.content);
 
         if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-            agentLog.warn(outputCapWarning("synthesis"));
-            agentLog.error("Failed to parse synthesizer JSON:", response.content);
+            logger.agent.warn(outputCapWarning("synthesis"));
+            logger.agent.error("Failed to parse synthesizer JSON:", response.content);
             throw new Error("Synthesizer returned invalid JSON.");
         }
 
@@ -253,7 +253,7 @@ async function synthesizeReport(evidencePackage, options = {}) {
         return finalReport;
 
     } catch (error) {
-        agentLog.error("Synthesizer failed:", error);
+        logger.agent.error("Synthesizer failed:", error);
         throw error;
     }
 }

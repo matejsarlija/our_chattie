@@ -1,5 +1,6 @@
 // backend/court-registry/enricher.js
 const apiClient = require('./apiClient');
+const logger = require('../services/logger');
 
 // Regex to identify legal entities (Croatian forms)
 // Includes both abbreviations and full formal names
@@ -139,49 +140,47 @@ async function enrichParticipants(participants) {
                 // Strategy 1: Search by OIB using dedicated endpoint (most reliable)
                 if (participantOib) {
                     // ... (Strategy 1 remains the same)
-                    console.log(`[Enricher] Searching by OIB (detalji_subjekta): ${participantOib} (Name: "${newP.name}")`);
+                    logger.agent.log(`[Enricher] Searching by OIB (detalji_subjekta): ${participantOib} (Name: "${newP.name}")`);
                     const oibMatch = await apiClient.searchByOib(participantOib);
 
                     if (oibMatch) {
-                        console.log(`[Enricher] ✓ Found exact OIB match via ID endpoint: MBS ${oibMatch.mbs}`);
+                        logger.agent.log(`[Enricher] ✓ Found exact OIB match via ID endpoint: MBS ${oibMatch.mbs}`);
                         match = oibMatch;
                     } else {
-                        console.log(`[Enricher] OIB ${participantOib} not found via direct lookup.`);
+                        logger.agent.log(`[Enricher] OIB ${participantOib} not found via direct lookup.`);
                     }
                 }
 
                 // Strategy 2: Fallback to name search + OIB filter
                 if (!match) {
-                    console.log(`[Enricher] Fallback: Searching for "${searchName}" (OIB: ${participantOib || 'None'})...`);
+                    logger.agent.log(`[Enricher] Fallback: Searching for "${searchName}" (OIB: ${participantOib || 'None'})...`);
                     const searchResult = await apiClient.searchCompany(searchName, { includeInactive: true });
 
                     if (participantOib && searchResult && Array.isArray(searchResult)) {
-                        console.log(`[Enricher] Filtering ${searchResult.length} results by OIB ${participantOib}...`);
+                        logger.agent.log(`[Enricher] Filtering ${searchResult.length} results by OIB ${participantOib}...`);
                         match = searchResult.find(r => String(r.oib) === participantOib);
-                        if (match) console.log(`[Enricher] ✓ Found OIB match in name results: MBS ${match.mbs}`);
-                        else console.log(`[Enricher] ⚠ No result matched OIB ${participantOib}.`);
+                        if (match) logger.agent.log(`[Enricher] ✓ Found OIB match in name results: MBS ${match.mbs}`);
+                        else logger.agent.log(`[Enricher] ⚠ No result matched OIB ${participantOib}.`);
 
                     } else if (!participantOib && searchResult && Array.isArray(searchResult) && searchResult.length > 0) {
                         // Strategy 3: Name-only search (Defensive Verification)
                         // Old code: match = searchResult[0];
 
                         // New Defensive Code:
-                        console.log(`[Enricher] Validating ${searchResult.length} name candidates against "${newP.name}"...`);
+                        logger.agent.log(`[Enricher] Validating ${searchResult.length} name candidates against "${newP.name}"...`);
                         
                         match = searchResult.find(r => {
                             // API result might have different name fields
                             const apiName = r.tvtka || r.naziv || r.ime || r.skracena_tvrtka;
                             const isMatch = verifyNameMatch(newP.name, apiName);
                             if (isMatch) {
-                                console.log(`[Enricher] ✓ Accepted match: "${apiName}" (MBS: ${r.mbs})`);
-                            } else {
-                                // console.log(`[Enricher] ✗ Rejected candidate: "${apiName}"`);
+                                logger.agent.log(`[Enricher] ✓ Accepted match: "${apiName}" (MBS: ${r.mbs})`);
                             }
                             return isMatch;
                         });
 
                         if (!match) {
-                            console.log(`[Enricher] ⚠ All candidates rejected. Search term "${searchName}" yielded results, but none matched sufficiently.`);
+                            logger.agent.log(`[Enricher] ⚠ All candidates rejected. Search term "${searchName}" yielded results, but none matched sufficiently.`);
                         }
                     }
                 }
@@ -197,7 +196,7 @@ async function enrichParticipants(participants) {
                     // Strategy 2 (list search) returns 'subjekti' objects which lack detailed data like GFI.
                     // If GFI is missing, we fetch full details by MBS.
                     if (!finalData.gfi || (Array.isArray(finalData.gfi) && finalData.gfi.length === 0)) {
-                        console.log(`[Enricher] GFI data missing in initial match. Fetching full details for MBS ${match.mbs}...`);
+                        logger.agent.log(`[Enricher] GFI data missing in initial match. Fetching full details for MBS ${match.mbs}...`);
                         const details = await apiClient.getCompanyDetails(match.mbs);
                         if (details) finalData = details;
                     }
@@ -207,20 +206,20 @@ async function enrichParticipants(participants) {
 
                     // Log enrichment details
                     const cd = newP.companyData;
-                    console.log(`[Enricher] Whole Company Data: ${JSON.stringify(cd)}`);
-                    console.log(`[Enricher] ✓ Enriched "${newP.name}"`);
-                    console.log(`[Enricher]   → MBS: ${cd.mbs || 'N/A'}, OIB: ${cd.oib || 'N/A'}`);
-                    console.log(`[Enricher]   → Official Name: ${cd.officialName || 'N/A'}`);
-                    console.log(`[Enricher]   → Status: ${cd.status === 1 ? 'Active' : cd.status === 5 ? 'Deleted' : cd.status || 'N/A'}`);
-                    if (cd.lastFinancialReportYear) console.log(`[Enricher]   → Last GFI: ${cd.lastFinancialReportYear}`);
-                    if (cd.founders) console.log(`[Enricher]   → Founders: ${cd.founders}`);
-                    if (cd.registeredSeat) console.log(`[Enricher]   → Seat: ${cd.registeredSeat}`);
+                    logger.agent.log(`[Enricher] Whole Company Data: ${JSON.stringify(cd)}`);
+                    logger.agent.log(`[Enricher] ✓ Enriched "${newP.name}"`);
+                    logger.agent.log(`[Enricher]   → MBS: ${cd.mbs || 'N/A'}, OIB: ${cd.oib || 'N/A'}`);
+                    logger.agent.log(`[Enricher]   → Official Name: ${cd.officialName || 'N/A'}`);
+                    logger.agent.log(`[Enricher]   → Status: ${cd.status === 1 ? 'Active' : cd.status === 5 ? 'Deleted' : cd.status || 'N/A'}`);
+                    if (cd.lastFinancialReportYear) logger.agent.log(`[Enricher]   → Last GFI: ${cd.lastFinancialReportYear}`);
+                    if (cd.founders) logger.agent.log(`[Enricher]   → Founders: ${cd.founders}`);
+                    if (cd.registeredSeat) logger.agent.log(`[Enricher]   → Seat: ${cd.registeredSeat}`);
                 } else {
                     newP.enrichmentStatus = 'not_found';
-                    console.log(`[Enricher] ✗ No match found for "${newP.name}"`);
+                    logger.agent.log(`[Enricher] ✗ No match found for "${newP.name}"`);
                 }
             } catch (error) {
-                console.error(`[Enricher] Error processing "${newP.name}": ${error.message}`);
+                logger.agent.error(`[Enricher] Error processing "${newP.name}": ${error.message}`);
                 newP.enrichmentStatus = 'error';
             }
         } else {

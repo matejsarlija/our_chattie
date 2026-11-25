@@ -60,8 +60,8 @@ jest.mock('../llm/openrouterClient.js', () => ({
 
 // The mocked report service isolates this lane to the CSV discovery path;
 // markdown composition remains real and deterministic.
-jest.mock('../court-analysis/reasoning/reportService', () => {
-    const actual = jest.requireActual('../court-analysis/reasoning/reportService');
+jest.mock('../court-analysis/reasoning/synthesis/reportService', () => {
+    const actual = jest.requireActual('../court-analysis/reasoning/synthesis/reportService');
     const mockReport = {
         schemaVersion: '1.0.0',
         narrative: 'Mock narrative for CSV live pipeline test.',

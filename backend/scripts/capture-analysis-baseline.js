@@ -12,7 +12,7 @@ const {
     DEFAULT_CASE_LIMIT,
     MIN_CASE_LIMIT,
     MAX_CASE_LIMIT,
-} = require("../helpers/courtAnalysisRequest");
+} = require("../http/courtAnalysisRequest");
 
 const RAW_SCRAPE_MULTIPLIER = 3;
 const backendRoot = path.resolve(__dirname, "..");

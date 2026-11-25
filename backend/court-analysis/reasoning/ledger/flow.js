@@ -12,9 +12,9 @@
 // expose derived views over that collector.
 
 const { convertToEur, dualMismatch } = require('./currencyConversion');
-const { normalizeText } = require('./indexer');
+const { normalizeText } = require('../retrieval/indexer');
 const { normalizePaymentRank } = require('./paymentRank');
-const { parseDate } = require('./timelineBuilder');
+const { parseDate } = require('../synthesis/timelineBuilder');
 const { normalizeClaimRegistryNumber } = require('./claimRegistry');
 
 // J-01 — signed/directional amounts: potraživanje (asset/claim) vs obveza

@@ -14,7 +14,7 @@ function buildNativePdfTranscriptInstruction(pageCount) {
         'Put the text from that page below its marker. Return no commentary, summary, or interpretation.',
     ].join(' ');
 }
-const { createUsageTracker } = require('../../helpers/geminiUsage');
+const { createUsageTracker } = require('../../llm/usage');
 const { shouldBoundAnalysis, runBoundedAnalysis, checkpointKey, DEFAULT_CHECKPOINT_DIR, persistRawRequest } = require('./bounded-analysis');
 
 const ARMS = [

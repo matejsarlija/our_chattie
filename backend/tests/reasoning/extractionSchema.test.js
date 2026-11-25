@@ -7,7 +7,7 @@ const {
     parseFieldRepairResponse,
     buildFieldRepairPrompt,
     buildFullRepairPrompt
-} = require('../../court-analysis/reasoning/extractionSchema');
+} = require('../../court-analysis/reasoning/schema/extractionSchema');
 
 describe('validateExtraction', () => {
     test('accepts a fully valid document with no gaps', () => {

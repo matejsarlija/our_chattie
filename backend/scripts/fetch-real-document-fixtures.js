@@ -506,7 +506,7 @@ function coverageDay(parseDate, rawDate) {
  */
 function coverageSpan(selected) {    let parseDate = null;
     try {
-        ({ parseDate } = require('../court-analysis/reasoning/timelineBuilder'));
+        ({ parseDate } = require('../court-analysis/reasoning/synthesis/timelineBuilder'));
     } catch {
         parseDate = null;
     }

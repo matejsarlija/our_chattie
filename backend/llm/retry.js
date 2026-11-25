@@ -12,7 +12,7 @@ const OPENROUTER_REQUEST_TIMEOUT_MS = Number(process.env.OPENROUTER_REQUEST_TIME
 // are retried with backoff by default. Set to "0" to restore fail-fast behavior.
 const OPENROUTER_RETRY_TIMEOUTS = process.env.OPENROUTER_RETRY_TIMEOUTS !== '0';
 
-const { isDailyQuotaExhaustion, extractProviderError } = require('./friendlyAnalysisError');
+const { isDailyQuotaExhaustion, extractProviderError } = require('../http/friendlyAnalysisError');
 
 async function withGeminiTimeout(callable, { timeoutMs = OPENROUTER_REQUEST_TIMEOUT_MS } = {}) {
     if (!timeoutMs || timeoutMs <= 0) {

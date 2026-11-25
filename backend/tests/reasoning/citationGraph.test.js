@@ -1,7 +1,7 @@
 const {
     buildCitationGraph,
     findCitationLinkedPairs,
-} = require('../../court-analysis/reasoning/citationGraph');
+} = require('../../court-analysis/reasoning/ledger/citationGraph');
 
 function makeAnalysis(id, fileName, refs, cited) {
     return {

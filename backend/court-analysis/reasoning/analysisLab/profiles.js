@@ -11,8 +11,8 @@
 // mutate an existing snapshot.
 
 const { OPENROUTER_ROLE_CONFIG } = require('../../../llm/openrouterConfig');
-const { EXTRACTION_SCHEMA_VERSION } = require('../extractionSchema');
-const { SCHEMA_VERSION: REPORT_SCHEMA_VERSION } = require('../schema');
+const { EXTRACTION_SCHEMA_VERSION } = require('../schema/extractionSchema');
+const { SCHEMA_VERSION: REPORT_SCHEMA_VERSION } = require('../schema/schema');
 
 // Evidence-package schema version: the ClusterEvidencePackage builder stamps
 // `schemaVersion: 1` (see evidencePackage.js buildClusterEvidencePackage).

@@ -1,5 +1,5 @@
 const { normalizeReasoningEvidence } = require('./synthesizer');
-const { normalizeText } = require('./indexer');
+const { normalizeText } = require('../retrieval/indexer');
 
 // --- Synthesis budget tiers (Phase 0.5) -------------------------------------
 // Concrete ranking rule (refinement: write the join down or the implementation

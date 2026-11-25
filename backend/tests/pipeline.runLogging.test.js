@@ -12,11 +12,13 @@ const mockLoggerInfo = jest.fn();
 const mockLoggerWarn = jest.fn();
 const mockLoggerError = jest.fn();
 
-jest.mock('../helpers/logger', () => ({
+jest.mock('../services/logger', () => ({
     info: (...args) => mockLoggerInfo(...args),
     warn: (...args) => mockLoggerWarn(...args),
     error: (...args) => mockLoggerError(...args),
     debug: jest.fn(),
+    trace: jest.fn(),
+    agent: { log: jest.fn(), warn: jest.fn(), error: jest.fn() },
     redact: (value) => String(value),
     redactSecrets: (value) => String(value),
 }));
@@ -34,12 +36,12 @@ jest.mock('../court-registry/enricher', () => ({
 }));
 
 
-jest.mock('../court-analysis/reasoning/synthesizer', () => ({
+jest.mock('../court-analysis/reasoning/synthesis/synthesizer', () => ({
     synthesizeReport: mockSynthesizeReport,
     normalizeReasoningEvidence: mockNormalizeReasoningEvidence
 }));
 
-jest.mock('../court-analysis/reasoning/verifier', () => ({
+jest.mock('../court-analysis/reasoning/synthesis/verifier', () => ({
     verifyReport: mockVerifyReport
 }));
 

@@ -1,4 +1,4 @@
-const { buildSseData, buildSseEvent } = require('../helpers/sse');
+const { buildSseData, buildSseEvent } = require('../http/sse');
 
 describe('buildSseData', () => {
   test('wraps payload as SSE data line', () => {

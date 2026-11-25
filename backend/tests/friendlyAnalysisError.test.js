@@ -2,7 +2,7 @@ const {
   friendlyAnalysisErrorMessage,
   describeStage,
   STAGE_LABELS,
-} = require('../helpers/friendlyAnalysisError');
+} = require('../http/friendlyAnalysisError');
 
 describe('friendlyAnalysisErrorMessage', () => {
   test('defaults to a neutral stage message and keeps the raw reason when no pattern matches', () => {
@@ -139,7 +139,7 @@ describe('classifyFileFailure', () => {
     SCHEMA_MISMATCH_MESSAGE,
     PDF_TOO_LARGE_MESSAGE,
     PDF_PAGE_LIMIT_MESSAGE,
-  } = require('../helpers/friendlyAnalysisError');
+  } = require('../http/friendlyAnalysisError');
 
   test('daily-quota wording maps to the daily-limit reason', () => {
     expect(classifyFileFailure('429 Quota exceeded for quota metric requests_per_day'))

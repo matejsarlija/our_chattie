@@ -19,7 +19,7 @@
 // evidence.
 
 const crypto = require('crypto');
-const { normalizeText } = require('./indexer');
+const { normalizeText } = require('../retrieval/indexer');
 const { parseAmount } = require('./flow');
 
 function cleanString(value) {

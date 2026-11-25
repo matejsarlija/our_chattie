@@ -390,7 +390,7 @@ function validateExtraction(parsed) {
  * it must not invent a missing fact.
  */
 function parseFieldRepairResponse(content, field) {
-    const { extractJsonBlock } = require('../../helpers/jsonExtract');
+    const { extractJsonBlock } = require('../../../helpers/jsonExtract');
     const parsed = extractJsonBlock(content);
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
         return { ok: false, reason: 'repair response is not a JSON object' };

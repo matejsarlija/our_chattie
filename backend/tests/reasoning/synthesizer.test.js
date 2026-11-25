@@ -4,7 +4,7 @@ jest.mock('../../llm/openrouterClient.js', () => ({
 }));
 
 // Mock retry helper
-jest.mock("../../helpers/geminiRetry", () => ({
+jest.mock("../../llm/retry", () => ({
     withGeminiRetry: jest.fn((fn) => fn()),
     withGeminiTimeout: jest.fn((callable) => callable(undefined))
 }));
@@ -14,9 +14,9 @@ jest.mock("../../helpers/geminiRetry", () => ({
 const {
     synthesizeReport,
     createReasoningEvidenceFromPackage
-} = require('../../court-analysis/reasoning/synthesizer');
-const { SCHEMA_VERSION, validateReport } = require('../../court-analysis/reasoning/schema');
-const { validateClusterEvidencePackage } = require('../../court-analysis/reasoning/evidencePackage');
+} = require('../../court-analysis/reasoning/synthesis/synthesizer');
+const { SCHEMA_VERSION, validateReport } = require('../../court-analysis/reasoning/schema/schema');
+const { validateClusterEvidencePackage } = require('../../court-analysis/reasoning/ledger/evidencePackage');
 
 describe('Synthesizer', () => {
     beforeEach(() => {
@@ -446,7 +446,7 @@ describe('Synthesizer', () => {
     });
 
     test('claim lines in the synthesis prompt carry their dates', async () => {
-        const { formatClaimLine } = require('../../court-analysis/reasoning/synthesizer');
+        const { formatClaimLine } = require('../../court-analysis/reasoning/synthesis/synthesizer');
         expect(formatClaimLine({
             text: 'Isplata.',
             confidence: 'high',
@@ -543,7 +543,7 @@ describe('Synthesizer', () => {
     });
 
     test('resolves claim references into structured citations and ignores invented prose', () => {
-        const { resolveFindingCitations } = require('../../court-analysis/reasoning/synthesizer');
+        const { resolveFindingCitations } = require('../../court-analysis/reasoning/synthesis/synthesizer');
         const claimByRef = new Map([
             ['C1', {
                 id: 'analysis-1',

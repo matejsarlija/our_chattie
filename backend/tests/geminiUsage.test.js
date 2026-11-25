@@ -2,7 +2,7 @@ const {
   createUsageTracker,
   extractUsageFromResponse,
   trackUsageInvoke,
-} = require('../helpers/geminiUsage');
+} = require('../llm/usage');
 
 describe('createUsageTracker', () => {
   test('accumulates input/output/total tokens across records', () => {

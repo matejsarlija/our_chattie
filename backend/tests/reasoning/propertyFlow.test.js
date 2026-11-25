@@ -1,6 +1,6 @@
-const { collectFlows } = require('../../court-analysis/reasoning/flow');
-const { reconcileFlows } = require('../../court-analysis/reasoning/reconciliation');
-const { attachAnalysesToEvidencePackage } = require('../../court-analysis/reasoning/evidencePackage');
+const { collectFlows } = require('../../court-analysis/reasoning/ledger/flow');
+const { reconcileFlows } = require('../../court-analysis/reasoning/ledger/reconciliation');
+const { attachAnalysesToEvidencePackage } = require('../../court-analysis/reasoning/ledger/evidencePackage');
 
 function makeAnalysis(id, fileName, propertyFlow, amounts = []) {
     return { id, fileName, caseNumber: 'Stč-2150/2022', amounts, propertyFlow };
@@ -256,7 +256,7 @@ describe('canonical flow reconciliation and property lifecycle', () => {
             resolveSupersedesTarget,
             resolveSupersedesTargetWithBasis,
             sharesLifecycleIdentifiers,
-        } = require('../../court-analysis/reasoning/propertyFlow');
+        } = require('../../court-analysis/reasoning/ledger/propertyFlow');
         const byId = new Map([['flow-1', { id: 'flow-1' }]]);
         const pool = [
             { id: 'flow-1', description: 'Prijava tražbine', claimRegistryNumber: '106' },
@@ -551,7 +551,7 @@ describe('canonical flow reconciliation and property lifecycle', () => {
     });
 
     test('value-change timeline orders mixed ISO and Croatian date formats chronologically', () => {
-        const { buildValueChangeTimeline } = require('../../court-analysis/reasoning/propertyFlow');
+        const { buildValueChangeTimeline } = require('../../court-analysis/reasoning/ledger/propertyFlow');
         const timeline = buildValueChangeTimeline([
             // Lexicographically "15.06.2022." > "2023-06-01" — string sorting
             // would put the 2022 stage last and invert original/latest values.

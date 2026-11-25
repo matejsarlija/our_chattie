@@ -2,7 +2,7 @@ const {
     buildProfileReportInput,
     selectContextNodes,
 } = require('../../court-analysis/reasoning/contextReportAdapter');
-const { buildSynthesisInput } = require('../../court-analysis/reasoning/synthesisInputBuilder');
+const { buildSynthesisInput } = require('../../court-analysis/reasoning/synthesis/synthesisInputBuilder');
 const {
     stableStringify,
     evidencePackageDigest,

@@ -3,7 +3,7 @@ const {
     evidencePackageDigest,
     cloneEvidencePackage,
 } = require('../../../court-analysis/reasoning/analysisLab/evidenceIdentity');
-const { validateClusterEvidencePackage } = require('../../../court-analysis/reasoning/evidencePackage');
+const { validateClusterEvidencePackage } = require('../../../court-analysis/reasoning/ledger/evidencePackage');
 
 const LAB_FIXTURE = require('../../fixtures/replays/analysis-lab/kerum-lab.json');
 

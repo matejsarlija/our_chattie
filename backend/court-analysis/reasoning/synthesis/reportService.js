@@ -1,18 +1,17 @@
 const { synthesizeReport } = require('./synthesizer');
 const { verifyReport } = require('./verifier');
-const { retrieveEvidence } = require('./retriever');
-const { annotateFindingsWithRetrieval } = require('./findingProvenance');
-const { buildScopeContract } = require('./scopeContract');
+const { retrieveEvidence } = require('../retrieval/retriever');
+const { annotateFindingsWithRetrieval } = require('../retrieval/findingProvenance');
+const { buildScopeContract } = require('../ledger/scopeContract');
 const { buildSynthesisInput } = require('./synthesisInputBuilder');
-const { buildProfileReportInput } = require('./contextReportAdapter');
-const agentLog = require('../../helpers/agentLog');
-const logger = require('../../helpers/logger');
+const { buildProfileReportInput } = require('../contextReportAdapter');
+const logger = require('../../../services/logger');
 
 
 async function generateClusterReport(clusterEvidencePackage, options = {}) {
     // Run correlation, same plumbing shape as tracker/onUsage: callers pass
-    // options.runId (null outside real runs); every logger.* call below
-    // carries it so one run's lines isolate with a single grep.
+    // options.runId (null outside real runs); structured stage records below
+    // carry it so one run's lines isolate with a single grep.
     const runId = options.runId || null;
     const sharedUpstream = options.sharedUpstream || null;
     const retrieval = sharedUpstream?.retrieval
@@ -102,7 +101,7 @@ async function generateClusterReport(clusterEvidencePackage, options = {}) {
                 && process.env.ANALYSIS_SCRAPE_LIMIT.trim() !== ''
         });
     } catch (err) {
-        agentLog.warn(`[ScopeContract] Contract build failed; persisting null (${err.message})`);
+        logger.agent.warn(`[ScopeContract] Contract build failed; persisting null (${err.message})`);
     }
     logger.info('reportService.scope', 'Conclusion contract built', {
         runId,

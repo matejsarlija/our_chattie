@@ -20,7 +20,7 @@
 // dual-mismatch residue, and tražbina lifecycle reconciliation run once over
 // the canonical array.
 
-const { normalizeText } = require('./indexer');
+const { normalizeText } = require('../retrieval/indexer');
 const { reconcileTrazbinaLifecycle, formatValue } = require('./propertyFlow');
 
 const DIVERGENCE_RATIO_THRESHOLD = 1.05;

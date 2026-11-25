@@ -3,7 +3,7 @@ const {
     hrkToEur,
     convertToEur,
     dualMismatch,
-} = require('../../court-analysis/reasoning/currencyConversion');
+} = require('../../court-analysis/reasoning/ledger/currencyConversion');
 
 describe('reasoning currencyConversion (K-01)', () => {
     test('fixed legal rate is 7.53450 HRK per EUR', () => {

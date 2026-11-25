@@ -8,7 +8,7 @@
 // Never throws: empty/missing quotes degrade to grounded:false.
 // Forward-only: no retroactive re-verification of cached analyses.
 
-const { normalizeText } = require('./indexer');
+const { normalizeText } = require('../retrieval/indexer');
 
 function collapseWhitespace(value) {
     return String(value || '').replace(/\s+/g, ' ').trim();

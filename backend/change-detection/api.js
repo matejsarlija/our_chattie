@@ -13,8 +13,8 @@
 // else -> 500.
 
 const express = require('express');
-const { parseCourtAnalysisRequest } = require('../helpers/courtAnalysisRequest');
-const { friendlyAnalysisErrorMessage } = require('../helpers/friendlyAnalysisError');
+const { parseCourtAnalysisRequest } = require('../http/courtAnalysisRequest');
+const { friendlyAnalysisErrorMessage } = require('../http/friendlyAnalysisError');
 const { CsvExportError } = require('../scraper/csvExportClient');
 
 const QUERY_ID_RE = /^[0-9a-f]{40}$/;

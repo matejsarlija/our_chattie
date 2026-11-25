@@ -86,7 +86,7 @@ async function buildRealCorpusFixture() {
             docCount += 1;
             const docId = `${entry.caseNumber}::${file.entryName}`;
             // Lazy require keeps Jest suites free of the pdfjs dependency chain.
-            const { buildRetrievalChunks } = require('../chunker');
+            const { buildRetrievalChunks } = require('../retrieval/chunker');
             for (const chunk of buildRetrievalChunks(text, { docId })) {
                 chunks.push({
                     id: chunk.id,

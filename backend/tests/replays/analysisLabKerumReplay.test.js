@@ -16,8 +16,8 @@ const os = require('os');
 const path = require('path');
 
 const { buildProfileReportInput } = require('../../court-analysis/reasoning/contextReportAdapter');
-const { buildSynthesisInput } = require('../../court-analysis/reasoning/synthesisInputBuilder');
-const { collectContextFacts } = require('../../court-analysis/reasoning/caseContextBuilder');
+const { buildSynthesisInput } = require('../../court-analysis/reasoning/synthesis/synthesisInputBuilder');
+const { collectContextFacts } = require('../../court-analysis/reasoning/ledger/caseContextBuilder');
 const {
     runExperiment,
 } = require('../../court-analysis/reasoning/analysisLab/runExperiment');

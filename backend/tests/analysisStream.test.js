@@ -4,7 +4,7 @@ const {
   didRunChange,
   getNewEvents,
   shouldStartStreamTimers,
-} = require('../helpers/analysisStream');
+} = require('../http/analysisStream');
 
 describe('analysisStream helpers', () => {
   test('detects terminal statuses', () => {

@@ -1,13 +1,6 @@
 // analysis-agent.js
 //
-// Logging convention for this file: `agentLog` stays per-file,
-// human-readable operational trace (extraction attempts, OCR fallback,
-// per-file results) — including OIBs, which are deliberately visible here.
-// Genuine pipeline-outcome signals (a check that failed, a batch-level
-// result) go to the structured `logger.js` WITH the run's `runId` so
-// concurrent runs isolate with one grep. Future structured surfaces
-// (reconciliation outcomes, scan-depth resolution, …) must follow the same
-// split: trace on agentLog, outcomes on logger + runId.
+// Operational logging is routed through the structured logger.
 
 require("dotenv").config();
 const fs = require("fs");
@@ -16,16 +9,15 @@ const os = require("os");
 const path = require("path");
 const mammoth = require("mammoth");
 const WordExtractor = require("word-extractor");
-const { buildRetrievalChunks, splitTextIntoChunks } = require("../reasoning/chunker");
-const agentLog = require("../../helpers/agentLog");
-const logger = require("../../helpers/logger");
+const { buildRetrievalChunks, splitTextIntoChunks } = require("../reasoning/retrieval/chunker");
+const logger = require("../../services/logger");
 const { createOpenRouterRoleClient, outputCapWarning } = require("../../llm/openrouterConfig");
-const { trackUsageInvoke } = require("../../helpers/geminiUsage");
-const { withGeminiRetry, withGeminiTimeout } = require("../../helpers/geminiRetry");
-const { classifyFileFailure, classifyFileFailureDetailed } = require("../../helpers/friendlyAnalysisError");
-const { buildStageCounterEvent } = require("../../helpers/analysisStage");
+const { trackUsageInvoke } = require("../../llm/usage");
+const { withGeminiRetry, withGeminiTimeout } = require("../../llm/retry");
+const { classifyFileFailure, classifyFileFailureDetailed } = require("../../http/friendlyAnalysisError");
+const { buildStageCounterEvent } = require("../../http/analysisStage");
 const { extractJsonBlock, modelContentToText } = require("../../helpers/jsonExtract");
-const { applyGroundingToAnalysis } = require("../reasoning/grounding");
+const { applyGroundingToAnalysis } = require("../reasoning/ledger/grounding");
 const {
     validateExtraction,
     parseFieldRepairResponse,
@@ -34,7 +26,7 @@ const {
     REPAIRABLE_FIELDS,
     EXTRACTION_SCHEMA_VERSION,
     FIELD_SPECS,
-} = require("../reasoning/extractionSchema");
+} = require("../reasoning/schema/extractionSchema");
 const ocrPageStore = require("../../helpers/ocrPageStore");
 
 // All model roles use the OpenRouter client; page OCR sends raster images only.
@@ -118,7 +110,7 @@ async function validateAndRepairAnalysisSegment(response, segment, file, repairC
     const rootWasUnparseable = !validated.value;
 
     if (rootWasUnparseable || !hasUsableExtraction(validated.value)) {
-        agentLog.warn(outputCapWarning("analysis"));
+        logger.agent.warn(outputCapWarning("analysis"));
         try {
             const repairContent = await invokeRepairGemini(
                 buildFullRepairPrompt({ sourceText: segment.text }),
@@ -127,7 +119,7 @@ async function validateAndRepairAnalysisSegment(response, segment, file, repairC
             const salvaged = validateExtraction(extractJsonBlock(repairContent));
             if (salvaged.value) validated = salvaged;
         } catch (repairErr) {
-            agentLog.warn(`[Analyzer] Full repair failed for ${file.text}: ${repairErr.message}`);
+            logger.agent.warn(`[Analyzer] Full repair failed for ${file.text}: ${repairErr.message}`);
         }
         if (!validated.value || !hasUsableExtraction(validated.value)) {
             if (!rootWasUnparseable) {
@@ -153,10 +145,10 @@ async function validateAndRepairAnalysisSegment(response, segment, file, repairC
                         [field]: repair.absent ? [] : repair.value,
                     });
                 } else {
-                    agentLog.warn(`[Analyzer] Field repair rejected for ${file.text} field ${field}: ${repair.reason}`);
+                    logger.agent.warn(`[Analyzer] Field repair rejected for ${file.text} field ${field}: ${repair.reason}`);
                 }
             } catch (repairErr) {
-                agentLog.warn(`[Analyzer] Field repair failed for ${file.text} field ${field}: ${repairErr.message}`);
+                logger.agent.warn(`[Analyzer] Field repair failed for ${file.text} field ${field}: ${repairErr.message}`);
             }
         }
         if (!hasUsableExtraction(validated.value)) {
@@ -195,7 +187,7 @@ async function validateAndRepairAnalysisSegment(response, segment, file, repairC
             assignmentCueGap = propertyFlowRepairGap(
                 `source states a receivable assignment but targeted property-flow repair failed: ${repairErr.message}`,
             );
-            agentLog.warn(`[Analyzer] Assignment property-flow repair failed for ${file.text}: ${repairErr.message}`);
+            logger.agent.warn(`[Analyzer] Assignment property-flow repair failed for ${file.text}: ${repairErr.message}`);
         }
     }
 
@@ -509,10 +501,8 @@ async function extractTextFromFile(filePath) {
         else if (lowerPath.endsWith(".docx")) errorCode = EXTRACTION_ERROR_CODES.DOCX_PARSE_FAILED;
         else if (lowerPath.endsWith(".doc")) errorCode = EXTRACTION_ERROR_CODES.DOC_PARSE_FAILED;
         else if (lowerPath.endsWith(".txt")) errorCode = EXTRACTION_ERROR_CODES.TXT_READ_FAILED;
-        agentLog.error(
-            `Failed to extract text from ${filePath} (error=${errorCode}):`,
-            error.message,
-        );
+        logger.agent.error(`Failed to extract text from ${filePath} (error=${errorCode}):`,
+        error.message,);
         return buildExtractionResult({ error: errorCode });
     }
     return buildExtractionResult({ error: EXTRACTION_ERROR_CODES.UNSUPPORTED_TYPE });
@@ -636,7 +626,7 @@ function readCachedOcrPage(key) {
     if (!parts) return null;
     const fromDisk = ocrPageStore.readOcrPageFromDisk(parts.contentHash, parts.pageNumber);
     if (fromDisk === null) return null;
-    agentLog.log(`[OCR] Persistent cache hit: ${parts.contentHash.slice(0, 8)} page ${parts.pageNumber}`);
+    logger.agent.log(`[OCR] Persistent cache hit: ${parts.contentHash.slice(0, 8)} page ${parts.pageNumber}`);
     ocrPageCache.set(key, fromDisk);
     return fromDisk;
 }
@@ -720,9 +710,7 @@ function splitBatchedOcrPages(responseText, expectedPages) {
  * Never rejects: failures are reported via `error` with `text: ""`.
  */
 async function extractTextViaOCR(filePath, progressCallback, options = {}) {
-    agentLog.log(
-        `[OCR] Attempting OCR for ${path.basename(filePath)} with pdf.js`,
-    );
+    logger.agent.log(`[OCR] Attempting OCR for ${path.basename(filePath)} with pdf.js`,);
     let pagesProcessed = 0;
     // Hoisted so the outer failure path can still report how many pages made
     // it into memory before the error.
@@ -732,10 +720,8 @@ async function extractTextViaOCR(filePath, progressCallback, options = {}) {
         const fileBytes = fs.readFileSync(filePath);
         const maxBytes = resolvePdfMaxBytes();
         if (fileBytes.length > maxBytes) {
-            agentLog.error(
-                `[OCR] Preflight reject for ${path.basename(filePath)}: ` +
-                    `${fileBytes.length} bytes exceeds the ${maxBytes}-byte limit. No Gemini call made.`,
-            );
+            logger.agent.error(`[OCR] Preflight reject for ${path.basename(filePath)}: ` +
+                `${fileBytes.length} bytes exceeds the ${maxBytes}-byte limit. No Gemini call made.`,);
             return buildExtractionResult({
                 method: "ocr",
                 pages: 0,
@@ -750,10 +736,8 @@ async function extractTextViaOCR(filePath, progressCallback, options = {}) {
         const numPages = pdf.numPages;
         const hardMaxPages = resolvePdfHardMaxPages();
         if (hardMaxPages !== null && numPages > hardMaxPages) {
-            agentLog.error(
-                `[OCR] Preflight reject for ${path.basename(filePath)}: ` +
-                    `${numPages} pages exceeds the ${hardMaxPages}-page limit. No Gemini call made.`,
-            );
+            logger.agent.error(`[OCR] Preflight reject for ${path.basename(filePath)}: ` +
+                `${numPages} pages exceeds the ${hardMaxPages}-page limit. No Gemini call made.`,);
             return buildExtractionResult({
                 method: "ocr",
                 pages: 0,
@@ -828,15 +812,11 @@ async function extractTextViaOCR(filePath, progressCallback, options = {}) {
                         batchCovered += 1;
                     }
                 });
-                agentLog.log(
-                    `[OCR] Batch request covered ${batchCovered}/${pendingPageNumbers.length} pending pages.`,
-                );
+                logger.agent.log(`[OCR] Batch request covered ${batchCovered}/${pendingPageNumbers.length} pending pages.`,);
             } catch (batchErr) {
-                agentLog.error(
-                    `[OCR] Batch request failed for ${filePath}:`,
-                    batchErr?.name === "AbortError" ? batchErr.message : batchErr,
-                );
-                agentLog.log("[OCR] Falling back to per-page OCR.");
+                logger.agent.error(`[OCR] Batch request failed for ${filePath}:`,
+                batchErr?.name === "AbortError" ? batchErr.message : batchErr,);
+                logger.agent.log("[OCR] Falling back to per-page OCR.");
             }
         }
 
@@ -892,10 +872,8 @@ async function extractTextViaOCR(filePath, progressCallback, options = {}) {
                 pageTexts.set(i, pageText);
                 writeCachedOcrPage(`${contentHash}:${i}`, pageText);
             } catch (pageErr) {
-                agentLog.error(
-                    `[OCR] Page ${i}/${maxPages} failed for ${filePath}:`,
-                    pageErr?.name === "AbortError" ? pageErr.message : pageErr,
-                );
+                logger.agent.error(`[OCR] Page ${i}/${maxPages} failed for ${filePath}:`,
+                pageErr?.name === "AbortError" ? pageErr.message : pageErr,);
                 firstFailure = pageErr;
                 break;
             }
@@ -915,10 +893,8 @@ async function extractTextViaOCR(filePath, progressCallback, options = {}) {
         const truncated = numPages > maxPages || Boolean(firstFailure) || pagesProcessed < maxPages;
 
         if (firstFailure || pagesProcessed < maxPages) {
-            agentLog.log(
-                `[OCR] Returning partial result: ${pagesProcessed}/${maxPages} pages extracted` +
-                    `${firstFailure ? " after a page failure" : ""}.`,
-            );
+            logger.agent.log(`[OCR] Returning partial result: ${pagesProcessed}/${maxPages} pages extracted` +
+                `${firstFailure ? " after a page failure" : ""}.`,);
             return buildExtractionResult({
                 text: combinedText,
                 method: "ocr",
@@ -929,11 +905,9 @@ async function extractTextViaOCR(filePath, progressCallback, options = {}) {
             });
         }
 
-        agentLog.log(
-            `[OCR] Extracted ~${combinedText.length} chars from ${pagesProcessed}/${numPages} pages` +
-                (cachedPagesHit > 0 ? ` (${cachedPagesHit} from cache)` : "") +
-                `${truncated ? ` (capped at OCR_MAX_PAGES=${maxPages})` : ""}.`,
-        );
+        logger.agent.log(`[OCR] Extracted ~${combinedText.length} chars from ${pagesProcessed}/${numPages} pages` +
+            (cachedPagesHit > 0 ? ` (${cachedPagesHit} from cache)` : "") +
+            `${truncated ? ` (capped at OCR_MAX_PAGES=${maxPages})` : ""}.`,);
         return buildExtractionResult({
             text: combinedText,
             method: "ocr",
@@ -945,10 +919,8 @@ async function extractTextViaOCR(filePath, progressCallback, options = {}) {
         // Timeout aborts carry only internal timer frames from the timeout
         // guard — their stack is pure noise. Log the message alone and keep
         // full stacks/inspect formatting for unexpected errors.
-        agentLog.error(
-            `[OCR] Failed during OCR process for ${filePath}:`,
-            err?.name === "AbortError" ? err.message : err,
-        );
+        logger.agent.error(`[OCR] Failed during OCR process for ${filePath}:`,
+        err?.name === "AbortError" ? err.message : err,);
         // Whatever reached memory before the failure still counts.
         pagesProcessed = Math.max(pagesProcessed, pageTexts.size);
         return buildExtractionResult({
@@ -1110,11 +1082,9 @@ async function analyzeClusterDocuments(input) {
                     (!text || text.trim().length === 0) &&
                     file.filePath.toLowerCase().endsWith(".pdf")
                 ) {
-                    agentLog.log(
-                        extraction.error
-                            ? `[Analyzer] Text extraction failed for ${path.basename(file.filePath)} (error=${extraction.error}); trying OCR fallback`
-                            : `[Analyzer] No embedded text layer in ${path.basename(file.filePath)} (likely scanned); trying OCR fallback`,
-                    );
+                    logger.agent.log(extraction.error
+                        ? `[Analyzer] Text extraction failed for ${path.basename(file.filePath)} (error=${extraction.error}); trying OCR fallback`
+                        : `[Analyzer] No embedded text layer in ${path.basename(file.filePath)} (likely scanned); trying OCR fallback`,);
                     const ocrResult = await extractTextViaOCR(
                         file.filePath,
                         progressCallback,
@@ -1134,9 +1104,7 @@ async function analyzeClusterDocuments(input) {
                     }
                 }
 
-                agentLog.log(
-                    `[Extractor] ${path.basename(file.filePath)}: ${summarizeExtraction(extraction)}`,
-                );
+                logger.agent.log(`[Extractor] ${path.basename(file.filePath)}: ${summarizeExtraction(extraction)}`,);
 
                 // Final check: if still no text, return error, file failed analysis
                 if (!text || text.trim().length === 0) {
@@ -1153,7 +1121,7 @@ async function analyzeClusterDocuments(input) {
                         .update(fs.readFileSync(file.filePath))
                         .digest("hex");
                 } catch (hashErr) {
-                    agentLog.warn(`[Analyzer] Could not hash source bytes for ${file.text}: ${hashErr.message}`);
+                    logger.agent.warn(`[Analyzer] Could not hash source bytes for ${file.text}: ${hashErr.message}`);
                 }
 
                 // Full text exists — capture the capped ground-truth chunk set
@@ -1229,7 +1197,7 @@ async function analyzeClusterDocuments(input) {
                 analysisChunks.completed += 1;
                     } catch (segmentError) {
                         chunkFailures.push({ segment, error: segmentError });
-                        agentLog.warn(`[Analyzer] Chunk ${segment.id} failed for ${file.text}: ${segmentError.message}`);
+                        logger.agent.warn(`[Analyzer] Chunk ${segment.id} failed for ${file.text}: ${segmentError.message}`);
                     }
                 }
 
@@ -1277,10 +1245,8 @@ async function analyzeClusterDocuments(input) {
                 // END of fix
 
                 // added by a human
-                agentLog.log(
-                    `Analyzed file ${file.filePath}, AI result:`,
-                    aiResult,
-                );
+                logger.agent.log(`Analyzed file ${file.filePath}, AI result:`,
+                aiResult,);
 
                 batchCounters.done += 1;
                 emitFileEvent(file, "ok", {
@@ -1298,10 +1264,8 @@ async function analyzeClusterDocuments(input) {
                     ...(retrievalChunks ? { retrievalChunks } : {}),
                 };
             } catch (err) {
-                agentLog.error(
-                    `Error analyzing file ${file.filePath}:`,
-                    err.message,
-                );
+                logger.agent.error(`Error analyzing file ${file.filePath}:`,
+                err.message,);
                 batchCounters.failed += 1;
                 emitFileEvent(file, "failed", {
                     durationMs: Date.now() - startedAt,
@@ -1345,7 +1309,7 @@ async function analyzeClusterDocuments(input) {
 
             let individualAnalyses = firstPassResults;
             if (retryableIndexes.length > 0) {
-                agentLog.log(`[Analyzer] ${retryableIndexes.length} file(s) failed with transient errors; retrying sequentially...`);
+                logger.agent.log(`[Analyzer] ${retryableIndexes.length} file(s) failed with transient errors; retrying sequentially...`);
                 const retryFiles = retryableIndexes.map((index) => files[index]);
                 const retryResults = await mapWithConcurrency(
                     retryFiles,

@@ -18,7 +18,7 @@
 // without mutating it, and derives every node id from kind + stable evidence
 // identity so an evidence change alters only the affected nodes.
 
-const { normalizeText } = require('./indexer');
+const { normalizeText } = require('../retrieval/indexer');
 const { createContextNode, validateContextGraph } = require('./contextNode');
 
 function cleanString(value) {

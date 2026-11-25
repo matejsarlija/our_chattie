@@ -5,10 +5,10 @@ const EventEmitter = require('events');
 const request = require('supertest');
 const express = require('express');
 const { createLocalStore } = require('../services/localStore');
-const { parsePagination } = require('../helpers/pagination');
-const { buildSseEvent } = require('../helpers/sse');
-const { createAnalysisRunStreamHandler } = require('../helpers/analysisStreamHandler');
-const { isTerminalStatus, buildCursor, didRunChange, getNewEvents, shouldStartStreamTimers } = require('../helpers/analysisStream');
+const { parsePagination } = require('../http/pagination');
+const { buildSseEvent } = require('../http/sse');
+const { createAnalysisRunStreamHandler } = require('../http/analysisStreamHandler');
+const { isTerminalStatus, buildCursor, didRunChange, getNewEvents, shouldStartStreamTimers } = require('../http/analysisStream');
 
 function makeApp(store) {
   const app = express();

@@ -1,4 +1,4 @@
 'use strict';
 
 // Compatibility export until the Analysis Lab sunset.
-module.exports = require('../runScorecard');
+module.exports = require('../ledger/runScorecard');

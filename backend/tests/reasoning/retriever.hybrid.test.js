@@ -1,5 +1,5 @@
-const { retrieveEvidence } = require('../../court-analysis/reasoning/retriever');
-const { buildLexicalIndex } = require('../../court-analysis/reasoning/indexer');
+const { retrieveEvidence } = require('../../court-analysis/reasoning/retrieval/retriever');
+const { buildLexicalIndex } = require('../../court-analysis/reasoning/retrieval/indexer');
 
 describe('retriever hybrid scoring (Phase 0.4)', () => {
     const pkg = {

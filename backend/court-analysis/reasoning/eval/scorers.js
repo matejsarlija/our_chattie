@@ -10,7 +10,7 @@
 // why), and has no I/O or clock access. Each result is a reward component:
 //   { metric, value, details }  where value ∈ [0, 1] unless stated otherwise.
 
-const { normalizeText } = require('../indexer');
+const { normalizeText } = require('../retrieval/indexer');
 
 function result(metric, value, details) {
     return { metric, value, details };

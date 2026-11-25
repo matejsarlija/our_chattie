@@ -1,4 +1,4 @@
-const { buildRetrievalChunks, RETRIEVAL_CHUNK_LIMIT, RETRIEVAL_MIN_CHUNK_CHARS } = require('../../court-analysis/reasoning/chunker');
+const { buildRetrievalChunks, RETRIEVAL_CHUNK_LIMIT, RETRIEVAL_MIN_CHUNK_CHARS } = require('../../court-analysis/reasoning/retrieval/chunker');
 
 function longText(paragraphs) {
     return Array.from({ length: paragraphs }, (_, i) => `Odluka broj ${i + 1}: sud je doneo rješenje u predmetu i odredio rok za prijavu tražbina vjerovnika u postupku. `.repeat(8)).join('\n\n');

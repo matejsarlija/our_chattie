@@ -4,7 +4,7 @@ const path = require('path');
 const request = require('supertest');
 const express = require('express');
 const { createLocalStore } = require('../services/localStore');
-const { createAnalysisReportRetryHandler } = require('../helpers/analysisReportRetry');
+const { createAnalysisReportRetryHandler } = require('../http/analysisReportRetry');
 
 function makeApp(store, regenerate) {
   const app = express();

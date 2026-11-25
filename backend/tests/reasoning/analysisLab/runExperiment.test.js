@@ -231,7 +231,7 @@ describe('runExperiment shared boundary (LE-1)', () => {
                 path.join(__dirname, '../../../court-analysis/reasoning/analysisLab/runExperiment.js'), 'utf8'
             ),
             fs.readFileSync(
-                path.join(__dirname, '../../../court-analysis/reasoning/reportService.js'), 'utf8'
+                path.join(__dirname, '../../../court-analysis/reasoning/synthesis/reportService.js'), 'utf8'
             ),
         ];
         for (const source of sources) {

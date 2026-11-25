@@ -1,4 +1,4 @@
-const { SCHEMA_VERSION } = require('../../court-analysis/reasoning/schema');
+const { SCHEMA_VERSION } = require('../../court-analysis/reasoning/schema/schema');
 
 // 1. Mock the local OpenRouter client factory
 const mockInvoke = jest.fn();
@@ -7,10 +7,10 @@ jest.mock('../../llm/openrouterClient.js', () => ({
 }));
 
 // 2. Require the module under test
-const { synthesizeReport, createEvidenceFromProcessedCases } = require('../../court-analysis/reasoning/synthesizer');
+const { synthesizeReport, createEvidenceFromProcessedCases } = require('../../court-analysis/reasoning/synthesis/synthesizer');
 
 // Mock retry helper
-jest.mock("../../helpers/geminiRetry", () => ({
+jest.mock("../../llm/retry", () => ({
     withGeminiRetry: jest.fn((fn) => fn()),
     withGeminiTimeout: jest.fn((callable) => callable(undefined))
 }));

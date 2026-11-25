@@ -1,4 +1,4 @@
-const { buildTimeline } = require('../../court-analysis/reasoning/timelineBuilder');
+const { buildTimeline } = require('../../court-analysis/reasoning/synthesis/timelineBuilder');
 
 describe('TimelineBuilder', () => {
     test('sorts events by date ascending', () => {

@@ -18,9 +18,9 @@
 // modules (they ride along in the flat meta, untouched).
 //
 // The adapter never mutates the supplied evidence package.
-const { boundTrace } = require('./traceBounds');
-const { buildSynthesisInput, appendContextClaims } = require('./synthesisInputBuilder');
-const { buildCaseContext, collectContextFacts } = require('./caseContextBuilder');
+const { boundTrace } = require('./synthesis/traceBounds');
+const { buildSynthesisInput, appendContextClaims } = require('./synthesis/synthesisInputBuilder');
+const { buildCaseContext, collectContextFacts } = require('./ledger/caseContextBuilder');
 const { getProfile } = require('./analysisLab/profiles');
 const { summarizeContextNodes } = require('./analysisLab/contextNodeSummary');
 const NODE_SUMMARY_PROMPT_VERSION = 'v1';

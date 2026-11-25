@@ -1,4 +1,4 @@
-const { validateClaim, validateEvidence, validateReport, validateEvent, validateTimelineItem, SCHEMA_VERSION } = require('../../court-analysis/reasoning/schema');
+const { validateClaim, validateEvidence, validateReport, validateEvent, validateTimelineItem, SCHEMA_VERSION } = require('../../court-analysis/reasoning/schema/schema');
 
 describe('Reasoning Schema Validator', () => {
     describe('Evidence Validation', () => {

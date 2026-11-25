@@ -1,6 +1,6 @@
 const request = require('supertest');
 const express = require('express');
-const rateLimiter = require('../court-analysis/utils/rateLimiter');
+const rateLimiter = require('../http/rateLimiter');
 
 // Dummy handler for testing
 const app = express();
@@ -27,7 +27,7 @@ describe('Rate Limiter Middleware', () => {
     it('blocks requests over the 1000/hour limit', async () => {
         // Simulate bucket state
         const ip = '::ffff:127.0.0.1';
-        const bucket = require('../court-analysis/utils/rateLimiter').__getBucket?.(ip) || null;
+        const bucket = require('../http/rateLimiter').__getBucket?.(ip) || null;
         if (bucket) bucket.hourTokens = 0;
         const res = await request(app).get('/api/court-analysis');
         expect(res.status).toBe(429);

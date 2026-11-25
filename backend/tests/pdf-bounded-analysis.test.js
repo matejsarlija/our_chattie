@@ -4,7 +4,7 @@ const crypto = require('crypto');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { splitTextIntoChunks } = require('../court-analysis/reasoning/chunker');
+const { splitTextIntoChunks } = require('../court-analysis/reasoning/retrieval/chunker');
 const { shouldBoundAnalysis, runBoundedAnalysis: runBoundedAnalysisWithCache, checkpointKey, DEFAULT_CHECKPOINT_DIR } = require('../scripts/lib/bounded-analysis');
 
 const checkpointDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pdf-bounded-analysis-'));

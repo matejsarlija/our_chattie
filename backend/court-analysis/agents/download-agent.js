@@ -4,7 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const axios = require('axios');
 const mime = require("mime-types");
-const agentLog = require("../../helpers/agentLog");
+const logger = require("../../services/logger");
 const { getDownloadCache } = require("../../helpers/downloadCache");
 
 // agents/download-agent.js -> inside the downloadFile function
@@ -28,13 +28,13 @@ async function downloadFile(url, baseFilename, fallbackLinkText) {
     try {
         cached = cache.get(url);
     } catch (err) {
-        agentLog.warn('[Downloader] Cache read failed, falling back to network:', err.message);
+        logger.agent.warn('[Downloader] Cache read failed, falling back to network:', err.message);
     }
     if (cached) {
         const extension = cached.meta.ext || '.bin';
         const filePath = path.join(uploadsDir, `${baseFilename}${extension}`);
         cache.materialize(cached.blobPath, filePath);
-        agentLog.log(`[Downloader] Cache HIT ${cached.key.slice(0, 8)} -> ${path.basename(filePath)}`);
+        logger.agent.log(`[Downloader] Cache HIT ${cached.key.slice(0, 8)} -> ${path.basename(filePath)}`);
         return { filePath, fromCache: true };
     }
 
@@ -56,7 +56,7 @@ async function downloadFile(url, baseFilename, fallbackLinkText) {
         let extension = '';
 
         // --- Start Debug Logging ---
-        agentLog.log('[Downloader] Response Headers:', {
+        logger.agent.log('[Downloader] Response Headers:', {
             'content-type': headers['content-type'],
             'content-disposition': headers['content-disposition'],
         });
@@ -80,7 +80,7 @@ async function downloadFile(url, baseFilename, fallbackLinkText) {
                 const serverExt = path.extname(serverFilename);
                 if (serverExt) {
                     extension = serverExt;
-                    agentLog.log(`[Downloader] Found extension '${extension}' from Content-Disposition.`);
+                    logger.agent.log(`[Downloader] Found extension '${extension}' from Content-Disposition.`);
                 }
             }
         }
@@ -91,20 +91,20 @@ async function downloadFile(url, baseFilename, fallbackLinkText) {
             const mimeExt = mime.extension(contentType);
             if (mimeExt && mimeExt !== 'bin') { // Ignore generic 'bin' from octet-stream
                 extension = `.${mimeExt}`;
-                agentLog.log(`[Downloader] Found extension '${extension}' from Content-Type: ${contentType}.`);
+                logger.agent.log(`[Downloader] Found extension '${extension}' from Content-Type: ${contentType}.`);
             }
         }
 
         // 3. LAST RESORT: If STILL no extension, use our link text fallback.
         if (!extension) {
-            agentLog.log('[Downloader] No specific extension found in headers. Using link text fallback.');
+            logger.agent.log('[Downloader] No specific extension found in headers. Using link text fallback.');
             if (fallbackLinkText && fallbackLinkText.toLowerCase().includes('zip')) {
                 extension = '.zip';
             } else {
                 // This is our ultimate fallback. A file MUST have an extension.
                 extension = '.bin'; // a generic binary file
             }
-            agentLog.log(`[Downloader] Using fallback extension: '${extension}'`);
+            logger.agent.log(`[Downloader] Using fallback extension: '${extension}'`);
         }
 
         const finalFilename = `${baseFilename}${extension}`;
@@ -127,7 +127,7 @@ async function downloadFile(url, baseFilename, fallbackLinkText) {
         });
         cache.materialize(blobPath, filePath);
 
-        agentLog.log(`[Downloader] Successfully saved file: ${filePath}`);
+        logger.agent.log(`[Downloader] Successfully saved file: ${filePath}`);
         return { filePath, fromCache: false };
     } catch (err) {
         pending.abort();
@@ -163,7 +163,7 @@ async function downloadClusterAttachments(input) {
                 : `Downloaded: ${path.basename(filePath)}`;
             progressCallback && progressCallback({ step: 'downloading', progress: currentProgress, message, completed, total: documentLinks.length });
         } catch (err) {
-            agentLog.error(`[Downloader] Failed to download ${link.text} from ${link.url}:`, err.message);
+            logger.agent.error(`[Downloader] Failed to download ${link.text} from ${link.url}:`, err.message);
             completed++;
             const currentProgress = 50 + Math.round((completed / documentLinks.length) * 30);
             progressCallback && progressCallback({ step: 'downloading', progress: currentProgress, message: `Failed: ${link.text}`, completed, total: documentLinks.length, failed: true });
@@ -171,7 +171,7 @@ async function downloadClusterAttachments(input) {
     }
 
     if (documentLinks.length > 0) {
-        agentLog.log(`[Downloader] Download cache: ${cacheHits}/${documentLinks.length} served without network.`);
+        logger.agent.log(`[Downloader] Download cache: ${cacheHits}/${documentLinks.length} served without network.`);
     }
     progressCallback && progressCallback({ step: 'downloading', progress: 80, message: 'All downloads attempted.' });
     return downloaded;

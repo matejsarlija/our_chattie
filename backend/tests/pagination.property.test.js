@@ -1,6 +1,6 @@
 const fc = require('fast-check');
-const { parsePagination, MAX_LIMIT } = require('../helpers/pagination');
-const { sanitizeMarkdown } = require('../helpers/sanitize');
+const { parsePagination, MAX_LIMIT } = require('../http/pagination');
+const { sanitizeMarkdown } = require('../http/sanitize');
 
 describe('parsePagination (property-based)', () => {
   test('clamps limit and offset to expected ranges', () => {

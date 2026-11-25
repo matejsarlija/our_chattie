@@ -1,5 +1,5 @@
 const EventEmitter = require('events');
-const { createAnalysisRunStreamHandler } = require('../helpers/analysisStreamHandler');
+const { createAnalysisRunStreamHandler } = require('../http/analysisStreamHandler');
 
 describe('analysisStreamHandler', () => {
   afterEach(() => {

@@ -9,16 +9,15 @@ const { groupEntriesByCase } = require('./utils/grouping');
 const { parseCaseDateToTimestamp } = require('./utils/caseDate');
 const { selectPrimaryCase } = require('./utils/primaryCaseSelector');
 const { stratifyClusterEntries } = require('./utils/stratify');
-const { buildStageCounterEvent } = require('../helpers/analysisStage');
+const { buildStageCounterEvent } = require('../http/analysisStage');
 const { normalizeCaseNumber } = require('./utils/caseNumber');
 const { resolveScanDepthEntries, COURT_ENTRIES_PER_PAGE } = require('./utils/scanDepth');
-const { buildClusterEvidencePackage, attachAnalysesToEvidencePackage } = require('./reasoning/evidencePackage');
-const { generateClusterReport, composeOverviewMarkdown } = require('./reasoning/reportService');
-const { createUsageTracker } = require('../helpers/geminiUsage');
+const { buildClusterEvidencePackage, attachAnalysesToEvidencePackage } = require('./reasoning/ledger/evidencePackage');
+const { generateClusterReport, composeOverviewMarkdown } = require('./reasoning/synthesis/reportService');
+const { createUsageTracker } = require('../llm/usage');
 const fs = require('fs');
 const path = require('path');
-const logger = require('../helpers/logger');
-const agentLog = require('../helpers/agentLog');
+const logger = require('../services/logger');
 
 /**
  * Error carrying whatever partial results were accumulated before a pipeline stage
@@ -943,7 +942,7 @@ async function processScrapedCases(casesToProcess, progressCallback, options = {
                 try {
                     caseInfo.participants = await enrichParticipants(caseInfo.participants);
                 } catch (err) {
-                    agentLog.error('Enrichment failed gracefully:', err.message);
+                    logger.agent.error('Enrichment failed gracefully:', err.message);
                 }
             }
             // -----------------------
@@ -1056,7 +1055,7 @@ async function processScrapedCases(casesToProcess, progressCallback, options = {
             }));
 
             if (filesForAnalysis.length === 0) {
-                 agentLog.warn(`No files to analyze for case ${caseInfo.title}. Skipping analysis.`);
+                 logger.agent.warn(`No files to analyze for case ${caseInfo.title}. Skipping analysis.`);
                  allProcessedCases.push({
                     caseResult: caseInfo,
                     analysis: { individualAnalyses: [], finalSummary: "Nema dokumenata za analizu." },
@@ -1153,7 +1152,7 @@ async function processScrapedCases(casesToProcess, progressCallback, options = {
             });
         } catch (err) {
             reportError = err.message;
-            agentLog.error('Report generation failed; returning partial per-document results without a synthesized report:', err.message);
+            logger.agent.error('Report generation failed; returning partial per-document results without a synthesized report:', err.message);
             logger.error('pipeline.processScrapedCases', 'Report generation failed', { runId, error: reportError });
         }
         partialResult.report = report;
@@ -1286,7 +1285,7 @@ async function cleanupFiles(filePaths) {
                 await fs.promises.unlink(filePath);
             }
         } catch (err) {
-            agentLog.warn(`Failed to delete temporary file ${filePath}: ${err.message}`);
+            logger.agent.warn(`Failed to delete temporary file ${filePath}: ${err.message}`);
         }
     }
 }

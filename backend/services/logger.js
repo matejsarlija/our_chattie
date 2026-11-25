@@ -1,6 +1,7 @@
-// logger.js - Minimal structured JSON-lines logger (no dependencies).
+// Central structured JSON-lines logger.
+const { format } = require('node:util');
 
-const LEVELS = { debug: 10, info: 20, warn: 30, error: 40 };
+const LEVELS = { trace: 5, debug: 10, info: 20, warn: 30, error: 40 };
 const DEFAULT_LEVEL = process.env.LOG_LEVEL || 'info';
 
 const OIB_PATTERN = /\b\d{11}\b/g;
@@ -19,6 +20,13 @@ function toJSON(entry) {
     return JSON.stringify(entry);
 }
 
+function logAgentMessage(level, args) {
+    const [first, ...rest] = args;
+    const match = typeof first === 'string' ? first.match(/^\[([^\]]+)\]\s*/) : null;
+    const scope = match ? `agent.${match[1].toLowerCase()}` : 'agent';
+    const message = match ? [first.slice(match[0].length), ...rest] : args;
+    log(level, scope, format(...message));
+}
 function log(level, scope, message, meta) {
     const threshold = LEVELS[DEFAULT_LEVEL] != null ? LEVELS[DEFAULT_LEVEL] : LEVELS.info;
     if (LEVELS[level] < threshold) return;
@@ -42,10 +50,16 @@ function log(level, scope, message, meta) {
 }
 
 const logger = {
+    trace: (scope, message, meta) => log('trace', scope, message, meta),
     debug: (scope, message, meta) => log('debug', scope, message, meta),
     info: (scope, message, meta) => log('info', scope, message, meta),
     warn: (scope, message, meta) => log('warn', scope, message, meta),
     error: (scope, message, meta) => log('error', scope, message, meta),
+    agent: {
+        log: (...args) => logAgentMessage('info', args),
+        warn: (...args) => logAgentMessage('warn', args),
+        error: (...args) => logAgentMessage('error', args),
+    },
     redact,
     redactSecrets,
 };

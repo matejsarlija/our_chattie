@@ -1,6 +1,6 @@
 const replay = require('../fixtures/replays/kerum-66124057408.json');
-const { collectFlows } = require('../../court-analysis/reasoning/flow');
-const { reconcileFlows } = require('../../court-analysis/reasoning/reconciliation');
+const { collectFlows } = require('../../court-analysis/reasoning/ledger/flow');
+const { reconcileFlows } = require('../../court-analysis/reasoning/ledger/reconciliation');
 
 describe('Kerum production replay: report-quality acceptance criteria', () => {
     test('retains incomplete corpus and degraded-retrieval signals from the observed run', () => {

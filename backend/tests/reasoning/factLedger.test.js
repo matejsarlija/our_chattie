@@ -1,4 +1,4 @@
-const { buildFactLedger, dedupeLedgerRows, docIdentity } = require('../../court-analysis/reasoning/factLedger');
+const { buildFactLedger, dedupeLedgerRows, docIdentity } = require('../../court-analysis/reasoning/ledger/factLedger');
 
 function distributionAnalysis(id, fileName, rows, { contentHash = `hash-${id}` } = {}) {
     return {

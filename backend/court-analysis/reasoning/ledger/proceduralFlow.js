@@ -1,7 +1,7 @@
 'use strict';
 
 const { createHash } = require('node:crypto');
-const { normalizeFilingReference } = require('../utils/proceduralMetadata');
+const { normalizeFilingReference } = require('../../utils/proceduralMetadata');
 
 function normalizeReference(value) {
     if (typeof value !== 'string') return '';

@@ -32,12 +32,12 @@ const {
     evidencePackageDigest,
     cloneEvidencePackage,
 } = require('../../../services/canonicalJson');
-const { validateClusterEvidencePackage } = require('../evidencePackage');
+const { validateClusterEvidencePackage } = require('../ledger/evidencePackage');
 const { buildComparisonViewModel } = require('./scorecard');
-const { boundExperimentForResponse } = require('../traceBounds');
+const { boundExperimentForResponse } = require('../synthesis/traceBounds');
 const { buildInputSummary } = require('./runExperiment');
-const { parsePagination } = require('../../../helpers/pagination');
-const { collectContextFacts } = require('../caseContextBuilder');
+const { parsePagination } = require('../../../http/pagination');
+const { collectContextFacts } = require('../ledger/caseContextBuilder');
 
 const DEFAULT_FIXTURES_DIR = path.join(__dirname, '..', '..', '..', 'tests', 'fixtures', 'replays', 'analysis-lab');
 

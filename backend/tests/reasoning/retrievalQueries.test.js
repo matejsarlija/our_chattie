@@ -1,4 +1,4 @@
-const { retrieveEvidence } = require('../../court-analysis/reasoning/retriever');
+const { retrieveEvidence } = require('../../court-analysis/reasoning/retrieval/retriever');
 
 function packageWith(overrides = {}) {
     return {

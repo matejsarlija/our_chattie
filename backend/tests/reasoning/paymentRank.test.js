@@ -1,4 +1,4 @@
-const { normalizePaymentRank } = require('../../court-analysis/reasoning/paymentRank');
+const { normalizePaymentRank } = require('../../court-analysis/reasoning/ledger/paymentRank');
 
 // Every raw value observed on run 2084d894, with its true count.
 const OBSERVED = [

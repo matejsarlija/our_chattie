@@ -3,7 +3,7 @@
 const path = require('path');
 
 const { canonicalCurrency } = require('./canonicalize');
-const { PROCEDURAL_OUTCOMES } = require('../../court-analysis/reasoning/extractionSchema');
+const { PROCEDURAL_OUTCOMES } = require('../../court-analysis/reasoning/schema/extractionSchema');
 
 // Currency spellings the gold editor accepts. Everything is stored canonically
 // as EUR or HRK so scoreGold compares like with like. The alias table itself

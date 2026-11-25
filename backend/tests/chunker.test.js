@@ -1,4 +1,4 @@
-const { splitTextIntoChunks, computeChunkId } = require('../court-analysis/reasoning/chunker');
+const { splitTextIntoChunks, computeChunkId } = require('../court-analysis/reasoning/retrieval/chunker');
 const fc = require('fast-check');
 
 describe('Chunker', () => {

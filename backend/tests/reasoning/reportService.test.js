@@ -4,16 +4,16 @@ const mockNormalizeReasoningEvidence = jest.fn();
 const mockVerifyReport = jest.fn();
 
 
-jest.mock('../../court-analysis/reasoning/synthesizer', () => ({
+jest.mock('../../court-analysis/reasoning/synthesis/synthesizer', () => ({
     synthesizeReport: mockSynthesizeReport,
     normalizeReasoningEvidence: mockNormalizeReasoningEvidence
 }));
 
-jest.mock('../../court-analysis/reasoning/verifier', () => ({
+jest.mock('../../court-analysis/reasoning/synthesis/verifier', () => ({
     verifyReport: mockVerifyReport
 }));
 
-const { generateClusterReport } = require('../../court-analysis/reasoning/reportService');
+const { generateClusterReport } = require('../../court-analysis/reasoning/synthesis/reportService');
 
 describe('reasoning reportService', () => {
     beforeEach(() => {
@@ -171,7 +171,7 @@ describe('reportService pass count', () => {
 });
 
 describe('stripRetrievalText provenance record (M-06)', () => {
-  const { stripRetrievalText, RETRIEVAL_SNIPPET_MAX_CHARS } = require('../../court-analysis/reasoning/reportService');
+  const { stripRetrievalText, RETRIEVAL_SNIPPET_MAX_CHARS } = require('../../court-analysis/reasoning/synthesis/reportService');
 
   test('keeps snippet/score/reasons/sourceId/fileName per match, drops full text', () => {
     const out = stripRetrievalText({
@@ -214,7 +214,7 @@ describe('stripRetrievalText provenance record (M-06)', () => {
 });
 
 describe('composeOverviewMarkdown', () => {
-  const { composeOverviewMarkdown } = require('../../court-analysis/reasoning/reportService');
+  const { composeOverviewMarkdown } = require('../../court-analysis/reasoning/synthesis/reportService');
 
   test('composes narrative, open questions, and next steps — findings live only in the annex (M-03)', () => {
     const overview = composeOverviewMarkdown({

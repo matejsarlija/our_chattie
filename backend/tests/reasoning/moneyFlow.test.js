@@ -1,4 +1,4 @@
-const { collectFlows, normalizeCurrency, parseAmount, normalizeDirection, normalizeOib } = require('../../court-analysis/reasoning/flow');
+const { collectFlows, normalizeCurrency, parseAmount, normalizeDirection, normalizeOib } = require('../../court-analysis/reasoning/ledger/flow');
 
 describe('canonical money flows', () => {
     test('normalizes amounts into the shared flow contract', () => {

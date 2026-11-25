@@ -1,4 +1,4 @@
-const { normalizeAnalysisProgressEvent } = require('../helpers/analysisStage');
+const { normalizeAnalysisProgressEvent } = require('../http/analysisStage');
 
 describe('normalizeAnalysisProgressEvent', () => {
   test('maps legacy steps to canonical taxonomy', () => {

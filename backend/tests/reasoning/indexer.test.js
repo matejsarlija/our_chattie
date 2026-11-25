@@ -1,4 +1,4 @@
-const { buildLexicalIndex, collectSources, tokenize } = require('../../court-analysis/reasoning/indexer');
+const { buildLexicalIndex, collectSources, tokenize } = require('../../court-analysis/reasoning/retrieval/indexer');
 
 describe('indexer', () => {
     const evidencePackage = {

@@ -19,10 +19,10 @@
 
 const { extractJsonBlock, extractJsonArrayAtKey, modelContentToText } = require('../../../helpers/jsonExtract');
 const { outputCapWarning, createOpenRouterRoleClient } = require('../../../llm/openrouterConfig');
-const { withGeminiRetry, withGeminiTimeout } = require('../../../helpers/geminiRetry');
-const { trackUsageInvoke } = require('../../../helpers/geminiUsage');
-const agentLog = require('../../../helpers/agentLog');
-const { collectContextFacts } = require('../caseContextBuilder');
+const { withGeminiRetry, withGeminiTimeout } = require('../../../llm/retry');
+const { trackUsageInvoke } = require('../../../llm/usage');
+const logger = require('../../../services/logger');
+const { collectContextFacts } = require('../ledger/caseContextBuilder');
 
 const NODE_SUMMARY_PROMPT_VERSION = 'v1';
 
@@ -245,7 +245,7 @@ function createContextNodeLlm({ tracker = null } = {}) {
         ));
         const content = modelContentToText(response?.content);
         if (!content.trim()) {
-            agentLog.warn(outputCapWarning('synthesis'));
+            logger.agent.warn(outputCapWarning('synthesis'));
             throw new Error('Empty synthesis completion.');
         }
         return content;
@@ -271,7 +271,7 @@ function fireUsage(onUsage, payload) {
     try {
         onUsage(payload);
     } catch (err) {
-        agentLog.warn(`[ContextNodeSummary] onUsage threw; ignoring (${err.message})`);
+        logger.agent.warn(`[ContextNodeSummary] onUsage threw; ignoring (${err.message})`);
     }
 }
 
@@ -327,7 +327,7 @@ async function summarizeContextNode(node, facts = [], options = {}) {
         );
     } catch (err) {
         fireUsage(onUsage, { role: 'synthesis', nodeId, status: 'partial', reason: 'call-failed', usage: tracker?.snapshot?.() || null });
-        agentLog.warn(`[ContextNodeSummary] Node ${nodeId} summary call failed; retaining raw node (${err.message})`);
+        logger.agent.warn(`[ContextNodeSummary] Node ${nodeId} summary call failed; retaining raw node (${err.message})`);
         return partial('call-failed', { calls, detail: String(err?.message || err).slice(0, 300) });
     }
     fireUsage(onUsage, { role: 'synthesis', nodeId, status: 'responded', usage: tracker?.snapshot?.() || null });
@@ -338,7 +338,7 @@ async function summarizeContextNode(node, facts = [], options = {}) {
         // distinguish "wrapped in prose" from "cut off by the output cap".
         const text = String(content || '').replace(/\s+/g, ' ').trim();
         const preview = text.length <= 400 ? text : `${text.slice(0, 200)} … ${text.slice(-200)}`;
-        agentLog.warn(`[ContextNodeSummary] Node ${nodeId} summary rejected (${parsed.reason}); retaining raw node. ${text.length} chars: ${preview}`);
+        logger.agent.warn(`[ContextNodeSummary] Node ${nodeId} summary rejected (${parsed.reason}); retaining raw node. ${text.length} chars: ${preview}`);
         return partial('invalid-summary', { calls, rejected: parsed.rejected, detail: parsed.reason, responseChars: text.length });
     }
     return {

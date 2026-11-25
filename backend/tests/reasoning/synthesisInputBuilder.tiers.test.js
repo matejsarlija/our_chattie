@@ -1,8 +1,8 @@
-const { buildSynthesisInput } = require('../../court-analysis/reasoning/synthesisInputBuilder');
+const { buildSynthesisInput } = require('../../court-analysis/reasoning/synthesis/synthesisInputBuilder');
 
 const mockNormalize = jest.fn();
 
-jest.mock('../../court-analysis/reasoning/synthesizer', () => ({
+jest.mock('../../court-analysis/reasoning/synthesis/synthesizer', () => ({
     normalizeReasoningEvidence: (...args) => mockNormalize(...args)
 }));
 

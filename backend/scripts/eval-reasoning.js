@@ -62,7 +62,7 @@ function parseArgs(argv) {
 }
 
 function evaluateFixture(fixture, seed) {
-    const { retrieveEvidence } = require('../court-analysis/reasoning/retriever');
+    const { retrieveEvidence } = require('../court-analysis/reasoning/retrieval/retriever');
     const { mutateEvidencePackage } = require('../court-analysis/reasoning/eval/conflictMutator');
     const { retrievalRecallAtK, retrievalMrr, amountScore } = require('../court-analysis/reasoning/eval/scorers');
 
@@ -166,8 +166,8 @@ async function run() {
         if (isAvailable()) {
             const real = await buildRealCorpusFixture();
             if (real) {
-                const { retrieveEvidence } = require('../court-analysis/reasoning/retriever');
-                const { tokenize } = require('../court-analysis/reasoning/indexer');
+                const { retrieveEvidence } = require('../court-analysis/reasoning/retrieval/retriever');
+                const { tokenize } = require('../court-analysis/reasoning/retrieval/indexer');
                 const { retrievalRecallAtK, retrievalMrr } = require('../court-analysis/reasoning/eval/scorers');
 
                 const broadRetrieval = retrieveEvidence(real.pkg, { topK: 20 });
@@ -179,7 +179,7 @@ async function run() {
 
                 // Targeted probes: per-span query built from the span's own
                 // rarest long tokens (df-aware, cheap approximation).
-                const { buildLexicalIndex } = require('../court-analysis/reasoning/indexer');
+                const { buildLexicalIndex } = require('../court-analysis/reasoning/retrieval/indexer');
                 const index = buildLexicalIndex(real.pkg);
                 const df = index.idfStats.df || {};
                 let targetedHits = 0;

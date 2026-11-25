@@ -12,7 +12,7 @@
 // - Pre-migration entries (no quote/grounded fields at all) must not crash
 //   any consumer (spec §7.1 backward compatibility).
 
-const { isQuoteGrounded, applyGroundingToAnalysis, countGroundedClaims } = require('../../court-analysis/reasoning/grounding');
+const { isQuoteGrounded, applyGroundingToAnalysis, countGroundedClaims } = require('../../court-analysis/reasoning/ledger/grounding');
 
 describe('reasoning grounding containment check', () => {
     const SOURCE = 'Polog za troškove stečajnog postupka u iznosu od 1.200,00 EUR dužnik je uplatio na žiro račun suda.';

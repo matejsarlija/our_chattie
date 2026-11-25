@@ -16,7 +16,7 @@
 const path = require('path');
 const { loadFixtures } = require('../../../court-analysis/reasoning/eval/fixtureLoader');
 const { retrievalRecallAtK, amountScore } = require('../../../court-analysis/reasoning/eval/scorers');
-const { retrieveEvidence } = require('../../../court-analysis/reasoning/retriever');
+const { retrieveEvidence } = require('../../../court-analysis/reasoning/retrieval/retriever');
 
 const FIXTURES_DIR = path.join(__dirname, '..', '..', 'fixtures', 'eval');
 

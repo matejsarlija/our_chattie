@@ -1,12 +1,12 @@
-const { deriveEntryDisplayId } = require('../utils/entryDisplayId');
+const { deriveEntryDisplayId } = require('../../utils/entryDisplayId');
 const { collectFlows } = require('./flow');
 const { buildCitationGraph } = require('./citationGraph');
 const { reconcileFlows } = require('./reconciliation');
 const { countGroundedClaims } = require('./grounding');
-const { classifyFileFailureDetailed } = require('../../helpers/friendlyAnalysisError');
+const { classifyFileFailureDetailed } = require('../../../http/friendlyAnalysisError');
 const { buildFactLedger, dedupeLedgerRows } = require('./factLedger');
 
-const { parseProceduralMetadataEntry } = require('../utils/proceduralMetadata');
+const { parseProceduralMetadataEntry } = require('../../utils/proceduralMetadata');
 const { collectProceduralEvents, reconcileProceduralEvents } = require('./proceduralFlow');
 
 function normalizeAcquisition(entry) {

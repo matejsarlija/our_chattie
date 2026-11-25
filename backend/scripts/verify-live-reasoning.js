@@ -6,10 +6,10 @@ require('dotenv').config({ path: require('path').join(__dirname, '..', '..', '.e
 
 const path = require('path');
 const fs = require('fs');
-const { buildClusterEvidencePackage } = require('../court-analysis/reasoning/evidencePackage');
-const { validateClusterEvidencePackage } = require('../court-analysis/reasoning/evidencePackage');
-const { generateClusterReport } = require('../court-analysis/reasoning/reportService');
-const { validateReport } = require('../court-analysis/reasoning/schema');
+const { buildClusterEvidencePackage } = require('../court-analysis/reasoning/ledger/evidencePackage');
+const { validateClusterEvidencePackage } = require('../court-analysis/reasoning/ledger/evidencePackage');
+const { generateClusterReport } = require('../court-analysis/reasoning/synthesis/reportService');
+const { validateReport } = require('../court-analysis/reasoning/schema/schema');
 
 // Each live run spends real OpenRouter tokens. It writes a small, structured,
 // diffable metrics snapshot to .eval/snapshots/ for regression comparison.
@@ -130,7 +130,7 @@ console.log('entries:', evidencePackage.entries.length, 'documentLinks:', eviden
 // Surface real token spend alongside the assertions: this lane pays for
 // planner + synthesis + verifier (+ optional rerank/follow-up), so a
 // silently-zero snapshot would hide erroneous spend.
-const { createUsageTracker } = require('../helpers/geminiUsage');
+const { createUsageTracker } = require('../llm/usage');
 const usageTracker = createUsageTracker();
 
 const stages = [];

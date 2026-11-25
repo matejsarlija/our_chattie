@@ -14,7 +14,7 @@ const { quoteGrounding } = require('./lib/grounding-metrics');
 const { buildAnalysisPrompt, extractTextFromFile } = require('../court-analysis/agents/analysis-agent');
 const { OIB_CASE_DOCS, SMOKE_DOC_IDS, assertRunScope } = require('./lib/lab-documents');
 const { shouldBoundAnalysis, CHUNK_SIZE, CHUNK_OVERLAP } = require('./lib/bounded-analysis');
-const { splitTextIntoChunks } = require('../court-analysis/reasoning/chunker');
+const { splitTextIntoChunks } = require('../court-analysis/reasoning/retrieval/chunker');
 
 const TABLE_HEADERS_DEFAULT = 'off';
 

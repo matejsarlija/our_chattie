@@ -1,4 +1,4 @@
-const { buildCourtAnalysisPayload } = require('../helpers/courtAnalysisPayload');
+const { buildCourtAnalysisPayload } = require('../http/courtAnalysisPayload');
 
 describe('buildCourtAnalysisPayload', () => {
     test('preserves cluster-scoped discovery metadata while returning lean processed case data', () => {

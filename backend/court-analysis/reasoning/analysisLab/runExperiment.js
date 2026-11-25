@@ -30,14 +30,14 @@ const {
     evidencePackageDigest,
     cloneEvidencePackage,
 } = require('../../../services/canonicalJson');
-const { validateClusterEvidencePackage } = require('../evidencePackage');
-const { retrieveEvidence } = require('../retriever');
-const { computeVariantScorecard } = require('../runScorecard');
-const { generateClusterReport } = require('../reportService');
+const { validateClusterEvidencePackage } = require('../ledger/evidencePackage');
+const { retrieveEvidence } = require('../retrieval/retriever');
+const { computeVariantScorecard } = require('../ledger/runScorecard');
+const { generateClusterReport } = require('../synthesis/reportService');
 const { createContextNodeLlm } = require('./contextNodeSummary');
-const { createUsageTracker } = require('../../../helpers/geminiUsage');
+const { createUsageTracker } = require('../../../llm/usage');
 const { createAnalysisLabStore } = require('../../../services/analysisLabStore');
-const agentLog = require('../../../helpers/agentLog');
+const logger = require('../../../services/logger');
 
 function sha256Hex(canonicalString) {
     return crypto.createHash('sha256').update(canonicalString, 'utf8').digest('hex');
@@ -242,7 +242,7 @@ async function runExperiment({
                     evidencePackageHash: frozenDigest,
                 });
             } catch (err) {
-                agentLog.warn(`[LabExperiment] Scorecard failed for ${profileId}; storing null (${err.message})`);
+                logger.agent.warn(`[LabExperiment] Scorecard failed for ${profileId}; storing null (${err.message})`);
             }
             await labStore.completeExperimentVariant({
                 experimentId,
@@ -256,7 +256,7 @@ async function runExperiment({
         } catch (err) {
             const elapsedMs = Math.max(0, now() - startedAt);
             const usage = { ...tracker.snapshot(), elapsedMs };
-            agentLog.warn(`[LabExperiment] Variant ${profileId} failed; recording partial (${err.message})`);
+            logger.agent.warn(`[LabExperiment] Variant ${profileId} failed; recording partial (${err.message})`);
             await labStore.failExperimentVariant({
                 experimentId,
                 profileId,

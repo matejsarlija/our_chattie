@@ -2,7 +2,7 @@ const path = require('path');
 const fs = require('fs');
 const { CsvExportClient, CsvExportError } = require('../scraper/csvExportClient');
 const { createDiscoveryClient, resolveDiscoverySource, AutoDiscoveryClient } = require('../scraper/discoveryClient');
-const { friendlyAnalysisErrorMessage } = require('../helpers/friendlyAnalysisError');
+const { friendlyAnalysisErrorMessage } = require('../http/friendlyAnalysisError');
 
 const FIXTURES_DIR = path.join(__dirname, 'fixtures', 'csv-export');
 
