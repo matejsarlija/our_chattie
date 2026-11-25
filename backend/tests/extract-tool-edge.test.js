@@ -1,7 +1,8 @@
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const AdmZip = require('adm-zip');
-const { extractArchiveFiles, sanitizeEntryName } = require('../court-analysis/agents/extract-tool');
+const { extractArchiveFiles, sanitizeEntryName } = require('../court-analysis/acquisition/archiveExtractor');
 
 describe('extractArchiveFiles edge/error cases', () => {
     it('returns error for non-zip file', async () => {
@@ -37,6 +38,8 @@ describe('sanitizeEntryName', () => {
     it('rejects absolute paths with drive letters', () => {
         expect(sanitizeEntryName('C:\\Windows\\System32')).toBeNull();
         expect(sanitizeEntryName('D:/data/file.txt')).toBeNull();
+        expect(sanitizeEntryName('/etc/passwd')).toBeNull();
+        expect(sanitizeEntryName('\\\\server\\share\\file.txt')).toBeNull();
     });
 
     it('rejects empty and dot-only names', () => {
@@ -96,5 +99,144 @@ describe('extractArchiveFiles zip extraction', () => {
             expect(typeof entry.entryName).toBe('string');
             expect(entry.filePath).toMatch(new RegExp(entry.entryName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '$'));
         }
+    });
+});
+
+describe('archive extraction isolation and safety', () => {
+    let root;
+
+    beforeEach(() => {
+        root = fs.mkdtempSync(path.join(os.tmpdir(), 'archive-hardening-'));
+    });
+
+    afterEach(() => {
+        fs.rmSync(root, { recursive: true, force: true });
+    });
+
+    it('extracts 20 same-named documents into distinct paths with parent metadata', async () => {
+        const extracted = [];
+        for (let index = 0; index < 20; index += 1) {
+            const archivePath = path.join(root, `archive-${index}.zip`);
+            const destination = path.join(root, 'uploads', 'extracted', `archive-${index}`);
+            const payload = Buffer.from(`document-${index}`);
+            const zip = new AdmZip();
+            zip.addFile('Podnesak.pdf', payload);
+            zip.writeZip(archivePath);
+
+            const result = await extractArchiveFiles({
+                filePath: archivePath,
+                destination,
+                sourceEntryIndex: index,
+                sourceDocumentLinkId: `case::entry-${index}::doc-1`,
+                entryDate: `2025-01-${String(index + 1).padStart(2, '0')}`
+            });
+
+            expect(result.status).toBe('success');
+            expect(result.extractedFiles).toHaveLength(1);
+            const [file] = result.extractedFiles;
+            expect(fs.readFileSync(file.filePath)).toEqual(payload);
+            expect(file).toEqual(expect.objectContaining({
+                sourceEntryIndex: index,
+                sourceDocumentLinkId: `case::entry-${index}::doc-1`,
+                entryDate: `2025-01-${String(index + 1).padStart(2, '0')}`
+            }));
+            extracted.push(file.filePath);
+        }
+
+        expect(new Set(extracted).size).toBe(20);
+    });
+
+    it('jails zip-slip and absolute paths while extracting safe entries', async () => {
+        const archivePath = path.join(root, 'zip-slip.zip');
+        const destination = path.join(root, 'safe-output');
+        const zip = new AdmZip();
+        zip.addFile('escape.txt', Buffer.from('outside'));
+        zip.getEntry('escape.txt').entryName = '../escape.txt';
+        zip.addFile('absolute.txt', Buffer.from('outside'));
+        zip.getEntry('absolute.txt').entryName = '/absolute.txt';
+        zip.addFile('safe.txt', Buffer.from('inside'));
+        zip.writeZip(archivePath);
+
+        const result = await extractArchiveFiles({ filePath: archivePath, destination });
+
+        expect(result.status).toBe('success');
+        expect(result.extractedFiles.map((file) => file.entryName)).toEqual(['safe.txt']);
+        expect(fs.readFileSync(path.join(destination, 'safe.txt'), 'utf8')).toBe('inside');
+        expect(fs.existsSync(path.join(root, 'escape.txt'))).toBe(false);
+        expect(fs.existsSync(path.join(root, 'absolute.txt'))).toBe(false);
+    });
+
+    it('rejects archives over the uncompressed-byte limit before writing entries', async () => {
+        const archivePath = path.join(root, 'large.zip');
+        const destination = path.join(root, 'large-output');
+        const zip = new AdmZip();
+        zip.addFile('large.txt', Buffer.alloc(1024, 'x'));
+        zip.writeZip(archivePath);
+
+        const result = await extractArchiveFiles({
+            filePath: archivePath,
+            destination,
+            maxArchiveUncompressedBytes: 100
+        });
+
+        expect(result.status).toBe('error');
+        expect(result.error_message).toMatch(/uncompressed limit/i);
+        expect(fs.existsSync(path.join(destination, 'large.txt'))).toBe(false);
+    });
+
+    it('rejects archives over the entry-count limit', async () => {
+        const archivePath = path.join(root, 'entries.zip');
+        const zip = new AdmZip();
+        zip.addFile('one.txt', Buffer.from('1'));
+        zip.addFile('two.txt', Buffer.from('2'));
+        zip.writeZip(archivePath);
+
+        const result = await extractArchiveFiles({
+            filePath: archivePath,
+            destination: path.join(root, 'entries-output'),
+            maxArchiveEntries: 1
+        });
+
+        expect(result.status).toBe('error');
+        expect(result.error_message).toMatch(/entry limit/i);
+    });
+
+    it('extracts one nested ZIP level without recursively expanding deeper ZIPs', async () => {
+        const deepest = new AdmZip();
+        deepest.addFile('leaf.txt', Buffer.from('deep'));
+        const nested = new AdmZip();
+        nested.addFile('inner.pdf', Buffer.from('nested'));
+        nested.addFile('deeper.zip', deepest.toBuffer());
+        const outer = new AdmZip();
+        outer.addFile('documents.zip', nested.toBuffer());
+        outer.addFile('outer.txt', Buffer.from('outer'));
+        const archivePath = path.join(root, 'nested.zip');
+        const destination = path.join(root, 'nested-output');
+        outer.writeZip(archivePath);
+
+        const result = await extractArchiveFiles({ filePath: archivePath, destination });
+        const entries = result.extractedFiles.map((file) => file.entryName);
+
+        expect(result.status).toBe('success');
+        expect(entries).toEqual(expect.arrayContaining([
+            'documents.zip/inner.pdf',
+            'documents.zip/deeper.zip',
+            'outer.txt'
+        ]));
+        expect(entries).not.toContain('documents.zip/deeper.zip/leaf.txt');
+        expect(fs.readFileSync(path.join(destination, 'documents.zip', 'inner.pdf'), 'utf8')).toBe('nested');
+    });
+
+    it('returns per-archive errors for corrupt ZIP data', async () => {
+        const archivePath = path.join(root, 'corrupt.zip');
+        fs.writeFileSync(archivePath, 'not a zip archive');
+
+        const result = await extractArchiveFiles({
+            filePath: archivePath,
+            destination: path.join(root, 'corrupt-output')
+        });
+
+        expect(result.status).toBe('error');
+        expect(result.error_message).toMatch(/extraction failed/i);
     });
 });

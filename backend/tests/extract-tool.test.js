@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const AdmZip = require('adm-zip');
-const { extractArchiveFiles } = require('../court-analysis/agents/extract-tool');
+const { extractArchiveFiles } = require('../court-analysis/acquisition/archiveExtractor');
 
 describe('extractArchiveFiles', () => {
     const testZipPath = path.resolve(__dirname, 'test-archive.zip');

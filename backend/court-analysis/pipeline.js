@@ -2,7 +2,7 @@
 
 const { createDiscoveryClient } = require('../scraper/discoveryClient');
 const { downloadClusterAttachments } = require('./acquisition/downloader');
-const { extractArchiveFiles } = require('./agents/extract-tool');
+const { extractArchiveFiles } = require('./acquisition/archiveExtractor');
 const { analyzeClusterDocuments } = require('./agents/analysis-agent');
 const { enrichParticipants } = require('../court-registry/enricher');
 const { groupEntriesByCase } = require('./utils/grouping');
@@ -19,6 +19,7 @@ const {
 const { buildClusterEvidencePackage, attachAnalysesToEvidencePackage } = require('./reasoning/ledger/evidencePackage');
 const { generateClusterReport, composeOverviewMarkdown } = require('./reasoning/synthesis/reportService');
 const { createUsageTracker } = require('../llm/usage');
+const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const logger = require('../services/logger');
@@ -987,6 +988,7 @@ async function processScrapedCases(casesToProcess, progressCallback, options = {
             // resolve entry dates by index instead of fuzzy filename matching.
             const entryIndexByUrl = new Map();
             const linkIdByUrl = new Map();
+            const entryDateByUrl = new Map();
             (cluster.entries || []).forEach((rawEntry, rawEntryIndex) => {
                 // Same deterministic id format evidencePackage.js's mapDocumentLink
                 // will later synthesize for this exact entry/link position, so a
@@ -1005,6 +1007,9 @@ async function processScrapedCases(casesToProcess, progressCallback, options = {
                     if (rawLink?.url && !linkIdByUrl.has(rawLink.url)) {
                         linkIdByUrl.set(rawLink.url, rawLinkId);
                     }
+                    if (rawLink?.url && !entryDateByUrl.has(rawLink.url)) {
+                        entryDateByUrl.set(rawLink.url, rawEntry?.entryDate ?? rawEntry?.caseInfo?.date ?? null);
+                    }
                 });
             });
             const tagProvenance = (file) => ({
@@ -1014,6 +1019,8 @@ async function processScrapedCases(casesToProcess, progressCallback, options = {
                 sourceDocumentLinkId: file?.sourceDocumentLinkId
                     ?? file?.documentLinkId
                     ?? (linkIdByUrl.has(file?.url) ? linkIdByUrl.get(file.url) : null),
+                entryDate: file?.entryDate
+                    ?? (entryDateByUrl.has(file?.url) ? entryDateByUrl.get(file.url) : null),
             });
             let extractedCount = 0;
             const emitExtractCounter = () => stageAwareProgress?.(buildStageCounterEvent({
@@ -1025,17 +1032,28 @@ async function processScrapedCases(casesToProcess, progressCallback, options = {
             for (const file of downloadedFiles) {
                 extractedFilePaths.push(file.filePath);
                 if (path.extname(file.filePath).toLowerCase() === '.zip') {
-                    const extractionDir = path.dirname(file.filePath);
-                    const extractionResult = await extractArchiveFiles({ filePath: file.filePath, destination: extractionDir });
+                    const uploadsDir = path.resolve(__dirname, '../uploads');
+                    const extractionDir = path.join(uploadsDir, 'extracted', crypto.randomUUID());
+                    const provenance = tagProvenance(file);
+                    const extractionResult = await extractArchiveFiles({
+                        filePath: file.filePath,
+                        destination: extractionDir,
+                        ...provenance
+                    });
+                    if (extractionResult.status !== 'success') {
+                        logger.agent.warn(`[ArchiveExtractor] Failed to extract ${file.filePath}: ${extractionResult.error_message}`);
+                    }
                     for (const extracted of (extractionResult.extractedFiles || [])) {
-                        // Zip-extracted files get a new working-copy path and an
-                        // in-archive display name, but keep the parent zip's
-                        // provenance (same originating court entry).
-                        filesForAnalysis.push({ filePath: extracted.filePath, text: extracted.entryName, url: file.url, ...tagProvenance(file) });
+                        filesForAnalysis.push({
+                            ...extracted,
+                            text: extracted.entryName,
+                            url: file.url
+                        });
                         extractedFilePaths.push(extracted.filePath);
                         extractedCount++;
                         emitExtractCounter();
                     }
+                    extractedFilePaths.push(extractionDir);
                 } else {
                     filesForAnalysis.push({ ...file, ...tagProvenance(file) });
                     extractedCount++;
@@ -1292,7 +1310,12 @@ async function cleanupFiles(filePaths) {
     for (const filePath of filePaths) {
         try {
             if (fs.existsSync(filePath)) {
-                await fs.promises.unlink(filePath);
+                const stats = await fs.promises.lstat(filePath);
+                if (stats.isDirectory()) {
+                    await fs.promises.rm(filePath, { recursive: true, force: true });
+                } else {
+                    await fs.promises.unlink(filePath);
+                }
             }
         } catch (err) {
             logger.agent.warn(`Failed to delete temporary file ${filePath}: ${err.message}`);
