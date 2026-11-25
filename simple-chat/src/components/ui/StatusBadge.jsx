@@ -20,8 +20,13 @@ import Badge from './Badge';
 const STATUS_MAP = {
   done: { label: 'Završeno', tone: 'success', glyph: '✓' },
   completed: { label: 'Završeno', tone: 'success', glyph: '✓' },
+  complete: { label: 'Završeno', tone: 'success', glyph: '✓' },
+  success: { label: 'Završeno', tone: 'success', glyph: '✓' },
   running: { label: 'U tijeku', tone: 'info', glyph: '◐' },
   queued: { label: 'U redu čekanja', tone: 'neutral', glyph: '…' },
+  partial: { label: 'Djelomično', tone: 'warning', glyph: '◒' },
+  interrupted: { label: 'Prekinuto', tone: 'warning', glyph: '!' },
+  aborted: { label: 'Prekinuto', tone: 'warning', glyph: '!' },
   canceled: { label: 'Otkazano', tone: 'neutral', glyph: '—' },
   cancelled: { label: 'Otkazano', tone: 'neutral', glyph: '—' },
   error: { label: 'Greška', tone: 'danger', glyph: '!' },
@@ -33,6 +38,7 @@ const GLYPH_CLASS = {
   success: 'text-success',
   info: 'text-info',
   neutral: 'text-ink-muted',
+  warning: 'text-warning',
   danger: 'text-danger',
   unknown: 'text-ink-muted',
 };

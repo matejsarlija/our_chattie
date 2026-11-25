@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { apiFetch } from '../lib/apiClient';
 import { useAnalysisRunStream } from './useAnalysisRunStream';
 
-const TERMINAL = new Set(['done', 'error', 'failed', 'completed', 'canceled']);
+const TERMINAL = new Set(['done', 'partial', 'error', 'failed', 'completed', 'interrupted', 'canceled', 'cancelled']);
 const MAX_BACKOFF_MS = 60_000;
 
 const withJitter = (ms) => {

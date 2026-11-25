@@ -14,4 +14,16 @@ describe('PipelinePhases', () => {
 
     expect(screen.getByRole('heading', { name: 'U tijeku' })).toBeInTheDocument();
   });
+
+  test.each([
+    ['queued', 'U redu čekanja', 'ink-muted'],
+    ['partial', 'Djelomično', 'warning'],
+    ['interrupted', 'Prekinuto', 'warning'],
+    ['canceled', 'Otkazano', 'ink-muted'],
+  ])('renders %s with a glyph, label, and tone', (status, label, tone) => {
+    render(<PipelinePhases runStatus={status} stages={[]} />);
+    const heading = screen.getByRole('heading', { name: label });
+    expect(heading.querySelector('[aria-hidden="true"]')).toBeTruthy();
+    expect(heading.querySelector(`.text-${tone}`)).toBeTruthy();
+  });
 });

@@ -10,7 +10,11 @@ describe('analysisStream helpers', () => {
   test('detects terminal statuses', () => {
     expect(isTerminalStatus('done')).toBe(true);
     expect(isTerminalStatus('FAILED')).toBe(true);
+    expect(isTerminalStatus('partial')).toBe(true);
+    expect(isTerminalStatus('interrupted')).toBe(true);
+    expect(isTerminalStatus('canceled')).toBe(true);
     expect(isTerminalStatus('running')).toBe(false);
+    expect(isTerminalStatus('queued')).toBe(false);
   });
 
   test('builds event cursor from last event', () => {

@@ -69,6 +69,7 @@ export default function RunsTable({ runs, onOpenRun }) {
             const oib = run.oib || summary?.queryValue || null;
             const party = summary?.participantNames?.[0] || null;
             const court = summary?.court || null;
+            const isQueued = run.status === 'queued';
             const isRunning = run.status === 'running';
             const isErrored = run.status === 'error' || run.status === 'failed';
 
@@ -85,7 +86,7 @@ export default function RunsTable({ runs, onOpenRun }) {
               // users see which row they are on.
               <tr
                 key={run.id}
-                className={`group relative transition-colors hover:bg-surface-muted/60 focus-within:bg-surface-muted/60 focus-within:outline focus-within:outline-2 focus-within:outline-offset-[-2px] focus-within:outline-accent${isRunning ? ' bg-info-surface/25' : ''}`}
+                className={`group relative transition-colors hover:bg-surface-muted/60 focus-within:bg-surface-muted/60 focus-within:outline focus-within:outline-2 focus-within:outline-offset-[-2px] focus-within:outline-accent${isRunning ? ' bg-info-surface/25' : isQueued ? ' bg-surface-muted/40' : ''}`}
               >
                 <td className="px-4 py-3.5 align-top">
                   <Link
@@ -93,7 +94,7 @@ export default function RunsTable({ runs, onOpenRun }) {
                     className="block after:absolute after:inset-0 after:content-[''] focus-visible:outline-none"
                   >
                     <span className="block text-base font-medium text-ink group-hover:text-accent">
-                      {caseNumber || (isRunning ? 'Analiza u tijeku' : 'Predmet bez broja')}
+                      {caseNumber || (isQueued ? 'Analiza čeka u redu' : isRunning ? 'Analiza u tijeku' : 'Predmet bez broja')}
                     </span>
                     {party || court ? (
                       <span className="mt-0.5 block text-sm text-ink-muted">

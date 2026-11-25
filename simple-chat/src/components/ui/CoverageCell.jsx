@@ -1,3 +1,4 @@
+import { resolveRunStatus } from './StatusBadge';
 import { formatCoverage, formatGrounding, formatRatio } from './format';
 
 /**
@@ -19,16 +20,29 @@ export default function CoverageCell({ coverage, status }) {
   const pair = formatCoverage(coverage);
   const grounding = formatGrounding(coverage);
   const ratio = formatRatio(coverage?.coverageRatio);
+  const statusToneClass = {
+    success: 'text-success',
+    info: 'text-info',
+    warning: 'text-warning',
+    danger: 'text-danger',
+    neutral: 'text-ink-muted',
+    unknown: 'text-ink-muted',
+  };
 
   if (!pair) {
+    const statusInfo = status ? resolveRunStatus(status) : null;
     const unfinished = status === 'error' || status === 'failed';
     return (
-      <div className="text-sm text-ink-muted whitespace-nowrap">
-        {unfinished ? <span>nije završena</span> : <span>—</span>}
+      <div className="text-sm whitespace-nowrap">
+        {statusInfo ? (
+          <span className={`inline-flex items-center gap-1.5 ${statusToneClass[statusInfo.tone] || 'text-ink-muted'}`}>
+            <span aria-hidden="true">{statusInfo.glyph}</span>
+            {unfinished ? 'nije završena' : statusInfo.label}
+          </span>
+        ) : <span className="text-ink-muted">—</span>}
       </div>
     );
   }
-
   const pct = ratio ?? (typeof coverage?.total === 'number' && coverage.total > 0
     ? `${Math.round(((coverage.analyzed ?? 0) / coverage.total) * 100)}%`
     : null);
@@ -54,6 +68,12 @@ export default function CoverageCell({ coverage, status }) {
       {grounding ? (
         <span className="mt-1.5 block text-xs tabular-nums text-ink-muted">
           {grounding} navoda
+        </span>
+      ) : null}
+      {status && ['partial', 'interrupted', 'canceled', 'cancelled', 'queued'].includes(status) ? (
+        <span className={`mt-1 block text-xs ${statusToneClass[resolveRunStatus(status).tone] || 'text-ink-muted'}`}>
+          <span aria-hidden="true">{resolveRunStatus(status).glyph} </span>
+          {resolveRunStatus(status).label}
         </span>
       ) : null}
     </div>

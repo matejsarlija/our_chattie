@@ -21,6 +21,9 @@ const { createChangeCheckService } = require('./change-detection/service');
 const { createCourtAnalysisRouter } = require('./routes/courtAnalysis');
 const { createAnalysisRunsRouter } = require('./routes/analysisRuns');
 const { createChangeDetectionRouter } = require('./routes/changeDetection');
+const path = require('node:path');
+const { createRunAbortRegistry } = require('./http/runAbortRegistry');
+const { recoverServerState, installShutdownHandlers } = require('./http/serverLifecycle');
 async function startServer() {
   const { default: PQueue } = await import('p-queue');
   logger.agent.log('p-queue module loaded successfully.');
@@ -31,6 +34,12 @@ async function startServer() {
   const host = '0.0.0.0';
   const courtAnalysisQueue = new PQueue({ concurrency: 2 });
   const analysisStore = createSqliteStore();
+  const runAbortRegistry = createRunAbortRegistry();
+  const recovery = recoverServerState({
+    analysisStore,
+    uploadsDir: path.join(__dirname, 'uploads'),
+  });
+  logger.agent.log(`[Startup] Interrupted ${recovery.interruptedRuns} stale run(s); removed ${recovery.removedUploadEntries} upload item(s).`);
   const analysisLabStore = createAnalysisLabStore();
   const changeCheckService = createChangeCheckService({ store: analysisStore });
 
@@ -88,6 +97,13 @@ async function startServer() {
 
   const server = app.listen(port, host, () => {
     logger.agent.log(`Court analysis server running on ${host}:${port}`);
+  });
+  installShutdownHandlers({
+    server,
+    queue: courtAnalysisQueue,
+    runAbortRegistry,
+    analysisStore,
+    onError: (error) => logger.agent.error('[Shutdown] Failed:', error),
   });
   server.on('error', (error) => {
     logger.agent.error('[Startup] Server listen failed:', error);

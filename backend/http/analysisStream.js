@@ -1,4 +1,4 @@
-const TERMINAL_STATUSES = new Set(['done', 'error', 'failed', 'completed', 'canceled']);
+const TERMINAL_STATUSES = new Set(['done', 'partial', 'error', 'failed', 'completed', 'interrupted', 'canceled', 'cancelled']);
 
 function isTerminalStatus(status) {
   const normalized = String(status || '').toLowerCase();

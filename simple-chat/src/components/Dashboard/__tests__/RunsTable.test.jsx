@@ -85,8 +85,12 @@ describe('StatusBadge — single vocabulary, fails loud', () => {
     ['completed', 'Završeno'],
     ['running', 'U tijeku'],
     ['queued', 'U redu čekanja'],
+    ['partial', 'Djelomično'],
+    ['interrupted', 'Prekinuto'],
     ['canceled', 'Otkazano'],
     ['cancelled', 'Otkazano'],
+    ['partial', 'Djelomično'],
+    ['interrupted', 'Prekinuto'],
     ['error', 'Greška'],
     ['failed', 'Greška'],
   ])('maps %s to the one Croatian label', (input, label) => {
@@ -173,9 +177,17 @@ describe('CoverageCell — three distinct states', () => {
     expect(screen.getByText('5/6 navoda')).toBeTruthy();
   });
 
-  test('an unfinished run says so rather than showing 0', () => {
-    render(<CoverageCell coverage={null} status="error" />);
+  test('shows a glyph, label, and color when coverage is absent for a failed run', () => {
+    const { container } = render(<CoverageCell coverage={null} status="error" />);
     expect(screen.getByText('nije završena')).toBeTruthy();
+    expect(container.querySelector('[aria-hidden="true"]')).toBeTruthy();
+    expect(container.querySelector('.text-danger')).toBeTruthy();
+  });
+
+  test('shows incomplete states alongside existing coverage figures', () => {
+    render(<CoverageCell coverage={{ analyzed: 2, total: 3 }} status="partial" />);
+    expect(screen.getByText('Djelomično')).toBeTruthy();
+    expect(screen.getByText('2')).toBeTruthy();
   });
 
   test('gives the meter an accessible name, not just a coloured bar', () => {

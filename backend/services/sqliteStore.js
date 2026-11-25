@@ -536,6 +536,23 @@ function createSqliteStore(options = {}) {
     dataDir,
     dbPath,
     db,
+    markStaleRunsInterrupted() {
+      const now = nowIso();
+      return db.prepare(`UPDATE runs SET status = 'interrupted', error_message = ?, completed_at = ?, updated_at = ?
+        WHERE status IN ('running', 'queued')`).run('Run interrupted by server restart.', now, now).changes;
+    },
+    markRunsInterrupted(runIds) {
+      if (!Array.isArray(runIds) || runIds.length === 0) return 0;
+      const now = nowIso();
+      const mark = db.prepare(`UPDATE runs SET status = 'interrupted', error_message = ?, completed_at = ?, updated_at = ?
+        WHERE id = ?`);
+      const markAll = db.transaction((ids) => {
+        let changed = 0;
+        for (const id of ids) changed += mark.run('Run interrupted by server shutdown.', now, now, id).changes;
+        return changed;
+      });
+      return markAll(runIds);
+    },
     async createAnalysisRun({ oib, queryType = null, queryValue = null, scanDepth = 'balanced', status = 'running' }) {
       const run = {
         id: createId(), oib: oib ?? null, query_type: queryType || null,

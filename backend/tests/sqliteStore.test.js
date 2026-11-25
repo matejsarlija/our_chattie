@@ -126,4 +126,16 @@ describe('sqliteStore', () => {
         expect(store.getOcrPage('document-hash', 3)).toBe('cached page text');
         expect(store.getOcrPage('document-hash', 4)).toBeNull();
     });
+    test('marks stale runs and active shutdown runs interrupted', async () => {
+        const running = await store.createAnalysisRun({ queryValue: 'running-case', status: 'running' });
+        const queued = await store.createAnalysisRun({ queryValue: 'queued-case', status: 'queued' });
+        const done = await store.createAnalysisRun({ queryValue: 'done-case', status: 'done' });
+
+        expect(store.markStaleRunsInterrupted()).toBe(2);
+        expect((await store.getAnalysisRun({ id: running.id })).status).toBe('interrupted');
+        expect((await store.getAnalysisRun({ id: queued.id })).status).toBe('interrupted');
+        expect((await store.getAnalysisRun({ id: done.id })).status).toBe('done');
+        expect(store.markRunsInterrupted([done.id])).toBe(1);
+        expect((await store.getAnalysisRun({ id: done.id })).status).toBe('interrupted');
+    });
 });

@@ -21,6 +21,7 @@
  *   Dokazi      → report.meta.retrieval.metrics.matchCount
  */
 
+import { resolveRunStatus } from './StatusBadge';
 const PHASES = [
   { key: 'discovery', label: 'Prikupljanje', stages: ['queued', 'starting', 'discovering'] },
   { key: 'documents', label: 'Dokumenti', stages: ['grouping', 'downloading', 'extracting'] },
@@ -75,19 +76,34 @@ export default function PipelinePhases({ stages, isErrored = false, runStatus, c
     phase.stages.map((key) => byKey.get(key)?.label).filter(Boolean).join(' · ');
 
   const terminalStatus = String(runStatus || '').toLowerCase();
-  const isTerminalFailure = isErrored || ['error', 'failed', 'cancelled', 'canceled', 'aborted'].includes(terminalStatus);
-  const isTerminalSuccess = ['done', 'completed', 'complete', 'success'].includes(terminalStatus);
-  const heading = isTerminalFailure
-    ? 'Prekinuto'
-    : isTerminalSuccess || !list.some((stage) => stage?.active)
-      ? 'Završeno'
-      : 'U tijeku';
-
+  const statusInfo = runStatus ? resolveRunStatus(terminalStatus) : null;
+  const isTerminalFailure = isErrored || ['error', 'failed', 'cancelled', 'canceled', 'interrupted', 'aborted'].includes(terminalStatus);
+  const isTerminalSuccess = ['done', 'completed', 'complete', 'success', 'partial'].includes(terminalStatus);
+  const heading = statusInfo
+    ? statusInfo.label
+    : isTerminalFailure
+      ? 'Prekinuto'
+      : isTerminalSuccess || !list.some((stage) => stage?.active)
+        ? 'Završeno'
+        : 'U tijeku';
+  const statusToneClass = {
+    success: 'text-success',
+    info: 'text-info',
+    warning: 'text-warning',
+    danger: 'text-danger',
+    neutral: 'text-ink-muted',
+    unknown: 'text-ink-muted',
+  }[statusInfo?.tone] || 'text-ink';
   return (
     <section className="card p-3.5" aria-labelledby="pipeline-heading">
       <div className="flex items-center justify-between gap-2">
         <h3 id="pipeline-heading" className="sec-title">
-          {heading}
+          {statusInfo ? (
+            <span className={`inline-flex items-center gap-1.5 ${statusToneClass}`}>
+              <span aria-hidden="true">{statusInfo.glyph}</span>
+              {heading}
+            </span>
+          ) : heading}
         </h3>
       </div>
 
