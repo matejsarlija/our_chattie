@@ -166,7 +166,7 @@ function resolveCacheRoot() {
     if (process.env.DOWNLOAD_CACHE_DIR) {
         return path.resolve(process.env.DOWNLOAD_CACHE_DIR);
     }
-    return path.resolve(__dirname, '../uploads/.dl-cache');
+    return path.resolve(__dirname, '../../uploads/.dl-cache');
 }
 
 let activeInstance = null;
@@ -184,5 +184,7 @@ function getDownloadCache() {
 module.exports = {
     DownloadCache,
     getDownloadCache,
+    resolveCacheRoot,
     cacheKeyFor: sha256Hex,
 };
+

@@ -2,7 +2,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const AdmZip = require('adm-zip');
-const { extractArchiveFiles, sanitizeEntryName } = require('../court-analysis/acquisition/archiveExtractor');
+const { extractArchiveFiles, extractZipEntries, sanitizeEntryName } = require('../court-analysis/acquisition/archiveExtractor');
 
 describe('extractArchiveFiles edge/error cases', () => {
     it('returns error for non-zip file', async () => {
@@ -184,6 +184,29 @@ describe('archive extraction isolation and safety', () => {
         expect(fs.existsSync(path.join(destination, 'large.txt'))).toBe(false);
     });
 
+    it('rejects actual decompressed bytes beyond the limit when the ZIP header understates size', () => {
+        const state = {
+            maxUncompressedBytes: 100,
+            maxEntries: 10,
+            uncompressedBytes: 0,
+            decompressedBytes: 0,
+            entryCount: 0,
+            extractedFiles: []
+        };
+        const zip = {
+            getEntries: () => [{
+                entryName: 'forged.txt',
+                header: { size: 1 },
+                isDirectory: false,
+                getData: () => Buffer.alloc(101, 'x')
+            }]
+        };
+
+        expect(() => extractZipEntries(zip, path.join(root, 'forged-output'), state))
+            .toThrow(/uncompressed limit/i);
+        expect(fs.existsSync(path.join(root, 'forged-output', 'forged.txt'))).toBe(false);
+    });
+
     it('rejects archives over the entry-count limit', async () => {
         const archivePath = path.join(root, 'entries.zip');
         const zip = new AdmZip();
@@ -225,6 +248,22 @@ describe('archive extraction isolation and safety', () => {
         ]));
         expect(entries).not.toContain('documents.zip/deeper.zip/leaf.txt');
         expect(fs.readFileSync(path.join(destination, 'documents.zip', 'inner.pdf'), 'utf8')).toBe('nested');
+    });
+
+    it('skips corrupt nested ZIPs and still extracts valid sibling files', async () => {
+        const outer = new AdmZip();
+        outer.addFile('corrupt.zip', Buffer.from('not a nested ZIP'));
+        outer.addFile('sibling.txt', Buffer.from('sibling survives'));
+        const archivePath = path.join(root, 'outer-with-corrupt-nested.zip');
+        const destination = path.join(root, 'outer-with-corrupt-nested-output');
+        outer.writeZip(archivePath);
+
+        const result = await extractArchiveFiles({ filePath: archivePath, destination });
+
+        expect(result.status).toBe('success');
+        expect(result.extractedFiles.map((file) => file.entryName)).toEqual(['sibling.txt']);
+        expect(fs.readFileSync(path.join(destination, 'sibling.txt'), 'utf8')).toBe('sibling survives');
+        expect(fs.existsSync(path.join(destination, 'corrupt.zip'))).toBe(false);
     });
 
     it('returns per-archive errors for corrupt ZIP data', async () => {

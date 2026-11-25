@@ -27,6 +27,13 @@ function jailedPath(root, relativeName) {
     return targetPath.startsWith(`${resolvedRoot}${path.sep}`) ? targetPath : null;
 }
 
+function recordDecompressedBytes(state, byteLength) {
+    state.decompressedBytes += byteLength;
+    if (state.decompressedBytes > state.maxUncompressedBytes) {
+        throw new Error(`Archive exceeds the ${state.maxUncompressedBytes}-byte uncompressed limit`);
+    }
+}
+
 function extractZipEntries(zip, destination, state, prefix = '', nestingLevel = 0) {
     const entries = zip.getEntries();
     if (state.entryCount + entries.length > state.maxEntries) {
@@ -56,13 +63,27 @@ function extractZipEntries(zip, destination, state, prefix = '', nestingLevel = 
         }
 
         if (nestingLevel === 0 && path.extname(safeName).toLowerCase() === '.zip') {
-            const nestedArchive = new AdmZip(entry.getData());
+            let content;
+            let nestedArchive;
+            try {
+                content = entry.getData();
+            } catch {
+                continue;
+            }
+            recordDecompressedBytes(state, content.length);
+            try {
+                nestedArchive = new AdmZip(content);
+                nestedArchive.getEntries();
+            } catch {
+                continue;
+            }
             fs.mkdirSync(targetPath, { recursive: true });
             extractZipEntries(nestedArchive, destination, state, entryName, 1);
             continue;
         }
 
         const content = entry.getData();
+        recordDecompressedBytes(state, content.length);
         fs.mkdirSync(path.dirname(targetPath), { recursive: true });
         fs.writeFileSync(targetPath, content);
         state.extractedFiles.push({ filePath: targetPath, entryName });
@@ -74,6 +95,7 @@ function extractInWorker({ filePath, destination, maxUncompressedBytes, maxEntri
         maxUncompressedBytes,
         maxEntries,
         uncompressedBytes: 0,
+        decompressedBytes: 0,
         entryCount: 0,
         extractedFiles: []
     };
@@ -81,6 +103,7 @@ function extractInWorker({ filePath, destination, maxUncompressedBytes, maxEntri
     extractZipEntries(new AdmZip(filePath), destination, state);
     return { status: 'success', extractedFiles: state.extractedFiles };
 }
+
 
 if (!isMainThread) {
     try {
@@ -150,6 +173,7 @@ if (!isMainThread) {
 
     module.exports = {
         extractArchiveFiles,
+        extractZipEntries,
         sanitizeEntryName,
         MAX_ARCHIVE_UNCOMPRESSED_BYTES,
         MAX_ARCHIVE_ENTRIES

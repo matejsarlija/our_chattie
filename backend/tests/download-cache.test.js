@@ -7,7 +7,7 @@ jest.mock('axios');
 const axios = require('axios');
 
 const { downloadClusterAttachments } = require('../court-analysis/acquisition/downloader');
-const { DownloadCache, getDownloadCache, cacheKeyFor } = require('../court-analysis/acquisition/downloadCache');
+const { DownloadCache, getDownloadCache, resolveCacheRoot, cacheKeyFor } = require('../court-analysis/acquisition/downloadCache');
 
 describe('DownloadCache store', () => {
     let root;
@@ -30,6 +30,17 @@ describe('DownloadCache store', () => {
 
     afterEach(() => {
         fs.rmSync(root, { recursive: true, force: true });
+    });
+
+    it('defaults the cache to backend/uploads/.dl-cache when DOWNLOAD_CACHE_DIR is unset', () => {
+        const previousCacheDir = process.env.DOWNLOAD_CACHE_DIR;
+        delete process.env.DOWNLOAD_CACHE_DIR;
+        try {
+            expect(resolveCacheRoot()).toBe(path.resolve(__dirname, '../uploads/.dl-cache'));
+        } finally {
+            if (previousCacheDir === undefined) delete process.env.DOWNLOAD_CACHE_DIR;
+            else process.env.DOWNLOAD_CACHE_DIR = previousCacheDir;
+        }
     });
 
     it('round-trips a committed download with metadata', async () => {
