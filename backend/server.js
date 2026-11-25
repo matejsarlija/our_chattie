@@ -87,7 +87,7 @@ async function startServer() {
   });
 
   const server = app.listen(port, host, () => {
-    logger.agent.log(`Gemini server running on ${host}:${port}`);
+    logger.agent.log(`Court analysis server running on ${host}:${port}`);
   });
   server.on('error', (error) => {
     logger.agent.error('[Startup] Server listen failed:', error);

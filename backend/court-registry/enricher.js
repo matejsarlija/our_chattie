@@ -120,7 +120,7 @@ function verifyNameMatch(scrapedName, apiName) {
  */
 async function enrichParticipants(participants) {
     if (!process.env.COURT_REGISTRY_CLIENT_ID) {
-        console.warn('[Enricher] Missing API credentials. Skipping enrichment.');
+        logger.warn('court-registry.enricher', 'Missing API credentials. Skipping enrichment.');
         return participants;
     }
 

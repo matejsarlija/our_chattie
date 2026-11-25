@@ -494,15 +494,8 @@ function mergeIdenticalEntries(entries) {
             )) kept.filings.push(filing);
         }
     }
-    let propertyOrdinal = 0;
     merged.forEach((entry, index) => {
         entry.id = `flow-${index + 1}`;
-        if (entry.assetType !== 'novac') {
-            propertyOrdinal += 1;
-            entry.__propertyOrdinal = propertyOrdinal;
-        } else {
-            delete entry.__propertyOrdinal;
-        }
     });
     return merged;
 }
