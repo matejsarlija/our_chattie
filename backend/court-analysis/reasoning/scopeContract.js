@@ -10,7 +10,7 @@
 // `full_case_outcome`. Status is `discovery_only | partial | sufficient`.
 //
 // Pure function over already-computed run artifacts (coverage, discovery
-// summary, analyses, rerank result). No model calls, no I/O.
+// summary, analyses, entries). No model calls, no I/O.
 
 const { normalizeText } = require('./indexer');
 const { parseCaseDateToTimestamp } = require('../utils/caseDate');
@@ -70,18 +70,18 @@ function reasoningClusterSummary(discovery, reasoningClusterId) {
 /**
  * Builds the conclusion contract for a run.
  *
- * @param {object} input - `{ coverage, discovery, analyses, entries, rerankedRetrieval, envBudgetCap }`.
+ * @param {object} input - `{ coverage, discovery, analyses, entries, envBudgetCap }`.
  *   `entries` must be the SELECTED-CASE docket entries (the evidence package's
  *   cluster-scoped `entries` array, already filtered by construction); each
- *   entry carries a structural publish date (`date`, never LLM-guessed) and
- *   analyses link back via integer `sourceEntryIndex` positions into it.
+ *   entry carries a structural publish date (never LLM-guessed) and analyses link
+ *   back via integer `sourceEntryIndex` positions into it.
  * @returns {{ analysisStatus, supported, blocked, blockingEvidence, degraded, corpus }}
  */
 function buildScopeContract(input = {}) {
     const coverage = input.coverage || {};
     const discovery = input.discovery || {};
     const analyses = Array.isArray(input.analyses) ? input.analyses : [];
-    const rerankedRetrieval = input.rerankedRetrieval || null;
+    
 
     const analyzed = Number.isFinite(coverage.analyzed) ? coverage.analyzed : analyses.length;
     const failed = Number.isFinite(coverage.failed) ? coverage.failed : 0;
@@ -158,11 +158,6 @@ function buildScopeContract(input = {}) {
     }
 
     // Degraded conditions: facts about run quality, never verdicts.
-    const rerankStatus = rerankedRetrieval?.rerankStatus || null;
-    const rerankReason = rerankedRetrieval?.metrics?.rerankReason || null;
-    if (rerankStatus === 'fallback') {
-        degraded.push({ condition: 'rerank-fallback', reason: rerankReason || 'lexical retrieval served the run' });
-    }
     if (input.envBudgetCap === true) {
         degraded.push({ condition: 'env-budget-cap', reason: 'ANALYSIS_SCRAPE_LIMIT tightened the discovery budget below the depth dial' });
     }

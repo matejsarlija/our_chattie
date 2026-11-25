@@ -353,7 +353,6 @@ function createAnalysisLabRouter(options = {}) {
                 profiles: parsed.profiles,
                 runtimeMetadata: parsed.runtimeMetadata,
                 store: labStore,
-                production: true,
             });
             return res.status(201).json({
                 experiment: summarizeExperiment(experiment),

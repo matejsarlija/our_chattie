@@ -1,4 +1,3 @@
-const { createRetrievalQueries } = require('./retrievalQueries');
 const { buildLexicalIndex, collectSources, normalizeText, tokenize } = require('./indexer');
 
 // Hybrid token scoring weights (Phase 0.4). Substring matching stays as a
@@ -58,6 +57,52 @@ function scoreSource(source, retrievalQuery, evidencePackage, idfStats = null) {
         reasons
     };
 }
+function createRetrievalQueries({ query = null, clusterId = null, primaryCaseNumber = null, identity = {} } = {}) {
+    const queryType = ['oib', 'case_number', 'text'].includes(query?.type) ? query.type : 'text';
+    const caseNumber = primaryCaseNumber || clusterId || '';
+    const participantOibs = Array.isArray(identity.participantOibs) ? identity.participantOibs : [];
+    const participantNames = Array.isArray(identity.participantNames) ? identity.participantNames : [];
+    const anchors = [query?.value || '', caseNumber, ...participantOibs, ...participantNames].filter(Boolean);
+
+    return [
+        {
+            id: 'timeline',
+            purpose: 'timeline',
+            text: ['datumi ročište rješenje zaključak objava tijek predmeta', caseNumber].filter(Boolean).join(' '),
+            anchors,
+            queryType
+        },
+        {
+            id: 'amounts',
+            purpose: 'financial-amounts',
+            text: ['iznos tražbina dug uplata kamata eur hrk trošak', caseNumber].filter(Boolean).join(' '),
+            anchors,
+            queryType
+        },
+        {
+            id: 'procedural-status',
+            purpose: 'procedural-status',
+            text: ['status postupka stečaj obustava nastavak pravomoćnost odluka', caseNumber].filter(Boolean).join(' '),
+            anchors,
+            queryType
+        },
+        {
+            id: 'party-roles',
+            purpose: 'party-roles',
+            text: ['dužnik vjerovnik stranka sudionik oib tvrtka osoba', ...participantNames].filter(Boolean).join(' '),
+            anchors,
+            queryType
+        },
+        {
+            id: 'property-flow',
+            purpose: 'property-assets',
+            text: ['imovina nekretnina pokretnina tražbina ustup cesija hipoteka katastar prodaja imovine', caseNumber].filter(Boolean).join(' '),
+            anchors,
+            queryType
+        }
+    ];
+}
+
 
 function retrieveEvidence(evidencePackage, options = {}) {
     const queries = Array.isArray(options.queries) && options.queries.length > 0

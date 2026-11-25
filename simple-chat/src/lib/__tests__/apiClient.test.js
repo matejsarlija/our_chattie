@@ -72,27 +72,27 @@ describe('apiFetch', () => {
       ok: true,
       status: 200,
       headers: { get: jest.fn(() => null) },
-      text: jest.fn().mockResolvedValue(JSON.stringify({ settings: { reasoningRerankMode: 'force' } })),
+      text: jest.fn().mockResolvedValue(JSON.stringify({ settings: { defaultScanDepth: 'full' } })),
     });
 
     const data = await getSettings();
-    expect(data).toEqual({ settings: { reasoningRerankMode: 'force' } });
+    expect(data).toEqual({ settings: { defaultScanDepth: 'full' } });
     expect(global.fetch).toHaveBeenCalledWith('/api/settings', expect.objectContaining({ method: 'GET' }));
   });
 
-  test('updateSettings PUTs the patch to the settings endpoint', async () => {
+  test('updateSettings PUTs a preference patch to the settings endpoint', async () => {
     global.fetch = jest.fn().mockResolvedValue({
       ok: true,
       status: 200,
       headers: { get: jest.fn(() => null) },
-      text: jest.fn().mockResolvedValue(JSON.stringify({ settings: { reasoningPlanner: 'off' } })),
+      text: jest.fn().mockResolvedValue(JSON.stringify({ settings: { defaultScanDepth: 'standard' } })),
     });
 
-    const data = await updateSettings({ reasoningPlanner: 'off' });
-    expect(data).toEqual({ settings: { reasoningPlanner: 'off' } });
+    const data = await updateSettings({ defaultScanDepth: 'standard' });
+    expect(data).toEqual({ settings: { defaultScanDepth: 'standard' } });
 
     const [, options] = global.fetch.mock.calls[0];
     expect(options.method).toBe('PUT');
-    expect(JSON.parse(options.body)).toEqual({ reasoningPlanner: 'off' });
+    expect(JSON.parse(options.body)).toEqual({ defaultScanDepth: 'standard' });
   });
 });

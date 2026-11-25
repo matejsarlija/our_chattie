@@ -39,7 +39,7 @@ describe('contextReportAdapter baseline (LC-3)', () => {
             evidencePackage: pkg,
             profileId: 'baseline-flat-v1',
         });
-        const legacy = buildSynthesisInput(pkg, null, null);
+        const legacy = buildSynthesisInput(pkg, null);
         expect(stableStringify(input)).toBe(stableStringify(legacy));
         expect(trace).toMatchObject({ profileId: 'baseline-flat-v1', baseline: true });
         expect(input.meta.context).toBeUndefined();
@@ -78,7 +78,7 @@ describe('contextReportAdapter context profiles (LC-3)', () => {
         });
         expect(summarizeLlm).not.toHaveBeenCalled();
 
-        const flatCount = buildSynthesisInput(pkg, null, null).claims.length;
+        const flatCount = buildSynthesisInput(pkg, null).claims.length;
         expect(input.claims.length).toBeGreaterThan(flatCount);
         expect(trace).toMatchObject({ strategy: 'case-context', baseline: false });
         expect(typeof trace.rootId).toBe('string');
@@ -91,7 +91,7 @@ describe('contextReportAdapter context profiles (LC-3)', () => {
         });
         // Same chronology + reconciliation ownership: timeline and flat meta
         // survive untouched underneath the layered claims.
-        expect(input.timeline).toEqual(buildSynthesisInput(pkg, null, null).timeline);
+        expect(input.timeline).toEqual(buildSynthesisInput(pkg, null).timeline);
         expect(input.meta.reconciliation).toBeDefined();
     });
     test('bounds the quadratic DAG relation trace before it enters report metadata', async () => {
@@ -162,7 +162,7 @@ describe('contextReportAdapter context profiles (LC-3)', () => {
             profileId: 'context-tree-summarized-v1',
             summarizeLlm,
         });
-        const flatCount = buildSynthesisInput(pkg, null, null).claims.length;
+        const flatCount = buildSynthesisInput(pkg, null).claims.length;
         expect(input.claims.length).toBeGreaterThan(flatCount);
         expect(input.claims.some((claim) => String(claim.id).startsWith('context-node-summary-'))).toBe(false);
         expect(trace.summaries.stats.calls).toBeGreaterThan(0);

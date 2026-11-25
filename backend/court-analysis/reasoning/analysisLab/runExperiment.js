@@ -3,10 +3,9 @@
 // LE-1 — Analysis Lab comparison orchestrator (spec §§4–5, 8).
 //
 // Runs the three built-in profiles from one frozen evidence package:
-// retrieval, reranking, claim-judge and significance passes run ONCE against
-// an isolated clone of the frozen package; their outputs are snapshotted and
-// supplied identically to all three variants. Each variant then runs with its
-// own usage tracker, timing, trace collector, temporary context, and error
+// Deterministic retrieval runs ONCE against an isolated clone; all three
+// variants receive the same snapshotted evidence. Each variant then runs with
+// its own usage tracker, timing, trace collector, temporary context, and error
 // boundary. A single-variant failure yields a `partial` experiment — it never
 // erases a successful baseline.
 //
@@ -34,29 +33,9 @@ const {
 const { validateClusterEvidencePackage } = require('../evidencePackage');
 const { retrieveEvidence } = require('../retriever');
 const { computeVariantScorecard } = require('../runScorecard');
-const { rerankEvidence, isAmbiguous } = require('../reranker');
-const { shouldAttemptRerank, resolveRerankMode } = require('../rerankerClient');
-const {
-    selectClaimJudgePairs,
-    runClaimJudge,
-    applyClaimVerdicts,
-    createClaimJudge,
-} = require('../claimJudge');
-const {
-    buildSignificanceShortlist,
-    runSignificance,
-    applySignificance,
-} = require('../significance');
-const { runQueryPlanner, mergeRetrievalQueries } = require('../queryPlanner');
 const { generateClusterReport } = require('../reportService');
 const { createContextNodeLlm } = require('./contextNodeSummary');
-const { createLlmRerank } = require('../rerankerClient');
 const { createUsageTracker } = require('../../../helpers/geminiUsage');
-const {
-    resolveReasoningPlanner,
-    resolveReasoningClaimJudge,
-    resolveReasoningSignificance,
-} = require('../../../helpers/reasoningSettings');
 const { createAnalysisLabStore } = require('../../../services/analysisLabStore');
 const agentLog = require('../../../helpers/agentLog');
 
@@ -107,169 +86,28 @@ function resolveCodeRevision(runtimeMetadata) {
 }
 
 /**
- * Runs the shared retrieval/rerank/advisory passes once against an isolated
- * clone of the frozen package (spec §5.1 boundary). Never mutates the frozen
- * input. Returns snapshotted artifacts plus their hashes.
- *
- * Seams (`deps`) mirror `generateClusterReport`'s upstream so tests stay
- * offline: `runQueryPlanner`/`llmRerank`/`judgeLlm`/`significanceLlm` are only
- * invoked when both the gate is on and a seam is supplied.
+ * Runs deterministic retrieval once against an isolated clone of the frozen
+ * package so every Lab variant receives the same evidence set.
  */
-async function prepareSharedReportArtifacts(evidencePackage, executionSnapshot, deps = {}) {
+function prepareSharedReportArtifacts(evidencePackage, deps = {}) {
     const {
-        runQueryPlanner: runPlanner = runQueryPlanner,
-        mergeQueries = mergeRetrievalQueries,
         retrieveEvidence: doRetrieve = retrieveEvidence,
-        rerankEvidence: doRerank = rerankEvidence,
-        plannerLlm = null,
-        llmRerank = null,
-        selectPairs = selectClaimJudgePairs,
-        runJudge = runClaimJudge,
-        applyVerdicts = applyClaimVerdicts,
-        judgeLlm = null,
-        judgeTracker = null,
-        buildShortlist = buildSignificanceShortlist,
-        runRank = runSignificance,
-        applyRanking = applySignificance,
-        significanceLlm = null,
-        significanceTracker = null,
-        production = false,
-        retrievalOptions: extraRetrievalOptions = {},
-        rerankOptions: extraRerankOptions = {},
+        retrievalOptions = {},
     } = deps || {};
-
     const sharedClone = cloneEvidencePackage(evidencePackage);
-    const gates = executionSnapshot?.gates || {};
-    const sharedTracker = createUsageTracker();
-    let effectivePlannerLlm = plannerLlm;
-    let effectiveLlmRerank = llmRerank;
-    if (production && typeof effectivePlannerLlm !== 'function') {
-        const { createOpenRouterRoleClient } = require('../../../llm/openrouterConfig');
-        const { withGeminiRetry, withGeminiTimeout } = require('../../../helpers/geminiRetry');
-        const { trackUsageInvoke } = require('../../../helpers/geminiUsage');
-        const roleClient = createOpenRouterRoleClient('planner');
-        effectivePlannerLlm = async ({ prompt }) => {
-            const response = await withGeminiRetry(() => withGeminiTimeout(
-                (signal) => trackUsageInvoke(roleClient, prompt, { signal, tracker: sharedTracker, onUsage: null })
-            ));
-            return response.content;
-        };
-    }
-    if (production && typeof effectiveLlmRerank !== 'function') {
-        effectiveLlmRerank = createLlmRerank({ tracker: sharedTracker, onUsage: null });
-    }
-
-    // Planner (optional, once): only when the gate is on AND a model seam is
-    // supplied. Offline/test lanes pass no seam and keep template queries.
-    const retrievalOptions = { ...extraRetrievalOptions };
-    const hasPresetQueries = Array.isArray(retrievalOptions.queries) && retrievalOptions.queries.length > 0;
-    let plannedQueryCount = 0;
-    const plannerGate = gates.planner ?? resolveReasoningPlanner();
-    if (!hasPresetQueries && plannerGate !== 'off' && typeof effectivePlannerLlm === 'function') {
-        try {
-            const planned = await runPlanner(sharedClone, {
-                plannerLlm: effectivePlannerLlm,
-                tracker: sharedTracker,
-                onUsage: null,
-            });
-            if (Array.isArray(planned) && planned.length > 0) {
-                const { createRetrievalQueries } = require('../retrievalQueries');
-                const templates = createRetrievalQueries({
-                    query: sharedClone?.query,
-                    clusterId: sharedClone?.clusterId,
-                    primaryCaseNumber: sharedClone?.primaryCaseNumber,
-                    identity: sharedClone?.identity,
-                });
-                retrievalOptions.queries = mergeQueries(planned, templates);
-                plannedQueryCount = planned.length;
-            }
-        } catch (err) {
-            agentLog.warn(`[LabShared] Planner failed; using templates (${err.message})`);
-        }
-    }
-
     const retrieval = doRetrieve(sharedClone, retrievalOptions);
-
-    // Rerank gate mirrors reportService: explicit mode wins, else
-    // ambiguous-only. A model call happens only with an `llmRerank` seam.
-    const configuredMode = executionSnapshot?.rerank?.mode;
-    const mode = configuredMode === 'force' || configuredMode === 'off' || configuredMode === 'auto'
-        ? configuredMode
-        : resolveRerankMode();
-    const rerankOptions = { ...extraRerankOptions };
-    if (mode === 'force') {
-        rerankOptions.enabled = true;
-        rerankOptions.force = true;
-    } else if (mode === 'off') {
-        rerankOptions.enabled = false;
-    } else if (rerankOptions.enabled === undefined) {
-        rerankOptions.enabled = shouldAttemptRerank({ ambiguous: isAmbiguous(retrieval) });
-    }
-    if (rerankOptions.enabled && typeof rerankOptions.llmRerank !== 'function' && typeof effectiveLlmRerank === 'function') {
-        rerankOptions.llmRerank = effectiveLlmRerank;
-    }
-    const rerankedRetrieval = await doRerank(retrieval, rerankOptions);
-
-    // Advisory passes (claim-judge + significance): bounded, advisory-only,
-    // applied to the isolated clone. Each degrades to unannotated output on
-    // any failure; neither ever removes or merges items.
-    let claimLinks = null;
-    let significanceRanking = null;
-    try {
-        const reconciliation = sharedClone?.reconciliation || null;
-        const claimJudgeGate = gates.claimJudge ?? resolveReasoningClaimJudge();
-        if (reconciliation && claimJudgeGate === 'on') {
-            const pairs = selectPairs(reconciliation, sharedClone?.flows, {});
-            if (Array.isArray(pairs) && pairs.length > 0) {
-                const verdicts = await runJudge(pairs, {
-                    ...(typeof judgeLlm === 'function' ? { judgeLlm } : {
-                        judgeLlm: createClaimJudge({ tracker: sharedTracker, onUsage: null }),
-                    }),
-                    tracker: judgeTracker || sharedTracker,
-                    onUsage: null,
-                });
-                const applied = applyVerdicts(reconciliation, pairs, verdicts);
-                claimLinks = Array.isArray(applied?.claimLinks) ? applied.claimLinks : [];
-            }
-        }
-        const significanceGate = gates.significance ?? resolveReasoningSignificance();
-        if (reconciliation && significanceGate === 'on') {
-            const shortlist = buildShortlist(reconciliation);
-            if (Array.isArray(shortlist) && shortlist.length > 0) {
-                const ranking = await runRank(shortlist, {
-                    ...(typeof significanceLlm === 'function' ? { significanceLlm } : {}),
-                    tracker: significanceTracker || sharedTracker,
-                    onUsage: null,
-                });
-                if (ranking) {
-                    applyRanking(reconciliation, shortlist, ranking);
-                    significanceRanking = ranking;
-                }
-            }
-        }
-    } catch (err) {
-        agentLog.warn(`[LabShared] Claim-judge/significance failed; continuing unannotated (${err.message})`);
-    }
-
     return {
         retrieval,
-        rerankedRetrieval,
-        claimLinks,
-        significanceRanking,
-        plannedQueryCount,
-        sharedUsage: sharedTracker.snapshot(),
+        sharedUsage: createUsageTracker().snapshot(),
         hashes: {
             retrievalHash: hashSharedArtifact(retrieval),
-            rerankHash: hashSharedArtifact(rerankedRetrieval),
-            advisoryHash: hashSharedArtifact({ claimLinks, significanceRanking }),
         },
     };
 }
 
 /**
  * Default per-variant report seam: one isolated `generateClusterReport` call
- * with the shared artifacts, Lab profile, disabled follow-up (enforced inside
- * reportService for any `labProfile`), and the variant's own tracker.
+ * with the shared artifacts, Lab profile, and the variant's own tracker.
  */
 async function defaultGenerateVariantReport({
     evidenceClone,
@@ -308,7 +146,6 @@ async function runExperiment({
     profiles = [...PROFILE_IDS],
     runtimeMetadata = {},
     summarizeLlm = null,
-    production = false,
     store = null,
     deps = {},
     now = () => Date.now(),
@@ -331,12 +168,9 @@ async function runExperiment({
     const executionSnapshot = snapshotExecutionSettings(runtimeMetadata);
     const labStore = store || createAnalysisLabStore();
 
-    // Shared passes run once on an isolated clone; the frozen input is
-    // re-checked immediately after so a leaky seam fails loudly.
-    const shared = await prepareSharedReportArtifacts(evidencePackage, executionSnapshot, {
-        ...(deps.shared || {}),
-        production: production || deps.shared?.production === true,
-    });
+    // Shared deterministic retrieval runs on an isolated clone; verify the
+    // frozen input remains untouched before comparing variants.
+    const shared = prepareSharedReportArtifacts(evidencePackage, deps.shared || {});
     if (evidencePackageDigest(evidencePackage) !== frozenDigest) {
         throw new Error('runExperiment: frozen evidence package was mutated during shared preparation; refusing to compare.');
     }
@@ -365,28 +199,8 @@ async function runExperiment({
             });
             continue;
         }
-        // Supply the exact shared artifacts to every variant. Advisory deltas
-        // are applied to the per-variant clone (reportService also applies
-        // them defensively when `sharedUpstream` is passed).
-        try {
-            const reconciliation = variantClone?.reconciliation;
-            if (reconciliation && typeof reconciliation === 'object') {
-                if (reconciliation.claimLinks == null && shared.claimLinks != null) {
-                    reconciliation.claimLinks = cloneEvidencePackage(shared.claimLinks);
-                }
-                if (reconciliation.significanceRanking == null && shared.significanceRanking != null) {
-                    reconciliation.significanceRanking = cloneEvidencePackage(shared.significanceRanking);
-                }
-            }
-        } catch (err) {
-            agentLog.warn(`[LabExperiment] Advisory application failed for ${profileId}; continuing (${err.message})`);
-        }
         const sharedUpstreamForVariant = {
             retrieval: cloneEvidencePackage(shared.retrieval),
-            rerankedRetrieval: cloneEvidencePackage(shared.rerankedRetrieval),
-            claimLinks: cloneEvidencePackage(shared.claimLinks),
-            significanceRanking: cloneEvidencePackage(shared.significanceRanking),
-            plannedQueryCount: shared.plannedQueryCount,
         };
 
         const tracker = createUsageTracker();

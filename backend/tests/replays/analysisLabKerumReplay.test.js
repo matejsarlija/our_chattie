@@ -30,10 +30,6 @@ const { createAnalysisLabStore } = require('../../services/analysisLabStore');
 
 const LAB_FIXTURE = require('../fixtures/replays/analysis-lab/kerum-lab.json');
 
-const OFFLINE_SHARED_SEAMS = {
-    runJudge: async () => [],
-    runRank: async () => null,
-};
 
 const frozenDigest = () => evidencePackageDigest(LAB_FIXTURE);
 
@@ -70,7 +66,6 @@ describe('Kerum Lab replay: adapter lane (LC-3 boundary)', () => {
             const { trace } = await buildProfileReportInput({
                 evidencePackage: cloneEvidencePackage(pkg),
                 retrieval: null,
-                rerankedRetrieval: null,
                 profileId,
                 summarizeLlm: profileId === 'context-tree-summarized-v1' ? resolvingSummaryLlm : null,
             });
@@ -89,10 +84,9 @@ describe('Kerum Lab replay: adapter lane (LC-3 boundary)', () => {
         const { input, trace } = await buildProfileReportInput({
             evidencePackage: pkg,
             retrieval: null,
-            rerankedRetrieval: null,
             profileId: 'baseline-flat-v1',
         });
-        const flat = buildSynthesisInput(cloneEvidencePackage(LAB_FIXTURE), null, null);
+        const flat = buildSynthesisInput(cloneEvidencePackage(LAB_FIXTURE), null);
 
         expect(input.claims).toEqual(flat.claims);
         expect(input.claims.some((claim) => String(claim.id).startsWith('context-node-'))).toBe(false);
@@ -104,19 +98,16 @@ describe('Kerum Lab replay: adapter lane (LC-3 boundary)', () => {
         const first = await buildProfileReportInput({
             evidencePackage: cloneEvidencePackage(LAB_FIXTURE),
             retrieval: null,
-            rerankedRetrieval: null,
             profileId: 'context-tree-v1',
         });
         const second = await buildProfileReportInput({
             evidencePackage: cloneEvidencePackage(LAB_FIXTURE),
             retrieval: null,
-            rerankedRetrieval: null,
             profileId: 'context-tree-v1',
         });
         const summarized = await buildProfileReportInput({
             evidencePackage: cloneEvidencePackage(LAB_FIXTURE),
             retrieval: null,
-            rerankedRetrieval: null,
             profileId: 'context-tree-summarized-v1',
             summarizeLlm: failingSummaryLlm,
         });
@@ -132,7 +123,6 @@ describe('Kerum Lab replay: adapter lane (LC-3 boundary)', () => {
         const dagOnly = await buildProfileReportInput({
             evidencePackage: cloneEvidencePackage(LAB_FIXTURE),
             retrieval: null,
-            rerankedRetrieval: null,
             profileId: 'context-tree-v1',
         });
         expect(dagOnly.trace.summaries.enabled).toBe(false);
@@ -142,7 +132,6 @@ describe('Kerum Lab replay: adapter lane (LC-3 boundary)', () => {
         const summarized = await buildProfileReportInput({
             evidencePackage: cloneEvidencePackage(LAB_FIXTURE),
             retrieval: null,
-            rerankedRetrieval: null,
             profileId: 'context-tree-summarized-v1',
             summarizeLlm: resolvingSummaryLlm,
         });
@@ -159,7 +148,6 @@ describe('Kerum Lab replay: adapter lane (LC-3 boundary)', () => {
             await buildProfileReportInput({
                 evidencePackage: cloneEvidencePackage(LAB_FIXTURE),
                 retrieval: null,
-                rerankedRetrieval: null,
                 profileId,
                 summarizeLlm: resolvingSummaryLlm,
             });
@@ -174,7 +162,6 @@ describe('Kerum Lab replay: adapter lane (LC-3 boundary)', () => {
         const { trace } = await buildProfileReportInput({
             evidencePackage: cloneEvidencePackage(LAB_FIXTURE),
             retrieval: null,
-            rerankedRetrieval: null,
             profileId: 'context-tree-v1',
         });
         const factsById = new Map(collectContextFacts(LAB_FIXTURE).map((fact) => [fact.factId, fact]));
@@ -212,7 +199,6 @@ describe('Kerum Lab replay: adapter lane (LC-3 boundary)', () => {
             await buildProfileReportInput({
                 evidencePackage: pkg,
                 retrieval: null,
-                rerankedRetrieval: null,
                 profileId,
                 summarizeLlm: resolvingSummaryLlm,
             });
@@ -233,7 +219,6 @@ describe('Kerum Lab replay: adapter lane (LC-3 boundary)', () => {
         const { input } = await buildProfileReportInput({
             evidencePackage: pkg,
             retrieval: null,
-            rerankedRetrieval: null,
             profileId: 'context-tree-summarized-v1',
             summarizeLlm: resolvingSummaryLlm,
         });
@@ -249,7 +234,6 @@ describe('Kerum Lab replay: adapter lane (LC-3 boundary)', () => {
         const { input, trace } = await buildProfileReportInput({
             evidencePackage: cloneEvidencePackage(LAB_FIXTURE),
             retrieval: null,
-            rerankedRetrieval: null,
             profileId: 'context-tree-summarized-v1',
             summarizeLlm: failingSummaryLlm,
         });
@@ -277,7 +261,6 @@ describe('Kerum Lab replay: orchestrator lane (LE-1 record)', () => {
             const { trace } = await buildProfileReportInput({
                 evidencePackage: evidenceClone,
                 retrieval: null,
-                rerankedRetrieval: null,
                 profileId,
                 summarizeLlm: profileId === 'context-tree-summarized-v1' ? resolvingSummaryLlm : null,
             });
@@ -302,7 +285,7 @@ describe('Kerum Lab replay: orchestrator lane (LE-1 record)', () => {
             evidencePackageRef: 'kerum-lab',
             runtimeMetadata: { codeRevision: 'replay-rev' },
             store: lab,
-            deps: { shared: OFFLINE_SHARED_SEAMS, generateVariantReport: replayVariantReports() },
+            deps: { generateVariantReport: replayVariantReports() },
         });
 
         expect(experiment.status).toBe('complete');

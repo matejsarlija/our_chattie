@@ -25,7 +25,7 @@ function experimentInput() {
         evidencePackageHash: 'e4e6ae8cfad31398ac21e10f9b10c4000efcfeb13a3c0df917c80bf1e788c921',
         inputSummary: { caseNumber: 'St-2/2013', documents: 3 },
         executionSnapshot: { followUpVerification: 'off' },
-        sharedUpstream: { retrievalHash: 'aaa', rerankHash: 'bbb', advisoryHash: 'ccc' },
+        sharedUpstream: { retrievalHash: 'aaa' },
     };
 }
 

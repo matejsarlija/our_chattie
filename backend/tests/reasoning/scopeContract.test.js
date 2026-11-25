@@ -39,7 +39,6 @@ function kerumLike({ analyzed = 57, failed = 6, total = 63, totalClaims = 375 } 
             { index: 2, caseNumber: 'ST-2/2013', date: '2025-01-01', documentLinks: [{ url: 'https://x/2', text: 'Žalba.pdf' }] }
         ],
         analyses: Array.from({ length: analyzed }, (_, i) => ({ fileName: `doc-${i}.pdf`, sourceEntryIndex: i % 3 })),
-        rerankedRetrieval: { rerankStatus: 'fallback', metrics: { rerankReason: 'invalid-model-output' } }
     };
 }
 
@@ -74,9 +73,7 @@ describe('buildScopeContract (T1-1 backend)', () => {
         // The failed ledger pair is named, not just counted.
         const failedBlocker = contract.blockingEvidence.find((b) => b.reason === 'failed-documents');
         expect(failedBlocker.evidence.files).toEqual(expect.arrayContaining(['Diobeni popis.pdf', 'Završni račun.pdf']));
-        expect(contract.degraded).toEqual([
-            { condition: 'rerank-fallback', reason: 'invalid-model-output' }
-        ]);
+        expect(contract.degraded).toEqual([]);
         expect(contract.corpus).toEqual(expect.objectContaining({
             analyzed: 57,
             failed: 6,
@@ -100,7 +97,6 @@ describe('buildScopeContract (T1-1 backend)', () => {
                 { index: 1, caseNumber: 'ST-5/2024', date: '2024-01-01', documentLinks: [{ url: 'https://x/1', text: 'Rješenje.pdf' }] }
             ],
             analyses: [{ fileName: 'Diobeni popis.pdf', sourceEntryIndex: 0 }, { fileName: 'Rješenje.pdf', sourceEntryIndex: 1 }],
-            rerankedRetrieval: { rerankStatus: 'active', metrics: {} }
         });
 
         expect(contract.analysisStatus).toBe('sufficient');
@@ -149,7 +145,6 @@ describe('buildScopeContract (T1-1 backend)', () => {
             coverage: { analyzed: 0, failed: 0, total: 0, failedFiles: [], totalClaims: 0 },
             discovery: { reasoningClusterId: null, rawEntryCount: 0, totalResults: 10, clusters: [] },
             analyses: [],
-            rerankedRetrieval: null
         });
 
         expect(contract.analysisStatus).toBe('discovery_only');
@@ -216,7 +211,6 @@ describe('current_procedural_status chronology gate (T1-1 follow-up)', () => {
                 fileName: `doc-${sourceEntryIndex}.pdf`,
                 sourceEntryIndex
             })),
-            rerankedRetrieval: null
         };
     }
 

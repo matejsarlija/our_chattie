@@ -1,5 +1,6 @@
 import * as Popover from '@radix-ui/react-popover';
-import ReasoningExperimentsPanel from './ReasoningExperimentsPanel';
+import { useSettings } from '../../hooks/useSettings';
+import ScanDepthSelect from './ScanDepthSelect';
 
 function GearIcon() {
   return (
@@ -21,6 +22,9 @@ function GearIcon() {
 }
 
 export default function SettingsPopover() {
+  const { settings, loading, saving, error, saveSettings } = useSettings();
+  const defaultScanDepth = settings.defaultScanDepth || 'balanced';
+
   return (
     <Popover.Root>
       <Popover.Trigger asChild>
@@ -47,20 +51,16 @@ export default function SettingsPopover() {
               Postavke
             </h2>
             <p className="mt-1 text-xs leading-5 text-[var(--text-muted)]">
-              Primjenjuju se na sljedeću analizu.
+              Zadana dubina pretrage za nove analize.
             </p>
           </div>
-          <section aria-labelledby="reasoning-experiments-title">
-            <h3 id="reasoning-experiments-title" className="text-sm font-semibold text-[var(--text)]">
-              Eksperimenti zaključivanja
-            </h3>
-            <p className="mt-1 text-sm text-[var(--text-muted)]">
-              Uključite ili isključite pojedine korake u tijeku zaključivanja.
-            </p>
-            <div className="mt-4">
-              <ReasoningExperimentsPanel />
-            </div>
-          </section>
+          <ScanDepthSelect
+            value={defaultScanDepth}
+            disabled={loading || saving}
+            onChange={(value) => saveSettings({ defaultScanDepth: value }).catch(() => {})}
+          />
+          {saving ? <p role="status" className="mt-2 text-xs text-[var(--text-muted)]">Spremanje…</p> : null}
+          {error ? <p role="alert" className="mt-2 text-xs text-[var(--error)]">{error}</p> : null}
         </Popover.Content>
       </Popover.Portal>
     </Popover.Root>

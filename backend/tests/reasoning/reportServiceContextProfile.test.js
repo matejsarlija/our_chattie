@@ -1,16 +1,7 @@
 const mockSynthesizeReport = jest.fn();
 const mockNormalizeReasoningEvidence = jest.fn();
 const mockVerifyReport = jest.fn();
-const mockInvoke = jest.fn();
-const mockRunQueryPlanner = jest.fn().mockResolvedValue([]);
 
-jest.mock('../../llm/openrouterClient.js', () => ({
-    createOpenRouterClient: () => ({ invoke: mockInvoke })
-}));
-jest.mock('../../helpers/geminiRetry', () => ({
-    withGeminiRetry: (fn) => fn(),
-    withGeminiTimeout: (callable) => callable(undefined)
-}));
 
 jest.mock('../../court-analysis/reasoning/synthesizer', () => ({
     synthesizeReport: mockSynthesizeReport,
@@ -21,10 +12,6 @@ jest.mock('../../court-analysis/reasoning/verifier', () => ({
     verifyReport: mockVerifyReport
 }));
 
-jest.mock('../../court-analysis/reasoning/queryPlanner', () => ({
-    runQueryPlanner: mockRunQueryPlanner,
-    mergeRetrievalQueries: jest.requireActual('../../court-analysis/reasoning/queryPlanner').mergeRetrievalQueries
-}));
 
 const { generateClusterReport } = require('../../court-analysis/reasoning/reportService');
 const {
@@ -37,7 +24,6 @@ const LAB_FIXTURE = require('../fixtures/replays/analysis-lab/kerum-lab.json');
 describe('reportService Lab profile seam (LC-3)', () => {
     beforeEach(() => {
         jest.clearAllMocks();
-        mockRunQueryPlanner.mockResolvedValue([]);
         mockNormalizeReasoningEvidence.mockImplementation((evidencePackage) => ({
             timeline: [{ date: null, description: `Objava ${evidencePackage.clusterId}`, evidence: [] }],
             claims: [{
@@ -62,12 +48,12 @@ describe('reportService Lab profile seam (LC-3)', () => {
         mockVerifyReport.mockImplementation(async (report) => report);
     });
 
-    test('without labProfile the persisted meta shape is unchanged (baseline parity)', async () => {
+    test('without labProfile the report has retrieval and scope metadata, without context metadata', async () => {
         const pkg = cloneEvidencePackage(LAB_FIXTURE);
         const result = await generateClusterReport(pkg, {});
         expect(result.meta).not.toHaveProperty('contextTrace');
         expect(result.meta).toHaveProperty('retrieval');
-        expect(result.meta).toHaveProperty('rerank');
+        expect(result.meta).not.toHaveProperty('rerank');
         expect(result.meta).toHaveProperty('scope');
         // Synthesis saw exactly the flat claims (baseline + retrieval), with
         // no context-layer claims.

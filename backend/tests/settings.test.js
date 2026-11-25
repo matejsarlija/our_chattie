@@ -25,7 +25,7 @@ function makeApp(store) {
   return app;
 }
 
-describe('settings store + API', () => {
+describe('lawyer settings store + API', () => {
   let dataDir;
   let store;
   let app;
@@ -40,35 +40,39 @@ describe('settings store + API', () => {
     fs.rmSync(dataDir, { recursive: true, force: true });
   });
 
-  test('defaults the reasoning switches', () => {
-    expect(store.getSettings()).toEqual({ reasoningRerankMode: 'auto', reasoningPlanner: 'on', reasoningFollowUp: 'on' });
+  test('defaults to no persisted preferences', () => {
+    expect(store.getSettings()).toEqual({});
   });
 
-  test('persists an updated reasoning switch', async () => {
-    await store.updateSettings({ reasoningRerankMode: 'force' });
-    expect(store.getSettings()).toEqual({ reasoningRerankMode: 'force', reasoningPlanner: 'on', reasoningFollowUp: 'on' });
+  test('persists default scan depth and UI preferences', async () => {
+    await store.updateSettings({ defaultScanDepth: 'full', uiPreferences: { compact: true } });
+    expect(store.getSettings()).toEqual({
+      defaultScanDepth: 'full',
+      uiPreferences: { compact: true },
+    });
   });
 
-  test('rejects an invalid reasoning switch value', async () => {
-    await expect(store.updateSettings({ reasoningRerankMode: 'premium' })).rejects.toThrow('Invalid reasoningRerankMode');
+  test('rejects an unsupported default scan depth', async () => {
+    await expect(store.updateSettings({ defaultScanDepth: 'unbounded' }))
+      .rejects.toThrow('Invalid defaultScanDepth');
   });
 
-  test('GET returns the current settings', async () => {
+  test('GET returns current preferences', async () => {
     const res = await request(app).get('/api/settings');
     expect(res.status).toBe(200);
-    expect(res.body.settings).toEqual({ reasoningRerankMode: 'auto', reasoningPlanner: 'on', reasoningFollowUp: 'on' });
+    expect(res.body.settings).toEqual({});
   });
 
-  test('PUT updates a reasoning switch and persists it', async () => {
-    const res = await request(app).put('/api/settings').send({ reasoningPlanner: 'off' });
+  test('PUT updates and persists a lawyer preference', async () => {
+    const res = await request(app).put('/api/settings').send({ defaultScanDepth: 'standard' });
     expect(res.status).toBe(200);
-    expect(res.body.settings).toEqual({ reasoningRerankMode: 'auto', reasoningPlanner: 'off', reasoningFollowUp: 'on' });
-    expect(store.getSettings()).toEqual({ reasoningRerankMode: 'auto', reasoningPlanner: 'off', reasoningFollowUp: 'on' });
+    expect(res.body.settings).toEqual({ defaultScanDepth: 'standard' });
+    expect(store.getSettings()).toEqual({ defaultScanDepth: 'standard' });
   });
 
-  test('PUT rejects an invalid reasoning switch with 400', async () => {
-    const res = await request(app).put('/api/settings').send({ reasoningRerankMode: 'gold' });
+  test('PUT rejects an invalid scan depth with 400', async () => {
+    const res = await request(app).put('/api/settings').send({ defaultScanDepth: 'gold' });
     expect(res.status).toBe(400);
-    expect(res.body.error).toContain('Invalid reasoningRerankMode');
+    expect(res.body.error).toContain('Invalid defaultScanDepth');
   });
 });

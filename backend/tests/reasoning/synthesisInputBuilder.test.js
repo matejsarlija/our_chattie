@@ -21,7 +21,7 @@ describe('synthesisInputBuilder', () => {
         }));
     });
 
-    test('builds compact synthesis input from selected-cluster evidence and reranked retrieval', () => {
+    test('builds compact synthesis input from selected-cluster evidence and deterministic retrieval', () => {
         const evidencePackage = {
             packageType: 'ClusterEvidencePackage',
             clusterId: 'ST-100/2023',
@@ -43,30 +43,15 @@ describe('synthesisInputBuilder', () => {
             }],
             metrics: { matchCount: 1 }
         };
-        const rerank = {
-            ...retrieval,
-            rerankStatus: 'skipped',
-            results: [{
-                ...retrieval.results[0],
-                rerankStatus: 'skipped',
-                matches: [{
-                    ...retrieval.results[0].matches[0],
-                    lexicalRank: 1,
-                    rerankStatus: 'skipped',
-                    rerankScore: null
-                }]
-            }]
-        };
 
-        const input = buildSynthesisInput(evidencePackage, retrieval, rerank);
+        const input = buildSynthesisInput(evidencePackage, retrieval);
 
         expect(mockNormalizeReasoningEvidence).toHaveBeenCalledWith(evidencePackage);
         expect(input).toEqual(expect.objectContaining({
             timeline: expect.any(Array),
             meta: expect.objectContaining({
                 clusterId: 'ST-100/2023',
-                retrieval,
-                rerank
+                retrieval
             })
         }));
         expect(input.claims).toEqual(expect.arrayContaining([
@@ -76,9 +61,7 @@ describe('synthesisInputBuilder', () => {
                 evidence: expect.arrayContaining([
                     expect.objectContaining({
                         sourceId: 'doc-1',
-                        retrievalScore: 8,
-                        lexicalRank: 1,
-                        rerankStatus: 'skipped'
+                        retrievalScore: 8
                     })
                 ])
             })
@@ -113,20 +96,8 @@ describe('synthesisInputBuilder', () => {
                 ]
             }]
         };
-        const rerank = {
-            ...retrieval,
-            rerankStatus: 'skipped',
-            results: [{
-                ...retrieval.results[0],
-                matches: retrieval.results[0].matches.map((match, index) => ({
-                    ...match,
-                    lexicalRank: index + 1,
-                    rerankStatus: 'skipped'
-                }))
-            }]
-        };
 
-        const input = buildSynthesisInput(evidencePackage, retrieval, rerank);
+        const input = buildSynthesisInput(evidencePackage, retrieval);
         const claimTexts = input.claims.map((claim) => claim.text).join('\n');
 
         expect(claimTexts).toContain('Rješenje u odabranom predmetu');
@@ -150,7 +121,7 @@ describe('synthesisInputBuilder', () => {
             })),
             meta: {},
         });
-        const reranked = {
+        const retrieval = {
             results: Array.from({ length: 24 }, (_, index) => ({
                 matches: [{
                     sourceId: `document-${index + 1}`,
@@ -163,7 +134,7 @@ describe('synthesisInputBuilder', () => {
             })),
         };
 
-        const input = buildSynthesisInput({ clusterId: 'St-1/2024' }, reranked, reranked);
+        const input = buildSynthesisInput({ clusterId: 'St-1/2024' }, retrieval);
         const fullClaims = input.claims.filter((claim) => claim.id.startsWith('analysis-') && claim.digest !== true);
 
         expect(fullClaims.map((claim) => claim.id)).toEqual([

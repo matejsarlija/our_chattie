@@ -2,11 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 
-const {
-  DEFAULT_REASONING_SETTINGS,
-  REASONING_RERANK_MODES,
-  REASONING_ON_OFF,
-} = require('../helpers/reasoningSettings');
+const DEFAULT_SCAN_DEPTHS = ['standard', 'balanced', 'full'];
 
 const { buildRunSummary, toRunListItem } = require('../court-analysis/utils/runSummary');
 
@@ -75,17 +71,14 @@ function createLocalStore(options = {}) {
 
   function readSettings() {
     const settings = readJson(settingsFile, {});
-    return {
-      reasoningRerankMode: REASONING_RERANK_MODES.includes(settings.reasoningRerankMode)
-        ? settings.reasoningRerankMode
-        : DEFAULT_REASONING_SETTINGS.rerankMode,
-      reasoningPlanner: REASONING_ON_OFF.includes(settings.reasoningPlanner)
-        ? settings.reasoningPlanner
-        : DEFAULT_REASONING_SETTINGS.planner,
-      reasoningFollowUp: REASONING_ON_OFF.includes(settings.reasoningFollowUp)
-        ? settings.reasoningFollowUp
-        : DEFAULT_REASONING_SETTINGS.followUp,
-    };
+    const result = {};
+    if (DEFAULT_SCAN_DEPTHS.includes(settings.defaultScanDepth)) {
+      result.defaultScanDepth = settings.defaultScanDepth;
+    }
+    if (settings.uiPreferences && typeof settings.uiPreferences === 'object' && !Array.isArray(settings.uiPreferences)) {
+      result.uiPreferences = settings.uiPreferences;
+    }
+    return result;
   }
 
   function writeSettings(settings) {
@@ -267,23 +260,21 @@ function createLocalStore(options = {}) {
   async function updateSettings(patch) {
     return enqueue(() => {
       const next = readSettings();
-      if (patch && typeof patch === 'object' && patch.reasoningRerankMode !== undefined) {
-        if (!REASONING_RERANK_MODES.includes(patch.reasoningRerankMode)) {
-          const err = new Error('Invalid reasoningRerankMode. Expected "auto", "force" or "off".');
+      if (patch && typeof patch === 'object' && patch.defaultScanDepth !== undefined) {
+        if (!DEFAULT_SCAN_DEPTHS.includes(patch.defaultScanDepth)) {
+          const err = new Error('Invalid defaultScanDepth. Expected "standard", "balanced" or "full".');
           err.statusCode = 400;
           throw err;
         }
-        next.reasoningRerankMode = patch.reasoningRerankMode;
+        next.defaultScanDepth = patch.defaultScanDepth;
       }
-      for (const key of ['reasoningPlanner', 'reasoningFollowUp']) {
-        if (patch && typeof patch === 'object' && patch[key] !== undefined) {
-          if (!REASONING_ON_OFF.includes(patch[key])) {
-            const err = new Error(`Invalid ${key}. Expected "on" or "off".`);
-            err.statusCode = 400;
-            throw err;
-          }
-          next[key] = patch[key];
+      if (patch && typeof patch === 'object' && patch.uiPreferences !== undefined) {
+        if (!patch.uiPreferences || typeof patch.uiPreferences !== 'object' || Array.isArray(patch.uiPreferences)) {
+          const err = new Error('Invalid uiPreferences. Expected an object.');
+          err.statusCode = 400;
+          throw err;
         }
+        next.uiPreferences = patch.uiPreferences;
       }
       writeSettings(next);
       return next;

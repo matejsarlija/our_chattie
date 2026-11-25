@@ -6,6 +6,7 @@ import React from 'react';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import NewAnalysisModal from '../NewAnalysisModal';
 import { useCourtAnalysisStream } from '../../../hooks/useCourtAnalysisStream';
+import { useSettings } from '../../../hooks/useSettings';
 
 const mockNavigate = jest.fn();
 const mockStreamCourtAnalysis = jest.fn();
@@ -18,14 +19,25 @@ jest.mock('react-router-dom', () => ({
 jest.mock('../../../hooks/useCourtAnalysisStream', () => ({
   useCourtAnalysisStream: jest.fn(),
 }));
+jest.mock('../../../hooks/useSettings', () => ({
+  useSettings: jest.fn(),
+}));
 
 describe('NewAnalysisModal', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    useSettings.mockReturnValue({ settings: { defaultScanDepth: 'balanced' } });
     useCourtAnalysisStream.mockReturnValue({
       isLoading: false,
       streamCourtAnalysis: mockStreamCourtAnalysis,
     });
+  });
+
+  test('uses the saved scan depth when opening a new analysis', () => {
+    useSettings.mockReturnValue({ settings: { defaultScanDepth: 'full' } });
+    render(<NewAnalysisModal isOpen onClose={jest.fn()} />);
+
+    expect(screen.getByLabelText(/dubina pretrage/i)).toHaveValue('full');
   });
 
   test('blocks invalid OIB before submit', async () => {

@@ -2,10 +2,8 @@
 //
 // LE-1 — comparison orchestrator tests (spec §§4–5, 8).
 //
-// Fixture-backed and offline: no scraper/download/OCR/native-PDF calls, no
-// Gemini model calls. Report generation is mocked per variant; shared-pass
-// model seams are stubbed (judge/rank), while retrieval/rerank run for real
-// in their deterministic offline mode (no `llmRerank` seam → skipped).
+// Fixture-backed and offline: no scraper/download/OCR/native-PDF calls or
+// model calls outside the mocked report generator.
 
 const fs = require('fs');
 const os = require('os');
@@ -19,15 +17,10 @@ const {
     evidencePackageDigest,
     cloneEvidencePackage,
 } = require('../../../court-analysis/reasoning/analysisLab/evidenceIdentity');
-const { snapshotExecutionSettings } = require('../../../court-analysis/reasoning/analysisLab/profiles');
 const { createAnalysisLabStore } = require('../../../services/analysisLabStore');
 
 const LAB_FIXTURE = require('../../fixtures/replays/analysis-lab/kerum-lab.json');
 
-const OFFLINE_SHARED_SEAMS = {
-    runJudge: async () => [],
-    runRank: async () => null,
-};
 
 function makeStore() {
     const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'analysis-lab-run-'));
@@ -49,8 +42,6 @@ function mockVariantReports({ failProfile = null, tokensByProfile = null } = {})
             evidencePackageHash,
             sharedHashes: { ...sharedHashes },
             retrieval: sharedUpstream.retrieval,
-            rerankedRetrieval: sharedUpstream.rerankedRetrieval,
-            claimLinks: sharedUpstream.claimLinks,
             cloneDigest: evidencePackageDigest(evidenceClone),
         });
         if (profileId === failProfile) {
@@ -83,7 +74,7 @@ describe('runExperiment shared boundary (LE-1)', () => {
             evidencePackageRef: 'kerum-lab',
             runtimeMetadata: { codeRevision: 'test-rev' },
             store: lab,
-            deps: { shared: OFFLINE_SHARED_SEAMS, generateVariantReport },
+            deps: { generateVariantReport },
         });
 
         expect(experiment.status).toBe('complete');
@@ -104,8 +95,6 @@ describe('runExperiment shared boundary (LE-1)', () => {
         // every variant; retrieval content identical but independently cloned.
         expect(experiment.sharedUpstream).toMatchObject({
             retrievalHash: expect.any(String),
-            rerankHash: expect.any(String),
-            advisoryHash: expect.any(String),
         });
         for (const call of seen) {
             expect(call.sharedHashes).toEqual(experiment.sharedUpstream);
@@ -113,7 +102,6 @@ describe('runExperiment shared boundary (LE-1)', () => {
         expect(seen[0].retrieval).toEqual(seen[1].retrieval);
         expect(seen[1].retrieval).toEqual(seen[2].retrieval);
         expect(seen[0].retrieval).not.toBe(seen[1].retrieval);
-        expect(seen[0].rerankedRetrieval).toEqual(seen[2].rerankedRetrieval);
 
         // Per-variant isolation: distinct usage totals from their own tracker.
         const usages = ['baseline-flat-v1', 'context-tree-v1', 'context-tree-summarized-v1']
@@ -158,7 +146,7 @@ describe('runExperiment shared boundary (LE-1)', () => {
             evidencePackage: frozen,
             evidencePackageRef: 'kerum-lab',
             store: lab,
-            deps: { shared: OFFLINE_SHARED_SEAMS, generateVariantReport },
+            deps: { generateVariantReport },
         });
 
         expect(evidencePackageDigest(frozen)).toBe(digestBefore);
@@ -172,7 +160,7 @@ describe('runExperiment shared boundary (LE-1)', () => {
             evidencePackage: cloneEvidencePackage(LAB_FIXTURE),
             evidencePackageRef: 'kerum-lab',
             store: lab,
-            deps: { shared: OFFLINE_SHARED_SEAMS, generateVariantReport },
+            deps: { generateVariantReport },
         });
 
         expect(experiment.status).toBe('partial');
@@ -191,7 +179,7 @@ describe('runExperiment shared boundary (LE-1)', () => {
             evidencePackage: { packageType: 'NotEvidence', clusterId: 'X' },
             evidencePackageRef: 'kerum-lab',
             store: lab,
-            deps: { shared: OFFLINE_SHARED_SEAMS, generateVariantReport },
+            deps: { generateVariantReport },
         })).rejects.toThrow(/invalid frozen evidence package/);
         expect(generateVariantReport).not.toHaveBeenCalled();
 
@@ -206,7 +194,7 @@ describe('runExperiment shared boundary (LE-1)', () => {
             evidencePackage: mutated,
             evidencePackageRef: 'kerum-lab',
             store: lab,
-            deps: { shared: OFFLINE_SHARED_SEAMS, generateVariantReport },
+            deps: { generateVariantReport },
         });
         expect(experiment.evidencePackageHash).toBe(mutatedDigest);
         expect(generateVariantReport.mock.calls[0][0].evidencePackageHash).toBe(mutatedDigest);
@@ -221,7 +209,7 @@ describe('runExperiment shared boundary (LE-1)', () => {
             evidencePackageRef: 'kerum-lab',
             profiles: ['baseline-flat-v1', 'context-tree-v1'],
             store: lab,
-            deps: { shared: OFFLINE_SHARED_SEAMS, generateVariantReport },
+            deps: { generateVariantReport },
         })).rejects.toThrow(/all three built-in profiles/);
 
         await expect(runExperiment({
@@ -229,7 +217,7 @@ describe('runExperiment shared boundary (LE-1)', () => {
             evidencePackageRef: 'kerum-lab',
             profiles: ['baseline-flat-v1', 'context-tree-v1', 'nope-v1'],
             store: lab,
-            deps: { shared: OFFLINE_SHARED_SEAMS, generateVariantReport },
+            deps: { generateVariantReport },
         })).rejects.toThrow(/Unknown analysis-lab profile/);
         expect(generateVariantReport).not.toHaveBeenCalled();
     });
@@ -251,16 +239,8 @@ describe('runExperiment shared boundary (LE-1)', () => {
         }
 
         // The shared phase itself runs with no acquisition/model seams.
-        const executionSnapshot = snapshotExecutionSettings({ codeRevision: 'test-rev' });
-        const shared = await prepareSharedReportArtifacts(
-            cloneEvidencePackage(LAB_FIXTURE),
-            executionSnapshot,
-            OFFLINE_SHARED_SEAMS
-        );
+        const shared = await prepareSharedReportArtifacts(cloneEvidencePackage(LAB_FIXTURE));
         expect(shared.hashes.retrievalHash).toMatch(/^[0-9a-f]{64}$/);
-        expect(shared.hashes.rerankHash).toMatch(/^[0-9a-f]{64}$/);
-        expect(shared.hashes.advisoryHash).toMatch(/^[0-9a-f]{64}$/);
         expect(shared.retrieval).toBeDefined();
-        expect(shared.rerankedRetrieval).toBeDefined();
     });
 });

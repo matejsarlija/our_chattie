@@ -27,53 +27,46 @@ describe('useSettings', () => {
     jest.clearAllMocks();
   });
 
-  test('loads persisted settings on mount', async () => {
-    getSettings.mockResolvedValue({ settings: { reasoningRerankMode: 'force' } });
+  test('loads the persisted default scan depth on mount', async () => {
+    getSettings.mockResolvedValue({ settings: { defaultScanDepth: 'full' } });
     const snapshots = [];
 
-    render(<Harness onValue={(v) => snapshots.push(v)} />);
+    render(<Harness onValue={(value) => snapshots.push(value)} />);
 
     await waitFor(() => {
       expect(getSettings).toHaveBeenCalledTimes(1);
-      expect(snapshots[snapshots.length - 1].reasoningRerankMode).toBe('force');
+      expect(snapshots[snapshots.length - 1].settings.defaultScanDepth).toBe('full');
     });
   });
 
-  test('defaults reasoning switches when the backend returns no settings', async () => {
+  test('defaults scan depth when the backend has no preferences', async () => {
     getSettings.mockResolvedValue({});
     const snapshots = [];
 
-    render(<Harness onValue={(v) => snapshots.push(v)} />);
+    render(<Harness onValue={(value) => snapshots.push(value)} />);
 
     await waitFor(() => {
-      expect(snapshots[snapshots.length - 1].reasoningRerankMode).toBe('auto');
-      expect(snapshots[snapshots.length - 1].reasoningPlanner).toBe('on');
+      expect(snapshots[snapshots.length - 1].settings.defaultScanDepth).toBe('balanced');
     });
   });
 
-  test('saves a reasoning switch and reflects the server response', async () => {
-    getSettings.mockResolvedValue({ settings: { reasoningPlanner: 'on' } });
-    updateSettings.mockResolvedValue({ settings: { reasoningPlanner: 'off' } });
+  test('saves a preference and reflects the server response', async () => {
+    getSettings.mockResolvedValue({ settings: { defaultScanDepth: 'balanced' } });
+    updateSettings.mockResolvedValue({ settings: { defaultScanDepth: 'full' } });
     const snapshots = [];
 
-    render(<Harness onValue={(v) => snapshots.push(v)} />);
-
-    await waitFor(() => {
-      expect(snapshots[snapshots.length - 1].loading).toBe(false);
-    });
-
-    const latest = snapshots[snapshots.length - 1];
+    render(<Harness onValue={(value) => snapshots.push(value)} />);
+    await waitFor(() => expect(snapshots[snapshots.length - 1].loading).toBe(false));
 
     let saved;
     await act(async () => {
-      saved = await latest.saveReasoningSettings({ reasoningPlanner: 'off' });
+      saved = await snapshots[snapshots.length - 1].saveSettings({ defaultScanDepth: 'full' });
     });
 
-    expect(updateSettings).toHaveBeenCalledWith({ reasoningPlanner: 'off' });
-    expect(saved).toEqual({ reasoningPlanner: 'off' });
-
+    expect(updateSettings).toHaveBeenCalledWith({ defaultScanDepth: 'full' });
+    expect(saved).toEqual({ defaultScanDepth: 'full' });
     await waitFor(() => {
-      expect(snapshots[snapshots.length - 1].reasoningPlanner).toBe('off');
+      expect(snapshots[snapshots.length - 1].settings.defaultScanDepth).toBe('full');
     });
   });
 });

@@ -15,12 +15,9 @@ const question = (overrides = {}) => ({
   ...overrides,
 });
 
-describe('AnalysisRiskList (TU-1 merged severity-ranked surface)', () => {
-  test('merges conflicts and questions into one ordered list with kind tags', () => {
-    render(<AnalysisRiskList
-      conflicts={[conflict()]}
-      openQuestions={[question()]}
-    />);
+describe('AnalysisRiskList', () => {
+  test('merges conflicts and questions in report order with kind tags', () => {
+    render(<AnalysisRiskList conflicts={[conflict()]} openQuestions={[question()]} />);
 
     expect(screen.getByText('Konflikti i pitanja')).toBeInTheDocument();
     expect(screen.getByText('Različiti iznosi za istu namjenu.')).toBeInTheDocument();
@@ -29,34 +26,25 @@ describe('AnalysisRiskList (TU-1 merged severity-ranked surface)', () => {
     expect(screen.getByText('Životni ciklus tražbine')).toBeInTheDocument();
   });
 
-  test('orders high, then unranked, then medium, then low — conflicts before questions', () => {
+  test('ignores retired ranking annotations and keeps every item visible in report order', () => {
     const { container } = render(<AnalysisRiskList
       conflicts={[
-        conflict({ finding: 'Niski sukob.', heuristicRank: { rank: 3, significance: 'low', reason: 'Rubno.' } }),
-        conflict({ finding: 'Visoki sukob.', heuristicRank: { rank: 1, significance: 'high', reason: 'Dioba.' } }),
+        conflict({ finding: 'Prvi sukob.', heuristicRank: { rank: 2, significance: 'low' } }),
+        conflict({ finding: 'Drugi sukob.', heuristicRank: { rank: 1, significance: 'high' } }),
       ]}
-      openQuestions={[
-        question({ text: 'Srednje pitanje.', heuristicRank: { rank: 2, significance: 'medium', reason: 'Provjera.' } }),
-        question({ text: 'Neocijenjeno pitanje.' }),
-      ]}
+      openQuestions={[question({ text: 'Treće pitanje.', claimJudge: { verdict: 'same' } })]}
     />);
 
-    const items = [...container.querySelectorAll('li')].map((li) => li.textContent);
+    const items = [...container.querySelectorAll('ol > li')].map((item) => item.textContent);
     expect(items).toHaveLength(3);
-    expect(items[0]).toMatch(/Visoki sukob/);
-    expect(items[1]).toMatch(/Neocijenjeno pitanje/);
-    expect(items[2]).toMatch(/Srednje pitanje/);
-    // Low tier is gated behind the expander, not filtered silently.
-    expect(screen.getByRole('button', { name: /Prikaži manje značajne \(1\)/ })).toBeInTheDocument();
-    expect(screen.queryByText(/Niski sukob/)).not.toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole('button', { name: /Prikaži manje značajne/ }));
-    expect(screen.getByText(/Niski sukob/)).toBeInTheDocument();
-    expect([...container.querySelectorAll('li')]).toHaveLength(4);
-    expect(screen.getByText('AI procjena · nizak značaj (#3)')).toBeInTheDocument();
+    expect(items[0]).toContain('Prvi sukob.');
+    expect(items[1]).toContain('Drugi sukob.');
+    expect(items[2]).toContain('Treće pitanje.');
+    expect(screen.queryByText(/AI procjena|značaj|ista tražbina/)).not.toBeInTheDocument();
+    expect(screen.getByText('Stavke su prikazane redoslijedom izvještaja.')).toBeInTheDocument();
   });
 
-  test('renders large risk lists incrementally instead of mounting every row', () => {
+  test('renders large risk lists incrementally', () => {
     const conflicts = Array.from({ length: 24 }, (_, index) => conflict({ finding: `Sukob ${index + 1}.` }));
     render(<AnalysisRiskList conflicts={conflicts} openQuestions={[]} />);
 
@@ -64,34 +52,6 @@ describe('AnalysisRiskList (TU-1 merged severity-ranked surface)', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Prikaži još 10 stavki' }));
     expect(screen.getAllByRole('listitem')).toHaveLength(20);
     expect(screen.getByRole('button', { name: 'Prikaži još 4 stavke' })).toBeInTheDocument();
-  });
-  test('identifies report order when no significance ratings are present', () => {
-    render(<AnalysisRiskList conflicts={[conflict()]} openQuestions={[]} />);
-
-    expect(screen.getByText(/redoslijed izvještaja/)).toBeInTheDocument();
-    expect(screen.getByText(/AI procjena, kada postoji/)).toBeInTheDocument();
-  });
-
-
-  test('badges render only on ranked items and describe tier grouping accurately', () => {
-    render(<AnalysisRiskList
-      conflicts={[conflict({ heuristicRank: { rank: 1, significance: 'high', reason: 'Dioba.' } })]}
-      openQuestions={[question()]}
-    />);
-
-    expect(screen.getByText(/AI procjena · visok značaj \(#1\)/)).toBeInTheDocument();
-    expect(screen.getAllByText(/Razlog AI procjene značaja/)).toHaveLength(1);
-    expect(screen.getByText(/grupirano po procjeni značaja/)).toBeInTheDocument();
-  });
-
-  test('judge verdicts render as compact same/different notes, uncertain stays silent', () => {
-    render(<AnalysisRiskList
-      conflicts={[conflict({ claimJudge: { verdict: 'same', confidence: 'high', reasons: 'Isti dužnik.' } })]}
-      openQuestions={[question({ claimJudge: { verdict: 'different', confidence: 'medium', reasons: 'Drugi dužnik.' } })]}
-    />);
-
-    expect(screen.getByText(/procjena: ista tražbina/)).toBeInTheDocument();
-    expect(screen.getByText(/procjena: različite tražbine/)).toBeInTheDocument();
   });
 
   test('malformed items fall back to dashes, empty lists hide without a report', () => {
@@ -105,32 +65,7 @@ describe('AnalysisRiskList (TU-1 merged severity-ranked surface)', () => {
     expect(screen.getByText('Nema utvrđenih konflikata ni otvorenih pitanja.')).toBeInTheDocument();
   });
 
-  // The audit's finding: every item was an amber-filled box, so a high-severity
-  // conflict and a low-severity one rendered identically. Severity now reads
-  // from the rail weight AND the label.
-  test('severity is distinguishable between tiers, not one uniform amber box', () => {
-    const { container } = render(<AnalysisRiskList
-      conflicts={[
-        conflict({ finding: 'Visoki sukob.', heuristicRank: { rank: 1, significance: 'high', reason: 'Dioba.' } }),
-        conflict({ finding: 'Srednji sukob.', heuristicRank: { rank: 2, significance: 'medium', reason: 'Provjera.' } }),
-        conflict({ finding: 'Neocijenjeni sukob.' }),
-      ]}
-      openQuestions={[]}
-    />);
-
-    const rows = [...container.querySelectorAll('ol > li')];
-    const rails = rows.map((row) => row.className);
-    expect(new Set(rails).size).toBe(3);
-
-    expect(screen.getByText(/AI procjena · visok značaj/)).toBeInTheDocument();
-    expect(screen.getByText(/AI procjena · srednji značaj/)).toBeInTheDocument();
-    expect(screen.getByText('Bez procjene značaja')).toBeInTheDocument();
-
-    // and none of the severity rails is an alarm fill
-    expect(container.querySelector('.bg-amber-50')).toBeNull();
-    expect(container.querySelector('.bg-amber-100')).toBeNull();
-  });
-  test('shows accurate conflict type, recorded origin, and linked source documents', () => {
+  test('shows conflict type, recorded origin, and linked source documents', () => {
     render(<AnalysisRiskList
       conflicts={[{
         finding: 'Podaci o istoj imovini odstupaju.',
@@ -164,7 +99,7 @@ describe('AnalysisRiskList (TU-1 merged severity-ranked surface)', () => {
       }]}
       openQuestions={[]}
     />);
-    const chips = [...document.querySelectorAll('span.rounded.border')].map((el) => el.textContent);
+    const chips = [...document.querySelectorAll('span.rounded.border')].map((element) => element.textContent);
     expect(chips).toEqual(expect.arrayContaining([
       expect.stringMatching(/9\.084\.692,55 HRK/),
       expect.stringMatching(/1\.205\.850,44/),

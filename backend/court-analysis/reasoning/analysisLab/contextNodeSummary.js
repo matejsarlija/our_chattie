@@ -227,11 +227,11 @@ function parseNodeSummaryResponse(content, node) {
 }
 
 /**
- * Production `summarizeLlm` seam over the `synthesis` role, mirroring
- * `createClaimJudge`: lazy client (importing this module never needs an API
- * key), retry + timeout inside. Usage is recorded against `tracker`;
- * `onUsage` is intentionally left to the caller (`summarizeContextNode`
- * fires it exactly once per attempt) so budgeted lanes count calls once.
+ * Production `summarizeLlm` seam over the `synthesis` role, using the same
+ * lazy-client pattern so importing this module never needs an API key. Retry
+ * + timeout stay inside. Usage is recorded against `tracker`; `onUsage` is
+ * intentionally left to the caller (`summarizeContextNode` fires it exactly
+ * once per attempt) so budgeted lanes count calls once.
  */
 function createContextNodeLlm({ tracker = null } = {}) {
     const holder = {};

@@ -266,14 +266,13 @@ function buildDerivedClaims(node, factsById, analysesById, filingsIndex, startIn
  * to `buildSynthesisInput` unchanged; context profiles layer branch +
  * derived claims on top of that same flat input.
  *
- * @param {object} args - `{ evidencePackage, retrieval, rerankedRetrieval,
- *   profileId, summarizeLlm, tracker, onUsage, summaryTimeoutMs }`.
+ * @param {object} args - `{ evidencePackage, retrieval, profileId,
+ *   summarizeLlm, tracker, onUsage, summaryTimeoutMs }`.
  * @returns {Promise<{ input, trace }>} Synthesis input + bounded trace.
  */
 async function buildProfileReportInput({
     evidencePackage,
     retrieval = null,
-    rerankedRetrieval = null,
     profileId = 'baseline-flat-v1',
     summarizeLlm = null,
     tracker = null,
@@ -281,8 +280,7 @@ async function buildProfileReportInput({
     summaryTimeoutMs,
 } = {}) {
     const profile = getProfile(profileId);
-    const flat = buildSynthesisInput(evidencePackage, retrieval, rerankedRetrieval ?? retrieval);
-
+    const flat = buildSynthesisInput(evidencePackage, retrieval);
     if (profile.contextStrategy !== 'case-context') {
         return {
             input: flat,

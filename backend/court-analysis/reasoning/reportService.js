@@ -3,210 +3,27 @@ const { verifyReport } = require('./verifier');
 const { retrieveEvidence } = require('./retriever');
 const { annotateFindingsWithRetrieval } = require('./findingProvenance');
 const { buildScopeContract } = require('./scopeContract');
-const { selectClaimJudgePairs, runClaimJudge, applyClaimVerdicts, createClaimJudge } = require('./claimJudge');
-const { buildSignificanceShortlist, runSignificance, applySignificance } = require('./significance');
-const { rerankEvidence, isAmbiguous } = require('./reranker');
-const { shouldAttemptRerank, createLlmRerank, resolveRerankMode } = require('./rerankerClient');
-const { runFollowUpVerification } = require('./followUpVerification');
-const { runQueryPlanner, mergeRetrievalQueries } = require('./queryPlanner');
 const { buildSynthesisInput } = require('./synthesisInputBuilder');
 const { buildProfileReportInput } = require('./contextReportAdapter');
-const { createOpenRouterRoleClient } = require('../../llm/openrouterConfig');
-const { modelContentToText } = require('../../helpers/jsonExtract');
-const { withGeminiRetry, withGeminiTimeout } = require('../../helpers/geminiRetry');
-const { trackUsageInvoke } = require('../../helpers/geminiUsage');
-const { resolveReasoningPlanner, resolveReasoningFollowUp, resolveReasoningClaimJudge, resolveReasoningSignificance } = require('../../helpers/reasoningSettings');
 const agentLog = require('../../helpers/agentLog');
 const logger = require('../../helpers/logger');
 
-// Follow-up re-verification reuses the strict 'verify' role policy
-// (temperature 0.1, bounded output) — it is the same concern, one pass later.
-// Lazy construction: importing this module must not require an API key.
-let followUpClient = null;
-
-function getFollowUpClient() {
-    if (!followUpClient) followUpClient = createOpenRouterRoleClient('verify');
-    return followUpClient;
-}
-
-// Planner reuses the 'planner' role policy — lazy for the same reason.
-let plannerClient = null;
-
-function getPlannerClient() {
-    if (!plannerClient) plannerClient = createOpenRouterRoleClient('planner');
-    return plannerClient;
-}
-
-// Gate for the optional LLM passes (planner / follow-up): "off" never runs;
-// everything else ("on" default, or "force" from env) runs.
-function shouldRunOptionalPass(mode) {
-    return mode !== 'off';
-}
 
 async function generateClusterReport(clusterEvidencePackage, options = {}) {
     // Run correlation, same plumbing shape as tracker/onUsage: callers pass
     // options.runId (null outside real runs); every logger.* call below
     // carries it so one run's lines isolate with a single grep.
     const runId = options.runId || null;
-    // LE-1 (spec §5.1) — shared upstream artifacts for fair Lab comparison.
-    // When `options.sharedUpstream` is supplied (by runExperiment.js), the
-    // retrieval/rerank/advisory passes already ran once against an isolated
-    // clone of the frozen package. Use those exact artifacts and never
-    // silently recompute them from process settings; the boundary must be
-    // explicit so all three variants provably share one input hash.
     const sharedUpstream = options.sharedUpstream || null;
-    let retrieval = null;
-    let rerankedRetrieval = null;
-    let plannedQueryCount = 0;
-    if (sharedUpstream) {
-        if (!sharedUpstream.retrieval || !sharedUpstream.rerankedRetrieval) {
-            throw new Error('generateClusterReport: sharedUpstream must carry retrieval and rerankedRetrieval.');
-        }
-        retrieval = sharedUpstream.retrieval;
-        rerankedRetrieval = sharedUpstream.rerankedRetrieval;
-        plannedQueryCount = Number.isFinite(sharedUpstream.plannedQueryCount) ? sharedUpstream.plannedQueryCount : 0;
-        // The orchestrator applies these to the per-variant clone before
-        // calling; apply defensively here too so a direct caller that passes
-        // sharedUpstream without pre-applying still sees identical advisory
-        // annotations. Idempotent: only fills absent fields.
-        try {
-            const reconciliation = clusterEvidencePackage?.reconciliation || null;
-            if (reconciliation && typeof reconciliation === 'object') {
-                if (reconciliation.claimLinks == null && sharedUpstream.claimLinks != null) {
-                    reconciliation.claimLinks = sharedUpstream.claimLinks;
-                }
-                if (reconciliation.significanceRanking == null && sharedUpstream.significanceRanking != null) {
-                    reconciliation.significanceRanking = sharedUpstream.significanceRanking;
-                }
-            }
-        } catch (err) {
-            agentLog.warn(`[SharedUpstream] Advisory application failed; continuing (${err.message})`);
-        }
-        logger.info('reportService.sharedUpstream', 'Using shared Lab upstream artifacts', {
-            runId,
-            plannedQueries: plannedQueryCount,
-            results: Array.isArray(retrieval?.results) ? retrieval.results.length : 0,
-        });
-    } else {
-    // Query planning (Phase 1.3): one small call lets the model add case-
-    // specific queries on top of the fixed templates. Off/plan-gated via
-    // shouldRunOptionalPass; any planner failure silently degrades to templates.
-    const retrievalOptions = { ...(options.retrieval || {}) };
-    const hasPresetQueries = Array.isArray(retrievalOptions.queries) && retrievalOptions.queries.length > 0;
-    if (!hasPresetQueries && shouldRunOptionalPass(resolveReasoningPlanner())) {
-        try {
-            const planned = await runQueryPlanner(clusterEvidencePackage, {
-                plannerLlm: async ({ prompt }) => {
-                    const response = await withGeminiRetry(() => withGeminiTimeout(
-                        (signal) => trackUsageInvoke(getPlannerClient(), prompt, { signal, tracker: options.tracker, onUsage: options.onUsage })
-                    ));
-                    return modelContentToText(response.content);
-                },
-                tracker: options.tracker,
-                onUsage: options.onUsage
-            });
-            if (planned.length > 0) {
-                const { createRetrievalQueries } = require('./retrievalQueries');
-                const templates = createRetrievalQueries({
-                    query: clusterEvidencePackage?.query,
-                    clusterId: clusterEvidencePackage?.clusterId,
-                    primaryCaseNumber: clusterEvidencePackage?.primaryCaseNumber,
-                    identity: clusterEvidencePackage?.identity
-                });
-                retrievalOptions.queries = mergeRetrievalQueries(planned, templates);
-                plannedQueryCount = planned.length;
-            }
-        } catch (err) {
-            agentLog.warn(`[QueryPlanner] Unexpected failure; using templates (${err.message})`);
-        }
-    }
-
-    retrieval = retrieveEvidence(clusterEvidencePackage, retrievalOptions);
+    const retrieval = sharedUpstream?.retrieval
+        || retrieveEvidence(clusterEvidencePackage, options.retrieval || {});
     logger.info('reportService.retrieve', 'Evidence retrieval completed', {
         runId,
         queries: Array.isArray(retrieval?.queries) ? retrieval.queries.length : 0,
-        plannedQueries: plannedQueryCount,
         results: Array.isArray(retrieval?.results) ? retrieval.results.length : 0,
         sourceTypes: retrieval?.metrics?.sourceTypeCounts || null,
     });
 
-    // Rerank gate: dashboard/env mode override wins; otherwise ambiguous-only.
-    // resolveRerankMode() already folds settings over env.
-    const mode = resolveRerankMode();
-    const rerankOptions = { ...(options.rerank || {}) };
-    if (mode === 'force') {
-        rerankOptions.enabled = true;
-        rerankOptions.force = true;
-    } else if (mode === 'off') {
-        rerankOptions.enabled = false;
-    } else {
-        rerankOptions.enabled = shouldAttemptRerank({ ambiguous: isAmbiguous(retrieval) });
-    }
-    if (rerankOptions.enabled && typeof rerankOptions.llmRerank !== 'function') {
-        rerankOptions.llmRerank = createLlmRerank({ tracker: options.tracker, onUsage: options.onUsage });
-    }
-
-    rerankedRetrieval = await rerankEvidence(retrieval, rerankOptions);
-    logger.info('reportService.rerank', 'Evidence rerank completed', {
-        runId,
-        status: rerankedRetrieval?.rerankStatus || null,
-        reason: rerankedRetrieval?.metrics?.rerankReason || null,
-        results: Array.isArray(rerankedRetrieval?.results) ? rerankedRetrieval.results.length : 0,
-    });
-
-    // TX-1 same-claim judge + TX-2 significance ranking: bounded advisory
-    // lite passes over the deterministic reconciliation output, BEFORE
-    // synthesis input is built so verdicts/ranks seed the report through the
-    // same item references. Both degrade to unannotated output on any
-    // failure; neither ever removes or merges items.
-    try {
-        const reconciliation = clusterEvidencePackage?.reconciliation || null;
-        if (reconciliation && resolveReasoningClaimJudge() === 'on') {
-            const pairs = selectClaimJudgePairs(reconciliation, clusterEvidencePackage?.flows, {});
-            if (pairs.length > 0) {
-                const verdicts = await runClaimJudge(pairs, {
-                    judgeLlm: createClaimJudge({ tracker: options.tracker, onUsage: options.onUsage }),
-                    tracker: options.tracker,
-                    onUsage: options.onUsage
-                });
-                const { claimLinks } = applyClaimVerdicts(reconciliation, pairs, verdicts);
-                reconciliation.claimLinks = claimLinks;
-                logger.info('reportService.claimJudge', 'Same-claim verdicts recorded', {
-                    runId,
-                    pairs: pairs.length,
-                    links: claimLinks.length
-                });
-            }
-        }
-        if (reconciliation && resolveReasoningSignificance() === 'on') {
-            const shortlist = buildSignificanceShortlist(reconciliation);
-            if (shortlist.length > 0) {
-                const ranking = await runSignificance(shortlist, {
-                    tracker: options.tracker,
-                    onUsage: options.onUsage
-                });
-                if (ranking) {
-                    const { applied } = applySignificance(reconciliation, shortlist, ranking);
-                    reconciliation.significanceRanking = ranking;
-                    logger.info('reportService.significance', 'Significance ranking applied', {
-                        runId,
-                        shortlist: shortlist.length,
-                        applied
-                    });
-                }
-            }
-        }
-    } catch (err) {
-        agentLog.warn(`[AdvisoryPasses] Claim-judge/significance failed; report continues unannotated (${err.message})`);
-    }
-    } // end non-shared upstream: planner/retrieval/rerank/advisory ran above
-
-    // LC-3 — profile-aware report input. Without `options.labProfile` this is
-    // exactly the historical flat path (baseline parity: same call, same
-    // shape, no extra meta keys). With a Lab profile id, the context adapter
-    // layers DAG branch + derived claims on top of that same flat input.
-    // `options.summarizeLlm` is the LC-2 model seam (mocked in tests); when
-    // absent, summaries-on profiles degrade to partial, never fail.
     const labProfile = options.labProfile || null;
     let reasoningEvidence;
     let contextTrace = null;
@@ -214,7 +31,6 @@ async function generateClusterReport(clusterEvidencePackage, options = {}) {
         const adapted = await buildProfileReportInput({
             evidencePackage: clusterEvidencePackage,
             retrieval,
-            rerankedRetrieval,
             profileId: labProfile,
             summarizeLlm: options.summarizeLlm || null,
             tracker: options.tracker,
@@ -230,7 +46,7 @@ async function generateClusterReport(clusterEvidencePackage, options = {}) {
             derivedClaims: contextTrace?.claims?.derived ?? 0,
         });
     } else {
-        reasoningEvidence = buildSynthesisInput(clusterEvidencePackage, retrieval, rerankedRetrieval);
+        reasoningEvidence = buildSynthesisInput(clusterEvidencePackage, retrieval);
     }
     logger.info('reportService.synthesize', 'Synthesis input built', {
         runId,
@@ -267,45 +83,12 @@ async function generateClusterReport(clusterEvidencePackage, options = {}) {
         conflicts: Array.isArray(verifiedReport?.conflicts) ? verifiedReport.conflicts.length : 0,
     });
 
-    // Conflict-triggered re-verification (Phase 1.1): exactly ONE extra call
-    // per run when conflicts exist, grounding both sides in indexed chunks.
-    // Off/plan-gated via shouldRunOptionalPass; failure leaves the report
-    // untouched.
-    // LE-1 (spec §5.1): follow-up verification is disabled for Lab runs in
-    // v1 — variants must not rerun passes outside the shared boundary.
-    let finalReport = verifiedReport;
-    if (!labProfile && shouldRunOptionalPass(resolveReasoningFollowUp())) {
-        try {
-            const followUp = await runFollowUpVerification(verifiedReport, clusterEvidencePackage, {
-                followUpLlm: async ({ prompt }) => {
-                    const response = await withGeminiRetry(() => withGeminiTimeout(
-                        (signal) => trackUsageInvoke(getFollowUpClient(), prompt, { signal, tracker: options.tracker, onUsage: options.onUsage })
-                    ));
-                    return modelContentToText(response.content);
-                },
-                tracker: options.tracker,
-                onUsage: options.onUsage,
-                logger: { warn: (msg) => agentLog.warn(msg), error: (msg) => agentLog.error(msg) }
-            });
-            finalReport = followUp.report;
-            if (followUp.called) {
-                logger.info('reportService.followUp', 'Conflict re-verification ran', {
-                    runId,
-                    conflicts: Array.isArray(finalReport?.conflicts) ? finalReport.conflicts.length : 0,
-                });
-            }
-        } catch (err) {
-            agentLog.error(`[FollowUp] Unexpected failure; report unchanged (${err.message})`);
-        }
-    }
-
     // M-09 — each finding citation links back to the retrieval query
     // that surfaced it (raw retrieval: full match score/reasons).
-    const annotatedFindings = annotateFindingsWithRetrieval(finalReport?.findings, retrieval);
+    const annotatedFindings = annotateFindingsWithRetrieval(verifiedReport?.findings, retrieval);
     // T1-1 — machine-readable conclusion contract: what this report's
     // evidence can and cannot support. Pure function over the evidence
-    // package + rerank outcome; never throws (a missing contract must not
-    // fail a run — degrade to null and log).
+    // package; never throws (a missing contract must not fail a run).
     let scope = null;
     try {
         scope = buildScopeContract({
@@ -315,7 +98,6 @@ async function generateClusterReport(clusterEvidencePackage, options = {}) {
             // Cluster-scoped docket entries for the current-status chronology
             // gate; absent on legacy packages, which then degrade safely.
             entries: clusterEvidencePackage?.entries || [],
-            rerankedRetrieval,
             envBudgetCap: typeof process.env.ANALYSIS_SCRAPE_LIMIT === 'string'
                 && process.env.ANALYSIS_SCRAPE_LIMIT.trim() !== ''
         });
@@ -328,28 +110,25 @@ async function generateClusterReport(clusterEvidencePackage, options = {}) {
         blocked: scope?.blocked || null,
     });
     return {
-        ...finalReport,
+        ...verifiedReport,
         findings: annotatedFindings,
-        ...(Array.isArray(finalReport?.verifiedFindings)
-            ? { verifiedFindings: annotateFindingsWithRetrieval(finalReport.verifiedFindings, retrieval) }
+        ...(Array.isArray(verifiedReport?.verifiedFindings)
+            ? { verifiedFindings: annotateFindingsWithRetrieval(verifiedReport.verifiedFindings, retrieval) }
             : {}),
         meta: {
-            ...(finalReport?.meta || {}),
+            ...(verifiedReport?.meta || {}),
             retrieval: stripRetrievalText(retrieval),
-            rerank: rerankedRetrieval,
             scope,
-            // Lab-only: the baseline path (no `labProfile`) keeps the exact
-            // historical meta shape — no persisted-run format change.
+            // Lab-only: context profiles persist their bounded trace.
             ...(contextTrace ? { contextTrace } : {}),
         }
     };
 }
 
-// Persistence diet (M-06): the reranked result (meta.rerank) already carries the
-// full match text, so the raw `retrieval` copy keeps a trimmed-but-real
-// provenance record per match — bounded snippet + score + reasons +
-// sourceId/fileName — instead of dropping everything. Telemetry (M-07/M-08)
-// expands into this data; without it the query table has nothing to show.
+// Persistence diet (M-06): the raw `retrieval` copy keeps a trimmed-but-real
+// provenance record per match — bounded snippet + score/reasons +
+// sourceId/fileName — instead of dropping everything. Telemetry expands this
+// data into the persisted query table.
 const RETRIEVAL_SNIPPET_MAX_CHARS = 500;
 
 function buildProvenanceMatch(match) {

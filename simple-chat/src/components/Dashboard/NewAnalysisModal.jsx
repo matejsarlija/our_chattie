@@ -1,7 +1,8 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { z } from 'zod';
 import { useNavigate } from 'react-router-dom';
 import { useCourtAnalysisStream } from '../../hooks/useCourtAnalysisStream';
+import { useSettings } from '../../hooks/useSettings';
 import Dialog from '../ui/Dialog';
 import ScanDepthSelect from './ScanDepthSelect';
 
@@ -13,12 +14,17 @@ const oibSchema = z
 export default function NewAnalysisModal({ isOpen, onClose }) {
   const navigate = useNavigate();
   const streamingAPI = useCourtAnalysisStream();
+  const { settings } = useSettings();
   const oibInputRef = useRef(null);
 
   const [oib, setOib] = useState('');
   const [scanDepth, setScanDepth] = useState('balanced');
   const [error, setError] = useState('');
   const [oibInvalid, setOibInvalid] = useState(false);
+
+  useEffect(() => {
+    if (isOpen) setScanDepth(settings.defaultScanDepth || 'balanced');
+  }, [isOpen, settings.defaultScanDepth]);
 
 
   const handleSubmit = async (event) => {

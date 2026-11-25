@@ -1,11 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { getSettings, updateSettings } from '../lib/apiClient';
 
-const DEFAULT_SETTINGS = {
-  reasoningRerankMode: 'auto',
-  reasoningPlanner: 'on',
-  reasoningFollowUp: 'on',
-};
+const DEFAULT_SETTINGS = { defaultScanDepth: 'balanced' };
 
 export function useSettings() {
   const [settings, setSettings] = useState(DEFAULT_SETTINGS);
@@ -18,7 +14,7 @@ export function useSettings() {
     setError('');
     try {
       const data = await getSettings();
-      setSettings(data?.settings || DEFAULT_SETTINGS);
+      setSettings({ ...DEFAULT_SETTINGS, ...(data?.settings || {}) });
     } catch (err) {
       setError(err.message || 'Neuspjelo učitavanje postavki.');
     } finally {
@@ -30,16 +26,14 @@ export function useSettings() {
     loadSettings();
   }, [loadSettings]);
 
-  // Generic patch saver for the reasoning experiment switches. The backend
-  // validates each field; on failure the prior selection is kept and `error`
-  // carries a Croatian message.
-  const saveReasoningSettings = useCallback(async (patch) => {
+  const saveSettings = useCallback(async (patch) => {
     setSaving(true);
     setError('');
     try {
       const data = await updateSettings(patch);
-      setSettings(data?.settings || { ...settings, ...patch });
-      return data?.settings || { ...settings, ...patch };
+      const next = data?.settings || { ...settings, ...patch };
+      setSettings({ ...DEFAULT_SETTINGS, ...next });
+      return next;
     } catch (err) {
       setError(err.message || 'Neuspjelo spremanje postavki.');
       throw err;
@@ -48,15 +42,5 @@ export function useSettings() {
     }
   }, [settings]);
 
-  return {
-    settings,
-    reasoningRerankMode: settings.reasoningRerankMode,
-    reasoningPlanner: settings.reasoningPlanner,
-    reasoningFollowUp: settings.reasoningFollowUp,
-    loading,
-    saving,
-    error,
-    loadSettings,
-    saveReasoningSettings,
-  };
+  return { settings, loading, saving, error, loadSettings, saveSettings };
 }

@@ -28,10 +28,10 @@ function isSelectedClusterMatch(match, clusterId) {
  * Builds the set of "cited" identifiers from surviving GROUND-TRUTH CHUNK
  * matches so claim tiering is a deterministic join, not a heuristic vibe.
  */
-function buildCitedIdentifiers(rerankedRetrieval) {
+function buildCitedIdentifiers(retrieval) {
     const fileNames = new Set();
     const sourceIds = new Set();
-    for (const result of iterResults(rerankedRetrieval)) {
+    for (const result of iterResults(retrieval)) {
         for (const match of result.matches || []) {
             if (!isChunkMatch(match)) continue;
             const fileName = match?.metadata?.fileName;
@@ -42,14 +42,14 @@ function buildCitedIdentifiers(rerankedRetrieval) {
     return { fileNames, sourceIds };
 }
 
-function iterResults(rerankedRetrieval) {
-    return Array.isArray(rerankedRetrieval?.results) ? rerankedRetrieval.results : [];
+function iterResults(retrieval) {
+    return Array.isArray(retrieval?.results) ? retrieval.results : [];
 }
 
-function buildRetrievedEvidenceClaims(rerankedRetrieval, clusterEvidencePackage) {
+function buildRetrievedEvidenceClaims(retrieval, clusterEvidencePackage) {
     const clusterId = clusterEvidencePackage?.clusterId;
 
-    return (rerankedRetrieval?.results || []).flatMap((result, resultIndex) => (
+    return (retrieval?.results || []).flatMap((result, resultIndex) => (
         (result.matches || [])
             .filter((match) => isSelectedClusterMatch(match, clusterId))
             .map((match, matchIndex) => ({
@@ -62,8 +62,6 @@ function buildRetrievedEvidenceClaims(rerankedRetrieval, clusterEvidencePackage)
                     retrievalScore: match.score,
                     retrievalReasons: match.reasons || [],
                     lexicalRank: match.lexicalRank ?? null,
-                    rerankStatus: match.rerankStatus || rerankedRetrieval?.rerankStatus || null,
-                    rerankScore: match.rerankScore ?? null,
                     metadata: match.metadata || null
                 }]
             }))
@@ -110,10 +108,9 @@ function truncateDigest(text, chars = DIGEST_SUMMARY_CHARS) {
  * degradation walks uncited analysis claims first, then cited ones, then
  * money-flow/structural claims last (they are small and factual).
  */
-function applyBudgetTiers(claims, rerankedRetrieval) {
-    const cited = buildCitedIdentifiers(rerankedRetrieval);
-    cited.retrievalRef = rerankedRetrieval;
-
+function applyBudgetTiers(claims, retrieval) {
+    const cited = buildCitedIdentifiers(retrieval);
+    cited.retrievalRef = retrieval;
     const decorated = claims.map((claim) => {
         const id = String(claim.id || '');
         const groundedMeta = claimPrimarySource(claim)?.metadata?.grounded;
@@ -172,14 +169,13 @@ function applyBudgetTiers(claims, rerankedRetrieval) {
     return sized;
 }
 
-function buildSynthesisInput(clusterEvidencePackage, retrieval, rerankedRetrieval = retrieval) {
-
+function buildSynthesisInput(clusterEvidencePackage, retrieval) {
     const normalizedEvidence = normalizeReasoningEvidence(clusterEvidencePackage);
-    const retrievedClaims = buildRetrievedEvidenceClaims(rerankedRetrieval, clusterEvidencePackage);
+    const retrievedClaims = buildRetrievedEvidenceClaims(retrieval, clusterEvidencePackage);
 
     const mergedClaims = applyBudgetTiers(
         [...(normalizedEvidence?.claims || []), ...retrievedClaims],
-        rerankedRetrieval
+        retrieval
     );
 
     return {
@@ -188,8 +184,7 @@ function buildSynthesisInput(clusterEvidencePackage, retrieval, rerankedRetrieva
         claims: mergedClaims,
         meta: {
             ...(normalizedEvidence?.meta || {}),
-            retrieval,
-            rerank: rerankedRetrieval
+            retrieval
         }
     };
 }
