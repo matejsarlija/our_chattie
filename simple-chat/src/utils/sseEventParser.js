@@ -35,10 +35,15 @@ export class SseEventParser {
 
     const lines = frame.split(/\r?\n/);
     let event = 'message';
+    let id;
     const dataLines = [];
 
     for (const line of lines) {
       if (!line || line.startsWith(':')) continue;
+      if (line.startsWith('id:')) {
+        id = line.slice(3).trim();
+        continue;
+      }
       if (line.startsWith('event:')) {
         event = line.slice(6).trim();
         continue;
@@ -54,9 +59,9 @@ export class SseEventParser {
 
     const payloadText = dataLines.join('\n');
     try {
-      return { event, data: JSON.parse(payloadText) };
+      return { event, ...(id !== undefined ? { id } : {}), data: JSON.parse(payloadText) };
     } catch {
-      return { event, data: { raw: payloadText } };
+      return { event, ...(id !== undefined ? { id } : {}), data: { raw: payloadText } };
     }
   }
 }

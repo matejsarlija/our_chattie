@@ -23,7 +23,11 @@ function installShutdownHandlers({ server, queue, runAbortRegistry, analysisStor
 
   function shutdown(signal = 'shutdown') {
     if (shutdownPromise) return shutdownPromise;
-    const runIds = runAbortRegistry.abortAll(new Error(`Server shutting down (${signal})`));
+    const shutdownError = Object.assign(new Error(`Server shutting down (${signal})`), {
+      name: 'AbortError',
+      code: 'ERR_SERVER_SHUTDOWN',
+    });
+    const runIds = runAbortRegistry.abortAll(shutdownError);
     runBus?.closeAll();
     const serverClosed = new Promise((resolve, reject) => {
       if (!server?.listening) return resolve();
@@ -38,6 +42,7 @@ function installShutdownHandlers({ server, queue, runAbortRegistry, analysisStor
 
   const onSigint = () => { void shutdown('SIGINT').catch(onError); };
   const onSigterm = () => { void shutdown('SIGTERM').catch(onError); };
+  processRef.once('SIGINT', onSigint);
   processRef.once('SIGTERM', onSigterm);
 
   return {

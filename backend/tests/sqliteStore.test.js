@@ -149,4 +149,31 @@ describe('sqliteStore', () => {
         const replay = await store.getAnalysisEventsAfterSeq({ analysisId: run.id, afterSeq: 1 });
         expect(replay.map((event) => event.seq)).toEqual([2, 3]);
     });
+
+    test('migrates multi-line legacy change-detection diffs.jsonl rows across LF and CRLF', () => {
+        store.close();
+        removeDatabaseFiles(dataDir);
+        const legacyChangeDir = path.join(dataDir, 'change-detection');
+        fs.mkdirSync(path.join(legacyChangeDir, 'snapshots'), { recursive: true });
+        fs.mkdirSync(path.join(legacyChangeDir, 'history', 'q1'), { recursive: true });
+        fs.writeFileSync(path.join(legacyChangeDir, 'snapshots', 'q1.json'), JSON.stringify({
+            id: 'q1',
+            query: { type: 'oib', value: '66124057408' },
+            snapshotId: 'snap-3',
+            capturedAt: '2026-01-03T00:00:00.000Z',
+        }));
+        fs.writeFileSync(
+            path.join(legacyChangeDir, 'history', 'q1', 'diffs.jsonl'),
+            [
+                JSON.stringify({ toSnapshotId: 'snap-1', computedAt: '2026-01-01T00:00:00.000Z', addedCount: 1 }),
+                JSON.stringify({ toSnapshotId: 'snap-2', computedAt: '2026-01-02T00:00:00.000Z', addedCount: 2 }),
+                JSON.stringify({ toSnapshotId: 'snap-3', computedAt: '2026-01-03T00:00:00.000Z', addedCount: 3 }),
+            ].join('\r\n') + '\n',
+        );
+
+        store = createSqliteStore({ dataDir, legacyChangeDetectionDir: legacyChangeDir });
+        const history = store.getHistory('q1');
+        expect(history.diffs).toHaveLength(3);
+        expect(history.diffs.map((d) => d.addedCount)).toEqual([1, 2, 3]);
+    });
 });

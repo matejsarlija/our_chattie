@@ -169,4 +169,52 @@ describe('useAnalysisRunDetail polling', () => {
       expect(latestValue?.error).toBe('');
     });
   });
+
+  test('refetches full report when run.terminal SSE event arrives', async () => {
+    let latestValue = null;
+
+    apiFetch
+      .mockResolvedValueOnce({ run: { id: 'r5', status: 'running' }, events: [] })
+      .mockResolvedValueOnce({
+        run: {
+          id: 'r5',
+          status: 'done',
+          result_text: 'Dovršeni izvještaj',
+          result_json: { comparativeAnalysis: 'Dovršeni izvještaj', report: { findings: [{ id: 'f1' }] } },
+        },
+        events: [{ id: 'e-term', seq: 2, event_type: 'run.terminal', metadata: { status: 'done' } }],
+      });
+
+    render(
+      <Harness
+        runId="r5"
+        pollMs={100000}
+        streamEnabled
+        onValue={(value) => {
+          latestValue = value;
+        }}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(apiFetch).toHaveBeenCalledTimes(1);
+    });
+
+    await waitFor(() => {
+      const latestCall = useAnalysisRunStream.mock.calls.at(-1)?.[0];
+      expect(latestCall?.enabled).toBe(true);
+    });
+
+    act(() => {
+      const latestCall = useAnalysisRunStream.mock.calls.at(-1)?.[0];
+      latestCall?.onTerminal?.({ runId: 'r5', seq: 2, status: 'done', run: { id: 'r5', status: 'done' } });
+    });
+
+    await waitFor(() => {
+      expect(apiFetch).toHaveBeenCalledTimes(2);
+      expect(latestValue?.run?.status).toBe('done');
+      expect(latestValue?.run?.result_json?.report?.findings).toEqual([{ id: 'f1' }]);
+    });
+    expect(apiFetch).toHaveBeenNthCalledWith(2, '/api/analysis/runs/r5/full');
+  });
 });

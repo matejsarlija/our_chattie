@@ -95,4 +95,80 @@ describe('analysisRunStreamHandler', () => {
     expect(frames[0]).toContain('id: 2\n');
     req.emit('close');
   });
+
+  test('emits terminal frame and closes immediately for interrupted run without run.terminal event', async () => {
+    const unsubscribe = jest.fn();
+    const runBus = { subscribe: jest.fn(() => unsubscribe) };
+    const req = new EventEmitter();
+    req.params = { id: 'run-int' };
+    req.query = {};
+    req.headers = {};
+    req.get = () => undefined;
+    const frames = [];
+    const res = {
+      writableEnded: false,
+      setHeader: jest.fn(),
+      flushHeaders: jest.fn(),
+      write: jest.fn((frame) => frames.push(frame)),
+      end: jest.fn(() => { res.writableEnded = true; }),
+    };
+    const setIntervalSpy = jest.spyOn(global, 'setInterval');
+    try {
+      const handler = createAnalysisRunStreamHandler({
+        getAnalysisRun: jest.fn().mockResolvedValue({ id: 'run-int', status: 'interrupted' }),
+        getAnalysisEventsAfterSeq: jest.fn().mockResolvedValue([
+          eventRow(1, 'starting'),
+          eventRow(2, 'downloading', { done: 1, total: 5 }),
+        ]),
+        runBus,
+        heartbeatMs: 10_000,
+      });
+
+      await handler(req, res);
+
+      expect(frames).toHaveLength(3);
+      expect(frames[2]).toContain('id: 3\n');
+      expect(frames[2]).toContain('event: run.terminal');
+      expect(frames[2]).toContain('"status":"interrupted"');
+      expect(res.end).toHaveBeenCalledTimes(1);
+      expect(unsubscribe).toHaveBeenCalledTimes(1);
+      expect(setIntervalSpy).not.toHaveBeenCalled();
+    } finally {
+      setIntervalSpy.mockRestore();
+    }
+  });
+
+  test('closes cleanly when reconnecting with afterSeq past an already-terminal run', async () => {
+    const unsubscribe = jest.fn();
+    const runBus = { subscribe: jest.fn(() => unsubscribe) };
+    const req = new EventEmitter();
+    req.params = { id: 'run-done' };
+    req.query = { afterSeq: '5' };
+    req.headers = {};
+    req.get = () => undefined;
+    const frames = [];
+    const res = {
+      writableEnded: false,
+      setHeader: jest.fn(),
+      flushHeaders: jest.fn(),
+      write: jest.fn((frame) => frames.push(frame)),
+      end: jest.fn(() => { res.writableEnded = true; }),
+    };
+
+    const handler = createAnalysisRunStreamHandler({
+      getAnalysisRun: jest.fn().mockResolvedValue({ id: 'run-done', status: 'done' }),
+      getAnalysisEventsAfterSeq: jest.fn().mockResolvedValue([]),
+      runBus,
+      heartbeatMs: 10_000,
+    });
+
+    await handler(req, res);
+
+    expect(frames).toHaveLength(1);
+    expect(frames[0]).toContain('id: 6\n');
+    expect(frames[0]).toContain('event: run.terminal');
+    expect(frames[0]).toContain('"status":"done"');
+    expect(res.end).toHaveBeenCalledTimes(1);
+    expect(unsubscribe).toHaveBeenCalledTimes(1);
+  });
 });

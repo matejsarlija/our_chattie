@@ -34,11 +34,13 @@ describe('runBus', () => {
     expect(messages[0].event).toBe('stage.progress');
     expect(Buffer.byteLength(messages[0].frame)).toBeLessThan(MAX_SSE_FRAME_BYTES);
     expect(messages[0].payload.lanes.download).toEqual({ done: 2, failed: 1, total: 4, unit: 'datoteka' });
+    expect(bus.activeLaneRunCount()).toBe(1);
 
     const terminal = await bus.publishTerminal(run.id, 'canceled');
     const duplicateTerminal = await bus.publishTerminal(run.id, 'canceled');
     expect(duplicateTerminal.seq).toBe(terminal.seq);
     expect(messages[1].event).toBe('run.terminal');
+    expect(bus.activeLaneRunCount()).toBe(0);
     expect((await store.getAnalysisEvents({ analysisId: run.id })).map((event) => event.event_type))
       .toEqual(['downloading', 'run.terminal']);
     expect(await bus.publish({ runId: run.id, eventType: 'late-progress' })).toBeNull();

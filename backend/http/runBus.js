@@ -111,6 +111,7 @@ function createRunBus({ analysisStore, maxFrameBytes = MAX_SSE_FRAME_BYTES }) {
       });
       const live = formatRunEvent({ ...row, analysis_id: runId }, maxFrameBytes);
       broadcast(runId, live);
+      laneState.delete(runId);
       return row;
     })();
     terminalPromises.set(runId, promise);
@@ -132,9 +133,17 @@ function createRunBus({ analysisStore, maxFrameBytes = MAX_SSE_FRAME_BYTES }) {
       for (const listener of [...listeners]) listener({ event: 'close' });
     }
     subscribers.clear();
+    laneState.clear();
   }
 
-  return { publish, publishTerminal, subscribe, closeAll, maxFrameBytes };
+  return {
+    publish,
+    publishTerminal,
+    subscribe,
+    closeAll,
+    maxFrameBytes,
+    activeLaneRunCount: () => laneState.size,
+  };
 }
 
 module.exports = { createRunBus, formatRunEvent, MAX_SSE_FRAME_BYTES, LANES, STAGE_TO_LANE };

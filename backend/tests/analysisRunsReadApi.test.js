@@ -38,7 +38,12 @@ describe('analysis run thin read APIs', () => {
 
   test('filters facts and returns bounded pagination metadata', async () => {
     analysisStore.insertRunFacts({ runId: run.id, facts: [
-      { id: 'fact-1', kind: 'amount', description: 'Prijavljena tražbina', canonicalPartyId: 'party-1', grounded: true, valueEur: 120 },
+      {
+        id: 'fact-1', kind: 'amount', description: 'Prijavljena tražbina', canonicalPartyId: 'party-1',
+        grounded: true, valueEur: 120, valueHrk: 904.14, valueRole: 'claim_balance', supersedes: 'fact-0',
+        sourceStartIndex: 10, sourceEndIndex: 45, doc: { analysisId: 'doc-1', contentHash: 'hash-1' },
+        docHash: 'hash-1',
+      },
       { id: 'fact-2', kind: 'amount', description: 'Trošak postupka', canonicalPartyId: 'party-1', grounded: false, valueEur: 20 },
       { id: 'fact-3', kind: 'property', description: 'Prodana nekretnina', canonicalPartyId: 'party-2', grounded: true },
     ] });
@@ -48,7 +53,18 @@ describe('analysis run thin read APIs', () => {
     expect(response.status).toBe(200);
     expect(response.body).toMatchObject({ total: 1, limit: 1, offset: 0 });
     expect(response.body.facts).toHaveLength(1);
-    expect(response.body.facts[0]).toMatchObject({ id: 'fact-1', grounded: true, canonicalPartyId: 'party-1' });
+    expect(response.body.facts[0]).toMatchObject({
+      id: 'fact-1',
+      grounded: true,
+      canonicalPartyId: 'party-1',
+      docId: 'doc-1',
+      docHash: 'hash-1',
+      valueHrk: 904.14,
+      valueRole: 'claim_balance',
+      supersedes: 'fact-0',
+      sourceStartIndex: 10,
+      sourceEndIndex: 45,
+    });
   });
 
   test('returns full chunk details and run-scoped BM25 snippets with exact identifiers', async () => {

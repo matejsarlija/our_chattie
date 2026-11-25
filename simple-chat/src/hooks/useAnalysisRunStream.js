@@ -5,19 +5,23 @@ import { resolveApiUrl } from '../lib/apiClient';
 export function useAnalysisRunStream({
   runId,
   enabled = true,
+  afterSeq = 0,
   onSnapshot,
   onRunUpdated,
   onEventCreated,
+  onPreflight,
   onTerminal,
   onHeartbeat,
   onError,
 }) {
   const [connected, setConnected] = useState(false);
   const [lastEventAt, setLastEventAt] = useState(null);
+  const lastSeqRef = useRef({ runId: null, seq: 0 });
   const callbacksRef = useRef({
     onSnapshot,
     onRunUpdated,
     onEventCreated,
+    onPreflight,
     onTerminal,
     onHeartbeat,
     onError,
@@ -28,16 +32,37 @@ export function useAnalysisRunStream({
       onSnapshot,
       onRunUpdated,
       onEventCreated,
+      onPreflight,
       onTerminal,
       onHeartbeat,
       onError,
     };
-  }, [onSnapshot, onRunUpdated, onEventCreated, onTerminal, onHeartbeat, onError]);
+  }, [onSnapshot, onRunUpdated, onEventCreated, onPreflight, onTerminal, onHeartbeat, onError]);
+
+  useEffect(() => {
+    const normalizedAfterSeq = Number.isSafeInteger(Number(afterSeq)) && Number(afterSeq) > 0
+      ? Number(afterSeq)
+      : 0;
+    if (lastSeqRef.current.runId !== runId) {
+      lastSeqRef.current = { runId: runId || null, seq: normalizedAfterSeq };
+    } else if (normalizedAfterSeq > lastSeqRef.current.seq) {
+      lastSeqRef.current.seq = normalizedAfterSeq;
+    }
+  }, [runId, afterSeq]);
 
   useEffect(() => {
     if (!enabled || !runId) {
       setConnected(false);
       return undefined;
+    }
+
+    const normalizedAfterSeq = Number.isSafeInteger(Number(afterSeq)) && Number(afterSeq) > 0
+      ? Number(afterSeq)
+      : 0;
+    if (lastSeqRef.current.runId !== runId) {
+      lastSeqRef.current = { runId, seq: normalizedAfterSeq };
+    } else if (normalizedAfterSeq > lastSeqRef.current.seq) {
+      lastSeqRef.current.seq = normalizedAfterSeq;
     }
 
     const controller = new AbortController();
@@ -53,9 +78,20 @@ export function useAnalysisRunStream({
       setLastEventAt(Date.now());
 
       const payload = message.data || {};
+      const candidateSeq = payload?.seq ?? payload?.event?.seq ?? (message?.id != null ? Number(message.id) : null);
+      if (Number.isSafeInteger(candidateSeq) && candidateSeq > lastSeqRef.current.seq) {
+        lastSeqRef.current.seq = candidateSeq;
+      }
+
       switch (message.event) {
         case 'snapshot':
           callbacksRef.current.onSnapshot?.(payload);
+          break;
+        case 'run.preflight':
+          callbacksRef.current.onPreflight?.(payload);
+          if (payload?.event) {
+            callbacksRef.current.onEventCreated?.({ event: payload.event });
+          }
           break;
         case 'stage.progress':
           callbacksRef.current.onEventCreated?.({ event: payload.event });
@@ -78,7 +114,11 @@ export function useAnalysisRunStream({
 
     const run = async () => {
       try {
-        const response = await fetch(resolveApiUrl(`/api/analysis/runs/${runId}/stream`), {
+        const resumeSeq = lastSeqRef.current.runId === runId ? lastSeqRef.current.seq : 0;
+        const streamPath = resumeSeq > 0
+          ? `/api/analysis/runs/${runId}/stream?afterSeq=${resumeSeq}`
+          : `/api/analysis/runs/${runId}/stream`;
+        const response = await fetch(resolveApiUrl(streamPath), {
           method: 'GET',
           signal: controller.signal,
         });

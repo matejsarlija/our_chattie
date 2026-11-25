@@ -135,9 +135,15 @@ export function useAnalysisRunDetail({ runId, pollMs = 5000, enabled = true, str
     && isVisible
     && !streamFallback;
 
+  const maxEventSeq = useMemo(
+    () => events.reduce((max, ev) => (Number.isSafeInteger(ev?.seq) && ev.seq > max ? ev.seq : max), 0),
+    [events],
+  );
+
   const { connected: streamConnected } = useAnalysisRunStream({
     runId,
     enabled: shouldUseStream,
+    afterSeq: maxEventSeq,
     onSnapshot: (payload) => {
       setRun(payload?.run || null);
       setEvents(payload?.events || []);
@@ -166,6 +172,10 @@ export function useAnalysisRunDetail({ runId, pollMs = 5000, enabled = true, str
       });
       setStreamError('');
     },
+    onPreflight: (payload) => {
+      if (!payload?.preflight) return;
+      setRun((previous) => (previous ? { ...previous, preflight: payload.preflight } : previous));
+    },
     onTerminal: (payload) => {
       if (payload?.run) {
         setRun((previous) => ({ ...(previous || {}), ...payload.run }));
@@ -174,6 +184,7 @@ export function useAnalysisRunDetail({ runId, pollMs = 5000, enabled = true, str
       }
       setStreamError('');
       setStreamFallback(false);
+      void loadDetail({ silent: true });
     },
     onError: (message) => {
       setStreamError(message || 'Stream connection failed.');

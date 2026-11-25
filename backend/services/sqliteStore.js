@@ -321,13 +321,15 @@ function createSqliteStore(options = {}) {
     return hydrateRun(row);
   };
 
+  const hasRunStmt = db.prepare('SELECT 1 FROM runs WHERE id = ?');
+  const touchRunStmt = db.prepare('UPDATE runs SET updated_at = ? WHERE id = ?');
   const insertEvent = db.prepare(`
     INSERT INTO run_events (id, run_id, seq, event_type, message, metadata_json, created_at)
     VALUES (@id, @run_id, @seq, @event_type, @message, @metadata_json, @created_at)
   `);
   const nextEventSeq = db.prepare('SELECT COALESCE(MAX(seq), 0) + 1 AS seq FROM run_events WHERE run_id = ?');
   function appendEventsInTransaction(analysisId, events) {
-    if (!db.prepare('SELECT 1 FROM runs WHERE id = ?').get(analysisId)) throw new Error('Analysis run not found.');
+    if (!hasRunStmt.get(analysisId)) throw new Error('Analysis run not found.');
     let seq = nextEventSeq.get(analysisId).seq;
     const created = [];
     for (const event of events) {
@@ -343,7 +345,7 @@ function createSqliteStore(options = {}) {
       insertEvent.run(row);
       created.push({ ...row, analysis_id: analysisId, metadata: parseJson(row.metadata_json, {}) });
     }
-    if (events.length) db.prepare('UPDATE runs SET updated_at = ? WHERE id = ?').run(nowIso(), analysisId);
+    if (events.length) touchRunStmt.run(nowIso(), analysisId);
     return created;
   }
 
@@ -363,7 +365,7 @@ function createSqliteStore(options = {}) {
     )
   `);
   function insertFactsInTransaction(runId, facts) {
-    if (facts.length && !db.prepare('SELECT 1 FROM runs WHERE id = ?').get(runId)) throw new Error('Analysis run not found.');
+    if (facts.length && !hasRunStmt.get(runId)) throw new Error('Analysis run not found.');
     for (const fact of facts) {
       const raw = fact.raw_json ?? fact.rawJson ?? fact;
       insertFact.run({
@@ -398,7 +400,7 @@ function createSqliteStore(options = {}) {
     )
   `);
   function insertChunksInTransaction(runId, chunks) {
-    if (chunks.length && !db.prepare('SELECT 1 FROM runs WHERE id = ?').get(runId)) throw new Error('Analysis run not found.');
+    if (chunks.length && !hasRunStmt.get(runId)) throw new Error('Analysis run not found.');
     for (const chunk of chunks) {
       const text = String(chunk.text ?? '');
       insertChunk.run({
@@ -509,7 +511,7 @@ function createSqliteStore(options = {}) {
         const queryValue = snapshot?.query
           ? normalizeQueryValue(snapshot.query.type, snapshot.query.value)
           : null;
-        for (const line of fs.readFileSync(diffPath, 'utf8').split('\\n')) {
+        for (const line of fs.readFileSync(diffPath, 'utf8').split(/\r?\n/)) {
           if (!line.trim()) continue;
           try {
             legacyDiffs.push({ queryId, queryValue, diff: JSON.parse(line) });
@@ -600,7 +602,7 @@ function createSqliteStore(options = {}) {
         db.prepare(`INSERT INTO run_artifacts (run_id, result_text, result_json) VALUES (?, ?, ?)
           ON CONFLICT(run_id) DO UPDATE SET result_text = excluded.result_text, result_json = excluded.result_json`)
           .run(analysisId, resultText ?? null, stringify(boundedResult));
-        db.prepare(`UPDATE runs SET status = ?, partial_reason = ?, preflight_json = ?, summary_json = ?, scorecard_json = ?,
+        db.prepare(`UPDATE runs SET status = ?, partial_reason = ?, preflight_json = COALESCE(?, preflight_json), summary_json = ?, scorecard_json = ?,
           token_usage_json = COALESCE(?, token_usage_json), completed_at = ?, updated_at = ? WHERE id = ?`)
           .run(partialReason ? 'partial' : 'done', partialReason, stringify(preflight), stringify(summary), stringify(scorecard), stringify(tokenUsage), nowIso(), nowIso(), analysisId);
       })();
@@ -727,36 +729,40 @@ function createSqliteStore(options = {}) {
       const total = db.prepare(`SELECT COUNT(*) AS total FROM run_facts WHERE ${where}`).get(...params).total;
       const rows = db.prepare(`SELECT * FROM run_facts WHERE ${where} ORDER BY rowid LIMIT ? OFFSET ?`)
         .all(...params, limit, offset)
-        .map((row) => ({
-          id: row.id,
-          kind: row.kind,
-          description: row.description,
-          value: row.value,
-          valueEur: row.value_eur,
-          valueHrk: row.value_hrk,
-          currency: row.currency,
-          date: row.date,
-          direction: row.direction,
-          amountRole: row.amount_role,
-          eventType: row.event_type,
-          valueRole: row.value_role,
-          legalEffect: row.legal_effect,
-          isplatniRed: row.isplatni_red,
-          supersedes: row.supersedes,
-          claimRegistryNumber: row.claim_registry_number,
-          filingReference: row.filing_reference,
-          canonicalPartyId: row.canonical_party_id,
-          payerOib: row.payer_oib,
-          recipientOib: row.recipient_oib,
-          grounded: Boolean(row.grounded),
-          docHash: row.doc_hash,
-          sourceEntryIndex: row.source_entry_index,
-          sourceChunkId: row.source_chunk_id,
-          sourceStartIndex: row.source_start_index,
-          sourceEndIndex: row.source_end_index,
-          sourcePages: parseJson(row.source_pages_json, []),
-          raw: parseJson(row.raw_json, {}),
-        }));
+        .map((row) => {
+          const raw = parseJson(row.raw_json, {});
+          return {
+            id: row.id,
+            kind: row.kind,
+            description: row.description,
+            value: row.value,
+            valueEur: row.value_eur,
+            valueHrk: row.value_hrk,
+            currency: row.currency,
+            date: row.date,
+            direction: row.direction,
+            amountRole: row.amount_role,
+            eventType: row.event_type,
+            valueRole: row.value_role,
+            legalEffect: row.legal_effect,
+            isplatniRed: row.isplatni_red,
+            supersedes: row.supersedes,
+            claimRegistryNumber: row.claim_registry_number,
+            filingReference: row.filing_reference,
+            canonicalPartyId: row.canonical_party_id,
+            payerOib: row.payer_oib,
+            recipientOib: row.recipient_oib,
+            grounded: Boolean(row.grounded),
+            docId: raw?.docId || raw?.doc?.docId || raw?.doc?.analysisId || row.doc_hash || null,
+            docHash: row.doc_hash,
+            sourceEntryIndex: row.source_entry_index,
+            sourceChunkId: row.source_chunk_id,
+            sourceStartIndex: row.source_start_index,
+            sourceEndIndex: row.source_end_index,
+            sourcePages: parseJson(row.source_pages_json, []),
+            raw,
+          };
+        });
       return { facts: rows, total };
     },
     getRunChunk({ runId, chunkId }) {

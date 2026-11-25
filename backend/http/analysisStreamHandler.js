@@ -1,4 +1,5 @@
 const { formatRunEvent } = require('./runBus');
+const { isTerminalStatus } = require('./analysisStream');
 
 function parseAfterSeq(queryValue, headerValue) {
   const raw = queryValue ?? headerValue;
@@ -13,8 +14,9 @@ function createAnalysisRunStreamHandler({ getAnalysisRun, getAnalysisEventsAfter
     const afterSeq = parseAfterSeq(req.query?.afterSeq, req.get?.('Last-Event-ID') || req.headers?.['last-event-id']);
     if (afterSeq === null) return res.status(400).json({ error: 'Invalid event sequence.' });
 
+    let run;
     try {
-      await getAnalysisRun({ id: req.params.id });
+      run = await getAnalysisRun({ id: req.params.id });
     } catch {
       return res.status(404).json({ error: 'Analysis run not found.' });
     }
@@ -69,6 +71,19 @@ function createAnalysisRunStreamHandler({ getAnalysisRun, getAnalysisEventsAfter
       for (const message of pending) {
         if (message.seq > lastSeq) send(message);
         if (closed) return;
+      }
+      if (!closed && isTerminalStatus(run?.status)) {
+        const terminalMessage = formatRunEvent({
+          id: `terminal-${run.id || req.params.id}`,
+          analysis_id: run.id || req.params.id,
+          seq: lastSeq + 1,
+          event_type: 'run.terminal',
+          message: null,
+          metadata: { status: run.status },
+        });
+        send(terminalMessage);
+        closeStream();
+        return;
       }
     } catch (error) {
       console.error('[Analysis Runs] stream replay failed:', error.message);

@@ -102,6 +102,11 @@ function createCourtAnalysisRouter({ analysisStore, courtAnalysisQueue, writeLim
         const completedRun = await analysisStore.getAnalysisRun({ id: runId });
         await runBus.publishTerminal(runId, completedRun.status);
       } catch (error) {
+        const isServerShutdown = controller.signal.reason?.code === 'ERR_SERVER_SHUTDOWN'
+          || error?.code === 'ERR_SERVER_SHUTDOWN';
+        if (isServerShutdown) {
+          return;
+        }
         if (controller.signal.aborted || error?.name === 'AbortError') {
           const canceledRun = await analysisStore.cancelAnalysisRun({ analysisId: runId });
           await runBus.publishTerminal(runId, canceledRun.status);
