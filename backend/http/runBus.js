@@ -6,7 +6,7 @@ const STAGE_TO_LANE = {
   ocr: 'ocr',
   extracting: 'extract',
 };
-const ALLOWED_METADATA = ['kind', 'stage', 'done', 'failed', 'total', 'unit', 'progress', 'lanes', 'fileName', 'status', 'reasonCode'];
+const ALLOWED_METADATA = ['kind', 'stage', 'done', 'failed', 'total', 'unit', 'progress', 'lanes', 'fileName', 'status', 'reasonCode', 'preflight'];
 
 function safeMetadata(metadata = {}) {
   return Object.fromEntries(ALLOWED_METADATA.filter((key) => metadata[key] !== undefined).map((key) => [key, metadata[key]]));
@@ -21,6 +21,7 @@ function makeFrame(row, eventName, payload, maxFrameBytes = MAX_SSE_FRAME_BYTES)
       seq: row.seq,
       stage: payload.stage,
       status: payload.status,
+      preflight: payload.preflight,
       message: typeof payload.message === 'string' ? payload.message.slice(0, 256) : undefined,
       lanes: payload.lanes,
       run: payload.run,
@@ -42,25 +43,40 @@ function makeFrame(row, eventName, payload, maxFrameBytes = MAX_SSE_FRAME_BYTES)
 
 function formatRunEvent(row, maxFrameBytes = MAX_SSE_FRAME_BYTES) {
   const metadata = safeMetadata(row.metadata || {});
-  const eventName = row.event_type === 'run.terminal' ? 'run.terminal' : 'stage.progress';
+  const eventName = row.event_type === 'run.terminal'
+    ? 'run.terminal'
+    : row.event_type === 'run.preflight'
+      ? 'run.preflight'
+      : 'stage.progress';
   const lanes = metadata.lanes || Object.fromEntries(LANES.map((lane) => [lane, null]));
+  const baseEvent = {
+    id: row.id,
+    analysis_id: row.analysis_id || row.run_id,
+    seq: row.seq,
+    event_type: row.event_type,
+    message: typeof row.message === 'string' ? row.message.slice(0, 512) : null,
+    metadata: { ...metadata, lanes },
+  };
   const payload = eventName === 'run.terminal'
     ? { runId: row.analysis_id || row.run_id, seq: row.seq, status: metadata.status, run: { id: row.analysis_id || row.run_id, status: metadata.status } }
-    : {
-      runId: row.analysis_id || row.run_id,
-      seq: row.seq,
-      stage: row.event_type,
-      message: typeof row.message === 'string' ? row.message.slice(0, 512) : null,
-      lanes,
-      event: {
-        id: row.id,
-        analysis_id: row.analysis_id || row.run_id,
+    : eventName === 'run.preflight'
+      ? {
+        runId: row.analysis_id || row.run_id,
         seq: row.seq,
-        event_type: row.event_type,
+        stage: 'preflight',
         message: typeof row.message === 'string' ? row.message.slice(0, 512) : null,
-        metadata: { ...metadata, lanes },
-      },
-    };
+        preflight: metadata.preflight || null,
+        lanes,
+        event: baseEvent,
+      }
+      : {
+        runId: row.analysis_id || row.run_id,
+        seq: row.seq,
+        stage: row.event_type,
+        message: typeof row.message === 'string' ? row.message.slice(0, 512) : null,
+        lanes,
+        event: baseEvent,
+      };
   return { event: eventName, seq: row.seq, payload, frame: makeFrame(row, eventName, payload, maxFrameBytes) };
 }
 

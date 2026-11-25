@@ -583,6 +583,11 @@ function createSqliteStore(options = {}) {
       if (!result.changes) throw new Error('Analysis run not found.');
       return requireRun(analysisId);
     },
+    updateAnalysisRunPreflight({ analysisId, preflight }) {
+      const result = db.prepare('UPDATE runs SET preflight_json = ?, updated_at = ? WHERE id = ?').run(stringify(preflight), nowIso(), analysisId);
+      if (!result.changes) throw new Error('Analysis run not found.');
+      return requireRun(analysisId);
+    },
     async updateAnalysisRunReport({ analysisId, resultText, resultJson = null }) {
       const run = requireRun(analysisId);
       const merged = resultJson == null ? run.result_json : { ...(run.result_json || {}), ...resultJson };
@@ -887,6 +892,80 @@ function createSqliteStore(options = {}) {
         VALUES (?, ?, 'TranscribePage', ?, ?, 1, ?, ?)
         ON CONFLICT(content_hash, engine, prompt_version, model_id) DO UPDATE SET text = excluded.text, created_at = excluded.created_at`)
         .run(`${contentHash}:p${pageNumber}`, options.engine || 'page-cache', options.promptVersion || 1, options.modelId || 'page-cache', text, nowIso());
+    },
+    getOcrTranscript({ contentHash, engine, promptVersion = 2, modelId }) {
+      if (!contentHash) return null;
+      const row = engine && modelId
+        ? db.prepare(`SELECT * FROM ocr_transcripts WHERE content_hash = ? AND engine = ? AND prompt_version = ? AND model_id = ?`)
+            .get(contentHash, engine, promptVersion, modelId)
+        : db.prepare(`SELECT * FROM ocr_transcripts WHERE content_hash = ? AND instr(content_hash, ':p') = 0 ORDER BY created_at DESC LIMIT 1`)
+            .get(contentHash);
+      if (!row) return null;
+      return {
+        contentHash: row.content_hash,
+        engine: row.engine,
+        taskType: row.task_type,
+        providerSlug: row.provider_slug,
+        promptVersion: row.prompt_version,
+        modelId: row.model_id,
+        pageCount: row.page_count,
+        text: row.text,
+        pageMap: parseJson(row.page_map_json, null),
+        truncated: Boolean(row.truncated),
+        costUsd: row.cost_usd,
+        createdAt: row.created_at,
+      };
+    },
+    hasOcrTranscript(contentHash) {
+      if (!contentHash) return false;
+      const row = db.prepare(`SELECT 1 FROM ocr_transcripts WHERE content_hash = ? OR content_hash LIKE ? LIMIT 1`)
+        .get(contentHash, `${contentHash}:p%`);
+      return Boolean(row);
+    },
+    putOcrTranscript({
+      contentHash,
+      engine,
+      taskType = 'TranscribePage',
+      providerSlug = null,
+      promptVersion = 2,
+      modelId,
+      pageCount = 1,
+      text,
+      pageMap = null,
+      truncated = false,
+      costUsd = null,
+    }) {
+      if (!contentHash || typeof text !== 'string') return;
+      db.prepare(`INSERT INTO ocr_transcripts (
+        content_hash, engine, task_type, provider_slug, prompt_version, model_id,
+        page_count, text, page_map_json, truncated, cost_usd, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(content_hash, engine, prompt_version, model_id) DO UPDATE SET
+        provider_slug = excluded.provider_slug,
+        page_count = excluded.page_count,
+        text = excluded.text,
+        page_map_json = excluded.page_map_json,
+        truncated = excluded.truncated,
+        cost_usd = excluded.cost_usd,
+        created_at = excluded.created_at`)
+        .run(
+          contentHash,
+          engine,
+          taskType,
+          providerSlug,
+          promptVersion,
+          modelId,
+          pageCount,
+          text,
+          stringify(pageMap),
+          truncated ? 1 : 0,
+          costUsd,
+          nowIso(),
+        );
+    },
+    hasSegmentCheckpointForContentHash(contentHash) {
+      if (!contentHash) return false;
+      return Boolean(db.prepare('SELECT 1 FROM segment_checkpoints WHERE content_hash = ? LIMIT 1').get(contentHash));
     },
     getLatestSnapshot(queryId) {
       const row = db.prepare('SELECT payload_json FROM change_snapshots WHERE query_id = ?').get(queryId);
