@@ -6,8 +6,8 @@ const { PassThrough } = require('stream');
 jest.mock('axios');
 const axios = require('axios');
 
-const { downloadClusterAttachments } = require('../court-analysis/agents/download-agent');
-const { DownloadCache, getDownloadCache, cacheKeyFor } = require('../helpers/downloadCache');
+const { downloadClusterAttachments } = require('../court-analysis/acquisition/downloader');
+const { DownloadCache, getDownloadCache, cacheKeyFor } = require('../court-analysis/acquisition/downloadCache');
 
 describe('DownloadCache store', () => {
     let root;
@@ -178,33 +178,77 @@ describe('downloadClusterAttachments download memoization', () => {
         expect(hit.meta.contentType).toBe('application/pdf');
     });
 
-    it('does not poison the cache when a download fails mid-stream', async () => {
+    it('retries transient HTTP failures before committing a complete response', async () => {
+        let attempts = 0;
         axios.mockImplementation(() => {
-            const stream = new PassThrough();
-            process.nextTick(() => stream.emit('error', new Error('connection reset')));
-            return Promise.resolve({ data: stream, headers: {} });
+            attempts += 1;
+            if (attempts < 3) {
+                return Promise.reject(Object.assign(new Error('temporary response'), {
+                    response: { status: attempts === 1 ? 429 : 503 }
+                }));
+            }
+            return mockPdfResponse('RETRIED')();
         });
-        const failedUrl = 'https://e-oglasna.pravosudje.hr/objave/dokument/broken/preuzimanje';
+        const [result] = await downloadClusterAttachments({
+            documentLinks: [{ url: 'https://e-oglasna.pravosudje.hr/objave/dokument/retry/preuzimanje', text: 'Retry' }]
+        });
+
+        expect(attempts).toBe(3);
+        expect(fs.readFileSync(result.filePath, 'utf8')).toBe('RETRIED');
+        fs.unlinkSync(result.filePath);
+    });
+
+    it('creates distinct intact working files for 30 identical cache hits', async () => {
+        axios.mockImplementation(mockPdfResponse('SHARED'));
+        const url = 'https://e-oglasna.pravosudje.hr/objave/dokument/shared/preuzimanje';
+        const [warm] = await downloadClusterAttachments({ documentLinks: [{ url, text: 'Podnesak.pdf' }] });
+        const files = await downloadClusterAttachments({
+            documentLinks: Array.from({ length: 30 }, () => ({ url, text: 'Podnesak.pdf' }))
+        });
+
+        expect(files).toHaveLength(30);
+        expect(new Set(files.map((file) => file.filePath)).size).toBe(30);
+        expect(files.every((file) => file.fromCache)).toBe(true);
+        for (const file of files) {
+            expect(fs.readFileSync(file.filePath)).toEqual(Buffer.from('SHARED'));
+            fs.unlinkSync(file.filePath);
+        }
+        fs.unlinkSync(warm.filePath);
+        expect(axios.mock.calls).toHaveLength(1);
+    });
+
+    it('cleans an aborted mid-stream cache write while other links succeed', async () => {
+        const failedUrl = 'https://e-oglasna.pravosudje.hr/objave/dokument/aborted/preuzimanje';
+        const healthyUrl = 'https://e-oglasna.pravosudje.hr/objave/dokument/healthy/preuzimanje';
+        axios.mockImplementation(({ url }) => {
+            if (url === failedUrl) {
+                const stream = new PassThrough();
+                process.nextTick(() => {
+                    stream.write('PARTIAL');
+                    stream.destroy(Object.assign(new Error('socket hang up'), { code: 'ECONNRESET' }));
+                });
+                return Promise.resolve({ data: stream, headers: {} });
+            }
+            return mockPdfResponse('GOOD')();
+        });
 
         const files = await downloadClusterAttachments({
-            documentLinks: [{ url: failedUrl, text: 'Broken' }],
-            progressCallback: null,
+            documentLinks: [
+                { url: failedUrl, text: 'Interrupted' },
+                { url: healthyUrl, text: 'Healthy' }
+            ]
         });
-        expect(files).toHaveLength(0);
 
-        const cache = getDownloadCache();
-        expect(cache.get(failedUrl)).toBeNull();
-        const leftovers = fs.readdirSync(path.join(root, 'blobs'))
-            .filter(name => name.includes('.tmp-'));
-        expect(leftovers).toHaveLength(0);
-
-        // A healthy URL still downloads normally afterwards.
-        axios.mockImplementation(mockPdfResponse('OK'));
-        const [recovered] = await downloadClusterAttachments({
-            documentLinks: [{ url: 'https://e-oglasna.pravosudje.hr/objave/dokument/fine/preuzimanje', text: 'Fine' }],
-            progressCallback: null,
-        });
-        expect(recovered.filePath).toBeTruthy();
-        expect(fs.readFileSync(recovered.filePath, 'utf8')).toBe('OK');
+        expect(files).toHaveLength(1);
+        expect(files[0].url).toBe(healthyUrl);
+        expect(fs.readFileSync(files[0].filePath, 'utf8')).toBe('GOOD');
+        expect(getDownloadCache().get(failedUrl)).toBeNull();
+        expect(axios.mock.calls.filter(([request]) => request.url === failedUrl)).toHaveLength(4);
+        const temporaryFiles = [
+            ...fs.readdirSync(root),
+            ...fs.readdirSync(path.join(root, 'blobs'))
+        ].filter((name) => name.includes('.tmp-'));
+        expect(temporaryFiles).toHaveLength(0);
+        fs.unlinkSync(files[0].filePath);
     });
 });

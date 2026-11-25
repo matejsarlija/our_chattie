@@ -1,5 +1,5 @@
 const os = require('os');
-const { downloadClusterAttachments } = require('../court-analysis/agents/download-agent');
+const { downloadClusterAttachments } = require('../court-analysis/acquisition/downloader');
 const fs = require('fs');
 const path = require('path');
 const { PassThrough } = require('stream');

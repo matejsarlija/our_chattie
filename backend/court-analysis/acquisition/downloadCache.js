@@ -1,4 +1,4 @@
-// helpers/downloadCache.js
+// court-analysis/acquisition/downloadCache.js
 //
 // Persistent, URL-keyed memoization for downloaded court documents.
 //
@@ -49,9 +49,17 @@ class DownloadCache {
 
     _writeIndex(index) {
         this._ensureDirs();
-        const tmpPath = `${this.indexPath}.tmp-${process.pid}-${Date.now()}`;
-        fs.writeFileSync(tmpPath, JSON.stringify(index, null, 2));
-        fs.renameSync(tmpPath, this.indexPath);
+        const tmpPath = `${this.indexPath}.tmp-${process.pid}-${crypto.randomUUID()}`;
+        try {
+            fs.writeFileSync(tmpPath, JSON.stringify(index, null, 2));
+            fs.renameSync(tmpPath, this.indexPath);
+        } finally {
+            try {
+                fs.unlinkSync(tmpPath);
+            } catch (error) {
+                if (error.code !== 'ENOENT') throw error;
+            }
+        }
     }
 
     /**
@@ -83,12 +91,9 @@ class DownloadCache {
     beginWrite(url) {
         this._ensureDirs();
         const key = sha256Hex(url);
-        const tmpPath = `${this.blobPathFor(key)}.tmp-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-        const writeStream = fs.createWriteStream(tmpPath);
-        // Errors are surfaced to callers via their own listeners / promise
-        // rejection; without this no-op the stream's late 'error' events
-        // (e.g. ENOENT after abort removed the staged file) would crash the
-        // process as unhandled.
+        const tmpPath = `${this.blobPathFor(key)}.tmp-${process.pid}-${crypto.randomUUID()}`;
+        const writeStream = fs.createWriteStream(tmpPath, { flags: 'wx' });
+        // Prevent late stream errors after abort from becoming unhandled.
         writeStream.on('error', () => {});
         let settled = false;
 
@@ -98,31 +103,41 @@ class DownloadCache {
             tmpPath,
             commit: (meta = {}) => {
                 if (settled) throw new Error('DownloadCache write already settled');
-                settled = true;
-
                 const blobPath = this.blobPathFor(key);
-                const size = fs.statSync(tmpPath).size;
-                fs.renameSync(tmpPath, blobPath);
+                try {
+                    const size = fs.statSync(tmpPath).size;
+                    if (size <= 0) throw new Error('Cannot cache an empty download');
+                    fs.renameSync(tmpPath, blobPath);
 
-                const index = this._readIndex();
-                index[key] = {
-                    url,
-                    size,
-                    fetchedAt: new Date().toISOString(),
-                    ...meta,
-                };
-                this._writeIndex(index);
-                return blobPath;
+                    const index = this._readIndex();
+                    index[key] = {
+                        url,
+                        size,
+                        fetchedAt: new Date().toISOString(),
+                        ...meta,
+                    };
+                    this._writeIndex(index);
+                    settled = true;
+                    return blobPath;
+                } catch (error) {
+                    settled = true;
+                    try {
+                        fs.unlinkSync(tmpPath);
+                    } catch (cleanupError) {
+                        if (cleanupError.code !== 'ENOENT') throw cleanupError;
+                    }
+                    throw error;
+                }
             },
             abort: () => {
                 if (settled) return;
                 settled = true;
+                writeStream.destroy();
                 try {
                     fs.unlinkSync(tmpPath);
-                } catch (err) {
-                    // Best effort: a missing tmp file is exactly what we want.
+                } catch (error) {
+                    if (error.code !== 'ENOENT') throw error;
                 }
-                writeStream.destroy();
             },
         };
     }

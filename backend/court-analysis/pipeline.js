@@ -1,7 +1,7 @@
 // pipeline.js
 
 const { createDiscoveryClient } = require('../scraper/discoveryClient');
-const { downloadClusterAttachments } = require('./agents/download-agent');
+const { downloadClusterAttachments } = require('./acquisition/downloader');
 const { extractArchiveFiles } = require('./agents/extract-tool');
 const { analyzeClusterDocuments } = require('./agents/analysis-agent');
 const { enrichParticipants } = require('../court-registry/enricher');

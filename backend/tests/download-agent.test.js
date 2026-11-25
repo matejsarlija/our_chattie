@@ -2,7 +2,7 @@ const os = require('os');
 const fs = require('fs');
 const path = require('path');
 const { PassThrough } = require('stream');
-const { downloadClusterAttachments } = require('../court-analysis/agents/download-agent');
+const { downloadClusterAttachments } = require('../court-analysis/acquisition/downloader');
 
 jest.mock('axios');
 const axios = require('axios');
@@ -61,6 +61,34 @@ describe('downloadDocuments', () => {
         expect(perLink[0]).toEqual(expect.objectContaining({ completed: 1, total: 2 }));
         expect(perLink[1]).toEqual(expect.objectContaining({ completed: 2, total: 2 }));
     });
+    it('bounds concurrent downloads at five active links', async () => {
+        let active = 0;
+        let maximumActive = 0;
+        axios.mockImplementation(({ url }) => {
+            active += 1;
+            maximumActive = Math.max(maximumActive, active);
+            const stream = new PassThrough();
+            setTimeout(() => {
+                stream.end(url);
+                active -= 1;
+            }, 20);
+            return Promise.resolve({ data: stream, headers: { 'content-type': 'application/pdf' } });
+        });
+
+        const files = await downloadClusterAttachments({
+            documentLinks: Array.from({ length: 12 }, (_, index) => ({
+                url: `http://example.test/${index}`,
+                text: `Document ${index}`
+            }))
+        });
+
+        expect(files).toHaveLength(12);
+        expect(maximumActive).toBe(5);
+        for (const file of files) {
+            fs.unlinkSync(file.filePath);
+        }
+    });
+
 
     it('threads explicit document provenance through to downloaded files', async () => {
         const files = await downloadClusterAttachments({

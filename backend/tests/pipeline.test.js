@@ -30,7 +30,7 @@ jest.mock('../scraper/discoveryClient', () => ({
     })),
 }));
 
-jest.mock('../court-analysis/agents/download-agent', () => ({
+jest.mock('../court-analysis/acquisition/downloader', () => ({
     downloadClusterAttachments: mockDownloadCall,
 }));
 
