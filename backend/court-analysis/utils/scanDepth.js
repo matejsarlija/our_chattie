@@ -11,36 +11,28 @@
 // newest court entries plus at most 10 oldest court entries, for 40 total.
 
 const COURT_ENTRIES_PER_PAGE = 10;
-const SCAN_DEPTH_STANDARD_ENTRIES = 30;
+const SCAN_DEPTH_BALANCED_FORWARD_ENTRIES = 30;
 const SCAN_DEPTH_TAIL_ENTRIES = 10;
 const SCAN_DEPTH_MAX_ENTRIES = 400;
 
 function balancedScanDepth() {
     return {
         scanDepth: 'balanced',
-        forwardEntries: SCAN_DEPTH_STANDARD_ENTRIES,
+        forwardEntries: SCAN_DEPTH_BALANCED_FORWARD_ENTRIES,
         tailEntries: SCAN_DEPTH_TAIL_ENTRIES,
-        maxEntries: SCAN_DEPTH_STANDARD_ENTRIES + SCAN_DEPTH_TAIL_ENTRIES
+        maxEntries: SCAN_DEPTH_BALANCED_FORWARD_ENTRIES + SCAN_DEPTH_TAIL_ENTRIES
     };
 }
 
 /**
  * Resolves the scan-depth dial into court-entry counts.
  *
- * @param {string} scanDepth - standard | balanced | full
+ * @param {string} scanDepth - balanced | full
  * @returns {{ scanDepth: string, forwardEntries: number, tailEntries: number, maxEntries: number }}
  */
 function resolveScanDepthEntries(scanDepth) {
     const mode = typeof scanDepth === 'string' ? scanDepth.trim().toLowerCase() : '';
 
-    if (mode === 'standard') {
-        return {
-            scanDepth: 'standard',
-            forwardEntries: SCAN_DEPTH_STANDARD_ENTRIES,
-            tailEntries: 0,
-            maxEntries: SCAN_DEPTH_STANDARD_ENTRIES
-        };
-    }
 
     if (mode === 'full') {
         return {
@@ -57,7 +49,7 @@ function resolveScanDepthEntries(scanDepth) {
 
 module.exports = {
     COURT_ENTRIES_PER_PAGE,
-    SCAN_DEPTH_STANDARD_ENTRIES,
+    SCAN_DEPTH_BALANCED_FORWARD_ENTRIES,
     SCAN_DEPTH_TAIL_ENTRIES,
     SCAN_DEPTH_MAX_ENTRIES,
     resolveScanDepthEntries

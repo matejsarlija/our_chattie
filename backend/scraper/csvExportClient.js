@@ -25,7 +25,7 @@ const {
 } = require('../court-analysis/utils/primaryCaseSelector');
 const {
     COURT_ENTRIES_PER_PAGE,
-    SCAN_DEPTH_STANDARD_ENTRIES,
+    SCAN_DEPTH_BALANCED_FORWARD_ENTRIES,
     SCAN_DEPTH_TAIL_ENTRIES,
     SCAN_DEPTH_MAX_ENTRIES
 } = require('../court-analysis/utils/scanDepth');
@@ -52,10 +52,9 @@ async function defaultFetcher(url) {
 
 /**
  * Resolves the maximum number of court entries to return. A finite `limit`
- * always controls this total outright. Without it, the page budget (or the
- * default standard entry count) is expanded by the tail allowance when a tail
- * is requested, so balanced mode naturally yields at most 30 newest plus 10
- * oldest court entries.
+ * always controls this total outright. Without it, the page budget or the
+ * default balanced forward-entry count is expanded by the tail allowance when
+ * a tail is requested, yielding at most 30 newest plus 10 oldest court entries.
  */
 function computeCourtEntryCap(limit, maxPages, tailSample = false) {
     if (Number.isFinite(limit)) {
@@ -67,7 +66,7 @@ function computeCourtEntryCap(limit, maxPages, tailSample = false) {
 
     const pages = Number.isFinite(maxPages) && maxPages >= 1
         ? Math.max(1, Math.floor(maxPages))
-        : Math.ceil(SCAN_DEPTH_STANDARD_ENTRIES / COURT_ENTRIES_PER_PAGE);
+        : Math.ceil(SCAN_DEPTH_BALANCED_FORWARD_ENTRIES / COURT_ENTRIES_PER_PAGE);
     return pages * COURT_ENTRIES_PER_PAGE + (tailSample ? SCAN_DEPTH_TAIL_ENTRIES : 0);
 }
 

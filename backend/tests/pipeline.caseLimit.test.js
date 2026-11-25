@@ -18,84 +18,29 @@ jest.mock('../scraper/discoveryClient', () => ({
   })),
 }));
 
-const { runCourtAnalysis, runCourtAnalysisWithExistingAutomator } = require('../court-analysis/pipeline');
+const { runCourtAnalysis } = require('../court-analysis/pipeline');
 
-describe('runCourtAnalysis caseLimit options', () => {
+describe('runCourtAnalysis primary-cluster reasoning scope', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     delete process.env.ANALYSIS_SCRAPE_LIMIT;
     mockSearchAndGetLatestCasesWithDocuments.mockResolvedValue([]);
   });
 
-  test('uses default caseLimit when options are omitted and second arg is callback', async () => {
-    const progress = jest.fn();
-    await expect(runCourtAnalysis('66124057408', progress)).rejects.toThrow();
-    expect(mockSearchAndGetLatestCasesWithDocuments).toHaveBeenCalledWith('66124057408', 40, 3, true, null, null);
-  });
 
-  test('honors options.caseLimit from caller', async () => {
+
+
+
+  test('uses the balanced scan depth without a legacy case-limit option', async () => {
     await expect(
-      runCourtAnalysis('66124057408', { caseLimit: 3 }, jest.fn()),
+      runCourtAnalysis('66124057408', { scanDepth: 'balanced' }, jest.fn()),
     ).rejects.toThrow();
     expect(mockSearchAndGetLatestCasesWithDocuments).toHaveBeenCalledWith('66124057408', 40, 3, true, null, null);
-  });
-
-  test('clamps options.caseLimit into supported bounds', async () => {
-    await expect(
-      runCourtAnalysis('66124057408', { caseLimit: 0 }, jest.fn()),
-    ).rejects.toThrow();
-    expect(mockSearchAndGetLatestCasesWithDocuments).toHaveBeenCalledWith('66124057408', 40, 3, true, null, null);
-
-    jest.clearAllMocks();
-    mockSearchAndGetLatestCasesWithDocuments.mockResolvedValue([]);
-
-    await expect(
-      runCourtAnalysis('66124057408', { caseLimit: 77 }, jest.fn()),
-    ).rejects.toThrow();
-    expect(mockSearchAndGetLatestCasesWithDocuments).toHaveBeenCalledWith('66124057408', 40, 3, true, null, null);
-  });
-
-  test('uses the balanced-depth entry budget by default', async () => {
-    await expect(
-      runCourtAnalysis('66124057408', { caseLimit: 5 }, jest.fn()),
-    ).rejects.toThrow();
-    expect(mockSearchAndGetLatestCasesWithDocuments).toHaveBeenCalledWith('66124057408', 40, 3, true, null, null);
-  });
-
-  test('lets a lower ANALYSIS_SCRAPE_LIMIT tighten the entry budget', async () => {
-    process.env.ANALYSIS_SCRAPE_LIMIT = '7';
-    await expect(
-      runCourtAnalysis('66124057408', { caseLimit: 5 }, jest.fn()),
-    ).rejects.toThrow();
-    expect(mockSearchAndGetLatestCasesWithDocuments).toHaveBeenCalledWith('66124057408', 7, 3, true, null, null);
-  });
-
-  test('never lets a higher ANALYSIS_SCRAPE_LIMIT widen the entry budget', async () => {
-    process.env.ANALYSIS_SCRAPE_LIMIT = '500';
-    await expect(
-      runCourtAnalysis('66124057408', { caseLimit: 5 }, jest.fn()),
-    ).rejects.toThrow();
-    expect(mockSearchAndGetLatestCasesWithDocuments).toHaveBeenCalledWith('66124057408', 40, 3, true, null, null);
-  });
-
-  test('threads the balanced-depth entry budget through an existing automator', async () => {
-    const existingAutomator = { searchAndGetLatestCasesWithDocuments: mockSearchAndGetLatestCasesWithDocuments };
-    await expect(
-      runCourtAnalysisWithExistingAutomator('66124057408', { caseLimit: 5 }, existingAutomator, jest.fn()),
-    ).rejects.toThrow();
-    expect(mockSearchAndGetLatestCasesWithDocuments).toHaveBeenCalledWith('66124057408', 40, 3, true, null, null);
-  });
-
-  test('resolves scanDepth standard into no tail sampling', async () => {
-    await expect(
-      runCourtAnalysis('66124057408', { caseLimit: 5, scanDepth: 'standard' }, jest.fn()),
-    ).rejects.toThrow();
-    expect(mockSearchAndGetLatestCasesWithDocuments).toHaveBeenCalledWith('66124057408', 30, 3, false, null, null);
   });
 
   test('resolves scanDepth full into a capped entry scan', async () => {
     await expect(
-      runCourtAnalysis('66124057408', { caseLimit: 5, scanDepth: 'full' }, jest.fn()),
+      runCourtAnalysis('66124057408', { scanDepth: 'full' }, jest.fn()),
     ).rejects.toThrow();
     expect(mockSearchAndGetLatestCasesWithDocuments).toHaveBeenCalledWith('66124057408', 400, Infinity, false, null, null);
   });

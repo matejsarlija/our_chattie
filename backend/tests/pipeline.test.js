@@ -118,7 +118,7 @@ describe('runCourtAnalysis pipeline (deterministic)', () => {
 
     test('keeps discovery breadth but reasons only over the selected primary cluster', async () => {
         const progress = jest.fn();
-        const result = await runCourtAnalysis('66124057408', { caseLimit: 3 }, progress);
+        const result = await runCourtAnalysis('66124057408', {}, progress);
 
         expect(mockSearchAndGetLatestCasesWithDocuments).toHaveBeenCalledWith('66124057408', 40, 3, true, null, null);
         expect(result.discoverySummary.capturedDistinctCaseCount).toBe(4);
@@ -141,7 +141,7 @@ describe('runCourtAnalysis pipeline (deterministic)', () => {
 
         const result = await runCourtAnalysis(
             query.value,
-            { caseLimit: 3, query },
+            { query },
             jest.fn()
         );
 
@@ -183,7 +183,7 @@ describe('runCourtAnalysis pipeline (deterministic)', () => {
             }
         });
 
-        const result = await runCourtDiscovery('66124057408', { caseLimit: 2 }, jest.fn());
+        const result = await runCourtDiscovery('66124057408', {}, jest.fn());
 
         expect(mockSearchAndGetLatestCases).toHaveBeenCalledWith('66124057408', null, 3, true, null);
         expect(result.discoverySummary.totalResults).toBe(12);
@@ -198,7 +198,7 @@ describe('runCourtAnalysis pipeline (deterministic)', () => {
     test('runCourtDiscovery threads the OIB query value as the debtor identity hint', async () => {
         const query = { type: 'oib', value: '66124057408' };
 
-        const result = await runCourtDiscovery(query.value, { caseLimit: 2, query }, jest.fn());
+        const result = await runCourtDiscovery(query.value, { query }, jest.fn());
 
         expect(mockSearchAndGetLatestCases).toHaveBeenCalledWith(query.value, null, 3, true, query.value);
         expect(result.discoverySummary.query).toEqual(query);
@@ -223,7 +223,7 @@ describe('runCourtAnalysis pipeline (deterministic)', () => {
             }
         });
 
-        const result = await runCourtDiscovery('bez-dokumenata', { caseLimit: 2 }, jest.fn());
+        const result = await runCourtDiscovery('bez-dokumenata', {}, jest.fn());
 
         expect(result.discoverySummary.totalResults).toBe(27);
         expect(result.discoverySummary.capturedDistinctCaseCount).toBe(2);
@@ -231,24 +231,4 @@ describe('runCourtAnalysis pipeline (deterministic)', () => {
         expect(result.secondaryClusters.map(cluster => cluster.clusterId)).toEqual(['C-NO-DOC-2']);
     });
 
-    test('runCourtDiscovery forwards clusterExpansion through the public options object', async () => {
-        const fixture = require('../fixtures/analysis-baselines/undercovered-primary-cluster-expansion.json');
-
-        mockSearchAndGetLatestCases.mockResolvedValue({
-            casesToProcess: fixture.casesToProcess,
-            discoveryMetadata: fixture.discoveryMetadata
-        });
-
-        const result = await runCourtDiscovery('KERUM', {
-            caseLimit: 1,
-            query: fixture.query,
-            clusterExpansion: fixture.clusterExpansion
-        }, jest.fn());
-
-        expect(result.discoverySummary.expansion).toEqual(expect.objectContaining({
-            status: 'applied',
-            expandedClusterId: 'ST-700/2024',
-            appendedEntryCount: 2
-        }));
-    });
 });

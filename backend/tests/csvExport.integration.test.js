@@ -100,7 +100,6 @@ describe('CSV export discovery → pipeline handoff', () => {
         expect(discoveryMetadata.totalResults).toBe(381);
 
         const result = await processScrapedCases(casesToProcess, jest.fn(), {
-            caseLimit: 5,
             query: { type: 'oib', value: '66124057408' },
             discoveryMetadata
         });
@@ -121,10 +120,6 @@ describe('CSV export discovery → pipeline handoff', () => {
         expect(primary.acquisitionModes).toEqual(['csv-export']);
         expect(primary.selectedForReasoning).toBe(true);
 
-        // Complete coverage: the primary cluster is already sufficient, so the
-        // deterministic expansion path must not be eligible.
-        expect(result.discoverySummary.expansionEligibility.eligible).toBe(false);
-        expect(result.discoverySummary.expansion).toBeUndefined();
 
         expect(result.processedCases).toHaveLength(1);
         expect(result.processedCases[0].groupMetadata.clusterId).toBe('ST-2/2013');
@@ -143,7 +138,6 @@ describe('CSV export discovery → pipeline handoff', () => {
         expect(discoveryMetadata.rawParsedEntryCount).toBe(30);
 
         const result = await processScrapedCases(casesToProcess, jest.fn(), {
-            caseLimit: 5,
             query: { type: 'oib', value: '66124057408' },
             discoveryMetadata
         });

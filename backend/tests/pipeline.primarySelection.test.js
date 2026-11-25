@@ -29,7 +29,6 @@ describe('buildDiscoveryResult shared primary selection (T0-1)', () => {
             ...datedEntries('ST-2/2013', ['2020-01-05', '2020-01-15', '2020-02-05'])
         ];
         const result = buildDiscoveryResult(entries, {
-            caseLimit: 5,
             query: { type: 'case_number', value: 'ST-2/2013' },
             discoveryMetadata: null
         });
@@ -44,27 +43,10 @@ describe('buildDiscoveryResult shared primary selection (T0-1)', () => {
         expect(result.discoverySummary.reasoningClusterId).toBe('ST-2/2013');
     });
 
-    test('selected key cut by caseLimit is reinstated as the reasoning target', () => {
-        const entries = [
-            ...datedEntries('ST-99/2020', ['2026-01-05', '2026-06-05']),
-            ...datedEntries('ST-2/2013', ['2020-01-05'])
-        ];
-        const result = buildDiscoveryResult(entries, {
-            caseLimit: 1,
-            query: { type: 'case_number', value: 'ST-2/2013' },
-            discoveryMetadata: null
-        });
-
-        expect(result.primaryClusterId).toBe('ST-2/2013');
-        expect(result.discoverySummary.primarySelection.source).toBe('shared-selector');
-        // The evicted scored cluster is still visible as a secondary candidate.
-        expect(result.secondaryClusters.map((c) => c.clusterId)).toContain('ST-99/2020');
-    });
 
     test('unkeyed input falls back to scoring and records the fallback', () => {
         const entries = [makeEntry('N/A'), makeEntry('N/A')];
         const result = buildDiscoveryResult(entries, {
-            caseLimit: 5,
             query: null,
             discoveryMetadata: null
         });
@@ -79,9 +61,9 @@ describe('buildDiscoveryResult shared primary selection (T0-1)', () => {
         expect(result.primaryClusterId).toBeTruthy();
     });
 
-    test('agreeing discovery-provided selection needs no override', () => {        const entries = datedEntries('ST-2/2013', ['2026-01-05', '2026-02-05']);
+    test('agreeing discovery-provided selection needs no override', () => {
+        const entries = datedEntries('ST-2/2013', ['2026-01-05', '2026-02-05']);
         const result = buildDiscoveryResult(entries, {
-            caseLimit: 5,
             query: { type: 'oib', value: '66124057408' },
             discoveryMetadata: {
                 discoveryMode: 'csv-export',
@@ -103,7 +85,6 @@ describe('buildDiscoveryResult shared primary selection (T0-1)', () => {
             ...datedEntries('ST-2/2013', ['2020-01-05', '2020-02-05'])
         ];
         const result = buildDiscoveryResult(entries, {
-            caseLimit: 5,
             query: null,
             discoveryMetadata: {
                 discoveryMode: 'csv-export',
@@ -122,13 +103,10 @@ describe('buildDiscoveryResult shared primary selection (T0-1)', () => {
     });
 
     test('scoring stands when no tier fires; unresolvable keys fall back too', () => {
-        const scored = buildDiscoveryResult(
-            [
-                ...datedEntries('ST-99/2020', ['2026-01-05', '2026-02-05']),
-                ...datedEntries('ST-2/2013', ['2020-01-05'])
-            ],
-            { caseLimit: 5, query: null, discoveryMetadata: null }
-        );
+        const scored = buildDiscoveryResult([
+            ...datedEntries('ST-99/2020', ['2026-01-05', '2026-02-05']),
+            ...datedEntries('ST-2/2013', ['2020-01-05'])
+        ]);
         expect(scored.primaryClusterId).toBe('ST-99/2020');
         expect(scored.discoverySummary.primarySelection).toEqual(expect.objectContaining({
             selectedCaseKey: 'ST-99/2020',
@@ -139,7 +117,6 @@ describe('buildDiscoveryResult shared primary selection (T0-1)', () => {
         const stale = buildDiscoveryResult(
             datedEntries('ST-99/2020', ['2026-01-05']),
             {
-                caseLimit: 5,
                 query: null,
                 discoveryMetadata: { selection: { selectedCaseKey: 'ST-0/2000', method: 'document-coverage' } }
             }
@@ -165,7 +142,6 @@ describe('stratified reasoning input (TS-2)', () => {
             poolEntry(40, '2026-06-23', 'Diobeni popis')
         ];
         const result = buildDiscoveryResult(pool, {
-            caseLimit: 5,
             query: { type: 'oib', value: '66124057408' },
             discoveryMetadata: {
                 discoveryMode: 'csv-export',
@@ -195,7 +171,6 @@ describe('stratified reasoning input (TS-2)', () => {
     test('no budget means no stratification (legacy paths pass through)', () => {
         const pool = Array.from({ length: 10 }, (_, i) => poolEntry(i, `2025-0${(i % 9) + 1}-15`, `Podnesak ${i}`));
         const result = buildDiscoveryResult(pool, {
-            caseLimit: 5,
             query: null,
             discoveryMetadata: { discoveryMode: 'search-window' }
         });
@@ -213,7 +188,6 @@ describe('acquisition sampling propagation (T0-2)', () => {
             makeEntry('ST-2/2013', { date: '2013-05-05', sampling: 'tail' })
         ];
         const result = buildDiscoveryResult(entries, {
-            caseLimit: 5,
             query: { type: 'oib', value: '66124057408' },
             discoveryMetadata: null
         });
@@ -228,7 +202,6 @@ describe('acquisition sampling propagation (T0-2)', () => {
     test('entries without markers report sampling null (backwards compatible)', () => {
         const entries = [makeEntry('ST-2/2013', { date: '2026-06-23' })];
         const result = buildDiscoveryResult(entries, {
-            caseLimit: 5,
             query: null,
             discoveryMetadata: null
         });
@@ -253,7 +226,6 @@ describe('acquisition sampling propagation (T0-2)', () => {
             primaryEntryCount: 343
         };
         const result = buildDiscoveryResult(datedEntries('ST-2/2013', ['2026-01-05']), {
-            caseLimit: 5,
             query: { type: 'oib', value: '66124057408' },
             discoveryMetadata: { discoveryMode: 'csv-export', selection }
         });

@@ -206,9 +206,7 @@ async function startServer() {
         const finalResult = await runCourtAnalysis(
           parsedRequest.query.value,
           {
-            caseLimit: parsedRequest.options.caseLimit,
             query: parsedRequest.query,
-            clusterExpansion: parsedRequest.options.clusterExpansion,
             scanDepth: parsedRequest.options.scanDepth,
             runId,
           },

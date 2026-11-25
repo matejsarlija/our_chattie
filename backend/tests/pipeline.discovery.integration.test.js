@@ -85,7 +85,6 @@ describe('processScrapedCases discovery reconciliation', () => {
             fixture.casesToProcess,
             jest.fn(),
             {
-                caseLimit: 3,
                 query: fixture.query,
                 discoveryMetadata: fixture.discoveryMetadata
             }
@@ -153,7 +152,6 @@ describe('processScrapedCases discovery reconciliation', () => {
             fixture.casesToProcess,
             jest.fn(),
             {
-                caseLimit: 5,
                 query: fixture.query,
                 discoveryMetadata: fixture.discoveryMetadata
             }
@@ -206,7 +204,6 @@ describe('processScrapedCases discovery reconciliation', () => {
             entries,
             jest.fn(),
             {
-                caseLimit: 5,
                 query: fixture.query,
                 discoveryMetadata: fixture.discoveryMetadata
             }
@@ -232,7 +229,6 @@ describe('processScrapedCases discovery reconciliation', () => {
             fixture.casesToProcess,
             jest.fn(),
             {
-                caseLimit: 1,
                 query: fixture.query,
                 discoveryMetadata: fixture.discoveryMetadata
             }
@@ -264,7 +260,6 @@ describe('processScrapedCases discovery reconciliation', () => {
             fixture.casesToProcess,
             jest.fn(),
             {
-                caseLimit: 2,
                 query: fixture.query,
                 discoveryMetadata: fixture.discoveryMetadata
             }
@@ -296,7 +291,6 @@ describe('processScrapedCases discovery reconciliation', () => {
             fixture.casesToProcess,
             jest.fn(),
             {
-                caseLimit: 1,
                 query: fixture.query,
                 discoveryMetadata: fixture.discoveryMetadata
             }
@@ -339,144 +333,6 @@ describe('processScrapedCases discovery reconciliation', () => {
         expect(result.processedCases[0].caseResult.caseNumber).toBe('ST-410/2022');
     });
 
-    test('applies bounded expansion only to an under-covered selected cluster while preserving explicit provenance', async () => {
-        const fixture = require('../fixtures/analysis-baselines/undercovered-primary-cluster-expansion.json');
-
-        const result = await processScrapedCases(
-            fixture.casesToProcess,
-            jest.fn(),
-            {
-                caseLimit: 1,
-                query: fixture.query,
-                discoveryMetadata: fixture.discoveryMetadata,
-                clusterExpansion: fixture.clusterExpansion
-            }
-        );
-
-        expect(result.discoverySummary.totalResults).toBe(21);
-        expect(result.discoverySummary.rawEntryCount).toBe(4);
-        expect(result.discoverySummary.capturedDistinctCaseCount).toBe(2);
-        expect(result.discoverySummary.recommendedPrimaryClusterId).toBe('ST-700/2024');
-        expect(result.discoverySummary.secondaryClusterIds).toEqual(['ST-123/2026']);
-        expect(result.discoverySummary.expansion).toEqual(expect.objectContaining({
-            status: 'applied',
-            expandedClusterId: 'ST-700/2024',
-            appliedPasses: 1,
-            appendedEntryCount: 2,
-            skippedEntryCount: 1,
-            expansionPlan: expect.objectContaining({
-                targetClusterId: 'ST-700/2024',
-                executable: true
-            })
-        }));
-        expect(result.discoverySummary.expansionEligibility).toEqual(expect.objectContaining({
-            eligible: true,
-            triggerReasons: expect.arrayContaining([
-                'entry-count-below-target',
-                'date-span-below-sufficient',
-                'dominant-cluster-under-covered'
-            ]),
-            blockerReasons: []
-        }));
-        expect(result.discoverySummary.expansionPlan).toEqual(expect.objectContaining({
-            targetClusterId: 'ST-700/2024',
-            executable: true,
-            maxPasses: 2,
-            strategies: ['case-number-follow-up-search', 'detail-link-follow-up'],
-            reasonCodes: expect.arrayContaining([
-                'entry-count-below-target',
-                'date-span-below-sufficient',
-                'dominant-cluster-under-covered'
-            ]),
-            blockedReasonCodes: []
-        }));
-        expect(result.discoverySummary.expansionPlan.identityGuard).toEqual(expect.objectContaining({
-            mode: 'advisory',
-            status: 'consistent'
-        }));
-
-        const primaryCluster = result.discoverySummary.clusters.find(cluster => cluster.clusterId === 'ST-700/2024');
-        const secondaryCluster = result.discoverySummary.clusters.find(cluster => cluster.clusterId === 'ST-123/2026');
-
-        expect(primaryCluster.entryCount).toBe(4);
-        expect(primaryCluster.documentCount).toBe(4);
-        expect(primaryCluster.acquisitionModes).toEqual(['search-window', 'cluster-expansion']);
-        expect(primaryCluster.entryCountsByAcquisitionMode).toEqual({
-            'search-window': 2,
-            'cluster-expansion': 2
-        });
-        expect(primaryCluster.documentCountsByAcquisitionMode).toEqual({
-            'search-window': 2,
-            'cluster-expansion': 2
-        });
-        expect(primaryCluster.acquisitionProvenance).toEqual(expect.arrayContaining([
-            expect.objectContaining({ mode: 'search-window', currentPage: 1, sourceCaseNumber: 'ST-700/2024' }),
-            expect.objectContaining({ mode: 'cluster-expansion', sourceCaseNumber: 'ST-700/2024', pass: 1 })
-        ]));
-        expect(primaryCluster.expansion).toEqual(expect.objectContaining({
-            status: 'applied',
-            appliedPasses: 1,
-            appendedEntryCount: 2
-        }));
-        expect(primaryCluster.expansionEligibility).toEqual(result.discoverySummary.expansionEligibility);
-        expect(primaryCluster.expansionPlan).toEqual(result.discoverySummary.expansionPlan);
-        expect(primaryCluster.selectedForReasoning).toBe(true);
-
-        expect(secondaryCluster.entryCount).toBe(2);
-        expect(secondaryCluster.acquisitionModes).toEqual(['search-window']);
-        expect(secondaryCluster.selectedForReasoning).toBe(false);
-        expect(result.primaryCluster.clusterId).toBe('ST-700/2024');
-        expect(result.secondaryClusters.map(cluster => cluster.clusterId)).toEqual(['ST-123/2026']);
-        expect(result.clusterEvidencePackage).toEqual(expect.objectContaining({
-            packageType: 'ClusterEvidencePackage',
-            reasoningScope: 'single-cluster',
-            clusterId: 'ST-700/2024',
-            primaryCaseNumber: 'ST-700/2024',
-            selectedClusterIds: ['ST-700/2024']
-        }));
-        expect(result.clusterEvidencePackage.selectedClusterIds).toHaveLength(1);
-        expect(result.clusterEvidencePackage.clusterId).toBe(result.discoverySummary.reasoningClusterId);
-        expect(result.clusterEvidencePackage.discovery.secondaryClusterIds).toEqual(['ST-123/2026']);
-        expect(result.clusterEvidencePackage.entries.map(entry => entry.caseNumber)).toEqual([
-            'ST-700/2024',
-            'ST-700/2024',
-            'ST-700/2024',
-            'ST-700/2024'
-        ]);
-        expect(result.clusterEvidencePackage.entries.some(entry => entry.caseNumber === 'ST-123/2026')).toBe(false);
-        expect(result.clusterEvidencePackage.documentLinks).toEqual(expect.arrayContaining([
-            expect.objectContaining({
-                url: 'https://example.test/st700-1',
-                caseNumber: 'ST-700/2024',
-                acquisition: expect.objectContaining({ mode: 'search-window', currentPage: 1 }),
-                sourceProvenance: expect.objectContaining({
-                    acquisitionMode: 'search-window',
-                    sourceCaseNumber: 'ST-700/2024'
-                })
-            }),
-            expect.objectContaining({
-                url: 'https://example.test/st700-3',
-                caseNumber: 'ST-700/2024',
-                acquisition: expect.objectContaining({
-                    mode: 'cluster-expansion',
-                    pass: 1,
-                    strategy: 'detail-link-follow-up'
-                }),
-                sourceProvenance: expect.objectContaining({
-                    acquisitionMode: 'cluster-expansion',
-                    sourceCaseNumber: 'ST-700/2024',
-                    pass: 1
-                })
-            })
-        ]));
-        expect(result.processedCases).toHaveLength(1);
-        expect(result.processedCases[0].groupMetadata.selectionScore).toBe(primaryCluster.score);
-        expect(result.processedCases[0].groupMetadata.selectionDiagnostics).toEqual(primaryCluster.selectionDiagnostics);
-        expect(result.processedCases[0].groupMetadata.expansionEligibility).toEqual(primaryCluster.expansionEligibility);
-        expect(result.processedCases[0].groupMetadata.expansionPlan).toEqual(primaryCluster.expansionPlan);
-        expect(result.processedCases[0].groupMetadata.acquisitionModes).toEqual(['search-window', 'cluster-expansion']);
-        expect(result.processedCases[0].groupMetadata.selectedForReasoning).toBe(true);
-    });
 
     test('attaches partial discovery results when a later analysis stage fails', async () => {
         const fixture = require('../fixtures/analysis-baselines/mixed-multi-cluster.json');
@@ -488,7 +344,6 @@ describe('processScrapedCases discovery reconciliation', () => {
             fixture.casesToProcess,
             jest.fn(),
             {
-                caseLimit: 3,
                 query: fixture.query,
                 discoveryMetadata: fixture.discoveryMetadata
             }
@@ -532,7 +387,6 @@ describe('processScrapedCases discovery reconciliation', () => {
             fixture.casesToProcess,
             progress,
             {
-                caseLimit: 3,
                 query: fixture.query,
                 discoveryMetadata: fixture.discoveryMetadata
             }
@@ -556,7 +410,6 @@ describe('buildDiscoveryResult on frozen 66124057408 baseline (CI, no Gemini)', 
         const fixture = require('../fixtures/analysis-baselines/66124057408-baseline.json');
 
         const result = buildDiscoveryResult(fixture.discovery.entries, {
-            caseLimit: 5,
             query: { type: 'oib', value: '66124057408' }
         });
 

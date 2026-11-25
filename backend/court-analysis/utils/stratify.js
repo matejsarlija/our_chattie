@@ -19,7 +19,7 @@
 const { parseCaseDateToTimestamp } = require('./caseDate');
 const { classifyDocRole } = require('./docRoles');
 const {
-    SCAN_DEPTH_STANDARD_ENTRIES,
+    SCAN_DEPTH_BALANCED_FORWARD_ENTRIES,
     SCAN_DEPTH_TAIL_ENTRIES
 } = require('./scanDepth');
 
@@ -27,7 +27,7 @@ const STRAT_ORIGIN_KEEP = 8;
 const STRAT_RECENT_KEEP = 22;
 const STRAT_OTHER_FLOOR = 2;
 const STRAT_ADMIN_CAP = 4;
-const STRAT_BUDGET_DEFAULT = SCAN_DEPTH_STANDARD_ENTRIES + SCAN_DEPTH_TAIL_ENTRIES;
+const STRAT_BUDGET_DEFAULT = SCAN_DEPTH_BALANCED_FORWARD_ENTRIES + SCAN_DEPTH_TAIL_ENTRIES;
 const YEAR_MS = 365 * 24 * 60 * 60 * 1000;
 
 function entryTimestamp(entry) {

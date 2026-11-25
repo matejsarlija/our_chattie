@@ -5,11 +5,6 @@ const { downloadClusterAttachments } = require('./agents/download-agent');
 const { extractArchiveFiles } = require('./agents/extract-tool');
 const { analyzeClusterDocuments } = require('./agents/analysis-agent');
 const { enrichParticipants } = require('../court-registry/enricher');
-const {
-    DEFAULT_CASE_LIMIT,
-    MIN_CASE_LIMIT,
-    MAX_CASE_LIMIT,
-} = require('../helpers/courtAnalysisRequest');
 const { groupEntriesByCase } = require('./utils/grouping');
 const { parseCaseDateToTimestamp } = require('./utils/caseDate');
 const { selectPrimaryCase } = require('./utils/primaryCaseSelector');
@@ -93,13 +88,6 @@ function composeFallbackOverviewMarkdown(allProcessedCases) {
 // usable evidence (createEmptyReport). They carry no analyzable substance, so
 
 
-function clampCaseLimit(rawLimit) {
-    const numeric = Number.parseInt(String(rawLimit), 10);
-    if (Number.isNaN(numeric)) return DEFAULT_CASE_LIMIT;
-    if (numeric < MIN_CASE_LIMIT) return MIN_CASE_LIMIT;
-    if (numeric > MAX_CASE_LIMIT) return MAX_CASE_LIMIT;
-    return numeric;
-}
 
 // ANALYSIS_SCRAPE_LIMIT is a composed safety valve, not an override that
 // ignores the scan-depth selection. Given an explicit positive limit, the
@@ -119,16 +107,11 @@ const CLUSTER_SELECTION_DEFAULTS = {
     targetPrimaryClusterEntries: 10,
     strongPrimaryClusterSpanDays: 730,
 };
-const CLUSTER_EXPANSION_DEFAULTS = {
-    sufficientPrimaryClusterSpanDays: 365,
-    maxClusterExpansionPasses: 2,
-};
 const DISCOVERY_HEURISTICS_DEFAULTS = {
     maxPagesScanned: 5,
     minEntriesBeforeStop: 8,
     targetPrimaryClusterEntries: 10,
     noNewClusterPageLimit: 2,
-    maxClusterExpansionPasses: 2,
     sufficientPrimaryClusterSpanDays: 365,
     strongPrimaryClusterSpanDays: 730,
     dominantClusterRatioThreshold: 0.65
@@ -411,7 +394,7 @@ function buildClusterSummaries(allClusters, query) {
     });
 }
 
-function selectClustersForProcessing(allClusters, clusterSummaries, rawCaseLimit) {
+function selectClustersForProcessing(allClusters, clusterSummaries) {
     if (!Array.isArray(allClusters) || allClusters.length === 0) {
         return [];
     }
@@ -452,12 +435,7 @@ function selectClustersForProcessing(allClusters, clusterSummaries, rawCaseLimit
         return a.originalIndex - b.originalIndex;
     });
 
-    if (typeof rawCaseLimit !== 'number' || Number.isNaN(rawCaseLimit)) {
-        return scored.map((item) => item.cluster);
-    }
-
-    const caseLimit = clampCaseLimit(rawCaseLimit);
-    return scored.slice(0, caseLimit).map((item) => item.cluster);
+    return scored.map((item) => item.cluster);
 }
 
 function evaluateDiscoveryHeuristics(summary, query) {
@@ -498,9 +476,9 @@ function evaluateDiscoveryHeuristics(summary, query) {
     }
 
     if ((primaryEntryCount < DISCOVERY_HEURISTICS_DEFAULTS.targetPrimaryClusterEntries ||
-         primarySpanDays < DISCOVERY_HEURISTICS_DEFAULTS.sufficientPrimaryClusterSpanDays) && 
+         primarySpanDays < DISCOVERY_HEURISTICS_DEFAULTS.sufficientPrimaryClusterSpanDays) &&
         !hasNextPage) {
-        return { action: 'expand', reason: 'promising-cluster-under-covered-after-search-window', details: { primaryEntryCount, primarySpanDays } };
+        return { action: 'stop', reason: 'search-window-exhausted-before-target', details: { primaryEntryCount, primarySpanDays } };
     }
 
     if (hasNextPage) {
@@ -508,135 +486,6 @@ function evaluateDiscoveryHeuristics(summary, query) {
     }
 
     return { action: 'stop', reason: 'exhausted-search-window', details: {} };
-}
-
-function evaluateClusterExpansionEligibility(primaryClusterSummary, summary = {}, query = null) {
-    const thresholds = {
-        targetPrimaryClusterEntries: CLUSTER_SELECTION_DEFAULTS.targetPrimaryClusterEntries,
-        sufficientPrimaryClusterSpanDays: CLUSTER_EXPANSION_DEFAULTS.sufficientPrimaryClusterSpanDays,
-        dominantClusterRatioThreshold: DISCOVERY_HEURISTICS_DEFAULTS.dominantClusterRatioThreshold,
-        maxClusterExpansionPasses: CLUSTER_EXPANSION_DEFAULTS.maxClusterExpansionPasses
-    };
-
-    if (!primaryClusterSummary) {
-        return {
-            eligible: false,
-            triggerReasons: [],
-            blockerReasons: ['no-primary-cluster'],
-            thresholds,
-            metrics: {}
-        };
-    }
-
-    const metrics = {
-        primaryEntryCount: primaryClusterSummary.entryCount || 0,
-        primarySpanDays: primaryClusterSummary.entryDateSpanDays || 0,
-        dominantClusterRatio: summary.dominantClusterRatio || 0,
-        capturedDistinctCaseCount: summary.capturedDistinctCaseCount || 0,
-        hasNextPage: summary.hasNextPage ?? null,
-        queryType: query?.type || null
-    };
-    const triggerReasons = [];
-
-    if (metrics.primaryEntryCount < thresholds.targetPrimaryClusterEntries) {
-        triggerReasons.push('entry-count-below-target');
-    }
-
-    if (metrics.primarySpanDays < thresholds.sufficientPrimaryClusterSpanDays) {
-        triggerReasons.push('date-span-below-sufficient');
-    }
-
-    if (
-        metrics.dominantClusterRatio >= thresholds.dominantClusterRatioThreshold &&
-        triggerReasons.length > 0
-    ) {
-        triggerReasons.push('dominant-cluster-under-covered');
-    }
-
-    if (
-        query?.type === 'case_number' &&
-        metrics.primaryEntryCount < thresholds.targetPrimaryClusterEntries
-    ) {
-        triggerReasons.push('case-number-query-under-covered');
-    }
-
-    const blockerReasons = triggerReasons.length === 0
-        ? ['primary-cluster-already-sufficient']
-        : [];
-
-    return {
-        eligible: triggerReasons.length > 0,
-        triggerReasons,
-        blockerReasons,
-        thresholds,
-        metrics
-    };
-}
-
-function buildClusterExpansionPlan(primaryClusterSummary, eligibility, query = null) {
-    if (!eligibility?.eligible || !primaryClusterSummary) {
-        return null;
-    }
-
-    const targetClusterId = primaryClusterSummary.clusterId || primaryClusterSummary.primaryCaseNumber || null;
-    const blockedReasonCodes = [];
-    let executable = true;
-    let identityGuard = {
-        mode: 'advisory',
-        status: 'not-required',
-        requiredOib: null,
-        notes: []
-    };
-
-    if (query?.type === 'oib') {
-        identityGuard = {
-            mode: 'required',
-            status: primaryClusterSummary.identityConsistency === 'consistent'
-                ? 'satisfied'
-                : 'ambiguous',
-            requiredOib: query.value || null,
-            notes: primaryClusterSummary.identityNotes || []
-        };
-
-        if (identityGuard.status !== 'satisfied') {
-            executable = false;
-            blockedReasonCodes.push('oib-identity-guard-not-satisfied');
-        }
-    } else if (query?.type === 'text') {
-        identityGuard = {
-            mode: 'advisory',
-            status: primaryClusterSummary.identityConsistency || 'unresolved',
-            requiredOib: null,
-            notes: primaryClusterSummary.identityNotes || []
-        };
-    } else if (query?.type === 'case_number') {
-        identityGuard = {
-            mode: 'case-lineage',
-            status: 'case-number-required',
-            requiredOib: null,
-            notes: ['Expansion must preserve normalized case-number lineage.']
-        };
-    } else if (primaryClusterSummary.identityConsistency === 'unresolved') {
-        identityGuard = {
-            mode: 'unavailable',
-            status: 'missing-identity-signals',
-            requiredOib: null,
-            notes: primaryClusterSummary.identityNotes || []
-        };
-    }
-
-    return {
-        targetClusterId,
-        executable,
-        maxPasses: eligibility.thresholds?.maxClusterExpansionPasses ?? CLUSTER_EXPANSION_DEFAULTS.maxClusterExpansionPasses,
-        strategies: [
-            'case-number-follow-up-search',
-            'detail-link-follow-up'
-        ],
-        reasonCodes: eligibility.triggerReasons || [],
-        blockedReasonCodes,
-        identityGuard
-    };
 }
 
 function buildDiscoverySummary(clusterSummaries, selectedClusters, query, discoveryMetadata = null) {
@@ -656,13 +505,9 @@ function buildDiscoverySummary(clusterSummaries, selectedClusters, query, discov
             : []),
         ...clusters.flatMap(cluster => cluster.acquisitionModes || [])
     ]));
-    const queryLevelAcquisitionProvenance = [
-        ...(Array.isArray(normalizedDiscoveryMetadata.searchWindows)
-            ? normalizedDiscoveryMetadata.searchWindows
-            : []),
-        ...clusters.flatMap(cluster => cluster.acquisitionProvenance || [])
-            .filter((provenance) => provenance.mode === 'cluster-expansion')
-    ];
+    const queryLevelAcquisitionProvenance = Array.isArray(normalizedDiscoveryMetadata.searchWindows)
+        ? normalizedDiscoveryMetadata.searchWindows
+        : [];
     const annotatedClusters = clusters.map((cluster) => ({
         ...cluster,
         selectedForReasoning: cluster.clusterId === primaryClusterId
@@ -699,19 +544,6 @@ function buildDiscoverySummary(clusterSummaries, selectedClusters, query, discov
     };
 
     baseSummary.heuristics = evaluateDiscoveryHeuristics(baseSummary, query);
-    baseSummary.expansionEligibility = evaluateClusterExpansionEligibility(primaryClusterSummary, baseSummary, query);
-    baseSummary.expansionPlan = buildClusterExpansionPlan(primaryClusterSummary, baseSummary.expansionEligibility, query);
-    baseSummary.clusters = baseSummary.clusters.map((cluster) => {
-        if (cluster.clusterId !== primaryClusterId) {
-            return cluster;
-        }
-
-        return {
-            ...cluster,
-            expansionEligibility: baseSummary.expansionEligibility,
-            expansionPlan: baseSummary.expansionPlan
-        };
-    });
 
     return baseSummary;
 }
@@ -745,344 +577,23 @@ function normalizeEntryForGrouping(entry) {
     };
 }
 
-function resolveClusterExpansionConfig(options = {}) {
-    const configuredExpansion = options.clusterExpansion || options.discoveryMetadata?.clusterExpansion;
-
-    if (!configuredExpansion || typeof configuredExpansion !== 'object') {
-        return null;
-    }
-
-    return {
-        maxPasses: Number.isFinite(configuredExpansion.maxPasses)
-            ? Math.max(0, configuredExpansion.maxPasses)
-            : CLUSTER_EXPANSION_DEFAULTS.maxClusterExpansionPasses,
-        batches: Array.isArray(configuredExpansion.batches) ? configuredExpansion.batches : []
-    };
-}
-
-function shouldExpandPrimaryCluster(primaryClusterSummary, discoverySummary = {}, query = null) {
-    const plan = discoverySummary.expansionPlan || buildClusterExpansionPlan(
-        primaryClusterSummary,
-        evaluateClusterExpansionEligibility(primaryClusterSummary, discoverySummary, query),
-        query
-    );
-
-    return plan?.executable === true;
-}
-
-function applyConfiguredClusterExpansion(entriesForGrouping, initialDiscoverySummary, options = {}) {
-    const expansionConfig = resolveClusterExpansionConfig(options);
-
-    if (!expansionConfig) {
-        return {
-            entriesForGrouping,
-            expansion: null
-        };
-    }
-
-    const expandedClusterId = initialDiscoverySummary?.recommendedPrimaryClusterId || null;
-    const primaryClusterSummary = initialDiscoverySummary?.clusters?.find(
-        (cluster) => cluster.clusterId === expandedClusterId
-    ) || null;
-    const expansionEligibility = initialDiscoverySummary?.expansionEligibility
-        || evaluateClusterExpansionEligibility(primaryClusterSummary, initialDiscoverySummary, options.query);
-    const expansionPlan = initialDiscoverySummary?.expansionPlan || buildClusterExpansionPlan(
-        primaryClusterSummary,
-        expansionEligibility,
-        options.query
-    );
-
-    if (!shouldExpandPrimaryCluster(primaryClusterSummary, initialDiscoverySummary, options.query)) {
-        return {
-            entriesForGrouping,
-            expansion: {
-                status: 'skipped',
-                expandedClusterId,
-                appliedPasses: 0,
-                appendedEntryCount: 0,
-                skippedEntryCount: 0,
-                reason: expansionPlan?.blockedReasonCodes?.[0] || 'primary-cluster-already-sufficient',
-                expansionPlan
-            }
-        };
-    }
-
-    const normalizedClusterId = normalizeCaseNumber(expandedClusterId);
-    const maxPasses = Math.min(expansionConfig.maxPasses, expansionPlan.maxPasses);
-    const eligibleBatches = expansionConfig.batches
-        .filter((batch) => normalizeCaseNumber(batch?.clusterId) === normalizedClusterId)
-        .slice(0, maxPasses);
-
-    if (eligibleBatches.length === 0) {
-        return {
-            entriesForGrouping,
-            expansion: {
-                status: 'skipped',
-                expandedClusterId,
-                appliedPasses: 0,
-                appendedEntryCount: 0,
-                skippedEntryCount: 0,
-                reason: 'no-eligible-expansion-batches',
-                expansionPlan
-            }
-        };
-    }
-
-    const appendedEntries = [];
-    let skippedEntryCount = 0;
-
-    eligibleBatches.forEach((batch, batchIndex) => {
-        const pass = batch?.pass ?? (batchIndex + 1);
-
-        for (const rawEntry of batch?.entries || []) {
-            const normalizedEntry = normalizeEntryForGrouping(rawEntry);
-
-            if (normalizedEntry.caseNumber !== normalizedClusterId) {
-                skippedEntryCount += 1;
-                continue;
-            }
-
-            appendedEntries.push({
-                ...normalizedEntry,
-                acquisition: {
-                    ...(normalizedEntry.acquisition || {}),
-                    mode: 'cluster-expansion',
-                    sourceCaseNumber: normalizedClusterId,
-                    pass,
-                    reason: batch?.reason || normalizedEntry?.acquisition?.reason || null,
-                    strategy: batch?.strategy || normalizedEntry?.acquisition?.strategy || null
-                }
-            });
-        }
-    });
-
-    if (appendedEntries.length === 0) {
-        return {
-            entriesForGrouping,
-            expansion: {
-                status: 'skipped',
-                expandedClusterId,
-                appliedPasses: 0,
-                appendedEntryCount: 0,
-                skippedEntryCount,
-                reason: 'no-same-cluster-entries-appended',
-                expansionPlan
-            }
-        };
-    }
-
-    return {
-        entriesForGrouping: [...entriesForGrouping, ...appendedEntries],
-        expansion: {
-            status: 'applied',
-            expandedClusterId,
-            appliedPasses: eligibleBatches.length,
-            appendedEntryCount: appendedEntries.length,
-            skippedEntryCount,
-            reason: 'bounded-cluster-expansion-applied',
-            expansionPlan
-        }
-    };
-}
-
 /**
- * Executes deterministic cluster-expansion follow-up searches against a live
- * scraper (`automator`) when the primary cluster is under-covered. Produces
- * `clusterExpansion.batches` compatible with `applyConfiguredClusterExpansion`,
- * which remains the single application point (provenance tagging + counts).
- *
- * No LLM decision loop: eligibility comes from `expansionPlan`/eligibility
- * computed by the deterministic heuristics. A scraper lacking the follow-up
- * methods (mocks/fixtures) is treated as a no-op.
- */
-async function executeClusterExpansionSearches(automator, discoveryResult, options = {}) {
-    const discoverySummary = discoveryResult?.discoverySummary || {};
-    const plan = discoverySummary.expansionPlan || null;
-    const eligibility = discoverySummary.expansionEligibility || null;
-    const primaryClusterId = discoveryResult?.primaryClusterId
-        || discoverySummary.recommendedPrimaryClusterId
-        || null;
-
-    if (!automator || typeof automator.searchCaseNumberFollowUp !== 'function') {
-        return { batches: [], status: 'no-automator', appliedPasses: 0 };
-    }
-    if (!plan?.executable || !eligibility?.eligible) {
-        return { batches: [], status: 'not-eligible', appliedPasses: 0 };
-    }
-    if (Array.isArray(eligibility.blockerReasons) && eligibility.blockerReasons.length > 0) {
-        return { batches: [], status: 'blocked', blockerReasons: eligibility.blockerReasons, appliedPasses: 0 };
-    }
-
-    const configuredMaxPasses = Number.isFinite(options.clusterExpansion?.maxPasses)
-        ? options.clusterExpansion.maxPasses
-        : null;
-    const maxPasses = Math.min(
-        configuredMaxPasses ?? CLUSTER_EXPANSION_DEFAULTS.maxClusterExpansionPasses,
-        plan.maxPasses ?? CLUSTER_EXPANSION_DEFAULTS.maxClusterExpansionPasses
-    );
-
-    const primaryClusterSummary = (discoverySummary.clusters || []).find(c => c.clusterId === primaryClusterId) || null;
-    const primaryCaseNumber = normalizeCaseNumber(
-        primaryClusterSummary?.primaryCaseNumber || primaryClusterId
-    );
-    const uniqueDetailLinks = Array.from(new Set(
-        (primaryClusterSummary?.acquisitionProvenance || [])
-            .map(p => p.entryDetailLink)
-            .filter(Boolean)
-    ));
-
-    const reason = plan.reasonCodes?.[0] || null;
-    const batches = [];
-    const seenEntryLinks = new Set();
-    const seenDocumentUrls = new Set();
-
-    // Seed the dedupe set with detail links already captured by the search
-    // window so that a follow-up search which re-fetches the same case (the
-    // typical single-cluster OIB shape, where case-number search returns the
-    // same window) is treated as "no new entries" instead of appending
-    // duplicates. Only explicit detail links are used as re-fetch identity;
-    // link-less entries stay eligible so genuine same-case expansion is not
-    // collapsed by the shared case number alone.
-    for (const cluster of discoveryResult?.clusters || []) {
-        if (cluster?.clusterId !== primaryClusterId) continue;
-        for (const entry of cluster?.entries || []) {
-            const detailLink = entry?.caseInfo?.detailLink || null;
-            if (detailLink) seenEntryLinks.add(detailLink);
-            for (const documentLink of entry?.documentLinks || []) {
-                if (documentLink?.url) seenDocumentUrls.add(documentLink.url);
-            }
-        }
-    }
-
-    const hasNewEntries = (entries) => {
-        let hasNew = false;
-        for (const entry of entries || []) {
-            const detailLink = entry?.caseInfo?.detailLink || entry?.caseInfo?.caseNumber || null;
-            if (!detailLink) {
-                // no fingerprint → treat as new
-                hasNew = true;
-                continue;
-            }
-            if (!seenEntryLinks.has(detailLink)) {
-                seenEntryLinks.add(detailLink);
-                hasNew = true;
-            }
-        }
-        return hasNew;
-    };
-
-    // Detail pages are intentionally revisited even though their page URL is
-    // already known. Their value is a newly exposed download URL, not a new
-    // search-result row, so detail-link identity must not suppress them.
-    const collectNewDetailDocuments = (entries) => {
-        const newEntries = [];
-        for (const entry of entries || []) {
-            const documentLinks = (entry.documentLinks || []).filter((documentLink) => {
-                if (!documentLink?.url || seenDocumentUrls.has(documentLink.url)) return false;
-                seenDocumentUrls.add(documentLink.url);
-                return true;
-            });
-            if (documentLinks.length > 0) {
-                newEntries.push({ ...entry, documentLinks });
-            }
-        }
-        return newEntries;
-    };
-
-    for (let pass = 1; pass <= maxPasses; pass += 1) {
-        let anyNewThisPass = false;
-
-        if (typeof automator.searchCaseNumberFollowUp === 'function') {
-            const result = await automator.searchCaseNumberFollowUp(primaryCaseNumber, {
-                pass,
-                strategy: 'case-number-follow-up-search',
-                reason,
-                maxPages: options.expansionSearchPages ?? 1
-            });
-            if (hasNewEntries(result?.entries)) {
-                batches.push({
-                    clusterId: primaryClusterId,
-                    pass,
-                    strategy: 'case-number-follow-up-search',
-                    reason,
-                    entries: result.entries
-                });
-                anyNewThisPass = true;
-            }
-        }
-
-        if (typeof automator.followDetailLinks === 'function' && uniqueDetailLinks.length > 0) {
-            const result = await automator.followDetailLinks(uniqueDetailLinks, {
-                pass,
-                strategy: 'detail-link-follow-up',
-                reason,
-                sourceCaseNumber: primaryCaseNumber
-            });
-            const entriesWithNewDocuments = collectNewDetailDocuments(result?.entries);
-            if (entriesWithNewDocuments.length > 0) {
-                batches.push({
-                    clusterId: primaryClusterId,
-                    pass,
-                    strategy: 'detail-link-follow-up',
-                    reason,
-                    entries: entriesWithNewDocuments
-                });
-                anyNewThisPass = true;
-            }
-        }
-
-        // A pass that adds nothing new terminates the loop: re-running the same
-        // searches would only re-discover the same entries.
-        if (!anyNewThisPass) break;
-    }
-
-    return {
-        batches,
-        status: batches.length > 0 ? 'executed' : 'no-follow-up-found',
-        appliedPasses: batches.length > 0 ? maxPasses : 0
-    };
-}
-
-/**
- * Resolves the reasoning primary (T0-1 convergence) without regressing
- * identity-aware scoring. Tiers:
- *   1. explicit `case_number` query match resolving to a known cluster — the
- *      user named the case; honoring it is always safe;
- *   2. discovery-provided selection key (the shared selector already ran over
- *      this input set on the CSV path) resolving to a known cluster;
- *   3. otherwise the coverage-aware scoring order stands untouched.
- *
- * Deliberate split from acquisition bounding: tie-breaks 2–4 of the shared
- * selector (document coverage, recency, lexical) are budget heuristics for
- * choosing WHAT to acquire. They must not overrule the scoring policy's
- * identity-confidence multipliers when deciding what a multi-cluster input
- * reasons over — that would flip primaries like the JADRAN-matching cluster
- * in the under-covered-expansion fixtures. The CSV balanced path is unaffected
- * (single-key input converges trivially).
+ * Promotes an explicit case-number query or discovery-provided primary key;
+ * otherwise the coverage-aware score order selects the primary cluster.
  */
 function resolveReasoningPrimary(allClusters, scoredClusters, resolution = {}) {
-    const { query = null, providedSelection = null, caseLimit = null } = resolution;
-    const list = Array.isArray(scoredClusters) ? scoredClusters : [];
+    const { query = null, providedSelection = null } = resolution;
+    const clusters = Array.isArray(scoredClusters) ? scoredClusters : [];
     const clusterIdOf = (cluster) => cluster?.clusterId || cluster?.caseNumber || null;
     const known = (key) => (Array.isArray(allClusters) ? allClusters : []).some((cluster) => clusterIdOf(cluster) === key);
 
     const promote = (key, method) => {
-        const atIndex = list.findIndex((cluster) => clusterIdOf(cluster) === key);
+        const atIndex = clusters.findIndex((cluster) => clusterIdOf(cluster) === key);
         if (atIndex > 0) {
-            const [picked] = list.splice(atIndex, 1);
-            list.unshift(picked);
-        } else if (atIndex < 0) {
-            const full = (Array.isArray(allClusters) ? allClusters : []).find((cluster) => clusterIdOf(cluster) === key);
-            if (full) {
-                // Selected key cut by caseLimit: reinstate it as the reasoning
-                // target, dropping the lowest-ranked selected cluster.
-                list.unshift(full);
-                if (typeof caseLimit === 'number' && list.length > caseLimit) {
-                    list.length = Math.max(1, caseLimit);
-                }
-            }
+            const [picked] = clusters.splice(atIndex, 1);
+            clusters.unshift(picked);
         }
-        return { clusters: list, primarySelection: { selectedCaseKey: key, method, source: 'shared-selector' } };
+        return { clusters, primarySelection: { selectedCaseKey: key, method, source: 'shared-selector' } };
     };
 
     const queriedKey = query?.type === 'case_number' ? normalizeCaseNumber(query?.value) : null;
@@ -1095,9 +606,9 @@ function resolveReasoningPrimary(allClusters, scoredClusters, resolution = {}) {
         return promote(providedKey, providedSelection.method || 'discovery-selection');
     }
 
-    const [head] = list;
+    const [head] = clusters;
     return {
-        clusters: list,
+        clusters,
         primarySelection: {
             selectedCaseKey: head ? clusterIdOf(head) : null,
             method: 'coverage-scoring',
@@ -1107,10 +618,7 @@ function resolveReasoningPrimary(allClusters, scoredClusters, resolution = {}) {
 }
 
 function buildDiscoveryResult(casesToProcess, options = {}, progressCallback) {
-    // The initial discovery pass (expansion eligibility check) reuses this
-    // function; suppress its progress events there so the timeline does not
-    // receive duplicate grouping entries.
-    const emitProgress = options.emitProgress === false ? null : progressCallback;
+    const emitProgress = progressCallback;
 
     if (!casesToProcess || casesToProcess.length === 0) {
         throw new Error('Nije pronađen nijedan predmet za traženi pojam.');
@@ -1119,12 +627,8 @@ function buildDiscoveryResult(casesToProcess, options = {}, progressCallback) {
     emitProgress?.({ step: 'grouping', progress: 15, message: 'Grupiram pronađene objave po predmetima...' });
 
     const entriesForGrouping = casesToProcess.map(normalizeEntryForGrouping);
-    // Shared primary-case selection (T0-1): the CSV path already ran the same
-    // selector over this input set for bounded acquisition. The local
-    // computation below is a tripwire for client/pipeline skew; reasoning
-    // follows the tiered resolver (explicit case_number query, then the
-    // discovery-provided key, else coverage scoring) so acquisition-bounding
-    // heuristics can never overrule identity-aware scoring.
+    // Selection is deterministic across the complete discovered set. The
+    // reasoning resolver honors an explicit case-number query or discovery key.
     const localSelection = selectPrimaryCase(entriesForGrouping, options.query || null);
     const providedSelection = options.discoveryMetadata?.selection || null;
     const discoveryProvidedKey = providedSelection?.selectedCaseKey || null;
@@ -1138,30 +642,12 @@ function buildDiscoveryResult(casesToProcess, options = {}, progressCallback) {
             method: localSelection.method
         });
     }
-    const resolution = {
-        query: options.query || null,
-        providedSelection,
-        caseLimit: options.caseLimit ?? null
-    };
-    const initialAllClusters = groupEntriesByCase(entriesForGrouping);
-    const initialClusterSummaries = buildClusterSummaries(initialAllClusters, options.query);
-    const initialClusters = resolveReasoningPrimary(
-        initialAllClusters,
-        selectClustersForProcessing(initialAllClusters, initialClusterSummaries, options.caseLimit),
-        resolution
-    ).clusters;
-    const initialDiscoverySummary = buildDiscoverySummary(
-        initialClusterSummaries,
-        initialClusters,
-        options.query,
-        options.discoveryMetadata
-    );
-    const expansionResult = applyConfiguredClusterExpansion(entriesForGrouping, initialDiscoverySummary, options);
-    const allClusters = groupEntriesByCase(expansionResult.entriesForGrouping);
+    const resolution = { query: options.query || null, providedSelection };
+    const allClusters = groupEntriesByCase(entriesForGrouping);
     const clusterSummaries = buildClusterSummaries(allClusters, options.query);
     const { clusters, primarySelection } = resolveReasoningPrimary(
         allClusters,
-        selectClustersForProcessing(allClusters, clusterSummaries, options.caseLimit),
+        selectClustersForProcessing(allClusters, clusterSummaries),
         resolution
     );
     // TS-2 — stratified analysis scope: when discovery served a candidate
@@ -1194,21 +680,8 @@ function buildDiscoveryResult(casesToProcess, options = {}, progressCallback) {
     };
     discoverySummary.coverageLedger = coverageLedger;
 
-    if (expansionResult.expansion) {
-        discoverySummary.expansion = expansionResult.expansion;
-        discoverySummary.clusters = discoverySummary.clusters.map((cluster) => {
-            if (cluster.clusterId !== expansionResult.expansion.expandedClusterId) {
-                return cluster;
-            }
-
-            return {
-                ...cluster,
-                expansion: expansionResult.expansion
-            };
-        });
-    }
-
     const primaryClusterId = discoverySummary.recommendedPrimaryClusterId;
+
 
     logger.info('pipeline.buildDiscoveryResult', 'Discovery completed', {
         runId: options?.runId || null,
@@ -1216,7 +689,6 @@ function buildDiscoveryResult(casesToProcess, options = {}, progressCallback) {
         allClusters: allClusters.length,
         primaryClusterId: primaryClusterId || null,
         queryType: options.query?.type || null,
-        expansionApplied: Boolean(expansionResult.expansion),
     });
 
     emitProgress?.({
@@ -1249,114 +721,39 @@ function buildDiscoveryResult(casesToProcess, options = {}, progressCallback) {
     };
 }
 
-function resolveAnalysisArgs(caseLimitOrOptions, maybeProgressCallback) {
-    if (typeof caseLimitOrOptions === 'function') {
-        const depth = resolveScanDepth('balanced');
-        return {
-            caseLimit: DEFAULT_CASE_LIMIT,
-            scrapeLimit: computeRawScrapeLimit(depth.maxEntries),
-            runId: null,
-            ...depth,
-            progressCallback: caseLimitOrOptions,
-        };
-    }
-
-    if (typeof caseLimitOrOptions === 'number' || typeof caseLimitOrOptions === 'string') {
-        const caseLimit = clampCaseLimit(caseLimitOrOptions);
-        const depth = resolveScanDepth('balanced');
-        return {
-            caseLimit,
-            scrapeLimit: computeRawScrapeLimit(depth.maxEntries),
-            runId: null,
-            ...depth,
-            progressCallback: maybeProgressCallback,
-        };
-    }
-
-    if (caseLimitOrOptions && typeof caseLimitOrOptions === 'object') {
-        const caseLimit = clampCaseLimit(caseLimitOrOptions.caseLimit);
-        const depth = resolveScanDepth(caseLimitOrOptions.scanDepth);
-        return {
-            caseLimit,
-            scrapeLimit: computeRawScrapeLimit(depth.maxEntries),
-            query: caseLimitOrOptions.query || null,
-            clusterExpansion: caseLimitOrOptions.clusterExpansion || null,
-            discoverySource: caseLimitOrOptions.discoverySource || null,
-            runId: caseLimitOrOptions.runId || null,
-            ...depth,
-            progressCallback: maybeProgressCallback,
-        };
-    }
-
-    const depth = resolveScanDepth('balanced');
+function resolveAnalysisArgs(optionsOrProgressCallback, maybeProgressCallback) {
+    const options = optionsOrProgressCallback && typeof optionsOrProgressCallback === 'object'
+        ? optionsOrProgressCallback
+        : {};
+    const depth = resolveScanDepth(options.scanDepth);
     return {
-        caseLimit: DEFAULT_CASE_LIMIT,
         scrapeLimit: computeRawScrapeLimit(depth.maxEntries),
-        query: null,
-        runId: null,
+        query: options.query || null,
+        discoverySource: options.discoverySource || null,
+        runId: options.runId || null,
         ...depth,
-        progressCallback: maybeProgressCallback,
+        progressCallback: typeof optionsOrProgressCallback === 'function'
+            ? optionsOrProgressCallback
+            : maybeProgressCallback,
     };
 }
 
 /**
- * Optionally enriches `resolved` with cluster-expansion batches discovered via
- * live follow-up searches. Runs an initial deterministic discovery pass to
- * check eligibility; if eligible and the automator supports follow-up methods,
- * executes them and returns options carrying `clusterExpansion` batches so the
- * single application point (`applyConfiguredClusterExpansion`) can append them
- * with proper provenance.
- */
-async function resolveAutoExpansion(automator, casesToProcess, resolved, progressCallback) {
-    if (!automator || !casesToProcess || casesToProcess.length === 0) {
-        return resolved;
-    }
-
-    const initialDiscovery = buildDiscoveryResult(casesToProcess, {
-        caseLimit: resolved.caseLimit,
-        query: resolved.query || null,
-        clusterExpansion: null,
-        discoveryMetadata: resolved.discoveryMetadata || null,
-        emitProgress: false
-    }, progressCallback);
-
-    const expansionResult = await executeClusterExpansionSearches(automator, initialDiscovery, {
-        clusterExpansion: resolved.clusterExpansion || null,
-        expansionSearchPages: resolved.expansionSearchPages ?? 1
-    });
-
-    if (expansionResult.status !== 'executed' || expansionResult.batches.length === 0) {
-        return resolved;
-    }
-
-    return {
-        ...resolved,
-        clusterExpansion: {
-            maxPasses: expansionResult.appliedPasses || null,
-            batches: expansionResult.batches
-        }
-    };
-}
-
-/**
- * New Pipeline for comparative court analysis: (Scrape → [Download → Unzip → Analyze] x N) → Compare
+ * Scrapes a search term and analyzes its selected primary cluster.
  * @param {string} searchTerm
- * @param {number|object|function} caseLimitOrOptions - Case limit or options object.
+ * @param {object|function} optionsOrProgressCallback
  * @param {function} progressCallback
  */
-async function runCourtAnalysis(searchTerm, caseLimitOrOptions, progressCallback) {
-    const resolved = resolveAnalysisArgs(caseLimitOrOptions, progressCallback);
+async function runCourtAnalysis(searchTerm, optionsOrProgressCallback, progressCallback) {
+    const resolved = resolveAnalysisArgs(optionsOrProgressCallback, progressCallback);
     const callback = resolved.progressCallback;
     const automator = createDiscoveryClient({ discoverySource: resolved.discoverySource });
-    const allProcessedCases = [];
-    let allFilesToCleanup = [];
 
     try {
         // 1. Scrape for the N latest cases
         logger.info('pipeline.runCourtAnalysis', 'Starting court analysis', {
             runId: resolved.runId || null,
             queryType: resolved.query?.type || null,
-            caseLimit: resolved.caseLimit,
             scrapeLimit: resolved.scrapeLimit,
         });
         callback?.({ step: 'discovering', progress: 10, message: 'Pretražujem sudske zapise za nedavne objave...' });
@@ -1386,22 +783,12 @@ async function runCourtAnalysis(searchTerm, caseLimitOrOptions, progressCallback
             discoveryMode: discoveryMetadata?.discoveryMode || null,
         });
 
-        // Optional deterministic cluster-expansion follow-up searches (2b). Uses
-        // the live automator; no-ops for mocks/fixtures lacking follow-up methods.
-        const expandedResolved = await resolveAutoExpansion(automator, casesToProcess, {
-            ...resolved,
+        return await processScrapedCases(casesToProcess, callback, {
+            query: resolved.query || { value: searchTerm },
             discoveryMetadata,
-        }, callback);
-
-        // Process the scraped cases using the separate function
-        const result = await processScrapedCases(casesToProcess, callback, {
-            caseLimit: expandedResolved.caseLimit,
-            query: expandedResolved.query || { value: searchTerm },
-            clusterExpansion: expandedResolved.clusterExpansion,
-            discoveryMetadata,
-            runId: expandedResolved.runId || null,
+            runId: resolved.runId || null,
         });
-        return result;
+
 
     } catch (error) {
         logger.error('pipeline.runCourtAnalysis', 'Court analysis failed', { runId: resolved.runId || null, error: error.message });
@@ -1410,12 +797,11 @@ async function runCourtAnalysis(searchTerm, caseLimitOrOptions, progressCallback
     } finally {
         // Always close automator here - simpler logic
         await automator.close();
-        await cleanupFiles(allFilesToCleanup);
     }
 }
 
-async function runCourtDiscovery(searchTerm, caseLimitOrOptions, progressCallback) {
-    const resolved = resolveAnalysisArgs(caseLimitOrOptions, progressCallback);
+async function runCourtDiscovery(searchTerm, optionsOrProgressCallback, progressCallback) {
+    const resolved = resolveAnalysisArgs(optionsOrProgressCallback, progressCallback);
     const callback = resolved.progressCallback;
     const automator = createDiscoveryClient({ discoverySource: resolved.discoverySource });
 
@@ -1431,73 +817,15 @@ async function runCourtDiscovery(searchTerm, caseLimitOrOptions, progressCallbac
         );
         const { casesToProcess, discoveryMetadata } = normalizeScraperResult(scrapeResult);
 
-        const expandedResolved = await resolveAutoExpansion(automator, casesToProcess, {
-            ...resolved,
-            discoveryMetadata,
-        }, callback);
-
         return buildDiscoveryResult(casesToProcess, {
-            caseLimit: expandedResolved.caseLimit,
-            query: expandedResolved.query || { value: searchTerm },
-            clusterExpansion: expandedResolved.clusterExpansion,
-            discoveryMetadata
+            query: resolved.query || { value: searchTerm },
+            discoveryMetadata,
         }, callback);
     } catch (error) {
         callback?.({ step: 'error', progress: 100, message: error.message });
         throw error;
     } finally {
         await automator.close();
-    }
-}
-
-/**
- * Modified version of runCourtAnalysis that uses an existing automator instance
- * This prevents creating multiple Puppeteer instances in the cron job
- */
-async function runCourtAnalysisWithExistingAutomator(searchTerm, caseLimitOrOptions, existingAutomator, progressCallback) {
-    const resolved = resolveAnalysisArgs(caseLimitOrOptions, progressCallback);
-    const callback = resolved.progressCallback;
-    const allProcessedCases = [];
-    let allFilesToCleanup = [];
-
-    try {
-        // 1. Use the existing automator to scrape (no init/close needed)
-        callback?.({ step: 'discovering', progress: 10, message: 'Pretražujem sudske zapise za nedavne objave...' });
-        const scrapeResult = await existingAutomator.searchAndGetLatestCasesWithDocuments(
-            searchTerm,
-            resolved.scrapeLimit,
-            resolved.maxPagesScanned,
-            resolved.tailSample,
-            resolved.query?.type === 'oib' ? resolved.query.value : null,
-            resolved.query || null
-        );
-        const { casesToProcess, discoveryMetadata } = normalizeScraperResult(scrapeResult);
-
-        if (!casesToProcess || casesToProcess.length === 0) {
-            throw new Error('Nije pronađen nijedan predmet s dostupnim dokumentima za traženi pojam.');
-        }
-
-        const expandedResolved = await resolveAutoExpansion(existingAutomator, casesToProcess, {
-            ...resolved,
-            discoveryMetadata,
-        }, callback);
-
-        // Process using the shared logic
-        const result = await processScrapedCases(casesToProcess, callback, {
-            caseLimit: expandedResolved.caseLimit,
-            query: expandedResolved.query || { value: searchTerm },
-            clusterExpansion: expandedResolved.clusterExpansion,
-            discoveryMetadata,
-            runId: expandedResolved.runId || null,
-        });
-        return result;
-
-    } catch (error) {
-        callback?.({ step: 'error', progress: 100, message: error.message });
-        throw error;
-    } finally {
-        // Don't close the automator - the cron job will handle that
-        await cleanupFiles(allFilesToCleanup);
     }
 }
 
@@ -1565,10 +893,9 @@ async function processScrapedCases(casesToProcess, progressCallback, options = {
             total: discoverySummary.rawEntryCount ?? null,
             unit: 'objava',
         }));
-        const reasoningClusters = primaryClusterId
-            ? clusters.filter((cluster) => (cluster.clusterId || cluster.caseNumber) === primaryClusterId)
-            : clusters.slice(0, 1);
-        const selectedReasoningCluster = reasoningClusters[0] || null;
+        const selectedReasoningCluster = primaryClusterId
+            ? clusters.find((cluster) => (cluster.clusterId || cluster.caseNumber) === primaryClusterId) || null
+            : clusters[0] || null;
         const selectedClusterSummary = selectedReasoningCluster
             ? discoverySummary.clusters.find((summary) => summary.clusterId === (
                 selectedReasoningCluster.clusterId || selectedReasoningCluster.caseNumber
@@ -1581,12 +908,11 @@ async function processScrapedCases(casesToProcess, progressCallback, options = {
             query: resolvedOptions.query || null
         });
         partialResult.clusterEvidencePackage = clusterEvidencePackage;
-        const totalCases = reasoningClusters.length;
 
         logger.info('pipeline.processScrapedCases', 'Discovery grouped', {
             runId,
             clusters: clusters.length,
-            reasoningClusters: totalCases,
+            reasoningClusters: selectedReasoningCluster ? 1 : 0,
             primaryClusterId: primaryClusterId || null,
             secondaryClusters: secondaryClusters.length,
             queryType: resolvedOptions.query?.type || null,
@@ -1594,10 +920,9 @@ async function processScrapedCases(casesToProcess, progressCallback, options = {
 
 
 
-        // Reason only over the selected primary cluster. Other clusters remain discovery outputs.
-        for (let i = 0; i < totalCases; i++) {
-            const cluster = reasoningClusters[i];
-            const clusterId = cluster.clusterId || cluster.caseNumber || `anonymous-${i + 1}`;
+        if (selectedReasoningCluster) {
+            const cluster = selectedReasoningCluster;
+            const clusterId = cluster.clusterId || cluster.caseNumber || 'anonymous-1';
             const clusterSummary = discoverySummary.clusters.find((summary) => summary.clusterId === clusterId);
             
             // Use the first entry as the primary metadata source (most recent usually)
@@ -1610,7 +935,7 @@ async function processScrapedCases(casesToProcess, progressCallback, options = {
             let downloadedFiles = [];
             let extractedFilePaths = [];
 
-            stageAwareProgress?.({ step: 'downloading', progress: 25 + (i / totalCases) * 50, message: `Obrađujem predmet ${i + 1} od ${totalCases}: ${caseInfo.caseNumber} (${cluster.entries.length} objava)` });
+            stageAwareProgress?.({ step: 'downloading', progress: 25, message: `Obrađujem predmet ${caseInfo.caseNumber} (${cluster.entries.length} objava)` });
 
             // --- ENRICHMENT STEP ---
             if (caseInfo.participants && caseInfo.participants.length > 0) {
@@ -1624,7 +949,7 @@ async function processScrapedCases(casesToProcess, progressCallback, options = {
             // -----------------------
 
             // 2a. Download
-            stageAwareProgress?.({ step: 'downloading', message: `Preuzimam arhivu za predmet ${i + 1} (${documentLinks.length} linkova)...` });
+            stageAwareProgress?.({ step: 'downloading', message: `Preuzimam arhivu za predmet ${caseInfo.caseNumber} (${documentLinks.length} linkova)...` });
             let downloadFailed = 0;
             downloadedFiles = await downloadClusterAttachments({
                 documentLinks,
@@ -1642,10 +967,10 @@ async function processScrapedCases(casesToProcess, progressCallback, options = {
                     }
                 },
             });
-            stageAwareProgress?.({ step: 'downloading', message: `Preuzeto ${downloadedFiles.length}/${documentLinks.length} datoteka za predmet ${i + 1}.` });
+            stageAwareProgress?.({ step: 'downloading', message: `Preuzeto ${downloadedFiles.length}/${documentLinks.length} datoteka za predmet ${caseInfo.caseNumber}.` });
 
             // 2b. Unzip
-            stageAwareProgress?.({ step: 'extracting', message: `Raspakiram datoteke za predmet ${i + 1}...` });
+            stageAwareProgress?.({ step: 'extracting', message: `Raspakiram datoteke za predmet ${caseInfo.caseNumber}...` });
             const filesForAnalysis = [];
             // Explicit file→entry provenance: the raw cluster entries are the
             // authority here (pre-evidencePackage, so no mapped link ids yet).
@@ -1742,8 +1067,6 @@ async function processScrapedCases(casesToProcess, progressCallback, options = {
                         isAnonymous: cluster.isAnonymous,
                         selectionScore: clusterSummary?.score ?? 0,
                         selectionDiagnostics: clusterSummary?.selectionDiagnostics || null,
-                        expansionEligibility: clusterSummary?.expansionEligibility || null,
-                        expansionPlan: clusterSummary?.expansionPlan || null,
                         identityConsistency: clusterSummary?.identityConsistency || 'unresolved',
                         identityNotes: clusterSummary?.identityNotes || [],
                         participantNames: clusterSummary?.participantNames || [],
@@ -1752,25 +1075,21 @@ async function processScrapedCases(casesToProcess, progressCallback, options = {
                         acquisitionProvenance: clusterSummary?.acquisitionProvenance || [],
                         entryCountsByAcquisitionMode: clusterSummary?.entryCountsByAcquisitionMode || {},
                         documentCountsByAcquisitionMode: clusterSummary?.documentCountsByAcquisitionMode || {},
-                        expansion: clusterSummary?.expansion || null,
                         selectedForReasoning: clusterId === primaryClusterId
                     }
                  });
-                 continue;
-            }
+            } else {
 
             // 2c. Analyze THIS case's documents
-            stageAwareProgress?.({ step: 'reasoning', message: `Analiziram ${filesForAnalysis.length} datoteka za predmet ${i + 1}...` });
+            stageAwareProgress?.({ step: 'reasoning', message: `Analiziram ${filesForAnalysis.length} datoteka za predmet ${caseInfo.caseNumber}...` });
             const analysis = await analyzeClusterDocuments({ files: filesForAnalysis, caseInfo: caseInfo, progressCallback: stageAwareProgress, usageTracker, onUsage: emitUsage, runId });
             const analysisCoverage = analysis?.coverage || {};
             stageAwareProgress?.({
                 step: 'reasoning',
-                message: `AI analiza predmeta ${i + 1} dovršena: ${analysisCoverage.analyzed ?? 0} uspješno, ${analysisCoverage.failed ?? 0} neuspjelo od ${analysisCoverage.total ?? filesForAnalysis.length} datoteka.`
+                message: `AI analiza predmeta ${caseInfo.caseNumber} dovršena: ${analysisCoverage.analyzed ?? 0} uspješno, ${analysisCoverage.failed ?? 0} neuspjelo od ${analysisCoverage.total ?? filesForAnalysis.length} datoteka.`
             });
             logger.info('pipeline.processScrapedCases', 'Case analyzed', {
                 runId,
-                caseIndex: i + 1,
-                totalCases,
                 filesAnalyzed: filesForAnalysis.length,
                 individualAnalyses: Array.isArray(analysis?.individualAnalyses) ? analysis.individualAnalyses.length : 0,
             });
@@ -1788,8 +1107,6 @@ async function processScrapedCases(casesToProcess, progressCallback, options = {
                     isAnonymous: cluster.isAnonymous,
                     selectionScore: clusterSummary?.score ?? 0,
                     selectionDiagnostics: clusterSummary?.selectionDiagnostics || null,
-                    expansionEligibility: clusterSummary?.expansionEligibility || null,
-                    expansionPlan: clusterSummary?.expansionPlan || null,
                     identityConsistency: clusterSummary?.identityConsistency || 'unresolved',
                     identityNotes: clusterSummary?.identityNotes || [],
                     participantNames: clusterSummary?.participantNames || [],
@@ -1798,10 +1115,10 @@ async function processScrapedCases(casesToProcess, progressCallback, options = {
                     acquisitionProvenance: clusterSummary?.acquisitionProvenance || [],
                     entryCountsByAcquisitionMode: clusterSummary?.entryCountsByAcquisitionMode || {},
                     documentCountsByAcquisitionMode: clusterSummary?.documentCountsByAcquisitionMode || {},
-                    expansion: clusterSummary?.expansion || null,
                     selectedForReasoning: clusterId === primaryClusterId
                 }
             });
+            }
         }
 
         // 3. Final Comparative Analysis
@@ -1978,7 +1295,6 @@ async function cleanupFiles(filePaths) {
 module.exports = {
     runCourtAnalysis,
     runCourtDiscovery,
-    runCourtAnalysisWithExistingAutomator,
     resolveScanDepth,
     computeRawScrapeLimit,
     processScrapedCases,
@@ -1986,9 +1302,4 @@ module.exports = {
     PartialAnalysisError,
     buildEmptyPartialResult,
     evaluateDiscoveryHeuristics,
-    evaluateClusterExpansionEligibility,
-    buildClusterExpansionPlan,
-    applyConfiguredClusterExpansion,
-    executeClusterExpansionSearches,
-    resolveAutoExpansion,
 };

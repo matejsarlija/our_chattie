@@ -123,7 +123,7 @@ describeIfIntegration('runCourtAnalysis pipeline (live CSV export discovery)', (
         const progressUpdates = [];
         const searchTerm = '66124057408';
 
-        const result = await runCourtDiscovery(searchTerm, { caseLimit: 3 }, (progress) => progressUpdates.push(progress));
+        const result = await runCourtDiscovery(searchTerm, (progress) => progressUpdates.push(progress));
 
         expect(result.discoverySummary).toBeDefined();
         // The load-bearing assertion for this whole lane: prove CSV actually

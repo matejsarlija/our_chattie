@@ -73,7 +73,7 @@ describe('processScrapedCases Selection Policy', () => {
         });
     });
 
-    test('respects caseLimit for discovery but reasons only over the top-ranked primary cluster', async () => {
+    test('reasons only over the top-ranked primary cluster while retaining all discovered clusters', async () => {
         // Create 5 distinct cases
         const casesToProcess = [
             { caseInfo: { caseNumber: 'C1', title: 'T1' }, documentLinks: [{ url: 'u1' }] },
@@ -84,9 +84,9 @@ describe('processScrapedCases Selection Policy', () => {
         ];
 
         const progressCallback = jest.fn();
-        const options = { caseLimit: 3 };
+
         
-        const result = await processScrapedCases(casesToProcess, progressCallback, options);
+        const result = await processScrapedCases(casesToProcess, progressCallback);
         
         expect(result.discoverySummary.clusters.map(cluster => cluster.clusterId)).toEqual(['C1', 'C2', 'C3', 'C4', 'C5']);
         expect(result.discoverySummary.recommendedPrimaryClusterId).toBe('C1');
@@ -109,11 +109,7 @@ describe('processScrapedCases Selection Policy', () => {
             { caseInfo: { caseNumber: 'C4', title: 'T4-A' }, documentLinks: [{ url: 'u4a' }] },
         ];
 
-        const result = await processScrapedCases(
-            casesToProcess,
-            jest.fn(),
-            { caseLimit: 3 },
-        );
+        const result = await processScrapedCases(casesToProcess, jest.fn());
 
         expect(result.discoverySummary.capturedDistinctCaseCount).toBe(4);
         expect(result.discoverySummary.recommendedPrimaryClusterId).toBe('C1');
@@ -131,11 +127,7 @@ describe('processScrapedCases Selection Policy', () => {
             { caseInfo: { caseNumber: 'C_MID', title: 'Mid', date: '01.01.2024' }, documentLinks: [{ url: 'u-mid' }] },
         ];
 
-        const result = await processScrapedCases(
-            casesToProcess,
-            jest.fn(),
-            { caseLimit: 2 },
-        );
+        const result = await processScrapedCases(casesToProcess, jest.fn());
 
         expect(result.discoverySummary.recommendedPrimaryClusterId).toBe('C_COVERED');
         expect(result.discoverySummary.secondaryClusterIds).toEqual(['C_NEW', 'C_MID']);
@@ -151,11 +143,7 @@ describe('processScrapedCases Selection Policy', () => {
             { caseInfo: { caseNumber: 'C_NEWER', title: 'Newer', date: '14.01.2025.' }, documentLinks: [{ url: 'u-newer-1' }] },
         ];
 
-        const result = await processScrapedCases(
-            casesToProcess,
-            jest.fn(),
-            { caseLimit: 1 },
-        );
+        const result = await processScrapedCases(casesToProcess, jest.fn());
 
         expect(result.processedCases.map(c => c.caseResult.caseNumber)).toEqual(['C_NEWER']);
     });
@@ -169,64 +157,30 @@ describe('processScrapedCases Selection Policy', () => {
             { caseInfo: { caseNumber: 'C_MED', title: 'Med B', date: '01.03.2025' }, documentLinks: [{ url: 'u-med-2' }] },
         ];
 
-        const result = await processScrapedCases(
-            casesToProcess,
-            jest.fn(),
-            { caseLimit: 2 },
-        );
+        const result = await processScrapedCases(casesToProcess, jest.fn());
 
         expect(result.discoverySummary.recommendedPrimaryClusterId).toBe('C_HIGH');
         expect(result.discoverySummary.secondaryClusterIds).toEqual(['C_LOW', 'C_MED']);
         expect(result.processedCases.map(c => c.caseResult.caseNumber)).toEqual(['C_HIGH']);
     });
 
-    test('handles caseLimit greater than available clusters', async () => {
+
+
+
+    test('does not expand the selected primary cluster with unrelated discovery entries', async () => {
         const casesToProcess = [
-            { caseInfo: { caseNumber: 'C1', title: 'T1' }, documentLinks: [{ url: 'u1' }] },
-            { caseInfo: { caseNumber: 'C2', title: 'T2' }, documentLinks: [{ url: 'u2' }] },
+            { caseInfo: { caseNumber: 'C_PRIMARY', date: '01.01.2025' }, documentLinks: [{ url: 'u-primary' }] },
+            { caseInfo: { caseNumber: 'C_OTHER', date: '01.01.2026' }, documentLinks: [{ url: 'u-other' }] },
         ];
+        const result = await processScrapedCases(casesToProcess, jest.fn(), {
+            query: { type: 'case_number', value: 'C_PRIMARY' }
+        });
+        const primary = result.discoverySummary.clusters.find((cluster) => cluster.clusterId === 'C_PRIMARY');
 
-        const options = { caseLimit: 5 };
-        const result = await processScrapedCases(casesToProcess, jest.fn(), options);
-        
-        expect(result.discoverySummary.capturedDistinctCaseCount).toBe(2);
-        expect(result.processedCases).toHaveLength(1);
-    });
-
-    test('defaults to all available if caseLimit is not provided', async () => {
-        const casesToProcess = [
-            { caseInfo: { caseNumber: 'C1', title: 'T1' }, documentLinks: [{ url: 'u1' }] },
-            { caseInfo: { caseNumber: 'C2', title: 'T2' }, documentLinks: [{ url: 'u2' }] },
-        ];
-
-        // No caseLimit in options
-        const result = await processScrapedCases(casesToProcess, jest.fn(), { });
-        
-        expect(result.discoverySummary.capturedDistinctCaseCount).toBe(2);
-        expect(result.processedCases).toHaveLength(1);
-    });
-
-
-
-    test('does not append unrelated expansion entries into the selected primary cluster', async () => {
-        const fixture = require('../fixtures/analysis-baselines/undercovered-primary-cluster-expansion.json');
-
-        const result = await processScrapedCases(
-            fixture.casesToProcess,
-            jest.fn(),
-            {
-                caseLimit: 1,
-                query: fixture.query,
-                discoveryMetadata: fixture.discoveryMetadata,
-                clusterExpansion: fixture.clusterExpansion
-            },
-        );
-
-        expect(result.processedCases).toHaveLength(1);
-        expect(result.processedCases[0].caseResult.caseNumber).toBe('ST-700/2024');
-        expect(result.discoverySummary.secondaryClusterIds).toEqual(['ST-123/2026']);
-        expect(result.discoverySummary.clusters.map(cluster => cluster.clusterId)).toEqual(['ST-700/2024', 'ST-123/2026']);
-        expect(result.discoverySummary.expansion.skippedEntryCount).toBe(1);
+        expect(result.discoverySummary.clusters.map((cluster) => cluster.clusterId)).toEqual(['C_PRIMARY', 'C_OTHER']);
+        expect(primary.entryCount).toBe(1);
+        expect(result.processedCases.map((item) => item.caseResult.caseNumber)).toEqual(['C_PRIMARY']);
+        expect(result.discoverySummary).not.toHaveProperty('expansion');
     });
 
     test('keeps anonymous clusters uniquely addressable during selection', async () => {
@@ -237,11 +191,7 @@ describe('processScrapedCases Selection Policy', () => {
             { caseInfo: { caseNumber: 'C_TRACKED', title: 'Tracked 2', date: '05.02.2025', participants: [] }, documentLinks: [{ url: 'u-tracked-2' }] },
         ];
 
-        const result = await processScrapedCases(
-            casesToProcess,
-            jest.fn(),
-            { caseLimit: 3 },
-        );
+        const result = await processScrapedCases(casesToProcess, jest.fn());
 
         const anonymousOne = result.discoverySummary.clusters.find(cluster => cluster.clusterId === 'anonymous-1');
         const anonymousTwo = result.discoverySummary.clusters.find(cluster => cluster.clusterId === 'anonymous-2');
@@ -269,11 +219,7 @@ describe('processScrapedCases Selection Policy', () => {
             { caseInfo: { caseNumber: 'C_SECONDARY', title: 'Secondary', date: '03.03.2025' }, documentLinks: [{ url: 'u-secondary-1' }] },
         ];
 
-        const result = await processScrapedCases(
-            casesToProcess,
-            jest.fn(),
-            { caseLimit: 2 },
-        );
+        const result = await processScrapedCases(casesToProcess, jest.fn());
 
         const primaryCluster = result.discoverySummary.clusters.find((cluster) => cluster.clusterId === 'C_PRIMARY');
         const secondaryCluster = result.discoverySummary.clusters.find((cluster) => cluster.clusterId === 'C_SECONDARY');
@@ -288,31 +234,4 @@ describe('processScrapedCases Selection Policy', () => {
         expect(result.processedCases[0].groupMetadata.selectedForReasoning).toBe(true);
     });
 
-    test('does not create an expansion plan for a sufficiently covered primary cluster', async () => {
-        const casesToProcess = Array.from({ length: 12 }, (_, index) => ({
-            caseInfo: {
-                caseNumber: 'C_SUFFICIENT',
-                title: `Covered ${index + 1}`,
-                date: index === 0 ? '01.06.2025' : '01.01.2024'
-            },
-            documentLinks: [{ url: `u-sufficient-${index + 1}` }]
-        }));
-
-        const result = await processScrapedCases(
-            casesToProcess,
-            jest.fn(),
-            {
-                caseLimit: 1,
-                query: { type: 'case_number', value: 'C_SUFFICIENT' }
-            },
-        );
-
-        const primaryCluster = result.discoverySummary.clusters.find((cluster) => cluster.clusterId === 'C_SUFFICIENT');
-
-        expect(result.discoverySummary.expansionEligibility.eligible).toBe(false);
-        expect(result.discoverySummary.expansionEligibility.blockerReasons).toEqual(['primary-cluster-already-sufficient']);
-        expect(result.discoverySummary.expansionPlan).toBeNull();
-        expect(primaryCluster.expansionPlan).toBeNull();
-        expect(result.processedCases[0].groupMetadata.expansionPlan).toBeNull();
-    });
 });

@@ -1,14 +1,16 @@
 const { parseCourtAnalysisRequest } = require('../helpers/courtAnalysisRequest');
 
 describe('parseCourtAnalysisRequest', () => {
-  test('accepts explicit typed query and options.caseLimit', () => {
+  test('accepts explicit typed query and scan options', () => {
     const parsed = parseCourtAnalysisRequest({
       query: { type: 'case_number', value: 'St-357/2013' },
-      options: { caseLimit: 3 },
+      options: { scanDepth: 'full', caseLimit: 3, clusterExpansion: true },
     });
 
     expect(parsed.query).toEqual({ type: 'case_number', value: 'St-357/2013' });
-    expect(parsed.options.caseLimit).toBe(3);
+    expect(parsed.options.scanDepth).toBe('full');
+    expect(parsed.options).not.toHaveProperty('caseLimit');
+    expect(parsed.options).not.toHaveProperty('clusterExpansion');
     expect(parsed.searchTerm).toBe('St-357/2013');
   });
 
@@ -16,7 +18,7 @@ describe('parseCourtAnalysisRequest', () => {
     const parsed = parseCourtAnalysisRequest({ searchTerm: '66124057408' });
 
     expect(parsed.query).toEqual({ type: 'oib', value: '66124057408' });
-    expect(parsed.options.caseLimit).toBe(5);
+    expect(parsed.options).not.toHaveProperty('caseLimit');
   });
 
   test('rejects invalid query.type with 400 metadata', () => {
@@ -45,98 +47,27 @@ describe('parseCourtAnalysisRequest', () => {
     }
   });
 
-  test('clamps caseLimit into supported bounds', () => {
-    const low = parseCourtAnalysisRequest({
-      searchTerm: '66124057408',
-      options: { caseLimit: 0 },
-    });
-    const high = parseCourtAnalysisRequest({
-      searchTerm: '66124057408',
-      options: { caseLimit: 99 },
-    });
-
-    expect(low.options.caseLimit).toBe(1);
-    expect(high.options.caseLimit).toBe(10);
-  });
-
-  test('defaults clusterExpansion to null when absent', () => {
-    const parsed = parseCourtAnalysisRequest({ searchTerm: '66124057408' });
-    expect(parsed.options.clusterExpansion).toBeNull();
-  });
-
-  test('coerces options.clusterExpansion booleans and integers', () => {
-    const enabled = parseCourtAnalysisRequest({
-      searchTerm: '66124057408',
-      options: { clusterExpansion: true },
-    });
-    const explicit = parseCourtAnalysisRequest({
-      searchTerm: '66124057408',
-      options: { clusterExpansion: { maxPasses: 2 } },
-    });
-    const numeric = parseCourtAnalysisRequest({
-      searchTerm: '66124057408',
-      options: { clusterExpansion: 1 },
-    });
-
-    expect(enabled.options.clusterExpansion).toEqual({ maxPasses: 2 });
-    expect(explicit.options.clusterExpansion).toEqual({ maxPasses: 2 });
-    expect(numeric.options.clusterExpansion).toEqual({ maxPasses: 1 });
-  });
-
-  test('clamps options.clusterExpansion.maxPasses into supported bounds', () => {
-    const zero = parseCourtAnalysisRequest({
-      searchTerm: '66124057408',
-      options: { clusterExpansion: { maxPasses: 0 } },
-    });
-    const over = parseCourtAnalysisRequest({
-      searchTerm: '66124057408',
-      options: { clusterExpansion: { maxPasses: 99 } },
-    });
-
-    expect(zero.options.clusterExpansion).toEqual({ maxPasses: 0 });
-    expect(over.options.clusterExpansion).toEqual({ maxPasses: 2 });
-  });
-
-  test('rejects invalid options.clusterExpansion.maxPasses with 400', () => {
-    try {
-      parseCourtAnalysisRequest({
-        searchTerm: '66124057408',
-        options: { clusterExpansion: { maxPasses: 'abc' } },
-      });
-      throw new Error('Expected parseCourtAnalysisRequest to throw');
-    } catch (err) {
-      expect(err.statusCode).toBe(400);
-      expect(err.message).toMatch(/clusterExpansion/);
-    }
-  });
-
-  test('treats explicit false clusterExpansion as disabled', () => {
-    const parsed = parseCourtAnalysisRequest({
-      searchTerm: '66124057408',
-      options: { clusterExpansion: false },
-    });
-    expect(parsed.options.clusterExpansion).toBeNull();
-  });
 
   test('defaults scanDepth to balanced when absent', () => {
     const parsed = parseCourtAnalysisRequest({ searchTerm: '66124057408' });
     expect(parsed.options.scanDepth).toBe('balanced');
   });
 
-  test('accepts explicit scanDepth values', () => {
-    expect(parseCourtAnalysisRequest({ searchTerm: 'x', options: { scanDepth: 'standard' } }).options.scanDepth).toBe('standard');
+  test('accepts balanced and full scanDepth values', () => {
     expect(parseCourtAnalysisRequest({ searchTerm: 'x', options: { scanDepth: 'balanced' } }).options.scanDepth).toBe('balanced');
     expect(parseCourtAnalysisRequest({ searchTerm: 'x', options: { scanDepth: 'full' } }).options.scanDepth).toBe('full');
     expect(parseCourtAnalysisRequest({ searchTerm: 'x', options: { scanDepth: 'FULL' } }).options.scanDepth).toBe('full');
   });
 
   test('rejects invalid options.scanDepth with 400', () => {
-    try {
-      parseCourtAnalysisRequest({ searchTerm: '66124057408', options: { scanDepth: 'deep' } });
-      throw new Error('Expected parseCourtAnalysisRequest to throw');
-    } catch (err) {
-      expect(err.statusCode).toBe(400);
-      expect(err.message).toMatch(/scanDepth/);
+    for (const scanDepth of ['standard', 'deep']) {
+      try {
+        parseCourtAnalysisRequest({ searchTerm: '66124057408', options: { scanDepth } });
+        throw new Error('Expected parseCourtAnalysisRequest to throw');
+      } catch (err) {
+        expect(err.statusCode).toBe(400);
+        expect(err.message).toMatch(/scanDepth/);
+      }
     }
   });
 });

@@ -1,13 +1,7 @@
 const { classifyQueryType } = require('../court-analysis/utils/queryClassifier');
 
 const ALLOWED_QUERY_TYPES = new Set(['oib', 'case_number', 'text']);
-const DEFAULT_CASE_LIMIT = 5;
-const MIN_CASE_LIMIT = 1;
-const MAX_CASE_LIMIT = 10;
-const DEFAULT_CLUSTER_EXPANSION_PASSES = 2;
-const MIN_CLUSTER_EXPANSION_PASSES = 0;
-const MAX_CLUSTER_EXPANSION_PASSES = 2;
-const SCAN_DEPTHS = ['standard', 'balanced', 'full'];
+const SCAN_DEPTHS = ['balanced', 'full'];
 const DEFAULT_SCAN_DEPTH = 'balanced';
 
 function createBadRequest(message) {
@@ -16,56 +10,8 @@ function createBadRequest(message) {
   return err;
 }
 
-function coerceCaseLimit(value) {
-  if (value === undefined || value === null || value === '') {
-    return DEFAULT_CASE_LIMIT;
-  }
 
-  const numeric = Number.parseInt(String(value), 10);
-  if (Number.isNaN(numeric)) {
-    throw createBadRequest('Invalid options.caseLimit. Expected an integer.');
-  }
-  if (numeric < MIN_CASE_LIMIT) return MIN_CASE_LIMIT;
-  if (numeric > MAX_CASE_LIMIT) return MAX_CASE_LIMIT;
-  return numeric;
-}
-
-// Threads the optional cluster-expansion depth through the API route (3a).
-// Accepts either an explicit object `{ maxPasses }`, a boolean (true = default
-// passes), or null/absent (let the pipeline's deterministic heuristics decide).
-function coerceClusterExpansion(value) {
-  if (value === undefined || value === null || value === '' || value === false) {
-    return null;
-  }
-
-  if (value === true) {
-    return { maxPasses: DEFAULT_CLUSTER_EXPANSION_PASSES };
-  }
-
-  if (typeof value === 'object') {
-    const raw = value.maxPasses;
-    if (raw === undefined || raw === null || raw === '') {
-      return { maxPasses: DEFAULT_CLUSTER_EXPANSION_PASSES };
-    }
-    const numeric = Number.parseInt(String(raw), 10);
-    if (Number.isNaN(numeric)) {
-      throw createBadRequest('Invalid options.clusterExpansion.maxPasses. Expected an integer.');
-    }
-    const clamped = Math.max(MIN_CLUSTER_EXPANSION_PASSES, Math.min(MAX_CLUSTER_EXPANSION_PASSES, numeric));
-    return { maxPasses: clamped };
-  }
-
-  const numeric = Number.parseInt(String(value), 10);
-  if (Number.isNaN(numeric)) {
-    throw createBadRequest('Invalid options.clusterExpansion. Expected a boolean, integer, or { maxPasses }.');
-  }
-  const clamped = Math.max(MIN_CLUSTER_EXPANSION_PASSES, Math.min(MAX_CLUSTER_EXPANSION_PASSES, numeric));
-  return { maxPasses: clamped };
-}
-
-// Threads the search scan-depth knob (dial) through the API route. One of
-// `standard` (default window only), `balanced` (default window + oldest-10 tail,
-// the default), or `full` (scan every available page).
+// Keeps request parsing aligned with the only supported acquisition budgets.
 function coerceScanDepth(value) {
   if (value === undefined || value === null || value === '') {
     return DEFAULT_SCAN_DEPTH;
@@ -116,8 +62,6 @@ function parseCourtAnalysisRequest(body) {
     },
     searchTerm: queryValue,
     options: {
-      caseLimit: coerceCaseLimit(optionsPayload.caseLimit),
-      clusterExpansion: coerceClusterExpansion(optionsPayload.clusterExpansion),
       scanDepth: coerceScanDepth(optionsPayload.scanDepth),
     },
   };
@@ -125,12 +69,6 @@ function parseCourtAnalysisRequest(body) {
 
 module.exports = {
   parseCourtAnalysisRequest,
-  DEFAULT_CASE_LIMIT,
-  MIN_CASE_LIMIT,
-  MAX_CASE_LIMIT,
-  DEFAULT_CLUSTER_EXPANSION_PASSES,
-  MIN_CLUSTER_EXPANSION_PASSES,
-  MAX_CLUSTER_EXPANSION_PASSES,
   SCAN_DEPTHS,
   DEFAULT_SCAN_DEPTH,
   ALLOWED_QUERY_TYPES,

@@ -340,7 +340,7 @@ describe('Track 1: pipeline wiring (1e)', () => {
       meta: {},
     });
 
-    const result = await runCourtAnalysis('66124057408', { caseLimit: 1 }, jest.fn());
+    const result = await runCourtAnalysis('66124057408', jest.fn());
 
     expect(result.clusterEvidencePackage.analyses).toHaveLength(1);
     expect(result.clusterEvidencePackage.analyses[0].summary).toBe('Tražbina od 40.000 EUR.');

@@ -60,7 +60,6 @@ const fixture = require('../fixtures/analysis-baselines/mixed-multi-cluster.json
 
 function baseOptions(overrides = {}) {
     return {
-        caseLimit: 3,
         query: fixture.query,
         discoveryMetadata: fixture.discoveryMetadata,
         ...overrides,

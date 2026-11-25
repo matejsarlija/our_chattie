@@ -92,7 +92,6 @@ describe('processScrapedCases stage-counter emission', () => {
             fixture.casesToProcess,
             (event) => events.push(event),
             {
-                caseLimit: 3,
                 query: fixture.query,
                 discoveryMetadata: fixture.discoveryMetadata
             }
@@ -118,7 +117,6 @@ describe('processScrapedCases stage-counter emission', () => {
             fixture.casesToProcess,
             (event) => events.push(event),
             {
-                caseLimit: 3,
                 query: fixture.query,
                 discoveryMetadata: fixture.discoveryMetadata
             }
@@ -177,7 +175,6 @@ describe('processScrapedCases stage-counter emission', () => {
             fixture.casesToProcess,
             (event) => events.push(event),
             {
-                caseLimit: 3,
                 query: fixture.query,
                 discoveryMetadata: fixture.discoveryMetadata
             }
@@ -203,7 +200,6 @@ describe('processScrapedCases stage-counter emission', () => {
             fixture.casesToProcess,
             (event) => events.push(event),
             {
-                caseLimit: 3,
                 query: fixture.query,
                 discoveryMetadata: fixture.discoveryMetadata
             }
