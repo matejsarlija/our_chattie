@@ -396,13 +396,12 @@ describe('processScrapedCases discovery reconciliation', () => {
 
         expect(result.processedCases).toHaveLength(1);
         expect(result.processedCases[0].caseResult.caseNumber).toBe('ST-100/2023');
-        expect(result.report).toBeNull();
+        expect(result.report).toMatchObject({
+            generationMode: 'deterministic_fallback',
+            fallbackReason: 'synthesis-failed',
+        });
         expect(result.reportError).toBe('Dnevni limit AI analize je iscrpljen.');
-        // No per-document summaries exist in this fixture's mocked analyses, so
-        // the fallback overview (built from allProcessedCases) is empty rather
-        // than null — the function returned successfully, it just had nothing
-        // to report on.
-        expect(result.comparativeAnalysis).toBe('');
+        expect(result.comparativeAnalysis).toContain('Deterministički rezervni izvještaj');
         expect(result.clusterEvidencePackage.clusterId).toBe('ST-100/2023');
     });
 });

@@ -34,12 +34,24 @@ function createAnalysisReportRetryHandler({ store, regenerate, composeNarrative 
     if (!evidencePackage) {
       return res.status(409).json({ error: 'Nema sačuvanih dokaza za ponovnu izradu izvještaja.' });
     }
-    if (stored.report) {
+    if (stored.report && stored.report.generationMode !== 'deterministic_fallback') {
       return res.status(409).json({ error: 'Stručni izvještaj već postoji.' });
     }
 
+    let hydratedPackage = evidencePackage;
+    if (!Array.isArray(evidencePackage.factLedger) && typeof store.listRunFacts === 'function') {
+      try {
+        const listed = store.listRunFacts({ runId: run.id, limit: 5000, offset: 0 });
+        if (Array.isArray(listed?.facts) && listed.facts.length > 0) {
+          hydratedPackage = { ...evidencePackage, factLedger: listed.facts };
+        }
+      } catch {
+        // Non-fatal: continue with stored evidencePackage
+      }
+    }
+
     try {
-      const report = await regenerate(evidencePackage, { runId: run.id });
+      const report = await regenerate(hydratedPackage, { runId: run.id, analysisStore: store });
       const narrative = compose(report);
       const updated = await store.updateAnalysisRunReport({
         analysisId: run.id,

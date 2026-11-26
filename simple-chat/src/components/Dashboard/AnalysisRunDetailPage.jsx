@@ -204,7 +204,10 @@ export default function AnalysisRunDetailPage() {
   );
   const hasEvidencePackage = Boolean(parsedResult?.clusterEvidencePackage);
   const canRetryReport =
-    !isRunning && !loading && !report && hasEvidencePackage;
+    !isRunning
+    && !loading
+    && hasEvidencePackage
+    && (!report || report.generationMode === "deterministic_fallback");
 
   const handleRetryReport = async () => {
     if (!canRetryReport || retryState.loading) return;

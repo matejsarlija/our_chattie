@@ -60,6 +60,11 @@ async function generateClusterReport(clusterEvidencePackage, options = {}) {
     const report = await synthesizeReport(reasoningEvidence, {
         tracker: options.tracker,
         onUsage: options.onUsage,
+        signal: options.signal,
+        sqliteStore: options.analysisStore || null,
+        creditLatch: options.creditLatch || null,
+        taskRouter: options.taskRouter,
+        runId,
     });
     logger.info('reportService.synthesize', 'Report synthesized', {
         runId,
@@ -75,6 +80,11 @@ async function generateClusterReport(clusterEvidencePackage, options = {}) {
     const verifiedReport = await verifyReport(report, reasoningEvidence, {
         tracker: options.tracker,
         onUsage: options.onUsage,
+        signal: options.signal,
+        sqliteStore: options.analysisStore || null,
+        creditLatch: options.creditLatch || null,
+        taskRouter: options.taskRouter,
+        runId,
     });
     logger.info('reportService.verify', 'Report verification result', {
         runId,

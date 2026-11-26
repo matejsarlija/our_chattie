@@ -71,6 +71,41 @@ describe('POST /api/analysis/runs/:id/report', () => {
     expect(regenerate).not.toHaveBeenCalled();
   });
 
+  test('allows retrying a deterministic_fallback report, rehydrates factLedger, and transitions partial -> done', async () => {
+    const run = await store.createAnalysisRun({ oib: '66124057408', queryType: 'oib', queryValue: '66124057408' });
+    store.insertRunFacts({
+      runId: run.id,
+      facts: [{ id: 'fact-1', kind: 'amount', description: 'Tražbina', value: 1000, currency: 'EUR', grounded: true }],
+    });
+    await store.completeAnalysisRun({
+      analysisId: run.id,
+      partialReason: 'provider-credits-exhausted',
+      resultText: 'fallback',
+      resultJson: {
+        comparativeAnalysis: 'fallback',
+        report: { generationMode: 'deterministic_fallback', fallbackReason: 'provider-credits-exhausted', findings: [] },
+        clusterEvidencePackage: { clusterId: 'ST-2/2013' },
+      },
+    });
+    const upgradedReport = { generationMode: 'llm', findings: [{ text: 'AI nalaz' }], timeline: [], conflicts: [] };
+    const regenerate = jest.fn().mockResolvedValue(upgradedReport);
+    const app = makeApp(store, regenerate);
+
+    const res = await request(app).post(`/api/analysis/runs/${run.id}/report`);
+
+    expect(res.status).toBe(200);
+    expect(regenerate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        clusterId: 'ST-2/2013',
+        factLedger: expect.arrayContaining([expect.objectContaining({ id: 'fact-1' })]),
+      }),
+      expect.objectContaining({ runId: run.id, analysisStore: store }),
+    );
+    expect(res.body.run.status).toBe('done');
+    expect(res.body.run.partial_reason).toBeNull();
+    expect(res.body.run.result_json.report.generationMode).toBe('llm');
+  });
+
   test('returns 404 for unknown run', async () => {
     const app = makeApp(store, jest.fn());
     const res = await request(app).post('/api/analysis/runs/missing/report');
@@ -93,6 +128,41 @@ describe('POST /api/analysis/runs/:id/report', () => {
     expect(regenerate).not.toHaveBeenCalled();
   });
 
+  test('allows retrying a deterministic_fallback report, rehydrates factLedger, and transitions partial -> done', async () => {
+    const run = await store.createAnalysisRun({ oib: '66124057408', queryType: 'oib', queryValue: '66124057408' });
+    store.insertRunFacts({
+      runId: run.id,
+      facts: [{ id: 'fact-1', kind: 'amount', description: 'Tražbina', value: 1000, currency: 'EUR', grounded: true }],
+    });
+    await store.completeAnalysisRun({
+      analysisId: run.id,
+      partialReason: 'provider-credits-exhausted',
+      resultText: 'fallback',
+      resultJson: {
+        comparativeAnalysis: 'fallback',
+        report: { generationMode: 'deterministic_fallback', fallbackReason: 'provider-credits-exhausted', findings: [] },
+        clusterEvidencePackage: { clusterId: 'ST-2/2013' },
+      },
+    });
+    const upgradedReport = { generationMode: 'llm', findings: [{ text: 'AI nalaz' }], timeline: [], conflicts: [] };
+    const regenerate = jest.fn().mockResolvedValue(upgradedReport);
+    const app = makeApp(store, regenerate);
+
+    const res = await request(app).post(`/api/analysis/runs/${run.id}/report`);
+
+    expect(res.status).toBe(200);
+    expect(regenerate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        clusterId: 'ST-2/2013',
+        factLedger: expect.arrayContaining([expect.objectContaining({ id: 'fact-1' })]),
+      }),
+      expect.objectContaining({ runId: run.id, analysisStore: store }),
+    );
+    expect(res.body.run.status).toBe('done');
+    expect(res.body.run.partial_reason).toBeNull();
+    expect(res.body.run.result_json.report.generationMode).toBe('llm');
+  });
+
   test('returns 409 when no evidence package is stored', async () => {
     const run = await store.createAnalysisRun({ oib: '66124057408', queryType: 'oib', queryValue: '66124057408' });
     await store.completeAnalysisRun({
@@ -107,6 +177,41 @@ describe('POST /api/analysis/runs/:id/report', () => {
 
     expect(res.status).toBe(409);
     expect(regenerate).not.toHaveBeenCalled();
+  });
+
+  test('allows retrying a deterministic_fallback report, rehydrates factLedger, and transitions partial -> done', async () => {
+    const run = await store.createAnalysisRun({ oib: '66124057408', queryType: 'oib', queryValue: '66124057408' });
+    store.insertRunFacts({
+      runId: run.id,
+      facts: [{ id: 'fact-1', kind: 'amount', description: 'Tražbina', value: 1000, currency: 'EUR', grounded: true }],
+    });
+    await store.completeAnalysisRun({
+      analysisId: run.id,
+      partialReason: 'provider-credits-exhausted',
+      resultText: 'fallback',
+      resultJson: {
+        comparativeAnalysis: 'fallback',
+        report: { generationMode: 'deterministic_fallback', fallbackReason: 'provider-credits-exhausted', findings: [] },
+        clusterEvidencePackage: { clusterId: 'ST-2/2013' },
+      },
+    });
+    const upgradedReport = { generationMode: 'llm', findings: [{ text: 'AI nalaz' }], timeline: [], conflicts: [] };
+    const regenerate = jest.fn().mockResolvedValue(upgradedReport);
+    const app = makeApp(store, regenerate);
+
+    const res = await request(app).post(`/api/analysis/runs/${run.id}/report`);
+
+    expect(res.status).toBe(200);
+    expect(regenerate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        clusterId: 'ST-2/2013',
+        factLedger: expect.arrayContaining([expect.objectContaining({ id: 'fact-1' })]),
+      }),
+      expect.objectContaining({ runId: run.id, analysisStore: store }),
+    );
+    expect(res.body.run.status).toBe('done');
+    expect(res.body.run.partial_reason).toBeNull();
+    expect(res.body.run.result_json.report.generationMode).toBe('llm');
   });
 
   test('persists the new reportError and returns 500 when regeneration fails', async () => {

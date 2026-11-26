@@ -588,14 +588,26 @@ function createSqliteStore(options = {}) {
       if (!result.changes) throw new Error('Analysis run not found.');
       return requireRun(analysisId);
     },
-    async updateAnalysisRunReport({ analysisId, resultText, resultJson = null }) {
+    async updateAnalysisRunReport({ analysisId, resultText, resultJson = null, scorecard = undefined }) {
       const run = requireRun(analysisId);
       const merged = resultJson == null ? run.result_json : { ...(run.result_json || {}), ...resultJson };
+      const bounded = stripDuplicateAiResults(merged);
+      const hasUpgradedLlmReport = Boolean(
+        bounded?.report && bounded.report.generationMode !== 'deterministic_fallback',
+      );
+      const nextStatus = hasUpgradedLlmReport && run.status === 'partial' ? 'done' : run.status;
+      const nextPartialReason = hasUpgradedLlmReport ? null : run.partial_reason;
+      const nextSummary = buildRunSummary({
+        run: { ...run, status: nextStatus, partial_reason: nextPartialReason },
+        resultJson: bounded,
+      });
+      const nextScorecard = scorecard !== undefined ? stringify(scorecard) : run.scorecard_json;
       db.transaction(() => {
         db.prepare(`INSERT INTO run_artifacts (run_id, result_text, result_json) VALUES (?, ?, ?)
           ON CONFLICT(run_id) DO UPDATE SET result_text = COALESCE(excluded.result_text, run_artifacts.result_text), result_json = excluded.result_json`)
-          .run(analysisId, resultText ?? run.result_text ?? null, stringify(stripDuplicateAiResults(merged)));
-        db.prepare('UPDATE runs SET updated_at = ? WHERE id = ?').run(nowIso(), analysisId);
+          .run(analysisId, resultText ?? run.result_text ?? null, stringify(bounded));
+        db.prepare(`UPDATE runs SET status = ?, partial_reason = ?, summary_json = ?, scorecard_json = ?, updated_at = ? WHERE id = ?`)
+          .run(nextStatus, nextPartialReason, stringify(nextSummary), nextScorecard, nowIso(), analysisId);
       })();
       return requireRun(analysisId);
     },

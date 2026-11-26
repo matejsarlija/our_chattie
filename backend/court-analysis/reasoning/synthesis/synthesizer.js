@@ -1,7 +1,10 @@
 require("dotenv").config();
+const crypto = require("node:crypto");
 const { withGeminiRetry, withGeminiTimeout } = require("../../../llm/retry");
 const { trackUsageInvoke } = require("../../../llm/usage");
 const { createOpenRouterRoleClient, outputCapWarning } = require("../../../llm/openrouterConfig");
+const { createTaskRouter } = require("../../../llm/taskRouter");
+const { createCreditExhaustedLatch } = require("../../../llm/creditLatch");
 const { extractJsonBlock } = require("../../../helpers/jsonExtract");
 const logger = require("../../../services/logger");
 const { SCHEMA_VERSION, validateReport } = require("../schema/schema");
@@ -117,55 +120,95 @@ async function synthesizeReport(evidencePackage, options = {}) {
         return createEmptyReport("Nema dovoljno dokaza za generiranje izvješća.");
     }
 
-    const { timeline = [], claims = [], meta = {} } = normalizedEvidence;
+    const { timeline = [], claims = [], meta = {}, creditorDigest = null, proceduralOutcomes = null } = normalizedEvidence;
 
-    // 1. Prepare Context
-    const timelineText = timeline.map(e => `- ${e.date || 'Undated'}: ${e.description}`).join('\n');
+    // 1. Prepare RLM Symbolic Case Environment (Markdown Pipe Tables + Tagged [C<N>] Blocks)
+    const timelineText = timeline.map(e => `- ${e.date || 'Nedatirano'}: ${e.description}`).join('\n');
     const claimByRef = new Map(claims.map((claim, index) => [`C${index + 1}`, claim]));
-    const claimsText = claims.map((claim, index) => formatClaimLine(claim, index)).join('\n');
+    const pipeTablesSection = formatRlmPipeTables({
+        creditorDigest: creditorDigest || meta.creditorDigest,
+        proceduralOutcomes: proceduralOutcomes || meta.proceduralOutcomes,
+        reconciliation: meta.reconciliation,
+    });
+    const claimsText = claims.map((claim, index) => formatTaggedClaimBlock(claim, index)).join('\n\n');
     const partiesText = (meta.parties || []).join(', ');
-    const caseNumber = meta.caseNumber || 'Unknown';
+    const caseNumber = meta.caseNumber || 'Nepoznato';
     const poorDocumentCoverage = isPoorDocumentCoverage(meta.coverage);
     const partialDocumentCoverage = hasPartialDocumentCoverage(meta.coverage);
     const coverageInstruction = poorDocumentCoverage || partialDocumentCoverage
         ? `\n    DOCUMENT COVERAGE WARNING: ${meta.coverage.analyzed || 0} of ${meta.coverage.total || 0} documents were analyzed successfully${partialDocumentCoverage ? `; ${meta.coverage.partial} were only partially extracted or analyzed` : ''}. Titles and links are structural metadata only. Do not infer facts from missing pages or failed chunks; qualify findings that depend on incomplete documents and identify those gaps as open questions. Low confidence is not a substitute for missing evidence.\n`
         : '';
 
-    const prompt = `
-    You are a legal analyst assistant for Croatian court cases.
-    Generate a final report in CROATIAN based ONLY on the following evidence.
+    const systemPrompt = [
+        'You are a legal analyst assistant for Croatian court cases.',
+        'Generate a final report in CROATIAN based ONLY on the supplied RLM Symbolic Case Environment.',
+        '1. Write one concise Croatian narrative (at most 1,500 characters).',
+        '2. List at most 12 key findings based on the claims. Each claim block has a stable reference [C1], [C2], ... Cite only the references that support the finding, at most 4 per finding. Never copy claim or citation text into the citations list.',
+        '3. Identify at most 8 concise open questions if information is missing or ambiguous.',
+        '4. Suggest at most 8 concise next steps grounded in the evidence; do not invent procedural actions.',
+        'Keep each finding, question, and next step short. Do not repeat the same fact across findings.',
+        'Return strictly a JSON object with keys: "narrative", "findings" ([{ "text", "confidence": "high|medium|low", "citations": ["C1"] }]), "openQuestions" ([string]), "nextSteps" ([string]).',
+        'Use only claim references from the list below in "citations"; do not invent references.',
+    ].join('\n');
 
-    CASE INFO:
-    Number: ${caseNumber}
-    Parties: ${partiesText}
+    const userContent = `CASE INFO:
+Number: ${caseNumber}
+Parties: ${partiesText || 'Nepoznato'}
+${pipeTablesSection ? `\n${pipeTablesSection}\n` : ''}
+TIMELINE OF EVENTS:
+${timelineText || "Nema kronoloških objava."}
 
-    TIMELINE OF EVENTS:
-    ${timelineText || "No timeline events found."}
+VERIFIED CLAIMS & SOURCE EXCERPTS:
+${claimsText || "Nema potvrđenih tvrdnji."}
+${coverageInstruction}`;
 
-    VERIFIED CLAIMS:
-    ${claimsText || "No verified claims found."}
-    ${coverageInstruction}
-
-    1. Write one concise Croatian narrative (at most 1,500 characters).
-    2. List at most 12 key findings based on the claims. Each claim line starts with a stable reference [C1], [C2], ... Cite only the references that support the finding, at most 4 per finding. Never copy claim or citation text into the citations list.
-    3. Identify at most 8 concise open questions if information is missing or ambiguous.
-    4. Suggest at most 8 concise next steps grounded in the evidence; do not invent procedural actions.
-    Keep each finding, question, and next step short. Do not repeat the same fact across findings.
-    OUTPUT FORMAT:
-    Return strictly JSON with the following structure:
-    {
-        "narrative": "string (Croatian)",
-        "findings": [
-            { "text": "finding text", "confidence": "high|medium|low", "citations": ["C1", "C2"] }
-        ],
-        "openQuestions": ["string"],
-        "nextSteps": ["string"]
+    const promptHash = crypto.createHash('sha256').update(`synthesis_v1:${systemPrompt}`).digest('hex').slice(0, 16);
+    if (options.sqliteStore?.upsertPromptRegistry) {
+        try {
+            options.sqliteStore.upsertPromptRegistry({
+                promptHash,
+                promptName: 'synthesis_v1',
+                schemaVersion: 1,
+                systemPrompt,
+            });
+        } catch {
+            // Non-fatal telemetry
+        }
     }
-    Use only claim references from the list above in "citations"; do not invent references.
-    `;
+
+    const prompt = `${systemPrompt}\n\n${userContent}`;
 
     try {
-        const response = await withGeminiRetry(() => withGeminiTimeout((signal) => trackUsageInvoke(gemini, prompt, { signal, tracker: options.tracker, onUsage: options.onUsage })));
+        let response;
+        const useLegacyClient = gemini?.invoke?._isMockFunction
+            || options.taskRouter === null
+            || !process.env.OPENROUTER_API_KEY;
+        if (!useLegacyClient && (options.taskRouter || options.sqliteStore || options.creditLatch)) {
+            const router = options.taskRouter || createTaskRouter({
+                creditLatch: options.creditLatch || createCreditExhaustedLatch({
+                    runId: options.runId || null,
+                    sqliteStore: options.sqliteStore || null,
+                }),
+                sqliteStore: options.sqliteStore || null,
+                runId: options.runId || null,
+            });
+            response = await router.invokeTask('SynthesizeCase', [
+                { role: 'system', content: systemPrompt },
+                { role: 'user', content: userContent },
+            ], {
+                promptHash,
+                responseFormat: { type: 'json_object' },
+                tracker: options.tracker,
+                onUsage: options.onUsage,
+                signal: options.signal,
+            });
+        } else {
+            response = await withGeminiRetry(() => withGeminiTimeout((reqSignal) => trackUsageInvoke(gemini, prompt, {
+                signal: options.signal || reqSignal,
+                tracker: options.tracker,
+                onUsage: options.onUsage,
+            })), { signal: options.signal });
+        }
         const parsed = extractJsonBlock(response.content);
 
         if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
@@ -181,7 +224,7 @@ async function synthesizeReport(evidencePackage, options = {}) {
         const findingsOmitted = rawFindings.length - selectedFindings.length;
         const findings = applyCoverageConfidenceGuard(selectedFindings.map((finding, index) => ({
             id: finding.id || `finding-${index + 1}`,
-            text: boundedText(finding.text || finding.claim || 'Untitled Finding', MAX_REPORT_FINDING_CHARS),
+            text: boundedText(finding.text || finding.claim || 'Nalaz bez naslova', MAX_REPORT_FINDING_CHARS),
             confidence: finding.confidence || 'medium',
             citations: resolveFindingCitations(finding.citations, claimByRef)
         })), normalizedEvidence);
@@ -226,11 +269,12 @@ async function synthesizeReport(evidencePackage, options = {}) {
         );
         const finalReport = {
             schemaVersion: SCHEMA_VERSION,
+            generationMode: 'llm',
             narrative: boundedText(parsed.narrative, MAX_REPORT_NARRATIVE_CHARS),
             openQuestions: [...seededOpenQuestions, ...openQuestions],
             nextSteps,
             conflicts: seededConflicts,
-            claims,
+            claims: [],
             findings: finalFindings,
             timeline: buildReportTimeline(timeline),
             meta: {
@@ -403,7 +447,59 @@ function extractClaimDate(claim) {
 function formatClaimLine(claim, index) {
     const date = extractClaimDate(claim);
     const ref = Number.isInteger(index) ? `[C${index + 1}] ` : '';
-    return `- ${ref}[${date || 'Undated'}] ${claim?.text || ''} (Confidence: ${claim?.confidence || 'medium'})`;
+    return `- ${ref}[${date || 'Nedatirano'}] ${claim?.text || ''} (Confidence: ${claim?.confidence || 'medium'})`;
+}
+
+function formatTaggedClaimBlock(claim, index) {
+    const ref = Number.isInteger(index) ? `C${index + 1}` : 'C?';
+    const ev = claim?.evidence?.[0] || {};
+    const meta = ev?.metadata || {};
+    const fileName = meta.fileName || ev.fileName || null;
+    const pages = Array.isArray(ev.sourcePages || meta.sourcePages) && (ev.sourcePages || meta.sourcePages).length > 0
+        ? ` (str. ${(ev.sourcePages || meta.sourcePages).join(', ')})`
+        : '';
+    if (String(claim?.id || '').startsWith('retrieved-') && fileName) {
+        return `### [${ref}] ${fileName}${pages}\n${claim.text || ''}`;
+    }
+    return formatClaimLine(claim, index);
+}
+
+function formatRlmPipeTables({ creditorDigest, proceduralOutcomes, reconciliation }) {
+    const sections = [];
+    const conflicts = Array.isArray(reconciliation?.conflicts) ? reconciliation.conflicts : [];
+    const openQuestions = Array.isArray(reconciliation?.openQuestions) ? reconciliation.openQuestions : [];
+
+    if (conflicts.length > 0) {
+        sections.push([
+            'RECONCILIATION CONFLICTS:',
+            '| Vrsta | Nalaz | Razlog |',
+            '|---|---|---|',
+            ...conflicts.slice(0, 15).map((c) => `| ${c.kind || 'arithmetic'} | ${String(c.finding || '').replace(/\|/g, '/')} | ${String(c.reason || '').replace(/\|/g, '/')} |`),
+        ].join('\n'));
+    }
+    if (openQuestions.length > 0) {
+        sections.push([
+            'RECONCILIATION OPEN QUESTIONS:',
+            ...openQuestions.slice(0, 10).map((q) => `- ${typeof q === 'string' ? q : q?.text || ''}`),
+        ].join('\n'));
+    }
+    if (creditorDigest?.topCreditors?.length > 0) {
+        sections.push([
+            'TOP CREDITORS DIGEST:',
+            '| Vjerovnik | Isplatni red | Ukupno EUR | Stavki |',
+            '|---|---|---|---|',
+            ...creditorDigest.topCreditors.slice(0, 15).map((c) => `| ${String(c.creditor || '').replace(/\|/g, '/')} | ${c.isplatniRed || '-'} | ${c.totalEur} | ${c.claimCount} |`),
+        ].join('\n'));
+    }
+    if (proceduralOutcomes?.milestoneEvents?.length > 0) {
+        sections.push([
+            'PROCEDURAL OUTCOMES:',
+            '| Datum | Tip | Instanca | Ishod | Opis |',
+            '|---|---|---|---|---|',
+            ...proceduralOutcomes.milestoneEvents.slice(0, 15).map((e) => `| ${e.date || 'Nedatirano'} | ${e.eventType || '-'} | ${e.instance || '-'} | ${e.outcome || '-'} | ${String(e.description || '').slice(0, 120).replace(/\|/g, '/')} |`),
+        ].join('\n'));
+    }
+    return sections.join('\n\n');
 }
 
 /**
@@ -449,17 +545,7 @@ function createReasoningEvidenceFromPackage(pkg) {
         }]
     })));
 
-    const claims = (pkg.documentLinks || []).map((link, index) => ({
-        id: `document-${index + 1}`,
-        text: `Dokument "${link.text || link.url || `#${index + 1}`}" pripada odabranom predmetu ${pkg.primaryCaseNumber || pkg.clusterId}.`,
-        confidence: 'medium',
-        evidence: [{
-            sourceId: link.id || link.url || `${pkg.clusterId}:document-${index + 1}`,
-            text: link.text || link.url || 'Dokument bez naziva',
-            metadata: { sourceType: 'document-link' },
-            provenance: link.sourceProvenance || link.acquisition || null
-        }]
-    }));
+    const claims = [];
 
     // Successful per-document analyses carry the real legal substance. Surface
     // them as first-class claims so the synthesizer grounds its findings in
@@ -519,7 +605,7 @@ function createReasoningEvidenceFromPackage(pkg) {
                 fileName: stage.fileName || null,
                 eventType: stage.eventType || null,
                 date: stage.date || null,
-                grounded: true
+                grounded: stage.grounded === true
             }
         }))
     }));

@@ -97,7 +97,7 @@ describe('Synthesizer Integration with Real Data', () => {
         // Verify output structure
         expect(report.schemaVersion).toBe(SCHEMA_VERSION);
         expect(report.narrative).toContain('Sud je odbio zahtjev');
-        expect(report.claims.length).toBeGreaterThan(0); // Should retain input claims
+        expect(report.claims).toEqual([]);
     });
 
     test('packages only one selected cluster instead of flattening multiple processed cases', () => {

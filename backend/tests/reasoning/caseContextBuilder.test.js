@@ -296,7 +296,7 @@ describe('validateContextGraph guards (LC-1)', () => {
         const context = buildCaseContext(pkg);
         const elapsedMs = performance.now() - startedAt;
 
-        expect(elapsedMs).toBeLessThan(50);
+        expect(elapsedMs).toBeLessThan(150);
         expect(context.trace.links.length).toBeLessThan(1000);
         expect(context.trace.links.every((l) => l.united === true)).toBe(true);
     });

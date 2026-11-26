@@ -282,8 +282,8 @@ describe('Synthesizer', () => {
             sourceCaseNumber: 'ST-700/2024'
         });
         expect(evidence.timeline).toHaveLength(1);
-        expect(evidence.claims).toHaveLength(1);
-        expect(evidence.claims[0].evidence[0].provenance.acquisitionMode).toBe('search-window');
+        expect(evidence.claims).toHaveLength(0);
+        expect(evidence.meta.documentLinks[0].sourceProvenance.acquisitionMode).toBe('search-window');
         expect(evidence.claims.some((claim) => claim.text.includes('ST-123/2026'))).toBe(false);
     });
 
@@ -341,7 +341,8 @@ describe('Synthesizer', () => {
             ],
             analyses: [
                 { id: 'analysis-newest', fileName: 'newest.pdf', summary: 'Najnovija analiza', decisionDate: '2025-02-10' },
-                { id: 'analysis-oldest', fileName: 'oldest.pdf', summary: 'Najstarija analiza', decisionDate: '2023-01-01' }
+                { id: 'analysis-oldest', fileName: 'oldest.pdf', summary: 'Najstarija analiza', decisionDate: '2023-01-01' },
+                { id: 'analysis-undated', fileName: 'undated.pdf', summary: 'Nedatirana analiza', decisionDate: null }
             ],
             flows: {
                 entries: [
@@ -374,7 +375,7 @@ describe('Synthesizer', () => {
 
         // The undated structural document-link claim has no date and must
         // sort after every dated claim.
-        const undatedIndex = evidence.claims.findIndex((claim) => claim.text.includes('Undated structural doc link'));
+        const undatedIndex = evidence.claims.findIndex((claim) => claim.text.includes('Nedatirana analiza'));
         const lastDatedIndex = evidence.claims.findIndex((claim) => claim.text.includes('Najnovija analiza'));
         expect(undatedIndex).toBeGreaterThan(lastDatedIndex);
     });
@@ -434,7 +435,9 @@ describe('Synthesizer', () => {
             events: [{ id: 'event-1', eventType: 'appeal', status: 'remanded' }],
             chains: [{ eventIds: ['event-1'], status: 'remanded' }]
         });
-        expect(report.claims[0].evidence[0].provenance).toEqual({
+        expect(report.generationMode).toBe('llm');
+        expect(report.claims).toEqual([]);
+        expect(report.meta.documentLinks[0].sourceProvenance).toEqual({
             acquisitionMode: 'search-window',
             sourceCaseNumber: 'ST-700/2024'
         });
@@ -456,7 +459,7 @@ describe('Synthesizer', () => {
             text: 'Bez datuma.',
             confidence: 'medium',
             evidence: [{ metadata: { sourceType: 'document-link' } }],
-        })).toBe('- [Undated] Bez datuma. (Confidence: medium)');
+        })).toBe('- [Nedatirano] Bez datuma. (Confidence: medium)');
 
         mockInvoke.mockResolvedValue({
             content: JSON.stringify({ narrative: 'N.', findings: [], openQuestions: [], nextSteps: [] }),
@@ -504,7 +507,7 @@ describe('Synthesizer', () => {
         expect(promptText).toContain('at most 12 key findings');
         expect(promptText).toContain('at most 8 concise open questions');
         expect(promptText).toContain('at most 8 concise next steps');
-        expect(report.claims).toHaveLength(462);
+        expect(report.claims).toEqual([]);
         expect(report.findings).toHaveLength(12);
         expect(report.findings[0].text.length).toBeLessThanOrEqual(1201);
         expect(report.findings[11].text).toContain('Model finding 19.');

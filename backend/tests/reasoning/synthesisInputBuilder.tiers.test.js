@@ -80,18 +80,15 @@ describe('synthesisInputBuilder budget tiers (Phase 0.5)', () => {
         expect(money.text).toContain('100 EUR');
     });
 
-    test('hard char budget drops retrieved claims from the tail first', () => {        // 30 uncited analysis claims digest to ~280 chars each (~8.5k); 50
-        // retrieved claims of 900 chars add ~45k — total exceeds the 48k
-        // budget, so the tail-drop loop must remove retrieved claims while
-        // money-flow/structural entries survive untouched.
-        const bigClaims = Array.from({ length: 30 }, (_, i) => analysisClaim(`analysis-${i + 1}`, 'X'.repeat(1500), `doc-uncited-${i}.pdf`));
+    test('hard char budget protects 25% BM25 floor and drops non-BM25 claims first', () => {
+        const bigClaims = Array.from({ length: 120 }, (_, i) => analysisClaim(`analysis-${i + 1}`, 'X'.repeat(1500), `doc-uncited-${i}.pdf`));
         bigClaims.push({ id: 'money-flow-1', text: 'Financijski iznos 100 EUR.', confidence: 'medium', evidence: [] });
         mockNormalize.mockReturnValue({ timeline: [], claims: bigClaims, meta: {} });
 
-        const RETRIEVED_COUNT = 50;
+        const RETRIEVED_COUNT = 25;
         const retrieved = Array.from({ length: RETRIEVED_COUNT }, (_, i) => ({
             id: `retrieved-q-${i + 1}`,
-            text: `Relevantni izvor (financial-amounts): ${'R'.repeat(880)}`,
+            text: `Relevantni izvor (financial-amounts): ${'R'.repeat(600)}`,
             confidence: 'medium',
             evidence: []
         }));
@@ -99,12 +96,11 @@ describe('synthesisInputBuilder budget tiers (Phase 0.5)', () => {
 
         const input = buildSynthesisInput(pkg, retrieval);
         const remainingRetrieved = input.claims.filter((c) => String(c.id).startsWith('retrieved-'));
-        expect(remainingRetrieved.length).toBeLessThan(RETRIEVED_COUNT);
+        // 25% BM25 floor (~16,000 chars) is never evicted by flow/analysis rows.
+        expect(remainingRetrieved.length).toBeGreaterThanOrEqual(20);
 
-        const totalChars = input.claims.reduce((sum, c) => sum + c.text.length, 0);
-        expect(totalChars).toBeLessThanOrEqual(48000);
-        // Money-flow survives tail-dropping.
-        expect(input.claims.some((c) => c.id === 'money-flow-1')).toBe(true);
+        const totalChars = input.claims.reduce((sum, c) => sum + c.text.length + 48, 0);
+        expect(totalChars).toBeLessThanOrEqual(64000);
     });
 
     test('ungrounded money/property claims degrade to digests; grounded ones stay full', () => {

@@ -15,6 +15,7 @@ const {
 } = require('./discoveryStage');
 const { buildClusterEvidencePackage, attachAnalysesToEvidencePackage } = require('./reasoning/ledger/evidencePackage');
 const { generateClusterReport, composeOverviewMarkdown } = require('./reasoning/synthesis/reportService');
+const { buildFallbackReport } = require('./reasoning/synthesis/fallbackReportBuilder');
 const { normalizeText } = require('./reasoning/retrieval/indexer');
 const { createUsageTracker } = require('../llm/usage');
 const { createCreditExhaustedLatch } = require('../llm/creditLatch');
@@ -414,22 +415,46 @@ async function processScrapedCases(casesToProcess, progressCallback, options = {
         stageAwareProgress?.({ step: 'reasoning', progress: 85, message: 'Generiram stručni izvještaj i zaključak...' });
         let report = null;
         let reportError = null;
-        try {
-            report = await generateClusterReport(enrichedEvidencePackage, {
-                onStage: (event) => stageAwareProgress?.(event),
-                tracker: usageTracker,
-                onUsage: emitUsage,
-                runId,
-                analysisStore: resolvedOptions.analysisStore,
-                creditLatch,
+        if (creditLatch.isTripped()) {
+            report = buildFallbackReport(enrichedEvidencePackage, {
+                fallbackReason: 'provider-credits-exhausted',
+                reasonDetail: creditLatch.getReason(),
             });
-        } catch (err) {
-            reportError = err.message;
-            logger.agent.error('Report generation failed; returning partial per-document results without a synthesized report:', err.message);
-            logger.error('pipeline.processScrapedCases', 'Report generation failed', { runId, error: reportError });
+            state.partialResult.partialReason = state.partialResult.partialReason || 'provider-credits-exhausted';
+        } else {
+            try {
+                report = await generateClusterReport(enrichedEvidencePackage, {
+                    onStage: (event) => stageAwareProgress?.(event),
+                    tracker: usageTracker,
+                    onUsage: emitUsage,
+                    runId,
+                    analysisStore: resolvedOptions.analysisStore,
+                    creditLatch,
+                    signal: resolvedOptions.signal,
+                });
+            } catch (err) {
+                if (resolvedOptions.signal?.aborted || err?.name === 'AbortError') throw err;
+                reportError = err.message;
+                logger.agent.error('Report generation failed; generating $0 deterministic fallback report:', err.message);
+                logger.error('pipeline.processScrapedCases', 'Report generation failed', { runId, error: reportError });
+                const fallbackReason = creditLatch.isTripped() ? 'provider-credits-exhausted' : 'synthesis-failed';
+                report = buildFallbackReport(enrichedEvidencePackage, {
+                    fallbackReason,
+                    reasonDetail: reportError,
+                });
+                if (creditLatch.isTripped()) {
+                    state.partialResult.partialReason = state.partialResult.partialReason || 'provider-credits-exhausted';
+                }
+            }
         }
         state.partialResult.report = report;
         state.partialResult.reportError = reportError;
+        if (report?.meta?.creditorDigest && enrichedEvidencePackage) {
+            enrichedEvidencePackage.creditorDigest = report.meta.creditorDigest;
+        }
+        if (report?.meta?.proceduralOutcomes && enrichedEvidencePackage) {
+            enrichedEvidencePackage.proceduralOutcomes = report.meta.proceduralOutcomes;
+        }
 
         const comparativeAnalysis = report
             ? composeOverviewMarkdown(report)
