@@ -4,9 +4,14 @@
 // from citing documents to the `poslovni broj` they explicitly reference.
 // Own references come from structured facts, procedural events, and discovery
 // metadata so a decision with no money/property facts still has an identity.
-//
-// Lifecycle reconciliation consumes exact filing references as explicit
-// tražbina-chain links, alongside model-provided `supersedes` identifiers.
+
+function normalizeRef(ref) {
+    return String(ref || '')
+        .trim()
+        .toLowerCase()
+        .replace(/[–—−]/g, '-')
+        .replace(/\s+/g, '');
+}
 
 function ownFilingReferences(analysis) {
     const refs = new Set();
@@ -37,47 +42,67 @@ function citedReferences(analysis) {
 }
 
 /**
- * @param {Array<object>} analyses - Normalized analyses (as attached by
- * attachAnalysesToEvidencePackage: {id, fileName, amounts, propertyFlow,
- * citedFilingReferences}).
+ * @param {Array<object>} analyses - Normalized analyses.
  * @returns {{nodes: Array<{id: string, fileName: string|null, filingReferences: string[]}>, edges: Array<{from: string, to: string, via: string}>}}
  */
 function buildCitationGraph(analyses, metadataEntries = []) {
     const nodes = [];
-    const refOwners = new Map(); // filingReference -> node id (first owner wins)
-    const sourceEntryNodes = new Map();
+    const refOwners = new Map(); // normalized filingReference -> Set<nodeId>
+    const sourceEntryNodes = new Map(); // entryIndex -> Array<node>
     const list = Array.isArray(analyses) ? analyses : [];
+
+    const addRefOwner = (ref, ownerId) => {
+        const norm = normalizeRef(ref);
+        if (!norm || !ownerId) return;
+        if (!refOwners.has(norm)) refOwners.set(norm, new Set());
+        refOwners.get(norm).add(ownerId);
+    };
+
+    const resolveSingleOwner = (ref) => {
+        const owners = refOwners.get(normalizeRef(ref));
+        if (!owners || owners.size !== 1) return null;
+        return owners.values().next().value;
+    };
 
     for (const analysis of list) {
         const id = analysis?.id || analysis?.fileName || `analysis-${nodes.length + 1}`;
         const refs = [...ownFilingReferences(analysis)];
-        nodes.push({ id, fileName: analysis?.fileName || null, filingReferences: refs });
-        if (Number.isInteger(analysis?.sourceEntryIndex)) sourceEntryNodes.set(analysis.sourceEntryIndex, nodes[nodes.length - 1]);
+        const node = { id, fileName: analysis?.fileName || null, filingReferences: refs };
+        nodes.push(node);
+        if (Number.isInteger(analysis?.sourceEntryIndex)) {
+            if (!sourceEntryNodes.has(analysis.sourceEntryIndex)) {
+                sourceEntryNodes.set(analysis.sourceEntryIndex, []);
+            }
+            sourceEntryNodes.get(analysis.sourceEntryIndex).push(node);
+        }
         for (const ref of refs) {
-            if (!refOwners.has(ref)) refOwners.set(ref, id);
+            addRefOwner(ref, id);
         }
     }
 
     for (const entry of Array.isArray(metadataEntries) ? metadataEntries : []) {
         const entryIndex = entry?.index;
-        let node = Number.isInteger(entryIndex) ? sourceEntryNodes.get(entryIndex) : null;
-        if (!node) {
+        let entryNodes = Number.isInteger(entryIndex) ? (sourceEntryNodes.get(entryIndex) || []) : [];
+        if (entryNodes.length === 0) {
             const id = `entry-${entryIndex ?? nodes.length}`;
-            node = { id, fileName: null, filingReferences: [] };
+            const node = { id, fileName: null, filingReferences: [] };
             nodes.push(node);
-            if (Number.isInteger(entryIndex)) sourceEntryNodes.set(entryIndex, node);
+            entryNodes = [node];
+            if (Number.isInteger(entryIndex)) sourceEntryNodes.set(entryIndex, entryNodes);
         }
+        const primaryNode = entryNodes[0];
         for (const event of Array.isArray(entry?.proceduralEvents) ? entry.proceduralEvents : []) {
             const own = typeof event?.filingReference === 'string' ? event.filingReference.trim() : '';
-            if (own && !node.filingReferences.includes(own)) node.filingReferences.push(own);
-            if (own && !refOwners.has(own)) refOwners.set(own, node.id);
+            if (own && !primaryNode.filingReferences.includes(own)) primaryNode.filingReferences.push(own);
+            if (own) addRefOwner(own, primaryNode.id);
         }
     }
 
     const edges = [];
     const addReferences = (fromId, references) => {
         for (const ref of references) {
-            const toId = refOwners.get(ref) || null;
+            const toId = resolveSingleOwner(ref);
+            if (toId && toId === fromId) continue;
             edges.push({ from: fromId, to: toId || ref, via: ref, resolved: toId !== null });
         }
     };
@@ -87,46 +112,52 @@ function buildCitationGraph(analyses, metadataEntries = []) {
     }
     for (const entry of Array.isArray(metadataEntries) ? metadataEntries : []) {
         const entryIndex = entry?.index;
-        const node = Number.isInteger(entryIndex) ? sourceEntryNodes.get(entryIndex) : null;
-        if (!node) continue;
+        const entryNodes = Number.isInteger(entryIndex) ? (sourceEntryNodes.get(entryIndex) || []) : [];
+        if (entryNodes.length === 0) continue;
+        const primaryNode = entryNodes[0];
         const refs = new Set((Array.isArray(entry.proceduralEvents) ? entry.proceduralEvents : [])
             .flatMap((event) => Array.isArray(event?.referencedFilingReferences) ? event.referencedFilingReferences : [])
             .map((ref) => String(ref || '').trim()).filter(Boolean));
-        addReferences(node.id, refs);
+        addReferences(primaryNode.id, refs);
     }
     return { nodes, edges };
 }
 
 /**
- * Finds entry-id pairs joined by a direct citation: entry A's filing
- * reference appears in entry B's document's citedFilingReferences (or vice
- * versa). Only pairs where BOTH entries carry a filingReference participate —
- * no fuzzy matching.
- * @param {Array<object>} entries - Normalized money/property entries
- * ({id, filingReference, sourceId}).
- * @param {Array<object>} analyses - Same shape as buildCitationGraph input.
- * @returns {Set<string>} `idA::idB` (sorted) pair keys.
+ * O(N) indexed lookup of entry-id pairs joined by a direct citation.
  */
 function findCitationLinkedPairs(entries, analyses) {
     const pairs = new Set();
     const list = Array.isArray(entries) ? entries : [];
-    const bySource = new Map();
-    for (const analysis of Array.isArray(analyses) ? analyses : []) {
-        if (analysis?.id) bySource.set(analysis.id, analysis);
-    }
     const citedBySource = new Map();
-    for (const [sourceId, analysis] of bySource) {
-        citedBySource.set(sourceId, citedReferences(analysis));
+    for (const analysis of Array.isArray(analyses) ? analyses : []) {
+        if (!analysis?.id) continue;
+        const normCited = new Set();
+        for (const ref of citedReferences(analysis)) {
+            const norm = normalizeRef(ref);
+            if (norm) normCited.add(norm);
+        }
+        citedBySource.set(analysis.id, normCited);
     }
 
-    const withRefs = list.filter((e) => typeof e?.filingReference === 'string' && e.filingReference.trim());
-    for (let i = 0; i < withRefs.length; i++) {
-        for (let j = i + 1; j < withRefs.length; j++) {
-            const a = withRefs[i];
-            const b = withRefs[j];
-            const aCitesB = citedBySource.get(a.sourceId)?.has(b.filingReference.trim());
-            const bCitesA = citedBySource.get(b.sourceId)?.has(a.filingReference.trim());
-            if (aCitesB || bCitesA) {
+    const entriesByNormRef = new Map();
+    const withRefs = [];
+    for (const entry of list) {
+        const normRef = normalizeRef(entry?.filingReference);
+        if (!normRef) continue;
+        withRefs.push({ entry, normRef });
+        if (!entriesByNormRef.has(normRef)) entriesByNormRef.set(normRef, []);
+        entriesByNormRef.get(normRef).push(entry);
+    }
+
+    for (const { entry: a } of withRefs) {
+        const cited = citedBySource.get(a.sourceId);
+        if (!cited || cited.size === 0) continue;
+        for (const ref of cited) {
+            const targets = entriesByNormRef.get(ref);
+            if (!targets) continue;
+            for (const b of targets) {
+                if (a.id === b.id) continue;
                 const key = [String(a.id), String(b.id)].sort().join('::');
                 pairs.add(key);
             }

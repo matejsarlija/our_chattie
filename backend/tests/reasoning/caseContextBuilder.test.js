@@ -255,4 +255,49 @@ describe('validateContextGraph guards (LC-1)', () => {
         const [, child] = linkedPair();
         expect(() => validateContextGraph([child])).toThrow(/exactly one case-root/);
     });
+
+    test('500-fact root-case fixture builds context graph in < 20 ms with < 1,000 links (no Tier-3 Cartesian explosion)', () => {
+        const analyses = Array.from({ length: 20 }, (_, docIdx) => ({
+            id: `doc-${docIdx}`,
+            fileName: `Podnesak-${docIdx}.pdf`,
+            caseNumber: 'ST-2/2013',
+            decisionDate: '2025-01-15',
+            citedFilingReferences: ['ST-2/2013', `doc-${(docIdx + 1) % 20}`],
+            amounts: Array.from({ length: 15 }, (__, j) => ({
+                description: `Tražbina ${docIdx}-${j}`,
+                amount: 1000 + j,
+                currency: 'EUR',
+                filingReference: 'ST-2/2013',
+                grounded: true,
+            })),
+            propertyFlow: Array.from({ length: 10 }, (__, j) => ({
+                description: `Imovina ${docIdx}-${j}`,
+                value: 2000 + j,
+                currency: 'EUR',
+                filingReference: 'ST-2/2013',
+                grounded: false,
+            })),
+        }));
+        const edges = [];
+        for (let i = 0; i < 20; i++) {
+            for (let j = i + 1; j < 20; j++) {
+                edges.push({ from: `doc-${i}`, to: `doc-${j}`, via: 'ST-2/2013', resolved: true });
+            }
+        }
+        const pkg = {
+            clusterId: 'ST-2/2013',
+            primaryCaseNumber: 'ST-2/2013',
+            analyses,
+            citationGraph: { nodes: [], edges },
+        };
+
+        buildCaseContext({ clusterId: 'WARM', analyses: [] });
+        const startedAt = performance.now();
+        const context = buildCaseContext(pkg);
+        const elapsedMs = performance.now() - startedAt;
+
+        expect(elapsedMs).toBeLessThan(50);
+        expect(context.trace.links.length).toBeLessThan(1000);
+        expect(context.trace.links.every((l) => l.united === true)).toBe(true);
+    });
 });

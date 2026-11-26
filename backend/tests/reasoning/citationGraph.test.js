@@ -86,4 +86,30 @@ describe('reasoning citationGraph (L-02)', () => {
         ];
         expect(findCitationLinkedPairs(entries, analyses).size).toBe(0);
     });
+
+    test('guards self-edges, normalizes refOwners, and preserves multi-attachment sourceEntryNodes', () => {
+        const graph = buildCitationGraph([
+            {
+                id: 'doc-a',
+                fileName: 'a.pdf',
+                sourceEntryIndex: 5,
+                amounts: [{ filingReference: 'St-2/2013-500' }],
+                citedFilingReferences: ['St - 2/2013 - 500', 'St-2/2013-600'],
+            },
+            {
+                id: 'doc-b',
+                fileName: 'b.pdf',
+                sourceEntryIndex: 5,
+                amounts: [{ filingReference: 'St-2/2013-600' }],
+                citedFilingReferences: [],
+            },
+        ], [
+            { index: 5, proceduralEvents: [{ filingReference: 'St-2/2013-500', referencedFilingReferences: ['St-2/2013-600'] }] },
+        ]);
+
+        expect(graph.edges.some((e) => e.from === e.to)).toBe(false);
+        expect(graph.edges).toEqual(expect.arrayContaining([
+            expect.objectContaining({ from: 'doc-a', to: 'doc-b', via: 'St-2/2013-600', resolved: true }),
+        ]));
+    });
 });

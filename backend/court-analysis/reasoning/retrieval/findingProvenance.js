@@ -35,6 +35,28 @@ function matchKeys(match) {
 }
 
 function matchesCitation(citation, match) {
+    const cDocId = norm(citation?.docId);
+    const mDocId = norm(match?.docId || match?.metadata?.docId);
+    if (cDocId && mDocId) {
+        return cDocId === mDocId;
+    }
+    const cEntryIndex = Number.isInteger(citation?.sourceEntryIndex) ? citation.sourceEntryIndex : null;
+    const mEntryIndex = Number.isInteger(match?.sourceEntryIndex)
+        ? match.sourceEntryIndex
+        : (Number.isInteger(match?.metadata?.sourceEntryIndex) ? match.metadata.sourceEntryIndex : null);
+    if (cEntryIndex !== null && mEntryIndex !== null) {
+        if (cEntryIndex !== mEntryIndex) return false;
+        const cFile = norm(citation?.fileName);
+        const mFile = norm(match?.fileName || match?.metadata?.fileName);
+        return !cFile || !mFile || cFile === mFile;
+    }
+
+    const cSource = norm(citation?.source || citation?.sourceId);
+    const mSource = norm(match?.sourceId);
+    if (cSource && mSource) {
+        if (cSource === mSource) return true;
+    }
+
     const cKeys = citationKeys(citation);
     if (cKeys.size === 0) return false;
     const mKeys = matchKeys(match);

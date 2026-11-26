@@ -129,7 +129,7 @@ function supersedesTokens(supersedes) {
     const cleaned = cleanString(supersedes);
     if (!cleaned) return [];
     const tokens = new Set([normalizeIdentity(cleaned)]);
-    for (const part of cleaned.split(/[\s,;|/]+/)) {
+    for (const part of cleaned.split(/[\s,;|]+/)) {
         const token = normalizeIdentity(part);
         if (token) tokens.add(token);
     }
@@ -192,13 +192,16 @@ function buildCaseContext(pkg) {
     const facts = collectContextFacts(pkg);
     const union = createUnionFind(facts.length);
     const traceLinks = [];
+    const rootCaseIdentities = new Set(
+        [pkg?.clusterId, pkg?.primaryCaseNumber]
+            .map((v) => normalizeIdentity(v))
+            .filter(Boolean),
+    );
+    const isBareRootCase = (identity) => Boolean(identity && rootCaseIdentities.has(identity));
 
     const linkFacts = (a, b, basis) => {
         if (a === b) return;
-        if (facts[a].kind !== facts[b].kind) {
-            traceLinks.push({ factIds: [facts[a].factId, facts[b].factId], basis: `${basis}-cross-kind`, united: false });
-            return;
-        }
+        if (facts[a].kind !== facts[b].kind) return;
         if (union.union(a, b)) {
             traceLinks.push({ factIds: [facts[a].factId, facts[b].factId], basis, united: true });
         }
@@ -212,6 +215,7 @@ function buildCaseContext(pkg) {
         facts.forEach((fact, index) => {
             const identity = normalizeIdentity(fact[identityField]);
             if (!identity) return;
+            if (identityField === 'filingReference' && isBareRootCase(identity)) return;
             const key = `${fact.kind}::${identity}`;
             if (!groups.has(key)) groups.set(key, []);
             groups.get(key).push(index);
@@ -231,8 +235,10 @@ function buildCaseContext(pkg) {
         if (registry && !registryIndex.has(registry)) registryIndex.set(registry, []);
         if (registry) registryIndex.get(registry).push(index);
         const filing = normalizeIdentity(fact.filingReference);
-        if (filing && !filingIndex.has(filing)) filingIndex.set(filing, []);
-        if (filing) filingIndex.get(filing).push(index);
+        if (filing && !isBareRootCase(filing)) {
+            if (!filingIndex.has(filing)) filingIndex.set(filing, []);
+            filingIndex.get(filing).push(index);
+        }
     });
     facts.forEach((fact, index) => {
         if (!fact.supersedes) return;
@@ -246,29 +252,66 @@ function buildCaseContext(pkg) {
         }
     });
 
-    // Tier 3 — citation-graph edges between filings. Endpoints may be filing
-    // references or analysis ids depending on which graph builder produced
-    // them; resolve through both maps.
+    // Tier 3 — citation-graph edges between filings. Never perform an all-pairs
+    // fact-to-fact Cartesian join: only link facts across a citation edge when
+    // they share an identity (claimRegistryNumber / non-root filingReference) or
+    // each endpoint has a single fact of that kind.
     const analysisIndex = new Map();
     facts.forEach((fact, index) => {
         if (!analysisIndex.has(fact.analysisId)) analysisIndex.set(fact.analysisId, []);
         analysisIndex.get(fact.analysisId).push(index);
     });
+    const analysisByNormalizedId = new Map();
+    for (const [analysisId, members] of analysisIndex) {
+        const normId = normalizeIdentity(analysisId);
+        if (!normId) continue;
+        if (!analysisByNormalizedId.has(normId)) analysisByNormalizedId.set(normId, []);
+        analysisByNormalizedId.get(normId).push(...members);
+    }
     const resolveEndpoint = (endpoint) => {
         const normalized = normalizeIdentity(endpoint);
-        if (!normalized) return [];
-        const out = [];
-        for (const candidate of filingIndex.get(normalized) || []) out.push(candidate);
-        for (const [analysisId, members] of analysisIndex) {
-            if (normalizeIdentity(analysisId) === normalized) out.push(...members);
+        if (!normalized || isBareRootCase(normalized)) return [];
+        const out = new Set();
+        for (const candidate of filingIndex.get(normalized) || []) out.add(candidate);
+        for (const candidate of analysisByNormalizedId.get(normalized) || []) out.add(candidate);
+        return [...out];
+    };
+    const groupIndicesByKind = (indices) => {
+        const byKind = new Map();
+        for (const idx of indices) {
+            const k = facts[idx].kind;
+            if (!byKind.has(k)) byKind.set(k, []);
+            byKind.get(k).push(idx);
         }
-        return [...new Set(out)];
+        return byKind;
     };
     for (const edge of Array.isArray(pkg?.citationGraph?.edges) ? pkg.citationGraph.edges : []) {
         if (!edge || typeof edge !== 'object') continue;
-        for (const a of resolveEndpoint(edge.from)) {
-            for (const b of resolveEndpoint(edge.to)) {
-                if (a !== b) linkFacts(a, b, 'citation');
+        const fromIndices = resolveEndpoint(edge.from);
+        const toIndices = resolveEndpoint(edge.to);
+        if (fromIndices.length === 0 || toIndices.length === 0) continue;
+        const fromByKind = groupIndicesByKind(fromIndices);
+        const toByKind = groupIndicesByKind(toIndices);
+        for (const [kind, fromList] of fromByKind) {
+            const toList = toByKind.get(kind);
+            if (!toList || toList.length === 0) continue;
+            if (fromList.length === 1 && toList.length === 1) {
+                linkFacts(fromList[0], toList[0], 'citation');
+                continue;
+            }
+            const toByReg = new Map();
+            for (const b of toList) {
+                const reg = normalizeIdentity(facts[b].claimRegistryNumber);
+                if (!reg) continue;
+                if (!toByReg.has(reg)) toByReg.set(reg, []);
+                toByReg.get(reg).push(b);
+            }
+            for (const a of fromList) {
+                const reg = normalizeIdentity(facts[a].claimRegistryNumber);
+                if (!reg) continue;
+                for (const b of toByReg.get(reg) || []) {
+                    linkFacts(a, b, 'citation');
+                }
             }
         }
     }
@@ -293,6 +336,11 @@ function buildCaseContext(pkg) {
         return firstA < firstB ? -1 : 1;
     });
 
+    const analysisById = new Map();
+    for (const analysis of Array.isArray(pkg.analyses) ? pkg.analyses : []) {
+        if (analysis && analysis.id) analysisById.set(analysis.id, analysis);
+    }
+
     for (const groupKey of orderedGroupKeys) {
         const members = groups.get(groupKey).sort((a, b) => a - b);
         const byKind = new Map();
@@ -304,7 +352,7 @@ function buildCaseContext(pkg) {
         for (const [kind, kindMembers] of byKind) {
             const memberFacts = kindMembers.map((index) => facts[index]);
             const registries = [...new Set(memberFacts.map((fact) => normalizeIdentity(fact.claimRegistryNumber)).filter(Boolean))].sort();
-            const filings = [...new Set(memberFacts.map((fact) => normalizeIdentity(fact.filingReference)).filter(Boolean))].sort();
+            const filings = [...new Set(memberFacts.map((fact) => normalizeIdentity(fact.filingReference)).filter((f) => f && !isBareRootCase(f)))].sort();
             if (registries.length === 0 && filings.length === 0) {
                 // No stable identity: one unresolved node per fact, never a merge.
                 for (const index of kindMembers) {
@@ -318,7 +366,7 @@ function buildCaseContext(pkg) {
                         sourceDocumentIds: [fact.analysisId],
                         factIds: [fact.factId],
                         citationIds: fact.citedFilingReferences,
-                        coverage: { groundedClaims: 0, totalClaims: 1, gaps: [`${fact.factId}: no stable identifier; kept separate, never merged`] },
+                        coverage: { groundedClaims: fact.grounded ? 1 : 0, totalClaims: 1, gaps: [`${fact.factId}: no stable identifier; kept separate, never merged`] },
                         status: 'unresolved',
                     });
                     unresolvedNodes.push(node);
@@ -346,10 +394,6 @@ function buildCaseContext(pkg) {
                     : `Tražbina — ${memberFacts.map((fact) => fact.filingReference).find(Boolean)}`;
             }
             const memberAnalyses = [...new Set(memberFacts.map((fact) => fact.analysisId))];
-            const analysisById = new Map();
-            for (const analysis of Array.isArray(pkg.analyses) ? pkg.analyses : []) {
-                if (analysis && analysis.id) analysisById.set(analysis.id, analysis);
-            }
             const citationIds = [];
             for (const analysisId of memberAnalyses) {
                 for (const ref of arrayOfStrings(analysisById.get(analysisId)?.citedFilingReferences)) {

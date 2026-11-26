@@ -70,4 +70,21 @@ describe('reasoning findingProvenance (M-09)', () => {
         expect(annotateFindingsWithRetrieval([], null)).toEqual([]);
         expect(annotateFindingsWithRetrieval([{ id: 'f' }], null)).toEqual([{ id: 'f' }]);
     });
+
+    test('anchors join on docId / sourceEntryIndex so generic Podnesak.pdf filenames never cross-link', () => {
+        const findings = [{
+            id: 'f1',
+            text: 'Nalaz.',
+            citations: [{ docId: 'doc-hash-2', sourceEntryIndex: 2, fileName: 'Podnesak.pdf' }],
+        }];
+        const out = annotateFindingsWithRetrieval(findings, retrieval(
+            'q1', 'podnesak',
+            [
+                { sourceId: 'other-1', docId: 'doc-hash-1', sourceEntryIndex: 1, fileName: 'Podnesak.pdf', score: 9.0, reasons: ['wrong-doc'] },
+                { sourceId: 'other-2', docId: 'doc-hash-2', sourceEntryIndex: 2, fileName: 'Podnesak.pdf', score: 4.5, reasons: ['right-doc'] },
+            ]
+        ));
+        expect(out[0].citations[0].retrievedBy).toHaveLength(1);
+        expect(out[0].citations[0].retrievedBy[0].reasons).toEqual(['right-doc']);
+    });
 });
