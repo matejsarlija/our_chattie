@@ -461,4 +461,60 @@ describe('reconcileFlows (unified engine)', () => {
         expect(reconcileFlows(null, {})).toEqual({ conflicts: [], openQuestions: [], validationWarnings: [], valueChanges: [] });
         expect(reconcileFlows({ entries: [] }, {})).toEqual({ conflicts: [], openQuestions: [], validationWarnings: [], valueChanges: [] });
     });
+
+    test('168-creditor Diobeni popis produces zero cross-creditor conflict collisions and zero OIB/redni broj currency leaks', () => {
+        const entries = Array.from({ length: 168 }, (_, idx) => {
+            const regNo = String(idx + 1);
+            const oib = String(10000000000 + idx + 1);
+            return entry({
+                description: 'Tražbina stečajnog vjerovnika drugog višeg isplatnog reda',
+                amount: 1000 + idx * 500,
+                currency: 'EUR',
+                amountEur: 1000 + idx * 500,
+                amountRole: 'line_item',
+                claimRegistryNumber: regNo,
+                canonicalPartyId: `oib:${oib}`,
+                recipientOib: oib,
+                fileName: 'Diobeni popis.pdf',
+                sourceId: `dioba-doc-${idx % 2}`,
+            });
+        });
+
+        const result = reconcileFlows({ entries }, {});
+        expect(result.conflicts).toHaveLength(0);
+
+        // Even when a single creditor genuinely diverges across two filings,
+        // the conflict currency must be 'EUR', never an OIB or redni broj.
+        const divergent = reconcileFlows({
+            entries: [
+                entry({
+                    description: 'Tražbina stečajnog vjerovnika',
+                    amount: 0,
+                    currency: 'EUR',
+                    amountEur: 0,
+                    amountRole: 'line_item',
+                    claimRegistryNumber: '42',
+                    canonicalPartyId: 'oib:49803335555',
+                    fileName: 'Podnesak-1.pdf',
+                    sourceId: 's-1',
+                }),
+                entry({
+                    description: 'Tražbina stečajnog vjerovnika',
+                    amount: 5000,
+                    currency: 'EUR',
+                    amountEur: 5000,
+                    amountRole: 'line_item',
+                    claimRegistryNumber: '42',
+                    canonicalPartyId: 'oib:49803335555',
+                    fileName: 'Podnesak-2.pdf',
+                    sourceId: 's-2',
+                }),
+            ],
+        }, {});
+
+        expect(divergent.conflicts).toHaveLength(1);
+        expect(divergent.conflicts[0].finding).toContain('usporedba u EUR');
+        expect(divergent.conflicts[0].finding).not.toContain('49803335555');
+        expect(divergent.conflicts[0].finding).not.toContain('usporedba u 42');
+    });
 });

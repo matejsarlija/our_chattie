@@ -282,7 +282,7 @@ function normalizeFlowItem(raw, index, analysis, options = {}) {
     return {
         id: `flow-${index + 1}`,
         kind,
-        canonicalPartyId: null,
+        canonicalPartyId: raw.canonicalPartyId ?? null,
         assetType,
         description: description === null || description === undefined ? null : String(description).trim() || null,
         // Cadastral/registration anchor; money raws virtually never carry
@@ -405,7 +405,6 @@ function mergeIdenticalEntries(entries) {
     const keyOf = (entry) => {
         const timestamp = parseDate(String(entry?.date || ''));
         const date = timestamp === null ? normalizeText(entry?.date || '') : String(timestamp);
-        const rank = normalizePaymentRank(entry?.isplatniRed || '');
         return [
             entry?.contentHash || sourceScope(entry) || '',
             entry?.assetType || '',

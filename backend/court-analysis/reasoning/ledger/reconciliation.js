@@ -93,7 +93,17 @@ function flowGroupKey(entry) {
     const key = descriptionKey(entry?.description || '');
     if (!key) return null;
     const scale = Number.isFinite(entry?.valueEur) ? 'EUR' : (entry?.currency || 'UNKNOWN');
-    return `${scale}::${entry?.assetType || 'drugo'}::${key}`;
+    const reg = normalizeText(entry?.claimRegistryNumber || '') || '-';
+    const partyId = normalizeText(
+        entry?.canonicalPartyId
+        || entry?.recipientOib
+        || entry?.payerOib
+        || entry?.transfereeOib
+        || entry?.transferorOib
+        || '',
+    ) || '-';
+    const role = normalizeText(entry?.amountRole || '') || '-';
+    return `${scale}::${reg}::${partyId}::${entry?.assetType || 'drugo'}::${role}::${key}`;
 }
 
 // TD-3 — collapse structurally identical questions (same underlying pair,
@@ -213,20 +223,26 @@ function flagDivergentGroups(entries, { novac }) {
         if (!novac && (entry.assetType === 'novac' || entry.assetType === 'tražbina')) continue;
         const key = flowGroupKey(entry);
         if (!key) continue;
-        if (!groups.has(key)) groups.set(key, []);
-        groups.get(key).push(entry);
+        const scale = Number.isFinite(entry?.valueEur) ? 'EUR' : (entry?.currency || 'UNKNOWN');
+        if (!groups.has(key)) groups.set(key, { scale, entries: [] });
+        groups.get(key).entries.push(entry);
     }
 
-    for (const [groupKey, groupEntries] of groups) {
+    for (const group of groups.values()) {
+        const groupEntries = group.entries;
         if (groupEntries.length < 2) continue;
         const values = groupEntries.map(effectiveFlowValue).filter((v) => Number.isFinite(v));
-        const currency = groupKey.split('::')[0];
+        const currency = group.scale;
         if (novac) {
+            if (values.length === 0) continue;
             const min = Math.min(...values);
             const max = Math.max(...values);
             // Same filing stating one figure in both currencies (§4.4.2).
             if (isSameSourceDualStatement(groupEntries)) continue;
-            const diverges = max > 0 && (max / min > DIVERGENCE_RATIO_THRESHOLD || Math.abs(max - min) > 0.01);
+            const diverges = max > 0 && (
+                (min > 0 ? max / min > DIVERGENCE_RATIO_THRESHOLD : max > 0.01)
+                || Math.abs(max - min) > 0.01
+            );
             if (!diverges) continue;
             conflicts.push({
                 finding: `Različiti iznosi za istu namjenu (usporedba u ${currency}): ${[...new Set(groupEntries.map(formatSourceValue))].join(' vs ')}.`,

@@ -209,10 +209,10 @@ function buildValueChangeTimeline(groupEntries, linkage, valueFn) {
     const comparisonReason = comparable
         ? null
         : balanceStages.length < 2
-            ? 'At least two explicitly identified claim balances are required; event amounts are not treated as balances.'
+            ? 'Potrebna su najmanje dva izričito označena salda tražbine; iznosi pojedinih događaja ne smatraju se saldima.'
             : balanceCurrencies.size > 1
-                ? 'Claim balances in different currencies cannot be compared without a deterministic conversion.'
-                : 'Claim balances need a known currency before comparison.';
+                ? 'Salda tražbine u različitim valutama nije moguće usporediti bez determinističke konverzije.'
+                : 'Za usporedbu salda tražbine potrebna je poznata valuta.';
     return {
         description: first.description,
         linkage,
@@ -303,7 +303,7 @@ function reconcileTrazbinaLifecycle(trazbinaEntries, allEntries, context = {}, v
         if (registryConsumed.has(entry.id)) continue;
         const key = propertyGroupKey(entry);
         if (!key) continue; // Ungroupable (too-generic description): standalone, never a conflict source.
-        const groupKey = `${entry.assetType}::${key}`;
+        const groupKey = key;
         if (!trazbinaGroups.has(groupKey)) trazbinaGroups.set(groupKey, []);
         trazbinaGroups.get(groupKey).push(entry);
     }
