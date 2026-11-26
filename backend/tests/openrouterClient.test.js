@@ -64,6 +64,7 @@ describe('OpenRouter client', () => {
                     temperature: 0,
                     max_tokens: 100,
                     stream: true,
+                    stream_options: { include_usage: true },
                 }),
             }),
         );
@@ -87,6 +88,7 @@ describe('OpenRouter client', () => {
 
         expect(request.messages).toEqual(messages);
         expect(request.stream).toBeUndefined();
+        expect(request.stream_options).toBeUndefined();
         expect(response.usage_metadata).toBeNull();
     });
 

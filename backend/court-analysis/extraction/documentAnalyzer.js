@@ -17,6 +17,7 @@ const {
 } = require('../reasoning/schema/extractionSchema');
 const {
     PROMPT_HASH_V5,
+    EXTRACTION_SIGNATURE_V5,
     buildAnalysisMessages,
     buildFieldRepairPrompt,
     buildFullRepairPrompt,
@@ -363,6 +364,18 @@ async function analyzeClusterDocuments(input = {}) {
 
     const total = Array.isArray(files) ? files.length : 0;
     const mockMode = isUsingMockLlm();
+    if (sqliteStore?.upsertPromptRegistry) {
+        try {
+            sqliteStore.upsertPromptRegistry({
+                promptHash: EXTRACTION_SIGNATURE_V5.promptHash,
+                promptName: EXTRACTION_SIGNATURE_V5.promptName,
+                schemaVersion: EXTRACTION_SIGNATURE_V5.version,
+                systemPrompt: EXTRACTION_SIGNATURE_V5.systemPrompt,
+            });
+        } catch (err) {
+            logger.warn(`[DocumentAnalyzer] Failed to upsert prompt registry: ${err.message}`);
+        }
+    }
     const analysisModelId = resolveRoleConfig('analysis').model || 'z-ai/glm-5.3-flash';
     const creditLatch = providedLatch || createCreditExhaustedLatch({ runId, sqliteStore });
     const taskRouter = providedRouter || (mockMode ? null : createTaskRouter({

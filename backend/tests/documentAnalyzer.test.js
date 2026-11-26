@@ -173,5 +173,7 @@ describe('documentAnalyzer Stage T0.5, checkpoints, bisection, closure & bench_c
         });
         const persistedRun = await sqliteStore.getAnalysisRun({ id: run.id });
         expect(persistedRun.partial_reason).toBe('provider_credits_exhausted');
+        const promptRow = sqliteStore.db.prepare('SELECT prompt_name, schema_version FROM prompt_registry WHERE prompt_name = ?').get('extraction_v5');
+        expect(promptRow).toEqual({ prompt_name: 'extraction_v5', schema_version: 5 });
     });
 });

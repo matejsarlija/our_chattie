@@ -224,6 +224,7 @@ function createOpenRouterClient({
             const useStream = invokeOpts.stream !== undefined ? invokeOpts.stream : stream;
             if (useStream !== false) {
                 payload.stream = true;
+                payload.stream_options = { include_usage: true };
             }
 
             const callerSignal = invokeOpts.signal;
