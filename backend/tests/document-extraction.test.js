@@ -28,12 +28,9 @@ jest.mock('../llm/usage', () => ({
     trackUsageInvoke: (_client, prompt, _opts) => mockGeminiInvoke(Array.isArray(prompt) && prompt.length === 1 && typeof prompt[0]?.content === 'string' ? prompt[0].content : prompt),
 }));
 
-const {
-    analyzeClusterDocuments,
-    extractTextFromFile,
-    extractTextViaOCR,
-    resetOcrPageCacheForTests,
-} = require('../court-analysis/agents/analysis-agent');
+const { analyzeClusterDocuments } = require('../court-analysis/extraction/documentAnalyzer');
+const { extractTextFromFile } = require('../court-analysis/extraction/pdfText');
+const { extractTextViaOCR, resetOcrPageCacheForTests } = require('../court-analysis/extraction/ocrRouter');
 const { createSqliteStore } = require('../services/sqliteStore');
 
 describe('extractTextFromFile', () => {

@@ -9,7 +9,7 @@ const { selectSample } = require('./lib/selection');
 const { extractOibs, extractDates, extractFilingNumbers } = require('./lib/metrics');
 const { FILING_NUMBER_PATTERN, canonicalCurrency } = require('./lib/canonicalize');
 const { normalizeGoldFacts, summarizeGold } = require('./lib/gold-editor');
-const { extractTextFromFile } = require('../court-analysis/agents/analysis-agent');
+const { extractTextFromFile } = require('../court-analysis/extraction/pdfText');
 
 const OUTPUT_ROOT = path.resolve(__dirname, '../data/pdf-engine-bench');
 const TRANSCRIPT_ROOT = path.join(OUTPUT_ROOT, 'fixtures', 'transcripts');

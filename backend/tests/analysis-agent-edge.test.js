@@ -36,7 +36,8 @@ jest.mock('canvas', () => ({
   })),
 }));
 
-const { analyzeClusterDocuments, resetOcrPageCacheForTests } = require('../court-analysis/agents/analysis-agent');
+const { analyzeClusterDocuments } = require('../court-analysis/extraction/documentAnalyzer');
+const { resetOcrPageCacheForTests } = require('../court-analysis/extraction/ocrRouter');
 
 // The persistent L2 OCR page cache is content-hash keyed and SHARED on disk:
 // a fake fixture PDF ('fake-pdf' bytes) can collide with an entry written by

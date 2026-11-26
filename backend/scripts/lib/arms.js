@@ -3,7 +3,9 @@
 const crypto = require('node:crypto');
 const fs = require('fs');
 const path = require('path');
-const { extractTextFromFile, extractTextViaOCR, renderPageToJpeg, buildOcrBatchInstruction, buildAnalysisPrompt } = require('../../court-analysis/agents/analysis-agent');
+const { extractTextFromFile, renderPageToJpeg } = require('../../court-analysis/extraction/pdfText');
+const { extractTextViaOCR, buildOcrBatchInstruction } = require('../../court-analysis/extraction/ocrRouter');
+const { buildAnalysisPrompt } = require('../../court-analysis/extraction/prompts');
 const { buildPdfMessage, buildImageMessage, requestChat, extractAssistantText, extractParsedFileText, ANALYSIS_MAX_TOKENS } = require('./openrouter-client');
 const { jsonValidity, scoreJsonConditions, scoreJsonRequestConditions } = require('./metrics');
 function buildNativePdfTranscriptInstruction(pageCount) {

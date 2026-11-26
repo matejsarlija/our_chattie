@@ -15,7 +15,8 @@ jest.mock('../llm/usage', () => ({
 }));
 
 const mockGeminiInvoke = jest.fn();
-const { analyzeClusterDocuments, mergeAnalysisChunkResults } = require('../court-analysis/agents/analysis-agent');
+const { analyzeClusterDocuments } = require('../court-analysis/extraction/documentAnalyzer');
+const { mergeAnalysisChunkResults } = require('../court-analysis/extraction/chunkMerge');
 test('mergeAnalysisChunkResults keeps the first concrete top-level decision outcome', () => {
     const makeResult = (id, decisionOutcome) => ({
         segment: { id, startIndex: 0, endIndex: 10, pageNumbers: [1] },

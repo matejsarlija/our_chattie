@@ -16,6 +16,11 @@ const TRUNCATION_MESSAGE = 'AI odgovor je prekinut zbog ograničenja veličine p
 const SCHEMA_MISMATCH_MESSAGE = 'Struktura AI odgovora nije valjana pa dokument čeka ponovnu obradu.';
 const PDF_TOO_LARGE_MESSAGE = 'PDF dokument premašuje dopuštenu veličinu za OCR.';
 const PDF_PAGE_LIMIT_MESSAGE = 'PDF dokument premašuje posebno postavljeno ograničenje broja stranica za OCR.';
+const HTML_AS_PDF_MESSAGE = 'Preuzeta datoteka sadrži HTML stranicu umjesto valjanog PDF dokumenta.';
+const PDF_ENCRYPTED_MESSAGE = 'PDF dokument je šifriran ili zaštićen lozinkom i nije ga moguće pročitati.';
+const PDF_CORRUPT_MESSAGE = 'PDF dokument je oštećen ili nečitljiv.';
+const EMPTY_DOCUMENT_MESSAGE = 'Dokument ne sadrži čitljiv tekst.';
+const CREDITS_EXHAUSTED_MESSAGE = 'OpenRouter kredit za AI analizu je iscrpljen (HTTP 402). Unaprijed keširani rezultati su sačuvani.';
 
 function describeStage(stage) {
     return STAGE_LABELS[stage] || 'obrade zahtjeva';
@@ -110,6 +115,21 @@ function classifyFileFailure(message) {
 
     if (!raw.trim()) {
         return { code: 'unclassified', reason: 'Obrada datoteke nije uspjela.' };
+    }
+    if (message?.reasonCode === 'provider-credits-exhausted' || message?.code === 'ERR_PROVIDER_CREDITS_EXHAUSTED' || /\b402\b.*credit|insufficient credits|provider-credits-exhausted/i.test(raw)) {
+        return { code: 'provider-credits-exhausted', reason: CREDITS_EXHAUSTED_MESSAGE };
+    }
+    if (/html-as-pdf|html masquerading/i.test(raw)) {
+        return { code: 'html-as-pdf', reason: HTML_AS_PDF_MESSAGE };
+    }
+    if (/pdf-encrypted|password protected|encrypted/i.test(raw)) {
+        return { code: 'pdf-encrypted', reason: PDF_ENCRYPTED_MESSAGE };
+    }
+    if (/\bpdf-corrupt\b/i.test(raw)) {
+        return { code: 'pdf-corrupt', reason: PDF_CORRUPT_MESSAGE };
+    }
+    if (/empty-document/i.test(raw)) {
+        return { code: 'empty-document', reason: EMPTY_DOCUMENT_MESSAGE };
     }
     if (isDailyQuotaExhaustion(extracted || raw)) {
         return { code: 'daily-quota', reason: DAILY_LIMIT_MESSAGE };

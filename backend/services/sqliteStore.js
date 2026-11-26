@@ -601,15 +601,17 @@ function createSqliteStore(options = {}) {
     },
     async completeAnalysisRun({ analysisId, resultText, resultJson = null, partialReason = null, preflight = null, scorecard = null, tokenUsage = undefined }) {
       const existing = requireRun(analysisId);
+      const effectivePartialReason = partialReason ?? existing.partial_reason ?? null;
+      const effectiveStatus = effectivePartialReason ? 'partial' : 'done';
       const boundedResult = stripDuplicateAiResults(resultJson);
-      const summary = buildRunSummary({ run: { ...existing, status: partialReason ? 'partial' : 'done' }, resultJson: boundedResult });
+      const summary = buildRunSummary({ run: { ...existing, status: effectiveStatus }, resultJson: boundedResult });
       db.transaction(() => {
         db.prepare(`INSERT INTO run_artifacts (run_id, result_text, result_json) VALUES (?, ?, ?)
           ON CONFLICT(run_id) DO UPDATE SET result_text = excluded.result_text, result_json = excluded.result_json`)
           .run(analysisId, resultText ?? null, stringify(boundedResult));
-        db.prepare(`UPDATE runs SET status = ?, partial_reason = ?, preflight_json = COALESCE(?, preflight_json), summary_json = ?, scorecard_json = ?,
+        db.prepare(`UPDATE runs SET status = ?, partial_reason = COALESCE(?, partial_reason), preflight_json = COALESCE(?, preflight_json), summary_json = ?, scorecard_json = ?,
           token_usage_json = COALESCE(?, token_usage_json), completed_at = ?, updated_at = ? WHERE id = ?`)
-          .run(partialReason ? 'partial' : 'done', partialReason, stringify(preflight), stringify(summary), stringify(scorecard), stringify(tokenUsage), nowIso(), nowIso(), analysisId);
+          .run(effectiveStatus, partialReason, stringify(preflight), stringify(summary), stringify(scorecard), stringify(tokenUsage), nowIso(), nowIso(), analysisId);
       })();
       return requireRun(analysisId);
     },
@@ -882,8 +884,14 @@ function createSqliteStore(options = {}) {
       };
     },
     getOcrPage(contentHash, pageNumber, options = {}) {
-      const row = db.prepare(`SELECT text FROM ocr_transcripts WHERE content_hash = ? AND engine = ? AND task_type = ? AND prompt_version = ? AND model_id = ?`)
-        .get(`${contentHash}:p${pageNumber}`, options.engine || 'page-cache', 'TranscribePage', options.promptVersion || 1, options.modelId || 'page-cache');
+      const key = `${contentHash}:p${pageNumber}`;
+      const engine = options.engine || 'page-cache';
+      const promptVersion = options.promptVersion || 1;
+      const row = options.modelId
+        ? db.prepare(`SELECT text FROM ocr_transcripts WHERE content_hash = ? AND engine = ? AND task_type = ? AND prompt_version = ? AND model_id = ?`)
+            .get(key, engine, 'TranscribePage', promptVersion, options.modelId)
+        : db.prepare(`SELECT text FROM ocr_transcripts WHERE content_hash = ? AND engine = ? AND task_type = ? AND prompt_version = ? ORDER BY created_at DESC LIMIT 1`)
+            .get(key, engine, 'TranscribePage', promptVersion);
       return row ? row.text : null;
     },
     putOcrPage(contentHash, pageNumber, text, options = {}) {
@@ -966,6 +974,117 @@ function createSqliteStore(options = {}) {
     hasSegmentCheckpointForContentHash(contentHash) {
       if (!contentHash) return false;
       return Boolean(db.prepare('SELECT 1 FROM segment_checkpoints WHERE content_hash = ? LIMIT 1').get(contentHash));
+    },
+    getSegmentCheckpoint(checkpointKey) {
+      if (!checkpointKey) return null;
+      const row = db.prepare('SELECT * FROM segment_checkpoints WHERE checkpoint_key = ?').get(checkpointKey);
+      if (!row) return null;
+      return {
+        checkpointKey: row.checkpoint_key,
+        contentHash: row.content_hash,
+        segmentId: row.segment_id,
+        modelId: row.model_id,
+        promptHash: row.prompt_hash,
+        schemaVersion: row.schema_version,
+        parsed: parseJson(row.parsed_json, null),
+        inputTokens: row.input_tokens,
+        outputTokens: row.output_tokens,
+        reasoningTokens: row.reasoning_tokens,
+        costUsd: row.cost_usd,
+        latencyMs: row.latency_ms,
+        createdAt: row.created_at,
+      };
+    },
+    putSegmentCheckpoint({
+      checkpointKey,
+      contentHash,
+      segmentId,
+      modelId,
+      promptHash,
+      schemaVersion,
+      parsed,
+      inputTokens = null,
+      outputTokens = null,
+      reasoningTokens = null,
+      costUsd = null,
+      latencyMs = null,
+    }) {
+      if (!checkpointKey || !contentHash || !segmentId || !parsed) return false;
+      db.prepare(`INSERT INTO segment_checkpoints (
+        checkpoint_key, content_hash, segment_id, model_id, prompt_hash, schema_version,
+        parsed_json, input_tokens, output_tokens, reasoning_tokens, cost_usd, latency_ms, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(checkpoint_key) DO UPDATE SET
+        parsed_json = excluded.parsed_json,
+        input_tokens = excluded.input_tokens,
+        output_tokens = excluded.output_tokens,
+        reasoning_tokens = excluded.reasoning_tokens,
+        cost_usd = excluded.cost_usd,
+        latency_ms = excluded.latency_ms,
+        created_at = excluded.created_at`)
+        .run(
+          checkpointKey,
+          contentHash,
+          segmentId,
+          String(modelId || 'z-ai/glm-5.3-flash'),
+          String(promptHash || 'v5'),
+          Number(schemaVersion || 5),
+          stringify(parsed),
+          inputTokens,
+          outputTokens,
+          reasoningTokens,
+          costUsd,
+          latencyMs,
+          nowIso(),
+        );
+      return true;
+    },
+    insertBenchCandidate({
+      id = crypto.randomUUID(),
+      runId = null,
+      contentHash = null,
+      docName,
+      frozenTranscript,
+      knownParties = null,
+      prodAiResult = null,
+      triggerReasons = [],
+      status = 'pending',
+    } = {}) {
+      if (!docName || typeof frozenTranscript !== 'string') return null;
+      db.prepare(`INSERT INTO bench_candidates (
+        id, run_id, content_hash, doc_name, frozen_transcript, known_parties_json,
+        prod_ai_result_json, trigger_reasons_json, status, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+        .run(
+          id,
+          runId,
+          contentHash,
+          docName,
+          frozenTranscript,
+          stringify(knownParties),
+          stringify(prodAiResult),
+          stringify(triggerReasons),
+          status,
+          nowIso(),
+        );
+      return id;
+    },
+    listBenchCandidates({ runId = null, limit = 50 } = {}) {
+      const rows = runId
+        ? db.prepare('SELECT * FROM bench_candidates WHERE run_id = ? ORDER BY created_at DESC LIMIT ?').all(runId, limit)
+        : db.prepare('SELECT * FROM bench_candidates ORDER BY created_at DESC LIMIT ?').all(limit);
+      return rows.map((row) => ({
+        id: row.id,
+        runId: row.run_id,
+        contentHash: row.content_hash,
+        docName: row.doc_name,
+        frozenTranscript: row.frozen_transcript,
+        knownParties: parseJson(row.known_parties_json, null),
+        prodAiResult: parseJson(row.prod_ai_result_json, null),
+        triggerReasons: parseJson(row.trigger_reasons_json, []),
+        status: row.status,
+        createdAt: row.created_at,
+      }));
     },
     setRunPartialReason({ id, partialReason }) {
       if (!id) return false;

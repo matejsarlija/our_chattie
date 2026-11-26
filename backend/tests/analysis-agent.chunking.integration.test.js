@@ -26,7 +26,7 @@ jest.mock('../court-analysis/reasoning/retrieval/chunker', () => ({
   buildRetrievalChunks: jest.fn(() => []),
 }));
 
-const { analyzeClusterDocuments } = require('../court-analysis/agents/analysis-agent');
+const { analyzeClusterDocuments } = require('../court-analysis/extraction/documentAnalyzer');
 
 describe('AnalyzeDocumentsTool chunking integration', () => {
   beforeEach(() => {

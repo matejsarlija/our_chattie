@@ -428,7 +428,11 @@ async function extractTextFromFile(filePath) {
                 });
             } finally {
                 if (doc && typeof doc.destroy === 'function') {
-                    await doc.destroy().catch(() => {});
+                    try {
+                        await doc.destroy();
+                    } catch {
+                        // Ignore pdf.js teardown noise.
+                    }
                 }
             }
         }

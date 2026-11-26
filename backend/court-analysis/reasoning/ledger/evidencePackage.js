@@ -419,18 +419,64 @@ function attachAnalysesToEvidencePackage(pkg, processedCases, clusterId = null) 
             truncated: item.truncated === true,
             degraded: item.degraded === true,
             analysisChunks: item.analysisChunks || null,
+            ...(item.docId !== undefined ? {
+                docId: item.docId,
+                sourceEntryIndex: item.sourceEntryIndex ?? item.entryIndex ?? null,
+                entryDisplayId: item.entryDisplayId || deriveEntryDisplayId(item.detailLink),
+                entryDate: item.entryDate || null,
+                entryTitle: item.entryTitle || null,
+                pageCount: item.pageCount ?? item.extraction?.pages ?? null,
+                docClass: item.docClass || null,
+                ocrEngine: item.ocrEngine || item.extraction?.ocrEngine || null,
+                fromCache: Boolean(item.fromCache),
+                adminFastPath: Boolean(item.adminFastPath),
+                skippedPageRanges: Array.isArray(item.skippedPageRanges) ? item.skippedPageRanges : [],
+                reasonCode: item.reasonCode || item.extraction?.error || null,
+            } : {}),
         }));
     const failedFiles = individualAnalyses
         .filter((item) => !item?.aiResult)
         .map((item) => {
             const classified = classifyFileFailureDetailed(item.error);
+            const reasonCode = item.reasonCode || classified.code;
             return {
                 fileName: item.text || item.filePath || 'nepoznata datoteka',
-                code: classified.code,
+                code: reasonCode,
                 reason: classified.reason,
                 causalChain: classified.causalChain,
+                ...(item.docId !== undefined ? {
+                    docId: item.docId,
+                    sourceEntryIndex: item.sourceEntryIndex ?? item.entryIndex ?? null,
+                    entryDisplayId: item.entryDisplayId || deriveEntryDisplayId(item.detailLink),
+                    entryDate: item.entryDate || null,
+                    entryTitle: item.entryTitle || null,
+                    pageCount: item.pageCount ?? item.extraction?.pages ?? null,
+                    docClass: item.docClass || null,
+                    ocrEngine: item.ocrEngine || item.extraction?.ocrEngine || null,
+                    fromCache: Boolean(item.fromCache),
+                    adminFastPath: Boolean(item.adminFastPath),
+                    skippedPageRanges: Array.isArray(item.skippedPageRanges) ? item.skippedPageRanges : [],
+                    reasonCode,
+                } : {}),
             };
         });
+
+    const sourceDocuments = individualAnalyses.map((item) => ({
+        docId: item.docId || null,
+        fileName: item.text || item.filePath || 'nepoznata datoteka',
+        contentHash: item.contentHash || null,
+        sourceEntryIndex: item.sourceEntryIndex ?? item.entryIndex ?? null,
+        entryDisplayId: item.entryDisplayId || deriveEntryDisplayId(item.detailLink),
+        entryDate: item.entryDate || null,
+        entryTitle: item.entryTitle || null,
+        pageCount: item.pageCount ?? item.extraction?.pages ?? null,
+        docClass: item.docClass || null,
+        ocrEngine: item.ocrEngine || item.extraction?.ocrEngine || null,
+        fromCache: Boolean(item.fromCache),
+        adminFastPath: Boolean(item.adminFastPath),
+        skippedPageRanges: Array.isArray(item.skippedPageRanges) ? item.skippedPageRanges : [],
+        reasonCode: item.reasonCode || item.extraction?.error || null,
+    }));
 
     const coverage = {
         analyzed,
@@ -452,6 +498,7 @@ function attachAnalysesToEvidencePackage(pkg, processedCases, clusterId = null) 
 
     return {
         ...pkg,
+        sourceDocuments,
         analyses,
         factLedger,
         chunks,

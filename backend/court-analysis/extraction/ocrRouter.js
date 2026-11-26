@@ -120,7 +120,11 @@ async function resolvePdfPageCount(fileBytes) {
         return doc.numPages || 0;
     } finally {
         if (doc && typeof doc.destroy === 'function') {
-            await doc.destroy().catch(() => {});
+            try {
+                await doc.destroy();
+            } catch {
+                // Ignore pdf.js teardown noise.
+            }
         }
     }
 }
@@ -854,7 +858,7 @@ async function extractTextViaOCR(filePath, progressCallback, options = {}) {
         const mergedPages = new Map();
         const pendingPages = [];
         for (const pageNo of selectedPages) {
-            const cached = readCachedPage(contentHash, pageNo, sqliteStore);
+            const cached = readCachedPage(contentHash, pageNo, sqliteStore, modelId);
             if (cached !== null) {
                 mergedPages.set(pageNo, cached);
             } else {
@@ -985,7 +989,11 @@ async function extractTextViaOCR(filePath, progressCallback, options = {}) {
         });
     } finally {
         if (doc && typeof doc.destroy === 'function') {
-            await doc.destroy().catch(() => {});
+            try {
+                await doc.destroy();
+            } catch {
+                // Ignore pdf.js teardown noise.
+            }
         }
     }
 }

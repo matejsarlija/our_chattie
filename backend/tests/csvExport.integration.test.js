@@ -18,7 +18,7 @@ jest.mock('../court-analysis/acquisition/downloader', () => ({
     downloadClusterAttachments: mockDownloadCall,
 }));
 
-jest.mock('../court-analysis/agents/analysis-agent', () => ({
+jest.mock('../court-analysis/extraction/documentAnalyzer', () => ({
     analyzeClusterDocuments: mockAnalyzeCall,
 }));
 

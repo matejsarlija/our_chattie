@@ -19,7 +19,17 @@ function mapProcessedCase(processedCase) {
             individualAnalyses: Array.isArray(processedCase?.analysis?.individualAnalyses)
                 ? processedCase.analysis.individualAnalyses.map((item) => ({
                     fileName: item.text,
-                    error: item.error
+                    error: item.error,
+                    ...(item.docId !== undefined ? { docId: item.docId } : {}),
+                    ...(item.docClass !== undefined ? { docClass: item.docClass } : {}),
+                    ...(item.ocrEngine !== undefined ? { ocrEngine: item.ocrEngine } : {}),
+                    ...(item.fromCache !== undefined ? { fromCache: Boolean(item.fromCache) } : {}),
+                    ...(item.adminFastPath !== undefined ? { adminFastPath: Boolean(item.adminFastPath) } : {}),
+                    ...(item.pageCount !== undefined ? { pageCount: item.pageCount } : {}),
+                    ...(Array.isArray(item.skippedPageRanges) && item.skippedPageRanges.length > 0
+                        ? { skippedPageRanges: item.skippedPageRanges }
+                        : {}),
+                    ...(item.reasonCode !== undefined ? { reasonCode: item.reasonCode } : {}),
                 }))
                 : [],
             coverage: processedCase?.analysis?.coverage || null

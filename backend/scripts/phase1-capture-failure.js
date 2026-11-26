@@ -3,7 +3,8 @@
 const fs = require('node:fs');
 const path = require('node:path');
 require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
-const { extractTextFromFile, buildAnalysisPrompt } = require('../court-analysis/agents/analysis-agent');
+const { extractTextFromFile } = require('../court-analysis/extraction/pdfText');
+const { buildAnalysisPrompt } = require('../court-analysis/extraction/prompts');
 const { splitTextIntoChunks } = require('../court-analysis/reasoning/retrieval/chunker');
 const { requestChat } = require('./lib/openrouter-client');
 

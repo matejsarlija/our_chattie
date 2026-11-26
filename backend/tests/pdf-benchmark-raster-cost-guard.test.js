@@ -11,8 +11,8 @@ jest.mock('pdfjs-dist/legacy/build/pdf.js', () => ({
     }),
 }));
 
-jest.mock('../court-analysis/agents/analysis-agent', () => ({
-    ...jest.requireActual('../court-analysis/agents/analysis-agent'),
+jest.mock('../court-analysis/extraction/pdfText', () => ({
+    ...jest.requireActual('../court-analysis/extraction/pdfText'),
     renderPageToJpeg: async (pageNumber) => Buffer.from(`page-${pageNumber}`),
 }));
 

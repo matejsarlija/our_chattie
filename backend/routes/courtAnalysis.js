@@ -97,6 +97,7 @@ function createCourtAnalysisRouter({ analysisStore, courtAnalysisQueue, writeLim
           analysisId: runId,
           resultText: finalPayload.comparativeAnalysis,
           resultJson: finalPayload,
+          partialReason: finalResult?.partialReason || null,
         });
         await safeProgress({ step: 'complete', progress: 100, message: 'Analiza je završena!' });
         const completedRun = await analysisStore.getAnalysisRun({ id: runId });

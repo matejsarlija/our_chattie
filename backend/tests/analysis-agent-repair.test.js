@@ -17,7 +17,7 @@ jest.mock('../llm/usage', () => ({
     trackUsageInvoke: (_client, prompt, _opts) => mockGeminiInvoke(Array.isArray(prompt) && prompt.length === 1 && typeof prompt[0]?.content === 'string' ? prompt[0].content : prompt),
 }));
 
-const { analyzeClusterDocuments } = require('../court-analysis/agents/analysis-agent');
+const { analyzeClusterDocuments } = require('../court-analysis/extraction/documentAnalyzer');
 
 const GOOD_AMOUNT = {
     description: 'Tražbina vjerovnika',

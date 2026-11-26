@@ -142,7 +142,7 @@ function extractZipSafely(zipPath, destinationDir) {
 async function extractAndProbe(manifest) {
     // Real production extraction path — no mocks. Imported lazily so
     // --verify-only does not pay module init twice.
-    const { extractTextFromFile } = require('../court-analysis/agents/analysis-agent');
+    const { extractTextFromFile } = require('../court-analysis/extraction/pdfText');
     // Demote pdfjs-dist's per-glyph font warnings ("Warning: TT: ...") for
     // the run: this pdfjs build exposes no verbosity setter, so filter at
     // the console boundary instead. Real failures still surface per file

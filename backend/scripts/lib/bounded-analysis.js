@@ -5,7 +5,7 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const { performance } = require('node:perf_hooks');
 const { splitTextIntoChunks } = require('../../court-analysis/reasoning/retrieval/chunker');
-const { mergeAnalysisChunkResults } = require('../../court-analysis/agents/analysis-agent');
+const { mergeAnalysisChunkResults } = require('../../court-analysis/extraction/chunkMerge');
 const { extractAssistantText } = require('./openrouter-client');
 const { extractTableHeader, applyHeaderPreservation } = require('./table-header-preprocessor');
 
