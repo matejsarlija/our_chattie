@@ -12,6 +12,13 @@ const getText = (item, keys) => {
 
 const getFindingText = (finding) => getText(finding, ['claim', 'text', 'summary']);
 
+const VERIFICATION_LABELS = {
+  verified_deterministic: { glyph: '✓', label: 'Potvrđeno (zapis)' },
+  verified_llm: { glyph: '✓', label: 'Potvrđeno (AI)' },
+  unverified: { glyph: '⚠', label: 'Nepotvrđeno' },
+  not_checked: { glyph: '•', label: 'Strukturno' },
+};
+
 function FindingsSection({ findings, showEmpty }) {
   if (!Array.isArray(findings) || findings.length === 0) {
     if (!showEmpty) return null;
@@ -27,12 +34,29 @@ function FindingsSection({ findings, showEmpty }) {
     <div className="mb-4">
       <h3 className="mb-2 text-sm font-semibold text-[var(--text)]">Nalazi</h3>
       <ul className="space-y-2">
-        {findings.map((finding, index) => (
-          <li key={`finding-${index}`} className="rounded-lg border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-2 text-sm text-[var(--text)]">
-            {getFindingText(finding) || '-'}
-            <AnalysisCitationList citations={finding?.citations} />
-          </li>
-        ))}
+        {findings.map((finding, index) => {
+          const vMeta = finding?.verificationStatus ? VERIFICATION_LABELS[finding.verificationStatus] : null;
+          return (
+            <li key={finding?.id || `finding-${index}`} className="rounded-lg border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-2 text-sm text-[var(--text)]">
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <span>{getFindingText(finding) || '-'}</span>
+                {vMeta ? (
+                  <span
+                    className="inline-flex shrink-0 items-center gap-1 rounded border border-[var(--border)] px-1.5 py-0.5 text-[11px] font-medium text-[var(--text-muted)]"
+                    title={finding.verificationNote || vMeta.label}
+                  >
+                    <span aria-hidden="true">{vMeta.glyph}</span>
+                    <span>{vMeta.label}</span>
+                  </span>
+                ) : null}
+              </div>
+              {finding?.verificationStatus === 'unverified' && finding?.verificationNote ? (
+                <p className="mt-1 text-xs text-[var(--text-muted)]">{finding.verificationNote}</p>
+              ) : null}
+              <AnalysisCitationList citations={finding?.citations} />
+            </li>
+          );
+        })}
       </ul>
     </div>
   );

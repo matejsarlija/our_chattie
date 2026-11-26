@@ -56,14 +56,20 @@ describe('Verifier', () => {
 
         const verifiedReport = await verifyReport(mockReport, mockEvidence);
 
-        expect(verifiedReport.findings).toHaveLength(1); // Only supported synthesized finding remains
-        expect(verifiedReport.findings[0].text).toBe('Defendant paid the debt');
-        expect(verifiedReport.findings[0].confidence).toBe('high');
-        expect(verifiedReport.findings[0].citations[0].text).toContain('Timeline mentions debt paid');
+        expect(verifiedReport.findings).toHaveLength(2); // Zero silent deletion; unsupported kept as unverified
+        expect(verifiedReport.findings[0]).toMatchObject({
+            text: 'Defendant paid the debt',
+            confidence: 'high',
+            verificationStatus: 'verified_llm',
+        });
+        expect(verifiedReport.findings[1]).toMatchObject({
+            text: 'Case was dismissed',
+            verificationStatus: 'unverified',
+        });
 
         expect(verifiedReport.claims).toEqual(mockReport.claims);
         expect(verifiedReport.openQuestions).toHaveLength(1);
-        expect(verifiedReport.openQuestions[0]).toContain('Unverified finding: Case was dismissed');
+        expect(verifiedReport.openQuestions[0]).toContain('Nepotvrđen nalaz: Case was dismissed');
         expect(verifiedReport.timeline).toEqual(mockReport.timeline);
     });
 
@@ -152,10 +158,10 @@ describe('Verifier', () => {
         ]);
         // Only the substantive finding was verified.
         expect(result.findings[1].confidence).toBe('high');
-        expect(result.findings[1].citations[0].sourceId).toBe('verification-pass');
-        // Mechanical findings pass through untouched — skipped, not deleted.
-        expect(result.findings[0]).toBe(mechanicalOne);
-        expect(result.findings[2]).toBe(mechanicalTwo);
+        expect(result.findings[1].verificationStatus).toBe('verified_llm');
+        // Mechanical findings keep not_checked status — skipped, not deleted.
+        expect(result.findings[0]).toMatchObject({ text: mechanicalOne.text, verificationStatus: 'not_checked' });
+        expect(result.findings[2]).toMatchObject({ text: mechanicalTwo.text, verificationStatus: 'not_checked' });
 
         // The prompt diet still holds: only the substantive text is sent.
         const prompt = mockInvoke.mock.calls[0][0];
@@ -178,20 +184,67 @@ describe('Verifier', () => {
         const result = await verifyReport(mockReport, mockEvidence);
 
         expect(result.meta.verification).toMatchObject({ status: 'complete', failedCount: 0 });
-        expect(result.findings).toHaveLength(1);
-        expect(result.findings[0].text).toBe('Defendant paid the debt');
+        expect(result.findings).toHaveLength(2);
+        expect(result.findings[0]).toMatchObject({ text: 'Defendant paid the debt', verificationStatus: 'verified_llm' });
+        expect(result.findings[1]).toMatchObject({ text: 'Case was dismissed', verificationStatus: 'unverified' });
     });
 
     test('records verification failure as partial without discarding the report', async () => {
         mockInvoke.mockResolvedValue({ content: '[{"index":1,"status":"supported"' });
         const result = await verifyReport(mockReport, mockEvidence);
         expect(result).not.toBe(mockReport);
-        expect(result.findings).toEqual(mockReport.findings);
+        expect(result.findings).toHaveLength(2);
+        expect(result.findings[0].verificationStatus).toBe('unverified');
         expect(result.meta.verification).toMatchObject({
             status: 'partial',
             failedCount: mockReport.findings.length,
         });
         expect(result.openQuestions).toContain('Dio nalaza nije mogao biti provjeren; rezultat provjere nije dostupan.');
+    });
+
+    test('verifies ledger-backed findings deterministically at $0 without invoking LLM', async () => {
+        const report = {
+            schemaVersion: SCHEMA_VERSION,
+            claims: [],
+            findings: [{
+                id: 'f-det',
+                text: 'Vjerovnik B2 KAPITAL d.o.o. (OIB 49803335555) ima tražbinu od 15.000,00 EUR.',
+                confidence: 'medium',
+                citations: [{ docId: 'doc-1', text: '15.000,00 EUR' }],
+            }],
+            openQuestions: [],
+            conflicts: [],
+            meta: {},
+        };
+        const evidence = {
+            timeline: [],
+            claims: [],
+            factLedger: [{
+                id: 'fact-1',
+                kind: 'amount',
+                value: 15000,
+                valueEur: 15000,
+                currency: 'EUR',
+                grounded: true,
+                parties: { recipientName: 'B2 KAPITAL d.o.o.', recipientOib: '49803335555' },
+            }],
+            meta: {},
+        };
+
+        const result = await verifyReport(report, evidence);
+
+        expect(mockInvoke).not.toHaveBeenCalled();
+        expect(result.findings[0]).toMatchObject({
+            verificationStatus: 'verified_deterministic',
+            verificationNote: expect.stringContaining('determinističkom provjerom'),
+        });
+        expect(result.meta.verification).toMatchObject({
+            status: 'complete',
+            attemptedCount: 1,
+            verifiedCount: 1,
+            deterministicVerifiedCount: 1,
+            failedCount: 0,
+        });
     });
 });
 

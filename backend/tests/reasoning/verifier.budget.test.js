@@ -189,7 +189,8 @@ describe('verifier evidence char budget (refinement 4)', () => {
         expect(mockInvoke.mock.calls[0][0]).not.toContain('Nalaz 9.');
         expect(mockInvoke.mock.calls[1][0]).toContain('Nalaz 9.');
         expect(result.findings).toHaveLength(9);
-        expect(result.findings.every((finding) => finding.citations.some((citation) => citation.sourceId === 'verification-pass'))).toBe(true);
+        expect(result.findings.every((finding) => finding.verificationStatus === 'verified_llm')).toBe(true);
+        expect(result.findings.every((finding) => !finding.citations.some((c) => c.sourceId === 'verification-pass'))).toBe(true);
         expect(result.meta.verification).toMatchObject({ status: 'complete', verifiedCount: 9, failedCount: 0 });
     });
 
@@ -217,12 +218,12 @@ describe('verifier evidence char budget (refinement 4)', () => {
         const result = await verifyReport(report, { timeline: [], claims: [], meta: {} });
 
         // Nothing is lost: supported/contradicted keep their verdict, the
-        // three unverified findings survive unchanged.
+        // three unverified findings survive with explicit unverified status.
         expect(result.findings).toHaveLength(6);
-        expect(result.findings[0].citations.some((citation) => citation.sourceId === 'verification-pass')).toBe(true);
-        expect(result.findings[1].citations.some((citation) => citation.sourceId === 'verification-contradiction')).toBe(true);
-        expect(result.findings[2].citations.some((citation) => citation.sourceId === 'verification-pass')).toBe(true);
-        expect(result.findings[5]).toMatchObject({ id: 'finding-6', citations: [{ sourceId: 'source-6' }] });
+        expect(result.findings[0].verificationStatus).toBe('verified_llm');
+        expect(result.findings[1].verificationStatus).toBe('unverified');
+        expect(result.findings[2].verificationStatus).toBe('verified_llm');
+        expect(result.findings[5]).toMatchObject({ id: 'finding-6', verificationStatus: 'unverified', citations: [{ sourceId: 'source-6' }] });
         expect(result.meta.verification).toMatchObject({ status: 'partial', attemptedCount: 6, verifiedCount: 3, failedCount: 3 });
     });
 });

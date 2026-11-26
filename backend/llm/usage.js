@@ -136,9 +136,96 @@ async function trackUsageInvoke(client, input, options = {}) {
     return response;
 }
 
+function mapTaskToStage(taskType) {
+    const t = String(taskType || '');
+    if (t.includes('Ocr') || t.includes('OCR')) return 'ocr';
+    if (t === 'SynthesizeCase') return 'synthesis';
+    if (t === 'VerifyReport') return 'verify';
+    return 'extraction';
+}
+
+function buildEnrichedTokenUsage({ usageTracker, sqliteStore = null, runId = null, processedCases = [] } = {}) {
+    const base = typeof usageTracker?.detailedSnapshot === 'function'
+        ? usageTracker.detailedSnapshot()
+        : {
+            inputTokens: 0,
+            outputTokens: 0,
+            totalTokens: 0,
+            cachedTokens: 0,
+            reasoningTokens: 0,
+            costUsd: 0,
+            calls: 0,
+        };
+
+    const byStage = {
+        ocr: { inputTokens: 0, outputTokens: 0, cachedTokens: 0, reasoningTokens: 0, costUsd: 0, calls: 0 },
+        extraction: { inputTokens: 0, outputTokens: 0, cachedTokens: 0, reasoningTokens: 0, costUsd: 0, calls: 0 },
+        synthesis: { inputTokens: 0, outputTokens: 0, cachedTokens: 0, reasoningTokens: 0, costUsd: 0, calls: 0 },
+        verify: { inputTokens: 0, outputTokens: 0, cachedTokens: 0, reasoningTokens: 0, costUsd: 0, calls: 0 },
+    };
+    const modelsUsed = new Set();
+
+    if (sqliteStore?.db && runId) {
+        try {
+            const rows = sqliteStore.db.prepare(`
+                SELECT task_type, COALESCE(actual_model, requested_model) AS model,
+                       input_tokens, output_tokens, cached_tokens, reasoning_tokens, cost_usd
+                FROM llm_traces WHERE run_id = ?
+            `).all(runId);
+            let traceCost = 0;
+            let traceCached = 0;
+            let traceReasoning = 0;
+            for (const row of rows) {
+                const stage = mapTaskToStage(row.task_type);
+                const bucket = byStage[stage];
+                const inTok = Number(row.input_tokens) || 0;
+                const outTok = Number(row.output_tokens) || 0;
+                const cachedTok = Number(row.cached_tokens) || 0;
+                const reasonTok = Number(row.reasoning_tokens) || 0;
+                const cost = Number(row.cost_usd) || 0;
+                bucket.inputTokens += inTok;
+                bucket.outputTokens += outTok;
+                bucket.cachedTokens += cachedTok;
+                bucket.reasoningTokens += reasonTok;
+                bucket.costUsd = Number((bucket.costUsd + cost).toFixed(6));
+                bucket.calls += 1;
+                traceCost += cost;
+                traceCached += cachedTok;
+                traceReasoning += reasonTok;
+                if (row.model) modelsUsed.add(row.model);
+            }
+            if (rows.length > 0) {
+                base.costUsd = Number(Math.max(base.costUsd, traceCost).toFixed(6));
+                base.cachedTokens = Math.max(base.cachedTokens, traceCached);
+                base.reasoningTokens = Math.max(base.reasoningTokens, traceReasoning);
+            }
+        } catch {
+            // Non-fatal trace aggregation
+        }
+    }
+
+    let cacheHitDocs = 0;
+    let adminFastPathDocs = 0;
+    for (const pc of Array.isArray(processedCases) ? processedCases : []) {
+        for (const item of Array.isArray(pc?.analysis?.individualAnalyses) ? pc.analysis.individualAnalyses : []) {
+            if (item?.fromCache) cacheHitDocs += 1;
+            if (item?.adminFastPath) adminFastPathDocs += 1;
+        }
+    }
+
+    return {
+        ...base,
+        byStage,
+        cacheHitDocs,
+        adminFastPathDocs,
+        modelsUsed: [...modelsUsed],
+    };
+}
+
 module.exports = {
     createUsageTracker,
     extractUsageFromResponse,
     extractUsageTelemetry,
     trackUsageInvoke,
+    buildEnrichedTokenUsage,
 };

@@ -164,7 +164,7 @@ describe('documentAnalyzer Stage T0.5, checkpoints, bisection, closure & bench_c
             taskRouter: { invokeTask },
         });
 
-        expect(result.partialReason).toBe('provider_credits_exhausted');
+        expect(result.partialReason).toBe('provider-credits-exhausted');
         expect(result.coverage.analyzed).toBe(1);
         expect(result.coverage.failed).toBe(1);
         expect(result.coverage.failedFiles[0]).toMatchObject({
@@ -172,7 +172,7 @@ describe('documentAnalyzer Stage T0.5, checkpoints, bisection, closure & bench_c
             reasonCode: 'provider-credits-exhausted',
         });
         const persistedRun = await sqliteStore.getAnalysisRun({ id: run.id });
-        expect(persistedRun.partial_reason).toBe('provider_credits_exhausted');
+        expect(persistedRun.partial_reason).toBe('provider-credits-exhausted');
         const promptRow = sqliteStore.db.prepare('SELECT prompt_name, schema_version FROM prompt_registry WHERE prompt_name = ?').get('extraction_v5');
         expect(promptRow).toEqual({ prompt_name: 'extraction_v5', schema_version: 5 });
     });

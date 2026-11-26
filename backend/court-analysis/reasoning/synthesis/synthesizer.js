@@ -76,6 +76,16 @@ function resolveFindingCitations(rawCitations, claimByRef) {
             }
             const citation = {};
             if (evidence.sourceId) citation.source = evidence.sourceId;
+            if (evidence.docId || evidence.metadata?.docId) citation.docId = evidence.docId || evidence.metadata.docId;
+            if (evidence.chunkId || evidence.metadata?.chunkId || evidence.metadata?.sourceChunkId) {
+                citation.chunkId = evidence.chunkId || evidence.metadata?.chunkId || evidence.metadata?.sourceChunkId;
+            }
+            if (Array.isArray(evidence.sourcePages || evidence.metadata?.sourcePages)) {
+                citation.sourcePages = [...(evidence.sourcePages || evidence.metadata.sourcePages)];
+            }
+            if (Number.isInteger(evidence.sourceEntryIndex ?? evidence.metadata?.sourceEntryIndex)) {
+                citation.sourceEntryIndex = evidence.sourceEntryIndex ?? evidence.metadata.sourceEntryIndex;
+            }
             if (evidence.metadata?.fileName) citation.fileName = evidence.metadata.fileName;
             if (evidence.url) citation.url = evidence.url;
             citation.text = boundedText(evidence.text || claim.text, MAX_CITATION_TEXT_CHARS);

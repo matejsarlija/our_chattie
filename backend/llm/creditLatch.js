@@ -43,7 +43,7 @@ function createCreditExhaustedLatch({ runId = null, sqliteStore = null, onTrip =
             try {
                 sqliteStore.setRunPartialReason({
                     id: runId,
-                    partialReason: 'provider_credits_exhausted',
+                    partialReason: 'provider-credits-exhausted',
                 });
             } catch {
                 // Non-fatal persistence failure while tripping latch.

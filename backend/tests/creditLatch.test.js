@@ -58,7 +58,7 @@ describe('CreditExhaustedLatch', () => {
         expect(onTrip).toHaveBeenCalledTimes(1);
 
         const persisted = await sqliteStore.getAnalysisRun({ id: run.id });
-        expect(persisted.partial_reason).toBe('provider_credits_exhausted');
+        expect(persisted.partial_reason).toBe('provider-credits-exhausted');
 
         expect(() => latch.assertNotTripped()).toThrow(/credits exhausted/i);
     });

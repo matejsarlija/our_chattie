@@ -228,12 +228,33 @@ function deriveAmounts(resultJson) {
  *   amounts: object|null,
  * }} never throws; every field degrades to null / []
  */
+function normalizePartialReason(reason) {
+    if (!reason || typeof reason !== 'string') return null;
+    return reason === 'provider_credits_exhausted' ? 'provider-credits-exhausted' : reason;
+}
+
 function buildRunSummary({ run, resultJson } = {}) {
     try {
         const safeRun = (run && typeof run === 'object') ? run : {};
         const safeResult = (resultJson && typeof resultJson === 'object') ? resultJson : null;
 
         const identity = deriveIdentity(safeResult, safeRun);
+        const coverage = deriveCoverage(safeResult);
+        const tokenUsage = (safeRun.token_usage && typeof safeRun.token_usage === 'object')
+            ? safeRun.token_usage
+            : (safeResult?.usage && typeof safeResult.usage === 'object' ? safeResult.usage : null);
+        const scorecard = (safeRun.scorecard && typeof safeRun.scorecard === 'object')
+            ? safeRun.scorecard
+            : null;
+        const partialReason = normalizePartialReason(safeRun.partial_reason ?? safeResult?.partialReason ?? null);
+        const costUsd = isFiniteNumber(tokenUsage?.costUsd) ? tokenUsage.costUsd : null;
+        const verificationStatus = firstString(
+            scorecard?.verificationStatus,
+            safeResult?.report?.meta?.verification?.status,
+        );
+        const criticalFailedDocuments = isFiniteNumber(scorecard?.criticalFailedDocuments)
+            ? scorecard.criticalFailedDocuments
+            : (coverage?.failed ?? null);
 
         return {
             caseNumber: identity.caseNumber,
@@ -243,12 +264,14 @@ function buildRunSummary({ run, resultJson } = {}) {
             queryType: typeof safeRun.query_type === 'string' ? safeRun.query_type : null,
             queryValue: typeof safeRun.query_value === 'string' ? safeRun.query_value : null,
             scanDepth: safeRun.scan_depth === 'full' ? 'full' : 'balanced',
-            coverage: deriveCoverage(safeResult),
+            costUsd,
+            partialReason,
+            verificationStatus,
+            criticalFailedDocuments,
+            coverage,
             amounts: deriveAmounts(safeResult),
         };
     } catch {
-        // Belt and braces: the callers are inside run completion, and a
-        // finished analysis must never be failed by its own summary.
         return {
             caseNumber: null,
             court: null,
@@ -257,6 +280,10 @@ function buildRunSummary({ run, resultJson } = {}) {
             queryType: null,
             queryValue: null,
             scanDepth: 'balanced',
+            costUsd: null,
+            partialReason: null,
+            verificationStatus: null,
+            criticalFailedDocuments: null,
             coverage: null,
             amounts: null,
         };

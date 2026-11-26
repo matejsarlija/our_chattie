@@ -10,11 +10,13 @@ export default function AnalysisUsageSummary({ usage, isRunning = false, model =
   const input = formatTokens(usage.inputTokens);
   const output = formatTokens(usage.outputTokens);
   const total = formatTokens(usage.totalTokens);
+  const costUsd = Number.isFinite(Number(usage.costUsd)) ? `$${Number(usage.costUsd).toFixed(4)}` : null;
 
   const stats = [
     { label: 'Ulazni tokeni', value: input },
     { label: 'Izlazni tokeni', value: output },
     { label: 'Ukupno tokena', value: total },
+    ...(costUsd ? [{ label: 'Trošak (USD)', value: costUsd }] : []),
   ];
 
   return (

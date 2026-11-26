@@ -1137,7 +1137,7 @@ async function analyzeClusterDocuments(input = {}) {
             individualAnalyses: sanitizedAnalyses,
             sourceDocuments: sanitizedAnalyses.map((item) => buildSourceDocumentRecord(item)),
             coverage: buildAnalysisCoverage(individualAnalyses),
-            partialReason: creditLatch.isTripped() ? 'provider_credits_exhausted' : null,
+            partialReason: creditLatch.isTripped() ? 'provider-credits-exhausted' : null,
         };
     } finally {
         if (heartbeatTimer) clearInterval(heartbeatTimer);

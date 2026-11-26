@@ -17,7 +17,7 @@ const { buildClusterEvidencePackage, attachAnalysesToEvidencePackage } = require
 const { generateClusterReport, composeOverviewMarkdown } = require('./reasoning/synthesis/reportService');
 const { buildFallbackReport } = require('./reasoning/synthesis/fallbackReportBuilder');
 const { normalizeText } = require('./reasoning/retrieval/indexer');
-const { createUsageTracker } = require('../llm/usage');
+const { createUsageTracker, buildEnrichedTokenUsage } = require('../llm/usage');
 const { createCreditExhaustedLatch } = require('../llm/creditLatch');
 const logger = require('../services/logger');
 
@@ -495,8 +495,25 @@ async function processScrapedCases(casesToProcess, progressCallback, options = {
             reportError,
         });
 
-        const partialReason = state.partialResult.partialReason
-            || (creditLatch.isTripped() ? 'provider_credits_exhausted' : null);
+        const partialReasonRaw = state.partialResult.partialReason
+            || (creditLatch.isTripped() ? 'provider-credits-exhausted' : null);
+        const partialReason = partialReasonRaw === 'provider_credits_exhausted'
+            ? 'provider-credits-exhausted'
+            : partialReasonRaw;
+        const enrichedUsage = buildEnrichedTokenUsage({
+            usageTracker,
+            sqliteStore: resolvedOptions.analysisStore || null,
+            runId,
+            processedCases: state.allProcessedCases,
+        });
+        const scorecard = {
+            verificationStatus: report?.meta?.verification?.status || 'unknown',
+            criticalFailedDocuments: summaryCoverage.failed ?? 0,
+            analyzedDocuments: summaryCoverage.analyzed ?? 0,
+            partialDocuments: enrichedEvidencePackage?.coverage?.partial ?? 0,
+            groundedClaims: enrichedEvidencePackage?.coverage?.groundedClaims ?? 0,
+            totalClaims: enrichedEvidencePackage?.coverage?.totalClaims ?? 0,
+        };
 
         return {
             processedCases: state.allProcessedCases,
@@ -508,7 +525,9 @@ async function processScrapedCases(casesToProcess, progressCallback, options = {
             report,
             reportError,
             partialReason,
-            usage: usageTracker.snapshot(),
+            scorecard,
+            usage: enrichedUsage,
+            tokenUsage: enrichedUsage,
         };
     } catch (error) {
         state.partialResult.usage = usageTracker.snapshot();

@@ -87,9 +87,14 @@ export default function AnalysisCoverageBanner({ coverage, status }) {
             Dokumenti koji nisu analizirani ({failedFiles.length})
           </summary>
           <ul className="mt-2 space-y-1 border-l-2 border-line pl-3">
-            {failedFiles.map((file) => (
-              <li key={file.name} className="text-xs text-ink-muted">
-                <span className="font-medium text-ink">{file.name}</span>
+            {failedFiles.map((file, index) => (
+              <li key={file.docId || `${file.fileName || file.name || 'failed'}-${index}`} className="text-xs text-ink-muted">
+                <span className="font-medium text-ink">{file.name || file.fileName}</span>
+                {(file.entryDate || file.entryDisplayId) && (
+                  <span className="ml-1.5 text-[11px] text-ink-muted">
+                    ({[file.entryDate, file.entryDisplayId].filter(Boolean).join(' · ')})
+                  </span>
+                )}
                 {file.reason ? <> — {file.reason}</> : null}
               </li>
             ))}
@@ -102,7 +107,7 @@ export default function AnalysisCoverageBanner({ coverage, status }) {
             Dokumenti obrađeni djelomično ({partialFiles.length})
           </summary>
           <ul className="mt-2 space-y-1 border-l-2 border-line pl-3">
-            {partialFiles.map((file) => {
+            {partialFiles.map((file, index) => {
               const chunks = file.analysisChunks;
               const detail = file.degraded && chunks
                 ? `${chunks.completed ?? 0}/${chunks.total ?? '?'} odlomaka analizirano`
@@ -110,8 +115,13 @@ export default function AnalysisCoverageBanner({ coverage, status }) {
                   ? `izdvajanje teksta skraćeno${file.extraction.pages ? ` nakon ${file.extraction.pages} stranica` : ''}`
                   : 'izdvajanje teksta nije potpuno';
               return (
-                <li key={file.fileName} className="text-xs text-ink-muted">
-                  <span className="font-medium text-ink">{file.fileName}</span> — {detail}
+                <li key={file.docId || `${file.fileName || 'partial'}-${index}`} className="text-xs text-ink-muted">
+                  <span className="font-medium text-ink">{file.fileName}</span>
+                  {(file.entryDate || file.entryDisplayId) && (
+                    <span className="ml-1.5 text-[11px] text-ink-muted">
+                      ({[file.entryDate, file.entryDisplayId].filter(Boolean).join(' · ')})
+                    </span>
+                  )} — {detail}
                 </li>
               );
             })}

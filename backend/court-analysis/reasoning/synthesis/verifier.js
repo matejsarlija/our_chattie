@@ -1,8 +1,11 @@
 require("dotenv").config();
+const crypto = require("node:crypto");
 const { withGeminiRetry, withGeminiTimeout } = require("../../../llm/retry");
 const { trackUsageInvoke } = require("../../../llm/usage");
 const { createOpenRouterRoleClient, outputCapWarning } = require("../../../llm/openrouterConfig");
-const { extractJsonArray, modelContentToText } = require("../../../helpers/jsonExtract");
+const { createTaskRouter } = require("../../../llm/taskRouter");
+const { createCreditExhaustedLatch } = require("../../../llm/creditLatch");
+const { extractJsonBlock, extractJsonArray, modelContentToText } = require("../../../helpers/jsonExtract");
 const logger = require("../../../services/logger");
 const { isPoorDocumentCoverage, hasPartialDocumentCoverage, coverageOpenQuestion, applyCoverageConfidenceGuard } = require('../ledger/coverageGuard');
 
@@ -25,35 +28,20 @@ function normalizeFindingsForVerification(report) {
     }));
 }
 
-// Mechanical metadata statements (e.g. "Dokument X pripada odabranom predmetu
-// Y") are deterministic grouping facts produced by discovery itself. Sending
-// them through the verification model burns tokens to confirm what code
-// already guarantees — they bypass the model but stay in the report verbatim.
-// Claims without an explicit sourceType are legacy/substantive content and
-// stay verifiable; money-flow entries ('analysis-amount') are short, factual,
-// and verified as before.
 const NON_VERIFIABLE_SOURCE_TYPES = new Set(['document-link']);
 
 function isVerifiableFinding(finding) {
+    if (String(finding?.id || '').startsWith('document-')) return false;
     const sources = [...(finding.evidence || []), ...(finding.citations || [])];
     const sourceTypes = sources
-        .map((source) => source?.metadata?.sourceType)
+        .map((source) => source?.metadata?.sourceType || source?.sourceType)
         .filter(Boolean);
     if (sourceTypes.length === 0) return true;
     return !sourceTypes.every((type) => NON_VERIFIABLE_SOURCE_TYPES.has(type));
 }
 
-// Small output batches keep JSON responses under the verify role cap even
-// when the model gives explanatory reasons. Failed batches stay explicitly
-// partial; they never turn unverified findings into supported/unsupported.
 const VERIFIER_FINDINGS_PER_CALL = 8;
 const VERIFIER_REASON_MAX_CHARS = 160;
-
-// Evidence budget for the verify prompt (refinement 4). Ground-truth chunk passages grow this
-// assembly per finding; without a ceiling, dense clusters pay real input
-// tokens for marginal verification signal. Timeline lines go in first (they
-// are compact and anchor dates); the cap then selects the claim/citation
-// lines most relevant to the findings in THIS batch.
 const VERIFIER_EVIDENCE_CHAR_BUDGET = 24000;
 const VERIFIER_TOKEN_MIN_LENGTH = 3;
 
@@ -73,13 +61,46 @@ function matchTokens(text) {
     return tokens;
 }
 
-/**
- * Builds a reusable evidence pool once per report: compact timeline lines,
- * one line per verifiable claim, and the claim's unique citation snippets.
- * Dense cases (hundreds of claims) cannot fit in one prompt, so selection is
- * per batch rather than a positional prefix — otherwise findings about recent
- * filings would be checked against the oldest evidence only.
- */
+function normalizeNumString(num) {
+    if (!Number.isFinite(num)) return [];
+    const fixed = num.toFixed(2);
+    const intOnly = Math.round(num).toString();
+    const hrFormatted = num.toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const enFormatted = num.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    return [...new Set([fixed, intOnly, hrFormatted, enFormatted, String(num)])];
+}
+
+function tryDeterministicVerify(finding, evidencePackage) {
+    const text = String(finding?.text || '');
+    if (!text) return null;
+    const normFinding = text.toLowerCase();
+    const ledger = Array.isArray(evidencePackage?.factLedger) ? evidencePackage.factLedger : [];
+    const flows = Array.isArray(evidencePackage?.flows?.entries) ? evidencePackage.flows.entries : [];
+    const candidates = [...ledger, ...flows].filter((row) => row && row.grounded === true);
+
+    for (const row of candidates) {
+        const val = Number.isFinite(row.valueEur) ? row.valueEur : row.value;
+        if (!Number.isFinite(val) || val <= 0) continue;
+        const numMatches = normalizeNumString(val).some((s) => text.includes(s));
+        if (!numMatches) continue;
+
+        const oib = row.parties?.recipientOib || row.parties?.payerOib || row.transfereeOib || row.transferorOib || null;
+        const party = row.parties?.recipientName || row.parties?.payerName || row.transferee || row.transferor || null;
+        const oibMatches = oib ? text.includes(oib) : true;
+        const partyMatches = party
+            ? matchTokens(party).size > 0 && [...matchTokens(party)].some((t) => normFinding.includes(t))
+            : true;
+
+        if (oibMatches && partyMatches) {
+            return {
+                verificationStatus: 'verified_deterministic',
+                verificationNote: 'Potvrđeno determinističkom provjerom izravno iz potvrđenog zapisa.',
+            };
+        }
+    }
+    return null;
+}
+
 function buildEvidencePool(evidencePackage) {
     const timelineLines = (evidencePackage.timeline || [])
         .map((event) => `[Date: ${event.date}] ${event.description}`);
@@ -137,12 +158,7 @@ function selectEvidenceForBatch(pool, findings, budget = VERIFIER_EVIDENCE_CHAR_
         return true;
     };
 
-    for (const line of pool.timelineLines) {
-        if (!push(line)) break;
-    }
-
-    // A finding's own citations are the most direct evidence available; put
-    // them ahead of the relevance-ranked claim pool.
+    // Pack cited snippets first, then timeline lines, then relevance-ranked claims.
     const seen = new Set();
     const seenCitations = new Set();
     const pushCitation = (citation) => {
@@ -158,10 +174,14 @@ function selectEvidenceForBatch(pool, findings, budget = VERIFIER_EVIDENCE_CHAR_
             const text = String(citation.text || '').trim();
             if (!text) continue;
             pushCitation({
-                line: `[Citation ${citation.source || citation.sourceId || ''}] ${text}`,
+                line: `[Citation ${citation.source || citation.sourceId || citation.docId || ''}] ${text}`,
                 text,
             });
         }
+    }
+
+    for (const line of pool.timelineLines) {
+        if (!push(line)) break;
     }
 
     const findingTokens = new Set();
@@ -182,19 +202,12 @@ function selectEvidenceForBatch(pool, findings, budget = VERIFIER_EVIDENCE_CHAR_
         .sort((a, b) => (b.score - a.score) || (a.index - b.index));
 
     for (const { claim } of ranked) {
-        // A previously included quote may echo this claim, but it does not
-        // stand in for the claim's other attached evidence.
         if (!seen.has(claim.text) && push(claim.line)) seen.add(claim.text);
         for (const citation of claim.citations) pushCitation(citation);
     }
     return { lines, truncated };
 }
 
-/**
- * Bounded log preview of a model response. Shows both ends: a truncated
- * completion is only recognizable by its cut-off tail, while the head shows
- * whether the model wrapped valid JSON in prose.
- */
 function responsePreview(content, maxChars = 160) {
     const text = modelContentToText(content).replace(/\s+/g, ' ').trim();
     if (!text) return '(empty)';
@@ -202,17 +215,35 @@ function responsePreview(content, maxChars = 160) {
     return `${text.slice(0, maxChars)} … ${text.slice(-maxChars)}`;
 }
 
+function parseVerifierResponse(content) {
+    const obj = extractJsonBlock(content);
+    if (obj && !Array.isArray(obj) && Array.isArray(obj.verdicts)) {
+        return { items: obj.verdicts, truncated: false };
+    }
+    return extractJsonArray(content);
+}
+
 async function verifyReport(report, evidencePackage, options = {}) {
-    // Mechanical findings are skipped by the model but must survive verbatim
-    // in the output at their original positions — skipping is not deleting.
     const allFindings = normalizeFindingsForVerification(report);
     const verifiableEntries = [];
-    allFindings.forEach((finding, index) => {
-        if (isVerifiableFinding(finding)) verifiableEntries.push({ finding, index });
-    });
-    const findingsToVerify = verifiableEntries.map((entry) => entry.finding);
+    const deterministicByOriginalIndex = new Map();
 
-    if (!report || findingsToVerify.length === 0) {
+    allFindings.forEach((finding, index) => {
+        if (!isVerifiableFinding(finding)) return;
+        const det = tryDeterministicVerify(finding, evidencePackage);
+        if (det) {
+            deterministicByOriginalIndex.set(index, {
+                ...finding,
+                confidence: finding.confidence || 'high',
+                verificationStatus: det.verificationStatus,
+                verificationNote: det.verificationNote,
+            });
+        } else {
+            verifiableEntries.push({ finding, index });
+        }
+    });
+
+    if (!report || (verifiableEntries.length === 0 && deterministicByOriginalIndex.size === 0)) {
         return report;
     }
 
@@ -222,7 +253,34 @@ async function verifyReport(report, evidencePackage, options = {}) {
     const verificationByPosition = new Map();
     const failedPositions = new Set();
 
+    const systemPrompt = [
+        'You are a strict legal verification engine.',
+        'Verify each finding against the supplied evidence. For each, return exactly one result.',
+        'Use status "supported", "contradicted", or "unsupported".',
+        `Give a concise Croatian reason of at most ${VERIFIER_REASON_MAX_CHARS} characters.`,
+        'Do not add legal conclusions beyond what the evidence states.',
+        'Return strictly a JSON object: {"verdicts": [{"index": 1, "status": "supported|contradicted|unsupported", "reason": "short explanation", "confidence": "high|medium|low"}]}',
+    ].join('\n');
+
+    const promptHash = crypto.createHash('sha256').update(`verify_v1:${systemPrompt}`).digest('hex').slice(0, 16);
+    if (options.sqliteStore?.upsertPromptRegistry && verifiableEntries.length > 0) {
+        try {
+            options.sqliteStore.upsertPromptRegistry({
+                promptHash,
+                promptName: 'verify_v1',
+                schemaVersion: 1,
+                systemPrompt,
+            });
+        } catch {
+            // Non-fatal telemetry
+        }
+    }
+
     for (let start = 0; start < verifiableEntries.length; start += VERIFIER_FINDINGS_PER_CALL) {
+        if (options.creditLatch?.isTripped?.()) {
+            for (let k = start; k < verifiableEntries.length; k += 1) failedPositions.add(k);
+            break;
+        }
         const batch = verifiableEntries.slice(start, start + VERIFIER_FINDINGS_PER_CALL);
         const batchNumber = Math.floor(start / VERIFIER_FINDINGS_PER_CALL) + 1;
         const claimsList = batch.map(({ finding }, index) => `${index + 1}. ${finding.text}`).join('\n');
@@ -234,33 +292,43 @@ async function verifyReport(report, evidencePackage, options = {}) {
             evidenceLineList.push('[Dokazni materijal je skraćen zbog ograničenja veličine — provjeri samo protiv navedenih dokaza.]');
         }
         const evidenceText = evidenceLineList.join('\n');
-        const prompt = `
-    You are a strict legal verification engine.
-    Verify each finding against the supplied evidence. For each, return exactly one result.
-
-    EVIDENCE:
-    ${evidenceText}
-
-    FINDINGS TO VERIFY:
-    ${claimsList}
-
-    INSTRUCTIONS:
-    Use status "supported", "contradicted", or "unsupported".
-    Give a concise reason of at most ${VERIFIER_REASON_MAX_CHARS} characters.
-    Do not add legal conclusions beyond what the evidence states.
-
-    OUTPUT FORMAT:
-    Return strictly JSON array:
-    [
-        { "index": 1, "status": "supported|contradicted|unsupported", "reason": "short explanation", "confidence": "high|medium|low" }
-    ]
-    `;
+        const userContent = `EVIDENCE:\n${evidenceText}\n\nFINDINGS TO VERIFY:\n${claimsList}`;
+        const prompt = `${systemPrompt}\n\n${userContent}`;
 
         try {
-            const response = await withGeminiRetry(() => withGeminiTimeout(
-                (signal) => trackUsageInvoke(gemini, prompt, { signal, tracker: options.tracker, onUsage: options.onUsage })
-            ));
-            const parsed = extractJsonArray(response.content);
+            let response;
+            const useLegacyClient = gemini?.invoke?._isMockFunction
+                || options.taskRouter === null
+                || !process.env.OPENROUTER_API_KEY;
+            if (!useLegacyClient && (options.taskRouter || options.sqliteStore || options.creditLatch)) {
+                const router = options.taskRouter || createTaskRouter({
+                    creditLatch: options.creditLatch || createCreditExhaustedLatch({
+                        runId: options.runId || null,
+                        sqliteStore: options.sqliteStore || null,
+                    }),
+                    sqliteStore: options.sqliteStore || null,
+                    runId: options.runId || null,
+                });
+                response = await router.invokeTask('VerifyReport', [
+                    { role: 'system', content: systemPrompt },
+                    { role: 'user', content: userContent },
+                ], {
+                    promptHash,
+                    responseFormat: { type: 'json_object' },
+                    tracker: options.tracker,
+                    onUsage: options.onUsage,
+                    signal: options.signal,
+                });
+            } else {
+                response = await withGeminiRetry(() => withGeminiTimeout(
+                    (reqSignal) => trackUsageInvoke(gemini, prompt, {
+                        signal: options.signal || reqSignal,
+                        tracker: options.tracker,
+                        onUsage: options.onUsage,
+                    })
+                ), { signal: options.signal });
+            }
+            const parsed = parseVerifierResponse(response.content);
             if (parsed?.truncated) {
                 logger.agent.warn(`Verification batch ${batchNumber} returned a truncated JSON array; using its ${parsed.items.length}/${batch.length} complete results.`);
             }
@@ -289,20 +357,29 @@ async function verifyReport(report, evidencePackage, options = {}) {
     const verifiedByPosition = new Map();
     verifiableEntries.forEach(({ finding }, index) => {
         if (failedPositions.has(index)) {
-            verifiedByPosition.set(index, finding);
+            verifiedByPosition.set(index, {
+                ...finding,
+                verificationStatus: 'unverified',
+                verificationNote: 'Provjera nije dovršena zbog pogreške ili ograničenja modela.',
+            });
             return;
         }
         const result = verificationByPosition.get(index);
         if (!result) {
-            verifiedByPosition.set(index, finding);
             failedPositions.add(index);
+            verifiedByPosition.set(index, {
+                ...finding,
+                verificationStatus: 'unverified',
+                verificationNote: 'Provjera nije vratila rezultat.',
+            });
             return;
         }
         if (result.status === 'supported') {
             verifiedByPosition.set(index, {
                 ...finding,
                 confidence: result.confidence || 'high',
-                citations: [...(finding.citations || []), { sourceId: 'verification-pass', text: result.reason }],
+                verificationStatus: 'verified_llm',
+                verificationNote: result.reason || 'Potvrđeno u dokaznom materijalu.',
             });
         } else if (result.status === 'contradicted') {
             conflicts.push({
@@ -314,21 +391,36 @@ async function verifyReport(report, evidencePackage, options = {}) {
             verifiedByPosition.set(index, {
                 ...finding,
                 confidence: 'low',
-                citations: [...(finding.citations || []), { sourceId: 'verification-contradiction', text: result.reason }],
+                verificationStatus: 'unverified',
+                verificationNote: result.reason ? `Proturječi dokazima: ${result.reason}` : 'Nalaz proturječi dostupnim dokazima.',
             });
         } else {
-            openQuestions.push(`Unverified finding: ${finding.text}`);
+            openQuestions.push(`Nepotvrđen nalaz: ${finding.text}`);
+            verifiedByPosition.set(index, {
+                ...finding,
+                confidence: 'low',
+                verificationStatus: 'unverified',
+                verificationNote: result.reason || 'Nalaz nije potvrđen u dostupnim dokazima.',
+            });
         }
     });
 
     const stitchedFindings = [];
     const positionOfOriginal = new Map(verifiableEntries.map((entry, position) => [entry.index, position]));
     allFindings.forEach((finding, originalIndex) => {
+        if (deterministicByOriginalIndex.has(originalIndex)) {
+            stitchedFindings.push(deterministicByOriginalIndex.get(originalIndex));
+            return;
+        }
         const position = positionOfOriginal.get(originalIndex);
         if (position !== undefined) {
             if (verifiedByPosition.has(position)) stitchedFindings.push(verifiedByPosition.get(position));
         } else {
-            stitchedFindings.push(finding);
+            stitchedFindings.push({
+                ...finding,
+                verificationStatus: 'not_checked',
+                verificationNote: 'Strukturni podatak — nije predmet provjere.',
+            });
         }
     });
 
@@ -343,6 +435,7 @@ async function verifyReport(report, evidencePackage, options = {}) {
         openQuestions.push('Dio nalaza nije mogao biti provjeren; rezultat provjere nije dostupan.');
     }
 
+    const totalAttempted = verifiableEntries.length + deterministicByOriginalIndex.size;
     return {
         ...report,
         findings: guardedFindings,
@@ -353,12 +446,19 @@ async function verifyReport(report, evidencePackage, options = {}) {
             ...(report.meta || {}),
             verification: {
                 status: failedCount > 0 ? 'partial' : 'complete',
-                attemptedCount: findingsToVerify.length,
-                verifiedCount: findingsToVerify.length - failedCount,
+                attemptedCount: totalAttempted,
+                verifiedCount: totalAttempted - failedCount,
+                deterministicVerifiedCount: deterministicByOriginalIndex.size,
                 failedCount,
             },
         },
     };
 }
 
-module.exports = { verifyReport };
+module.exports = {
+    verifyReport,
+    isVerifiableFinding,
+    tryDeterministicVerify,
+    buildEvidencePool,
+    selectEvidenceForBatch,
+};
