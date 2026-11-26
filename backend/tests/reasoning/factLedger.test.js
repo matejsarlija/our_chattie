@@ -162,4 +162,81 @@ describe('dedupeLedgerRows (TL-1)', () => {
         const rowB = buildFactLedger([distributionAnalysis('a-2', 'y.pdf', [REGISTER_ROWS[1]], { contentHash: 'same-bytes' })])[0];
         expect(dedupeLedgerRows([rowA, rowB])).toHaveLength(2);
     });
+
+    test('supports 4 canonical kinds with deterministic row.id, full provenance, and canonicalPartyId', () => {
+        const rows = buildFactLedger([{
+            id: 'a-4kind',
+            docId: 'doc-hash-4kind',
+            fileName: 'rjesenje.pdf',
+            caseNumber: 'ST-2/2013',
+            sourceEntryIndex: 4,
+            sourceDocumentLinkId: 'link-4',
+            contentHash: 'hash-4kind',
+            amounts: [{
+                description: 'Tražbina',
+                amount: 1000,
+                amountHrk: 7534.5,
+                currency: 'EUR',
+                recipientName: 'B2 KAPITAL d.o.o.',
+                recipientOib: '49803335555',
+                quote: '1.000,00 EUR',
+                sourcePages: [2],
+                sourceChunkId: 'rjesenje.pdf:prose-1',
+                sourceStartIndex: 100,
+                sourceEndIndex: 112,
+                grounded: true,
+            }],
+            propertyFlow: [{
+                description: 'Ustup',
+                value: 1000,
+                valueHrk: 7534.5,
+                currency: 'EUR',
+                transferor: 'Prvi d.o.o.',
+                transferorOib: '11111111111',
+                transferee: 'B2 KAPITAL d.o.o.',
+                transfereeOib: '49803335555',
+                quote: 'ustup',
+                sourcePages: [3],
+            }],
+            documentParties: [{
+                name: 'B2 Kapital',
+                role: 'vjerovnik',
+                quote: 'B2 Kapital',
+                sourcePages: [1],
+            }],
+            proceduralEvents: [{
+                eventType: 'appellate-decision',
+                outcome: 'upheld',
+                instance: 'VTS RH',
+                quote: 'Potvrđuje se rješenje.',
+                sourcePages: [4],
+            }],
+        }]);
+
+        expect(rows.map((r) => r.kind)).toEqual(['amount', 'property', 'party', 'procedural_outcome']);
+        for (const row of rows) {
+            expect(row.id).toMatch(/^fact-[a-f0-9]{20}$/);
+            expect(row.docId).toBe('doc-hash-4kind');
+            expect(row.sourcePages.length).toBeGreaterThan(0);
+        }
+        expect(rows[0]).toMatchObject({
+            amountHrk: 7534.5,
+            sourceChunkId: 'rjesenje.pdf:prose-1',
+            sourceStartIndex: 100,
+            sourceEndIndex: 112,
+            canonicalPartyId: 'oib:49803335555',
+        });
+        expect(rows[1]).toMatchObject({
+            valueHrk: 7534.5,
+            transferorOib: '11111111111',
+            transfereeOib: '49803335555',
+            canonicalPartyId: 'oib:49803335555',
+        });
+        expect(rows[2].canonicalPartyId).toBe('oib:49803335555');
+        expect(rows[3]).toMatchObject({
+            eventType: 'appellate-decision',
+            outcome: 'upheld',
+            instance: 'VTS RH',
+        });
+    });
 });

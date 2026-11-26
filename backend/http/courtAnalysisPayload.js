@@ -37,10 +37,39 @@ function mapProcessedCase(processedCase) {
         groupMetadata: processedCase?.groupMetadata || null
     };
 }
+function slimAnalysisForArtifact(analysis) {
+    if (!analysis || typeof analysis !== 'object') return analysis;
+    return {
+        id: analysis.id ?? null,
+        docId: analysis.docId ?? null,
+        fileName: analysis.fileName ?? null,
+        caseNumber: analysis.caseNumber ?? null,
+        decisionDate: analysis.decisionDate ?? null,
+        decisionOutcome: analysis.decisionOutcome ?? null,
+        entryDate: analysis.entryDate ?? null,
+        sourceEntryIndex: analysis.sourceEntryIndex ?? null,
+        sourceDocumentLinkId: analysis.sourceDocumentLinkId ?? null,
+        extraction: analysis.extraction ?? null,
+        summary: analysis.summary ?? null,
+        ...(analysis.truncated ? { truncated: true } : {}),
+        ...(analysis.degraded ? { degraded: true } : {}),
+    };
+}
+
 function mapClusterEvidencePackage(pkg) {
-    if (!pkg || typeof pkg !== 'object' || !Array.isArray(pkg.chunks) || pkg.chunks.length === 0) return pkg || null;
-    const { chunks, ...metadata } = pkg;
-    return { ...metadata, chunkCount: chunks.length };
+    if (!pkg || typeof pkg !== 'object') return pkg || null;
+    const { chunks, factLedger, analyses, ...rest } = pkg;
+    const mapped = { ...rest };
+    if (Array.isArray(chunks) && chunks.length > 0) {
+        mapped.chunkCount = chunks.length;
+    }
+    if (Array.isArray(factLedger)) {
+        mapped.factLedgerCount = factLedger.length;
+    }
+    if (Array.isArray(analyses)) {
+        mapped.analyses = analyses.map(slimAnalysisForArtifact);
+    }
+    return mapped;
 }
 
 

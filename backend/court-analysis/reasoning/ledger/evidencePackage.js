@@ -5,6 +5,7 @@ const { reconcileFlows } = require('./reconciliation');
 const { countGroundedClaims } = require('./grounding');
 const { classifyFileFailureDetailed } = require('../../../http/friendlyAnalysisError');
 const { buildFactLedger, dedupeLedgerRows } = require('./factLedger');
+const { buildCanonicalParties } = require('./partyRegistry');
 
 const { parseProceduralMetadataEntry } = require('../../utils/proceduralMetadata');
 const { collectProceduralEvents, reconcileProceduralEvents } = require('./proceduralFlow');
@@ -319,12 +320,13 @@ function attachAnalysesToEvidencePackage(pkg, processedCases, clusterId = null) 
             ?? item?.documentLinkId
             ?? null;
         analyses.push({
-            id: item.filePath || item.text || `analysis-${analyses.length + 1}`,
+            id: item.docId || item.filePath || item.text || `analysis-${analyses.length + 1}`,
+            docId: item.docId || null,
             fileName: item.text || item.filePath || null,
             filePath: item.filePath || null,
             caseNumber: item.aiResult.caseNumber || pkg.clusterId || null,
             decisionDate: item.aiResult.decisionDate || entryDate || null,
-            decisionOutcome: item.aiResult.decisionOutcome || null,
+            decisionOutcome: item.aiResult.decisionOutcome ?? null,
             entryDate: entryDate || null,
             sourceEntryIndex,
             sourceDocumentLinkId,
@@ -353,7 +355,8 @@ function attachAnalysesToEvidencePackage(pkg, processedCases, clusterId = null) 
     // analyses for narrative/retrieval provenance, but flow/reconciliation
     // must consume the deduped ledger so every surviving row keeps its filing
     // identity instead of reverting to summary-shaped arrays.
-    const factLedger = dedupeLedgerRows(buildFactLedger(analyses));
+    const partyRegistry = buildCanonicalParties(analyses, pkg.entries);
+    const factLedger = dedupeLedgerRows(buildFactLedger(analyses, { partyRegistry }));
     const flowAnalyses = factLedger.map((row, index) => ({
         id: row?.doc?.analysisId || `ledger-${index + 1}`,
         fileName: row?.doc?.fileName || null,
@@ -499,6 +502,7 @@ function attachAnalysesToEvidencePackage(pkg, processedCases, clusterId = null) 
     return {
         ...pkg,
         sourceDocuments,
+        canonicalParties: partyRegistry.parties,
         analyses,
         factLedger,
         chunks,

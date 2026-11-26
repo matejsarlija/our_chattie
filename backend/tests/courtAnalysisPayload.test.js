@@ -257,4 +257,57 @@ describe('buildCourtAnalysisPayload', () => {
         expect(payload.report).toEqual({ summary: 'kept' });
         expect(Buffer.byteLength(JSON.stringify(payload))).toBeLessThan(500 * 1024);
     });
+
+    test('synthetic 100-entry clusterEvidencePackage strips factLedger and raw analysis arrays to stay strictly < 500 KB', () => {
+        const analyses = Array.from({ length: 100 }, (_, i) => ({
+            id: `doc-${i}`,
+            docId: `hash-${i}`,
+            fileName: `Podnesak-${i}.pdf`,
+            caseNumber: 'ST-2/2013',
+            decisionDate: '2025-01-10',
+            decisionOutcome: 'granted',
+            entryDate: '2025-01-10',
+            sourceEntryIndex: i,
+            sourceDocumentLinkId: `link-${i}`,
+            extraction: { pages: 3, method: 'pdf-text' },
+            summary: `Sažetak dokumenta ${i}.`,
+            amounts: Array.from({ length: 10 }, (__, j) => ({ description: `Stavka ${j}`, amount: 1000 + j, currency: 'EUR', quote: 'x'.repeat(200) })),
+            propertyFlow: Array.from({ length: 5 }, (__, j) => ({ description: `Nekretnina ${j}`, value: 50000, currency: 'EUR', quote: 'y'.repeat(200) })),
+            documentParties: [{ name: 'KERUM d.o.o.', oib: '66124057408', role: 'DUŽNIK', quote: 'KERUM d.o.o.' }],
+            proceduralEvents: [{ eventType: 'decision', outcome: 'granted', quote: 'Odlučeno' }],
+            parties: [{ name: 'KERUM d.o.o.', oib: '66124057408' }],
+        }));
+        const factLedger = Array.from({ length: 1200 }, (_, i) => ({
+            id: `fact-${i}`,
+            kind: 'amount',
+            description: `Fact ${i}`,
+            quote: 'z'.repeat(300),
+        }));
+        const payload = buildCourtAnalysisPayload({
+            processedCases: [],
+            clusterEvidencePackage: {
+                packageType: 'ClusterEvidencePackage',
+                clusterId: 'ST-2/2013',
+                canonicalParties: [{ canonicalPartyId: 'oib:66124057408', name: 'KERUM d.o.o.', oib: '66124057408' }],
+                analyses,
+                factLedger,
+                chunks: [{ id: 'c1', text: 'chunk' }],
+            },
+        });
+
+        expect(payload.clusterEvidencePackage.factLedger).toBeUndefined();
+        expect(payload.clusterEvidencePackage.factLedgerCount).toBe(1200);
+        expect(payload.clusterEvidencePackage.chunkCount).toBe(1);
+        expect(payload.clusterEvidencePackage.canonicalParties).toHaveLength(1);
+        expect(payload.clusterEvidencePackage.analyses[0]).toMatchObject({
+            docId: 'hash-0',
+            decisionOutcome: 'granted',
+        });
+        expect(payload.clusterEvidencePackage.analyses[0].amounts).toBeUndefined();
+        expect(payload.clusterEvidencePackage.analyses[0].propertyFlow).toBeUndefined();
+        expect(payload.clusterEvidencePackage.analyses[0].documentParties).toBeUndefined();
+        expect(payload.clusterEvidencePackage.analyses[0].proceduralEvents).toBeUndefined();
+        expect(payload.clusterEvidencePackage.analyses[0].parties).toBeUndefined();
+        expect(Buffer.byteLength(JSON.stringify(payload))).toBeLessThan(500 * 1024);
+    });
 });
