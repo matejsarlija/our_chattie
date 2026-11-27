@@ -53,7 +53,9 @@ function resolveOcrImageLongEdge() {
 }
 
 function isPdfJsMocked() {
-    return Boolean(pdfjsLib?.getDocument?._isMockFunction);
+    if (pdfjsLib?.getDocument?._isMockFunction) return true;
+    if (typeof jest !== 'undefined' && !pdfjsLib?.version) return true;
+    return false;
 }
 
 function isCanvasMocked() {

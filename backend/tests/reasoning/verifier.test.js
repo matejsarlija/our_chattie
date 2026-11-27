@@ -246,6 +246,41 @@ describe('Verifier', () => {
             failedCount: 0,
         });
     });
+
+    test('verifies grounded single-fact findings deterministically at $0 even without OIB in finding prose', async () => {
+        const report = {
+            schemaVersion: SCHEMA_VERSION,
+            claims: [],
+            findings: [{
+                id: 'f-det-no-oib',
+                text: 'Društvo B2 KAPITAL d.o.o. ostvaruje namirenje od 15.000,00 EUR.',
+                confidence: 'medium',
+                citations: [{ docId: 'doc-hash-1', text: '15.000,00 EUR' }],
+            }],
+            openQuestions: [],
+            conflicts: [],
+            meta: {},
+        };
+        const evidence = {
+            timeline: [],
+            claims: [],
+            factLedger: [{
+                id: 'fact-2',
+                kind: 'amount',
+                docId: 'doc-hash-1',
+                value: 15000,
+                valueEur: 15000,
+                currency: 'EUR',
+                grounded: true,
+                parties: { recipientName: 'B2 KAPITAL d.o.o.', recipientOib: '49803335555' },
+            }],
+            meta: {},
+        };
+
+        const result = await verifyReport(report, evidence);
+        expect(mockInvoke).not.toHaveBeenCalled();
+        expect(result.findings[0].verificationStatus).toBe('verified_deterministic');
+    });
 });
 
 describe('Verifier evidence diet', () => {

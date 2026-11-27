@@ -310,4 +310,80 @@ describe('buildCourtAnalysisPayload', () => {
         expect(payload.clusterEvidencePackage.analyses[0].parties).toBeUndefined();
         expect(Buffer.byteLength(JSON.stringify(payload))).toBeLessThan(500 * 1024);
     });
+
+    test('100-entry / 4,600-flow / 382-conflict / large report.meta package serializes strictly < 500 KB', () => {
+        const entries = Array.from({ length: 100 }, (_, i) => ({
+            index: i,
+            caseNumber: 'ST-2/2013',
+            title: `Objava ${i}`,
+            date: '2025-01-10',
+            detailLink: `https://e-oglasna.pravosudje.hr/objave/${i}`,
+            participants: Array.from({ length: 5 }, (__, p) => ({ name: `Party ${p}`, oib: '12345678901' })),
+            proceduralEvents: Array.from({ length: 3 }, () => ({ description: 'P'.repeat(400) })),
+        }));
+        const flowEntries = Array.from({ length: 4600 }, (_, i) => ({
+            id: `flow-${i}`,
+            kind: 'amount',
+            description: `Tražbina vjerovnika ${i}`,
+            value: 1000 + i,
+            valueEur: 1000 + i,
+            currency: 'EUR',
+            quote: 'Q'.repeat(300),
+            quoteVariants: ['Q'.repeat(300)],
+            filings: [{ analysisId: `doc-${i % 100}` }],
+            grounded: true,
+        }));
+        const conflicts = Array.from({ length: 382 }, (_, i) => ({
+            finding: `Odstupanje ${i}: ${'C'.repeat(200)}`,
+            reason: `Razlog ${i}: ${'R'.repeat(200)}`,
+            sources: ['doc-1', 'doc-2'],
+            kind: 'arithmetic',
+        }));
+        const proceduralFlow = {
+            events: Array.from({ length: 800 }, (_, i) => ({ id: `ev-${i}`, description: 'E'.repeat(500) })),
+            chains: Array.from({ length: 200 }, (_, i) => ({ id: `ch-${i}`, events: ['E'.repeat(500)] })),
+        };
+        const flows = { count: 4600, entries: flowEntries, currencyTotals: { EUR: 1000000 }, hasFlows: true };
+        const reconciliation = { conflicts, openQuestions: [], validationWarnings: [], valueChanges: [] };
+
+        const payload = buildCourtAnalysisPayload({
+            processedCases: [],
+            clusterEvidencePackage: {
+                packageType: 'ClusterEvidencePackage',
+                clusterId: 'ST-2/2013',
+                entries,
+                flows,
+                reconciliation,
+                proceduralFlow,
+                canonicalParties: Array.from({ length: 250 }, (_, i) => ({
+                    canonicalPartyId: `oib:${10000000000 + i}`,
+                    name: `Stranka ${i}`,
+                })),
+            },
+            report: {
+                schemaVersion: '1.0.0',
+                generationMode: 'llm',
+                narrative: 'Sažetak.',
+                claims: [],
+                findings: [{ text: 'Nalaz 1', confidence: 'high', citations: [] }],
+                meta: {
+                    clusterId: 'ST-2/2013',
+                    flows,
+                    proceduralFlow,
+                    reconciliation,
+                    documentLinks: Array.from({ length: 150 }, (_, i) => ({ id: `dl-${i}`, url: `https://example.test/${i}` })),
+                },
+            },
+        });
+
+        const bytes = Buffer.byteLength(JSON.stringify(payload));
+        expect(bytes).toBeLessThan(500 * 1024);
+        expect(payload.report.meta.flows).toBeUndefined();
+        expect(payload.report.meta.proceduralFlow).toBeUndefined();
+        expect(payload.report.meta.reconciliation).toBeUndefined();
+        expect(payload.clusterEvidencePackage.proceduralFlow).toBeUndefined();
+        expect(payload.clusterEvidencePackage.flows.count).toBe(4600);
+        expect(payload.clusterEvidencePackage.flows.truncated).toBe(true);
+        expect(payload.clusterEvidencePackage.reconciliation.totalConflicts).toBe(382);
+    });
 });

@@ -268,6 +268,7 @@ function buildRunSummary({ run, resultJson } = {}) {
             partialReason,
             verificationStatus,
             criticalFailedDocuments,
+            ...(scorecard?.stageTimings ? { stageTimings: scorecard.stageTimings } : {}),
             coverage,
             amounts: deriveAmounts(safeResult),
         };

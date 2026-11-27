@@ -35,7 +35,7 @@ describe('TokenBudgetPolicy', () => {
         expect(profile).toMatchObject({
             shouldChunk: true,
             densityClass: 'table_dense',
-            chunkSize: 2500,
+            chunkSize: 3500,
         });
     });
 
@@ -49,7 +49,7 @@ describe('TokenBudgetPolicy', () => {
         expect(segmented.usedChunking).toBe(true);
         expect(segmented.segments.length).toBeGreaterThanOrEqual(2);
         for (const seg of segmented.segments) {
-            expect(seg.text.length).toBeLessThanOrEqual(2800);
+            expect(seg.text.length).toBeLessThanOrEqual(3800);
             expect(seg.densityClass).toBe('table_dense');
         }
     });

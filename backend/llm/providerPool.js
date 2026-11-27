@@ -1,7 +1,7 @@
 'use strict';
 
 const DEFAULT_POOL_LIMITS = Object.freeze({
-    'openrouter:z-ai': 3,
+    'openrouter:z-ai': 10,
     'openrouter:mistral-ocr': 3,
     'openrouter:gemma': 4,
     'openrouter:gemini': 4,

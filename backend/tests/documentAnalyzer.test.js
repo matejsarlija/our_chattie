@@ -176,4 +176,36 @@ describe('documentAnalyzer Stage T0.5, checkpoints, bisection, closure & bench_c
         const promptRow = sqliteStore.db.prepare('SELECT prompt_name, schema_version FROM prompt_registry WHERE prompt_name = ?').get('extraction_v5');
         expect(promptRow).toEqual({ prompt_name: 'extraction_v5', schema_version: 5 });
     });
+
+    test('runs Stage T0 preflightClusterDocuments cleanly without TypeError and caches usable repaired segments', async () => {
+        const pdfPath = path.join(tmpDir, 'sample.pdf');
+        // Minimal valid PDF header (triggers real preflightClusterDocuments path without mocking pdfjs)
+        fs.writeFileSync(pdfPath, '%PDF-1.4\n1 0 obj\n<<>>\nendobj\ntrailer\n<<>>\n%%EOF\n');
+        const run = await sqliteStore.createAnalysisRun({ queryType: 'oib', queryValue: '66124057408', scanDepth: 'balanced' });
+
+        const result = await analyzeClusterDocuments({
+            files: [{ filePath: pdfPath, text: 'sample.pdf', role: 'ruling', sourceEntryIndex: 0 }],
+            caseInfo: { participants: [] },
+            runId: run.id,
+            sqliteStore,
+            taskRouter: { invokeTask: jest.fn() },
+        });
+
+        expect(result.preflightManifest).toMatchObject({
+            totalDocs: 1,
+            estimatedMinUsd: expect.any(Number),
+            estimatedExpectedUsd: expect.any(Number),
+        });
+        const persisted = await sqliteStore.getAnalysisRun({ id: run.id });
+        const preflightObj = typeof persisted.preflight_json === 'string'
+            ? JSON.parse(persisted.preflight_json)
+            : persisted.preflight_json;
+        expect(preflightObj).toMatchObject({
+            totalDocs: 1,
+            estimatedExpectedUsd: expect.any(Number),
+        });
+        expect(result.stageTimings).toEqual(expect.objectContaining({
+            preflightMs: expect.any(Number),
+        }));
+    });
 });

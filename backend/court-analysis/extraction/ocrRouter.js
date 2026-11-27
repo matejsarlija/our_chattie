@@ -366,11 +366,30 @@ function isRecitationOrBlockedResponse(response, error = null) {
     return false;
 }
 
-async function runMistralOcrWindow({ window, fileName, invokeClient, tracker, onUsage, signal }) {
+async function runMistralOcrWindow({
+    window,
+    fileName,
+    invokeClient,
+    tracker,
+    onUsage,
+    signal,
+    sqliteStore = null,
+    runId = null,
+    docHash = null,
+}) {
     const plugins = [{ id: 'file-parser', pdf: { engine: 'mistral-ocr' } }];
     const client = invokeClient
         ? { invoke: invokeClient }
-        : createOpenRouterClient({ model: MISTRAL_OCR_HOST_MODEL, temperature: 0, maxTokens: 16, plugins });
+        : createOpenRouterClient({
+            model: MISTRAL_OCR_HOST_MODEL,
+            temperature: 0,
+            maxTokens: 16,
+            plugins,
+            traceStore: sqliteStore,
+            runId,
+            docHash,
+            taskType: 'TranscribePage',
+        });
     const message = {
         role: 'user',
         content: [
@@ -414,6 +433,9 @@ async function runRasterOcrForPages({
     progressCallback,
     fileName,
     signal,
+    sqliteStore = null,
+    runId = null,
+    docHash = null,
 }) {
     if (!pageNumbers.length) return { pageMap: new Map(), error: null, recitationBlocked: false };
 
@@ -434,6 +456,10 @@ async function runRasterOcrForPages({
             temperature: 0.1,
             maxTokens: renderedPages.length > 1 ? 16384 : 4096,
             provider: providerPref,
+            traceStore: sqliteStore,
+            runId,
+            docHash,
+            taskType: 'TranscribePage',
         });
 
     const pageMap = new Map();
@@ -528,6 +554,7 @@ async function transcribeDocumentViaStageT({
     preflightDoc = null,
     progressCallback = null,
     sqliteStore = null,
+    runId = null,
     workerPool = null,
     tracker = null,
     onUsage = null,
@@ -673,6 +700,9 @@ async function transcribeDocumentViaStageT({
                     tracker,
                     onUsage,
                     signal,
+                    sqliteStore,
+                    runId,
+                    docHash: contentHash,
                 });
                 const covered = [];
                 for (const pageNo of unresolved) {
@@ -710,6 +740,9 @@ async function transcribeDocumentViaStageT({
                 progressCallback,
                 fileName,
                 signal,
+                sqliteStore,
+                runId,
+                docHash: contentHash,
             });
             if (gemmaRes.pageMap.size > 0) {
                 enginesUsed.add('gemma-raster');
@@ -738,6 +771,9 @@ async function transcribeDocumentViaStageT({
                 progressCallback,
                 fileName,
                 signal,
+                sqliteStore,
+                runId,
+                docHash: contentHash,
             });
             if (geminiRes.pageMap.size > 0) {
                 enginesUsed.add('gemini-raster');
@@ -832,6 +868,7 @@ async function extractTextViaOCR(filePath, progressCallback, options = {}) {
 
     const contentHash = crypto.createHash('sha256').update(fileBytes).digest('hex');
     const sqliteStore = options.sqliteStore || null;
+    const runId = options.runId || null;
     const tracker = options.tracker || null;
     const onUsage = options.onUsage || null;
     const modelId = options.modelId || GEMMA_RASTER_MODEL;
@@ -875,6 +912,10 @@ async function extractTextViaOCR(filePath, progressCallback, options = {}) {
                     temperature: 0.1,
                     maxTokens: pendingPages.length > 1 ? 16384 : 4096,
                     provider: GEMMA_PROVIDER_PREF,
+                    traceStore: sqliteStore,
+                    runId,
+                    docHash: contentHash,
+                    taskType: 'TranscribePage',
                 });
 
             if (pendingPages.length > 1) {

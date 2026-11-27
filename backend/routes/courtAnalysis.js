@@ -98,6 +98,7 @@ function createCourtAnalysisRouter({ analysisStore, courtAnalysisQueue, writeLim
           resultText: finalPayload.comparativeAnalysis,
           resultJson: finalPayload,
           partialReason: finalResult?.partialReason || null,
+          preflight: finalResult?.preflightManifest || null,
           scorecard: finalResult?.scorecard || null,
           tokenUsage: finalResult?.tokenUsage || finalResult?.usage || undefined,
         });

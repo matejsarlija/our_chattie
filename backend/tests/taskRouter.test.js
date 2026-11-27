@@ -16,7 +16,8 @@ describe('TaskRouter', () => {
             model: Z_AI_PRIMARY_MODEL,
             poolKey: 'openrouter:z-ai',
             provider: expect.objectContaining({
-                order: ['Z.AI', 'Novita', 'DeepInfra'],
+                order: ['Novita', 'DeepInfra', 'Z.AI'],
+                sort: 'throughput',
                 quantizations: ['bf16', 'fp16', 'fp8'],
                 require_parameters: true,
                 data_collection: 'deny',
@@ -60,7 +61,7 @@ describe('TaskRouter', () => {
         });
         expect(res.content).toBe('{"ok":true}');
         expect(calls).toHaveLength(2);
-        expect(calls[0].provider.order).toEqual(['Z.AI', 'Novita', 'DeepInfra']);
+        expect(calls[0].provider.order).toEqual(['Novita', 'DeepInfra', 'Z.AI']);
         expect(calls[1].provider.ignore).toEqual(['Z.AI']);
         expect(calls[1].provider.order).toEqual(['Novita', 'DeepInfra']);
     });

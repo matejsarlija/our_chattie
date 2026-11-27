@@ -240,8 +240,9 @@ function flagDivergentGroups(entries, { novac }) {
             // Same filing stating one figure in both currencies (§4.4.2).
             if (isSameSourceDualStatement(groupEntries)) continue;
             const diverges = max > 0 && (
-                (min > 0 ? max / min > DIVERGENCE_RATIO_THRESHOLD : max > 0.01)
-                || Math.abs(max - min) > 0.01
+                min > 0
+                    ? (max / min > DIVERGENCE_RATIO_THRESHOLD && Math.abs(max - min) > 0.01)
+                    : max > 0.01
             );
             if (!diverges) continue;
             conflicts.push({

@@ -517,4 +517,30 @@ describe('reconcileFlows (unified engine)', () => {
         expect(divergent.conflicts[0].finding).not.toContain('49803335555');
         expect(divergent.conflicts[0].finding).not.toContain('usporedba u 42');
     });
+
+    test('ignores < 5% diffs (e.g. 808.98 vs 788.31 = 2.62%) under DIVERGENCE_RATIO_THRESHOLD', () => {
+        const result = reconcileFlows({
+            entries: [
+                entry({
+                    description: 'Diobni udio vjerovnika',
+                    amount: 808.98,
+                    currency: 'EUR',
+                    amountEur: 808.98,
+                    canonicalPartyId: 'oib:49803335555',
+                    fileName: 'Dioba-1.pdf',
+                    sourceId: 's-1',
+                }),
+                entry({
+                    description: 'Diobni udio vjerovnika',
+                    amount: 788.31,
+                    currency: 'EUR',
+                    amountEur: 788.31,
+                    canonicalPartyId: 'oib:49803335555',
+                    fileName: 'Dioba-2.pdf',
+                    sourceId: 's-2',
+                }),
+            ],
+        }, {});
+        expect(result.conflicts).toHaveLength(0);
+    });
 });

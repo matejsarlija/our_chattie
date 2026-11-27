@@ -138,7 +138,7 @@ async function trackUsageInvoke(client, input, options = {}) {
 
 function mapTaskToStage(taskType) {
     const t = String(taskType || '');
-    if (t.includes('Ocr') || t.includes('OCR')) return 'ocr';
+    if (t === 'TranscribePage' || t.includes('Ocr') || t.includes('OCR')) return 'ocr';
     if (t === 'SynthesizeCase') return 'synthesis';
     if (t === 'VerifyReport') return 'verify';
     return 'extraction';

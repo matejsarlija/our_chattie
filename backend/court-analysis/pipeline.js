@@ -138,10 +138,15 @@ function persistReasoningArtifacts({ runId, analysisStore, enrichedEvidencePacka
         });
     }
     if (analysisStore.insertRunFacts) {
+        const seenFactIds = new Set();
         analysisStore.insertRunFacts({
             runId,
-            facts: (enrichedEvidencePackage.factLedger || []).map((fact, index) => ({
-                id: fact.id || `${runId}:fact:${index + 1}`,
+            facts: (enrichedEvidencePackage.factLedger || []).map((fact, index) => {
+                const baseId = fact.id ? `${runId}:${fact.id}` : `${runId}:fact:${index + 1}`;
+                const uniqueId = seenFactIds.has(baseId) ? `${baseId}:${index + 1}` : baseId;
+                seenFactIds.add(uniqueId);
+                return {
+                id: uniqueId,
                 kind: fact.kind,
                 description: fact.description,
                 value: fact.value,
@@ -169,7 +174,8 @@ function persistReasoningArtifacts({ runId, analysisStore, enrichedEvidencePacka
                 sourceEndIndex: fact.sourceEndIndex ?? null,
                 sourcePages: fact.sourcePages,
                 rawJson: fact,
-            })),
+                };
+            }),
         });
     }
 }
@@ -189,6 +195,7 @@ async function runCourtAnalysis(searchTerm, optionsOrProgressCallback, progressC
         callback?.({ step: 'discovering', progress: 10, message: 'Pretražujem sudske zapise za nedavne objave...' });
         throwIfAborted(resolved.signal);
         await automator.init();
+        const discoveryStartedAt = Date.now();
         const scrapeResult = await automator.searchAndGetLatestCasesWithDocuments(
             searchTerm,
             resolved.scrapeLimit,
@@ -198,6 +205,7 @@ async function runCourtAnalysis(searchTerm, optionsOrProgressCallback, progressC
             resolved.query || null,
             resolved.scanDepth,
         );
+        const scrapeDurationMs = Date.now() - discoveryStartedAt;
         throwIfAborted(resolved.signal);
         const { casesToProcess, discoveryMetadata } = normalizeScraperResult(scrapeResult);
 
@@ -219,6 +227,7 @@ async function runCourtAnalysis(searchTerm, optionsOrProgressCallback, progressC
         return await processScrapedCases(casesToProcess, callback, {
             query: resolved.query || { value: searchTerm },
             discoveryMetadata,
+            scrapeDurationMs,
             scanDepth: resolved.scanDepth,
             analysisStore: resolved.analysisStore,
             signal: resolved.signal,
@@ -278,6 +287,22 @@ async function processScrapedCases(casesToProcess, progressCallback, options = {
         stageAwareProgress({ step: lastStage || 'reasoning', usage: snapshot });
     };
 
+    const stageTimings = {
+        discoveryMs: Number.isFinite(resolvedOptions.scrapeDurationMs) ? resolvedOptions.scrapeDurationMs : 0,
+        downloadMs: 0,
+        archiveMs: 0,
+        preflightMs: 0,
+        ocrMs: 0,
+        stageAMs: 0,
+        reasoningMs: 0,
+        stage2Ms: 0,
+        verifyMs: 0,
+        segmentCacheHits: 0,
+        segmentCacheMisses: 0,
+        ocrCacheHits: 0,
+        ocrCacheMisses: 0,
+    };
+    let preflightManifest = null;
     let state = {
         allProcessedCases: [],
         partialResult: buildEmptyPartialResult(),
@@ -289,6 +314,7 @@ async function processScrapedCases(casesToProcess, progressCallback, options = {
         }
 
         // Stage 1: Discovery & Primary Cluster Selection
+        const discoveryGroupingStartedAt = Date.now();
         const {
             clusters,
             discoverySummary,
@@ -296,6 +322,7 @@ async function processScrapedCases(casesToProcess, progressCallback, options = {
             primaryCluster,
             secondaryClusters,
         } = buildDiscoveryResult(casesToProcess, resolvedOptions, stageAwareProgress);
+        stageTimings.discoveryMs += Date.now() - discoveryGroupingStartedAt;
         stageAwareProgress(buildStageCounterEvent({
             stage: 'discovering',
             done: 0,
@@ -349,12 +376,16 @@ async function processScrapedCases(casesToProcess, progressCallback, options = {
                 }
             }
 
+            const acquireStartedAt = Date.now();
             const acquired = await acquireClusterFiles({
                 cluster,
                 caseInfo,
                 progressCallback: stageAwareProgress,
                 signal: resolvedOptions.signal,
             });
+            const acquireTotalMs = Date.now() - acquireStartedAt;
+            stageTimings.downloadMs += acquired.downloadMs ?? acquireTotalMs;
+            stageTimings.archiveMs += acquired.archiveMs ?? 0;
             allFilesToCleanup.push(...acquired.cleanupPaths);
             const groupMetadata = buildGroupMetadata({ cluster, clusterSummary, clusterId, primaryClusterId });
 
@@ -367,6 +398,7 @@ async function processScrapedCases(casesToProcess, progressCallback, options = {
                 });
             } else {
                 stageAwareProgress?.({ step: 'reasoning', message: `Analiziram ${acquired.filesForAnalysis.length} datoteka za predmet ${caseInfo.caseNumber}...` });
+                const analyzeStartedAt = Date.now();
                 const analysis = await analyzeClusterDocuments({
                     files: acquired.filesForAnalysis,
                     caseInfo,
@@ -378,6 +410,18 @@ async function processScrapedCases(casesToProcess, progressCallback, options = {
                     creditLatch,
                     signal: resolvedOptions.signal,
                 });
+                const analyzeTotalMs = Date.now() - analyzeStartedAt;
+                const docTimings = analysis?.stageTimings || {};
+                stageTimings.preflightMs += docTimings.preflightMs || 0;
+                stageTimings.ocrMs += docTimings.ocrMs || 0;
+                stageTimings.stageAMs += Math.max(0, analyzeTotalMs - (docTimings.preflightMs || 0) - (docTimings.ocrMs || 0));
+                stageTimings.segmentCacheHits += docTimings.segmentCacheHits || 0;
+                stageTimings.segmentCacheMisses += docTimings.segmentCacheMisses || 0;
+                stageTimings.ocrCacheHits += docTimings.ocrCacheHits || 0;
+                stageTimings.ocrCacheMisses += docTimings.ocrCacheMisses || 0;
+                if (analysis?.preflightManifest && !preflightManifest) {
+                    preflightManifest = analysis.preflightManifest;
+                }
                 throwIfAborted(resolvedOptions.signal);
                 const cov = analysis?.coverage || {};
                 stageAwareProgress?.({
@@ -402,6 +446,7 @@ async function processScrapedCases(casesToProcess, progressCallback, options = {
         }
 
         // Stage 3: Reasoning Persistence & Evidence Package Assembly
+        const reasoningStartedAt = Date.now();
         state.partialResult.processedCases = state.allProcessedCases;
         const enrichedEvidencePackage = attachAnalysesToEvidencePackage(
             clusterEvidencePackage,
@@ -410,6 +455,7 @@ async function processScrapedCases(casesToProcess, progressCallback, options = {
         );
         state.partialResult.clusterEvidencePackage = enrichedEvidencePackage;
         persistReasoningArtifacts({ runId, analysisStore: resolvedOptions.analysisStore, enrichedEvidencePackage });
+        stageTimings.reasoningMs = Date.now() - reasoningStartedAt;
 
         // Stage 4: Synthesis & Report Generation
         stageAwareProgress?.({ step: 'reasoning', progress: 85, message: 'Generiram stručni izvještaj i zaključak...' });
@@ -506,6 +552,10 @@ async function processScrapedCases(casesToProcess, progressCallback, options = {
             runId,
             processedCases: state.allProcessedCases,
         });
+        const reportStageTimings = report?.meta?.stageTimings || {};
+        stageTimings.stage2Ms = reportStageTimings.stage2Ms ?? 0;
+        stageTimings.verifyMs = reportStageTimings.verifyMs ?? (report?.meta?.verification?.durationMs ?? 0);
+
         const scorecard = {
             verificationStatus: report?.meta?.verification?.status || 'unknown',
             criticalFailedDocuments: summaryCoverage.failed ?? 0,
@@ -513,6 +563,7 @@ async function processScrapedCases(casesToProcess, progressCallback, options = {
             partialDocuments: enrichedEvidencePackage?.coverage?.partial ?? 0,
             groundedClaims: enrichedEvidencePackage?.coverage?.groundedClaims ?? 0,
             totalClaims: enrichedEvidencePackage?.coverage?.totalClaims ?? 0,
+            stageTimings,
         };
 
         return {
@@ -522,10 +573,12 @@ async function processScrapedCases(casesToProcess, progressCallback, options = {
             primaryCluster,
             secondaryClusters,
             clusterEvidencePackage: enrichedEvidencePackage,
+            preflightManifest,
             report,
             reportError,
             partialReason,
             scorecard,
+            stageTimings,
             usage: enrichedUsage,
             tokenUsage: enrichedUsage,
         };

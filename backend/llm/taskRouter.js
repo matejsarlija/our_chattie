@@ -13,7 +13,8 @@ const GEMMA_RASTER_MODEL = 'google/gemma-4-31b-it';
 const GEMINI_FLASH_MODEL = 'google/gemini-2.5-flash';
 
 const Z_AI_PROVIDER_PREF = Object.freeze({
-    order: ['Z.AI', 'Novita', 'DeepInfra'],
+    order: ['Novita', 'DeepInfra', 'Z.AI'],
+    sort: 'throughput',
     allow_fallbacks: true,
     require_parameters: true,
     data_collection: 'deny',

@@ -74,24 +74,44 @@ function tryDeterministicVerify(finding, evidencePackage) {
     const text = String(finding?.text || '');
     if (!text) return null;
     const normFinding = text.toLowerCase();
+    const findingTokens = matchTokens(text);
+    const citedDocIds = new Set(
+        (Array.isArray(finding?.citations) ? finding.citations : [])
+            .map((c) => c?.docId || c?.source || c?.sourceId)
+            .filter(Boolean)
+            .map((v) => String(v).trim().toLowerCase()),
+    );
     const ledger = Array.isArray(evidencePackage?.factLedger) ? evidencePackage.factLedger : [];
     const flows = Array.isArray(evidencePackage?.flows?.entries) ? evidencePackage.flows.entries : [];
     const candidates = [...ledger, ...flows].filter((row) => row && row.grounded === true);
 
     for (const row of candidates) {
         const val = Number.isFinite(row.valueEur) ? row.valueEur : row.value;
-        if (!Number.isFinite(val) || val <= 0) continue;
-        const numMatches = normalizeNumString(val).some((s) => text.includes(s));
-        if (!numMatches) continue;
+        const sourceVal = Number.isFinite(row.sourceAmount) ? row.sourceAmount : null;
+        const valMatches = (Number.isFinite(val) && val > 0 && normalizeNumString(val).some((s) => text.includes(s)))
+            || (Number.isFinite(sourceVal) && sourceVal > 0 && normalizeNumString(sourceVal).some((s) => text.includes(s)));
 
-        const oib = row.parties?.recipientOib || row.parties?.payerOib || row.transfereeOib || row.transferorOib || null;
-        const party = row.parties?.recipientName || row.parties?.payerName || row.transferee || row.transferor || null;
-        const oibMatches = oib ? text.includes(oib) : true;
-        const partyMatches = party
-            ? matchTokens(party).size > 0 && [...matchTokens(party)].some((t) => normFinding.includes(t))
-            : true;
+        const rowDocId = row.docId || row.doc?.docId || row.sourceId || null;
+        const docCited = rowDocId && citedDocIds.has(String(rowDocId).trim().toLowerCase());
+        const oib = row.parties?.recipientOib || row.parties?.payerOib || row.transfereeOib || row.transferorOib || row.parties?.oib || null;
+        const party = row.parties?.recipientName || row.parties?.payerName || row.transferee || row.transferor || row.parties?.name || null;
+        const oibMatches = oib ? text.includes(oib) : false;
+        const partyTokens = party ? [...matchTokens(party)] : [];
+        const partyMatches = partyTokens.length > 0 && partyTokens.some((t) => normFinding.includes(t));
 
-        if (oibMatches && partyMatches) {
+        if (valMatches && (oibMatches || partyMatches || docCited || (!oib && !party))) {
+            return {
+                verificationStatus: 'verified_deterministic',
+                verificationNote: 'Potvrđeno determinističkom provjerom izravno iz potvrđenog zapisa.',
+            };
+        }
+
+        // Grounded date/party/procedural single-fact match
+        const dateMatches = typeof row.date === 'string' && row.date.length >= 8 && text.includes(row.date);
+        const refMatches = typeof row.filingReference === 'string' && row.filingReference.length >= 4 && normFinding.includes(row.filingReference.toLowerCase());
+        const descTokens = [...matchTokens(row.description || '')];
+        const descOverlap = descTokens.filter((t) => findingTokens.has(t)).length;
+        if ((dateMatches || refMatches) && (partyMatches || oibMatches || docCited) && descOverlap >= 2) {
             return {
                 verificationStatus: 'verified_deterministic',
                 verificationNote: 'Potvrđeno determinističkom provjerom izravno iz potvrđenog zapisa.',
@@ -224,6 +244,7 @@ function parseVerifierResponse(content) {
 }
 
 async function verifyReport(report, evidencePackage, options = {}) {
+    const verifyStartedAt = Date.now();
     const allFindings = normalizeFindingsForVerification(report);
     const verifiableEntries = [];
     const deterministicByOriginalIndex = new Map();
@@ -450,6 +471,7 @@ async function verifyReport(report, evidencePackage, options = {}) {
                 verifiedCount: totalAttempted - failedCount,
                 deterministicVerifiedCount: deterministicByOriginalIndex.size,
                 failedCount,
+                durationMs: Date.now() - verifyStartedAt,
             },
         },
     };

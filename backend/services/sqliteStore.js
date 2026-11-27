@@ -350,7 +350,7 @@ function createSqliteStore(options = {}) {
   }
 
   const insertFact = db.prepare(`
-    INSERT INTO run_facts (
+    INSERT OR REPLACE INTO run_facts (
       id, run_id, kind, description, value, value_eur, value_hrk, currency, date, direction,
       amount_role, event_type, value_role, legal_effect, isplatni_red, supersedes,
       claim_registry_number, filing_reference, canonical_party_id, payer_oib, recipient_oib,

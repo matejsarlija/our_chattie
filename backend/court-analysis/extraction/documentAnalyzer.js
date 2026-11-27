@@ -29,7 +29,7 @@ const {
     pageRangesFromMarkedText,
     pageNumbersForRange,
 } = require('./pdfText');
-const { runPdfPreflight } = require('./pdfPreflight');
+const { preflightClusterDocuments } = require('./pdfPreflight');
 const { canUseAdminFastPath, extractAdminNoticeFastPath } = require('./adminFastPath');
 const { transcribeDocumentViaStageT, extractTextViaOCR } = require('./ocrRouter');
 const { mergeAnalysisChunkResults } = require('./chunkMerge');
@@ -54,7 +54,7 @@ const { buildStageCounterEvent } = require('../../http/analysisStage');
 
 const ANALYSIS_FILE_CONCURRENCY = (() => {
     const raw = Number(process.env.ANALYSIS_FILE_CONCURRENCY);
-    return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 4;
+    return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 8;
 })();
 const ANALYSIS_FILE_DELAY_MS = (() => {
     const raw = Number(process.env.ANALYSIS_FILE_DELAY_MS);
@@ -389,6 +389,16 @@ async function analyzeClusterDocuments(input = {}) {
 
     const batchCounters = { done: 0, failed: 0 };
     const completedByHash = new Map();
+    const timingCounters = {
+        preflightMs: 0,
+        ocrMs: 0,
+        stageAMs: 0,
+        segmentCacheHits: 0,
+        segmentCacheMisses: 0,
+        ocrCacheHits: 0,
+        ocrCacheMisses: 0,
+    };
+    let preflightManifest = null;
     let benchCandidatesInserted = 0;
     let currentFileName = null;
 
@@ -553,8 +563,15 @@ async function analyzeClusterDocuments(input = {}) {
             : null;
         const cachedSegment = checkpointKey ? sqliteStore.getSegmentCheckpoint(checkpointKey) : null;
         if (cachedSegment?.parsed) {
-            return { results: [{ segment, ...cachedSegment.parsed }], fromCheckpoint: true, bisected: false, repaired: false };
+            timingCounters.segmentCacheHits += 1;
+            return {
+                results: [{ segment, ...cachedSegment.parsed, fromCheckpoint: true }],
+                fromCheckpoint: true,
+                bisected: false,
+                repaired: Boolean(cachedSegment.parsed.repaired),
+            };
         }
+        timingCounters.segmentCacheMisses += 1;
 
         creditLatch.assertNotTripped();
         const isTableDense = segment.densityClass === 'table_dense';
@@ -599,7 +616,8 @@ async function analyzeClusterDocuments(input = {}) {
         }
 
         const segResult = await validateAndRepairSegment(response, segment, file, docHash);
-        if (checkpointKey && sqliteStore?.putSegmentCheckpoint && (!segResult.gaps || segResult.gaps.length === 0) && !segResult.assignmentCueGap) {
+        const isUsableCheckpoint = hasUsableExtraction(segResult.value) && !segResult.assignmentCueGap;
+        if (checkpointKey && sqliteStore?.putSegmentCheckpoint && isUsableCheckpoint) {
             try {
                 sqliteStore.putSegmentCheckpoint({
                     checkpointKey,
@@ -608,7 +626,11 @@ async function analyzeClusterDocuments(input = {}) {
                     modelId: analysisModelId,
                     promptHash: PROMPT_HASH_V5,
                     schemaVersion: EXTRACTION_SCHEMA_VERSION,
-                    parsed: segResult,
+                    parsed: {
+                        ...segResult,
+                        gapCount: Array.isArray(segResult.gaps) ? segResult.gaps.length : 0,
+                        repaired: Boolean(segResult.repaired),
+                    },
                     inputTokens: response?.usage_metadata?.input_tokens ?? null,
                     outputTokens: response?.usage_metadata?.output_tokens ?? null,
                     reasoningTokens: response?.response_metadata?.usageDetails?.reasoning_tokens ?? null,
@@ -626,9 +648,10 @@ async function analyzeClusterDocuments(input = {}) {
     const hasPdfFiles = files.some((f) => String(f?.filePath || '').toLowerCase().endsWith('.pdf'));
     const preflightByFile = new Map();
     if (hasPdfFiles && !isPdfJsMocked() && files.some((f) => f?.filePath && fs.existsSync(f.filePath) && String(f.filePath).toLowerCase().endsWith('.pdf'))) {
+        const preflightStartedAt = Date.now();
         try {
             const pdfCandidates = files.filter((f) => f?.filePath && fs.existsSync(f.filePath) && String(f.filePath).toLowerCase().endsWith('.pdf'));
-            const manifest = await runPdfPreflight({
+            const { manifest, documents } = await preflightClusterDocuments({
                 files: pdfCandidates,
                 sqliteStore,
                 workerPool,
@@ -636,12 +659,15 @@ async function analyzeClusterDocuments(input = {}) {
                 progressCallback,
                 signal,
             });
-            for (const docManifest of manifest.docs || []) {
+            preflightManifest = manifest || null;
+            for (const docManifest of documents || []) {
                 preflightByFile.set(docManifest.filePath, docManifest);
             }
         } catch (preflightErr) {
             if (signal?.aborted) throw preflightErr;
             logger.agent.warn(`[Stage T0] Preflight failed; falling back to per-file extraction: ${preflightErr.message}`);
+        } finally {
+            timingCounters.preflightMs += Date.now() - preflightStartedAt;
         }
     }
 
@@ -755,16 +781,21 @@ async function analyzeClusterDocuments(input = {}) {
                     };
                 } else {
                     creditLatch.assertNotTripped();
+                    const ocrStartedAt = Date.now();
                     const ocrRes = await transcribeDocumentViaStageT({
                         filePath: file.filePath,
                         preflightDoc,
                         progressCallback,
                         sqliteStore,
+                        runId,
                         workerPool,
                         tracker: usageTracker,
                         onUsage,
                         signal,
                     });
+                    timingCounters.ocrMs += Date.now() - ocrStartedAt;
+                    if (ocrRes.fromCache) timingCounters.ocrCacheHits += 1;
+                    else timingCounters.ocrCacheMisses += 1;
                     text = ocrRes.text || '';
                     extraction = ocrRes;
                     ocrEngine = ocrRes.ocrEngine || null;
@@ -787,11 +818,15 @@ async function analyzeClusterDocuments(input = {}) {
                         message: `Pokrećem OCR za ${path.basename(file.filePath)}.`,
                         metadata: { stage: 'ocr', done: 0, total: 1, unit: 'dokument' },
                     });
+                    const ocrStartedAt = Date.now();
                     const ocrResult = await extractTextViaOCR(
                         file.filePath,
                         progressCallback,
-                        { tracker: usageTracker, onUsage, sqliteStore, signal },
+                        { tracker: usageTracker, onUsage, sqliteStore, runId, signal },
                     );
+                    timingCounters.ocrMs += Date.now() - ocrStartedAt;
+                    if (ocrResult.fromCache) timingCounters.ocrCacheHits += 1;
+                    else timingCounters.ocrCacheMisses += 1;
                     progressCallback?.({
                         step: 'ocr',
                         message: `OCR završen za ${path.basename(file.filePath)}.`,
@@ -1138,6 +1173,8 @@ async function analyzeClusterDocuments(input = {}) {
             sourceDocuments: sanitizedAnalyses.map((item) => buildSourceDocumentRecord(item)),
             coverage: buildAnalysisCoverage(individualAnalyses),
             partialReason: creditLatch.isTripped() ? 'provider-credits-exhausted' : null,
+            preflightManifest,
+            stageTimings: { ...timingCounters },
         };
     } finally {
         if (heartbeatTimer) clearInterval(heartbeatTimer);

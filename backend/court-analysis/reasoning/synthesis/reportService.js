@@ -57,6 +57,7 @@ async function generateClusterReport(clusterEvidencePackage, options = {}) {
         claims: Array.isArray(reasoningEvidence?.claims) ? reasoningEvidence.claims.length : 0,
     });
 
+    const stage2StartedAt = Date.now();
     const report = await synthesizeReport(reasoningEvidence, {
         tracker: options.tracker,
         onUsage: options.onUsage,
@@ -66,6 +67,7 @@ async function generateClusterReport(clusterEvidencePackage, options = {}) {
         taskRouter: options.taskRouter,
         runId,
     });
+    const stage2Ms = Date.now() - stage2StartedAt;
     logger.info('reportService.synthesize', 'Report synthesized', {
         runId,
         findings: Array.isArray(report?.findings) ? report.findings.length : 0,
@@ -130,6 +132,10 @@ async function generateClusterReport(clusterEvidencePackage, options = {}) {
             : {}),
         meta: {
             ...(verifiedReport?.meta || {}),
+            stageTimings: {
+                stage2Ms,
+                verifyMs: verifiedReport?.meta?.verification?.durationMs ?? 0,
+            },
             retrieval: stripRetrievalText(retrieval),
             scope,
             // Lab-only: context profiles persist their bounded trace.
