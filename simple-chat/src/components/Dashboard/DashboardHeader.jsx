@@ -29,8 +29,8 @@ export default function DashboardHeader({ onOpenNewAnalysis }) {
             <Link to="/dashboard" className="text-[var(--text-muted)] hover:text-[var(--text)] transition-colors">
               Dashboard
             </Link>
-            <Link to="/dashboard/lab" className="text-[var(--text-muted)] hover:text-[var(--text)] transition-colors">
-              Laboratorij
+            <Link to="/dashboard/bench" className="text-[var(--text-muted)] hover:text-[var(--text)] transition-colors">
+              Bench
             </Link>
             <button
               type="button"

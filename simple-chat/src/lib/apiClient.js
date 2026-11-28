@@ -110,3 +110,45 @@ export const listLabExperiments = ({ limit = 50, offset = 0 } = {}) => apiFetch(
 export const getLabExperiment = (id) => apiFetch(
   `/api/analysis-lab/experiments/${encodeURIComponent(id)}`
 );
+
+// Programmatic Bench (/api/bench)
+export const listBenchDocuments = (model) => apiFetch(
+  `/api/bench/documents${model ? `?model=${encodeURIComponent(model)}` : ''}`
+);
+export const listBenchModels = () => apiFetch('/api/bench/models');
+export const syncBenchModels = () => apiFetch('/api/bench/models/sync', {
+  method: 'POST',
+  body: { approved: true },
+});
+export const runGbenchGate = (body) => apiFetch('/api/bench/gbench/gate', {
+  method: 'POST',
+  body,
+});
+export const listBenchCandidates = (limit = 50) => apiFetch(`/api/bench/candidates?limit=${encodeURIComponent(limit)}`);
+export const seedBenchCandidates = () => apiFetch('/api/bench/candidates/seed', { method: 'POST', body: {} });
+export const runCandidateMicroBench = (id, body) => apiFetch(
+  `/api/bench/candidates/${encodeURIComponent(id)}/micro-bench`,
+  { method: 'POST', body }
+);
+export const listBenchRuns = () => apiFetch('/api/bench/runs');
+export const launchBenchRun = (body) => apiFetch('/api/bench/runs', { method: 'POST', body });
+export const getBenchJob = (id) => apiFetch(`/api/bench/jobs/${encodeURIComponent(id)}`);
+export const cancelBenchJob = (id) => apiFetch(`/api/bench/jobs/${encodeURIComponent(id)}/cancel`, { method: 'POST', body: {} });
+export const getBenchRunReport = (runId) => apiFetch(`/api/bench/runs/${encodeURIComponent(runId)}/report`);
+export const getBenchRunTraces = (runId) => apiFetch(`/api/bench/runs/${encodeURIComponent(runId)}/traces`);
+export const getBenchReview = (runId, { sample = 3, seed = 7 } = {}) => apiFetch(
+  `/api/bench/runs/${encodeURIComponent(runId)}/review?sample=${encodeURIComponent(sample)}&seed=${encodeURIComponent(seed)}`
+);
+export const submitBenchReview = (runId, verdicts) => apiFetch(
+  `/api/bench/runs/${encodeURIComponent(runId)}/review`,
+  { method: 'POST', body: { verdicts } }
+);
+export const listBenchGoldSets = () => apiFetch('/api/bench/gold/sets');
+export const getBenchGoldTemplate = (set, file) => apiFetch(
+  `/api/bench/gold/template?set=${encodeURIComponent(set)}&file=${encodeURIComponent(file)}`
+);
+export const saveBenchGoldTemplate = (body) => apiFetch('/api/bench/gold/save', { method: 'POST', body });
+export const suggestBenchGold = (body) => apiFetch('/api/bench/gold/suggest', { method: 'POST', body });
+export const getBenchGoldPageUrl = (set, file, page) => resolveApiUrl(
+  `/api/bench/gold/page?set=${encodeURIComponent(set)}&file=${encodeURIComponent(file)}&page=${encodeURIComponent(page)}`
+);

@@ -4,6 +4,7 @@ import PrivacyPolicy from './components/PrivacyPolicy';
 import AboutUs from './components/AboutUs';
 import { DashboardPage, AnalysisRunDetailPage } from './components/Dashboard';
 import { AnalysisLabPage, LabExperimentDetailPage } from './components/Dashboard/AnalysisLab';
+import { BenchPage, BenchRunDetailPage, BenchGoldEditorPage } from './components/Bench';
 
 function App() {
   return (
@@ -12,6 +13,9 @@ function App() {
         <Route path="/" element={<Navigate to="/dashboard" replace />} />
         <Route path="/dashboard" element={<DashboardPage />} />
         <Route path="/dashboard/runs/:id" element={<AnalysisRunDetailPage />} />
+        <Route path="/dashboard/bench" element={<BenchPage />} />
+        <Route path="/dashboard/bench/runs/:runId" element={<BenchRunDetailPage />} />
+        <Route path="/dashboard/bench/gold" element={<BenchGoldEditorPage />} />
         <Route path="/dashboard/lab" element={<AnalysisLabPage />} />
         <Route path="/dashboard/lab/experiments/:id" element={<LabExperimentDetailPage />} />
         <Route path="/pravila-privatnosti" element={<PrivacyPolicy />} />
