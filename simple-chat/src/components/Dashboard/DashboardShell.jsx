@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import DashboardHeader from './DashboardHeader';
 import NewAnalysisModal from './NewAnalysisModal';
+import SettingsPopover from './SettingsPopover';
 
 export default function DashboardShell({ children }) {
   const [isNewModalOpen, setIsNewModalOpen] = useState(false);
@@ -16,9 +17,12 @@ export default function DashboardShell({ children }) {
   }, [searchParams, setSearchParams]);
 
   return (
-    <div className="min-h-screen bg-[var(--bg)]">
+    <div className="flex min-h-screen flex-col bg-bg">
       <DashboardHeader onOpenNewAnalysis={() => setIsNewModalOpen(true)} />
-      {children}
+      <div className="flex-1">{children}</div>
+      <div className="fixed bottom-4 right-4 z-40 print:hidden">
+        <SettingsPopover />
+      </div>
       <NewAnalysisModal isOpen={isNewModalOpen} onClose={() => setIsNewModalOpen(false)} />
     </div>
   );

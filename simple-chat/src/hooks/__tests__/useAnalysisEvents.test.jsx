@@ -253,4 +253,57 @@ describe('useAnalysisEvents canonical stage parity', () => {
     expect(legacy.headerCounter).toBeNull();
     expect(legacy.counterKnown).toBe(false);
   });
+
+  test('maps preflight and ocr stages and extracts latest lanes object', () => {
+    let latest = null;
+
+    render(
+      <Harness
+        events={[
+          {
+            id: 'e1',
+            event_type: 'preflight',
+            message: 'Priprema dokumenata',
+            created_at: '2026-08-21T10:00:00.000Z',
+            metadata: {
+              lanes: {
+                download: { done: 5, total: 5, failed: 0 },
+                preflight: { done: 2, total: 5, failed: 0 },
+                ocr: null,
+                extract: null,
+              },
+            },
+          },
+          {
+            id: 'e2',
+            event_type: 'ocr',
+            message: 'OCR obrada stranica',
+            created_at: '2026-08-21T10:00:10.000Z',
+            metadata: {
+              lanes: {
+                download: { done: 5, total: 5, failed: 0 },
+                preflight: { done: 5, total: 5, failed: 0 },
+                ocr: { done: 3, total: 10, failed: 0 },
+                extract: { done: 1, total: 5, failed: 0 },
+              },
+            },
+          },
+        ]}
+        onValue={(value) => {
+          latest = value;
+        }}
+      />,
+    );
+
+    expect(latest.timeline.map((e) => e.stageLabel)).toEqual([
+      'Priprema dokumenata',
+      'OCR transkripcija',
+    ]);
+    expect(latest.lanes).toEqual({
+      download: { done: 5, total: 5, failed: 0 },
+      preflight: { done: 5, total: 5, failed: 0 },
+      ocr: { done: 3, total: 10, failed: 0 },
+      extract: { done: 1, total: 5, failed: 0 },
+    });
+  });
 });

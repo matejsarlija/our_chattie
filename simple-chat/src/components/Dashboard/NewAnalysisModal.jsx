@@ -1,12 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
-import { z } from 'zod';
 import { useNavigate } from 'react-router-dom';
 import { useCourtAnalysisStream } from '../../hooks/useCourtAnalysisStream';
 import { useSettings } from '../../hooks/useSettings';
 import Dialog from '../ui/Dialog';
 import ScanDepthSelect from './ScanDepthSelect';
-
-const querySchema = z.string().trim().min(1, 'Upit ne smije biti prazan.');
 
 export default function NewAnalysisModal({ isOpen, onClose }) {
   const navigate = useNavigate();
@@ -29,15 +26,15 @@ export default function NewAnalysisModal({ isOpen, onClose }) {
     setError('');
     setQueryInvalid(false);
 
-    const validated = querySchema.safeParse(query);
-    if (!validated.success) {
-      setError(validated.error.issues[0]?.message || 'Upit ne smije biti prazan.');
+    const trimmedQuery = String(query || '').trim();
+    if (!trimmedQuery) {
+      setError('Upit ne smije biti prazan.');
       setQueryInvalid(true);
       return;
     }
 
     try {
-      const accepted = await streamingAPI.streamCourtAnalysis(validated.data, {
+      const accepted = await streamingAPI.streamCourtAnalysis(trimmedQuery, {
         onError: (message) => setError(message || 'Neuspjelo pokretanje analize.'),
       }, { scanDepth });
       if (!accepted?.analysisId || accepted.status !== 'queued') {
@@ -64,7 +61,7 @@ export default function NewAnalysisModal({ isOpen, onClose }) {
     >
       <form className="space-y-5" onSubmit={handleSubmit}>
         <div>
-          <label htmlFor="new-analysis-query" className="block text-sm font-medium text-[var(--text)]">
+          <label htmlFor="new-analysis-query" className="block text-sm font-medium text-ink">
             Upit
           </label>
           <input
@@ -72,35 +69,35 @@ export default function NewAnalysisModal({ isOpen, onClose }) {
             id="new-analysis-query"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            className="mt-1 w-full rounded-lg border border-[var(--border-control)] bg-[var(--surface)] px-3 py-2 text-[var(--text)] outline-none focus:border-[var(--accent)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
+            className="mt-1 w-full rounded-lg border border-line-control bg-surface px-3 py-2 text-ink outline-none focus:border-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
             placeholder="npr. 12345678901, St-357/2013 ili pojam za pretragu"
             autoComplete="off"
             aria-invalid={queryInvalid}
             aria-describedby={error ? errorId : undefined}
           />
           {error ? (
-            <p id={errorId} role="alert" className="mt-2 rounded-md border-l-2 border-[var(--border-control)] bg-[var(--surface-muted)] px-3 py-2 text-sm text-[var(--text)]">
+            <p id={errorId} role="alert" className="mt-2 rounded-md border-l-2 border-line-control bg-surface-muted px-3 py-2 text-sm text-ink">
               {error}
             </p>
           ) : null}
         </div>
 
-        <div className="border-t border-[var(--border)] pt-4">
+        <div className="border-t border-line pt-4">
           <ScanDepthSelect value={scanDepth} onChange={setScanDepth} disabled={streamingAPI.isLoading} />
         </div>
 
-        <div className="flex justify-end gap-2 border-t border-[var(--border)] pt-4">
+        <div className="flex justify-end gap-2 border-t border-line pt-4">
           <button
             type="button"
             onClick={onClose}
-            className="rounded-lg border border-[var(--border-control)] px-3 py-2 text-sm font-medium text-[var(--text)] hover:bg-[var(--surface-muted)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
+            className="rounded-lg border border-line-control px-3 py-2 text-sm font-medium text-ink hover:bg-surface-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
             disabled={streamingAPI.isLoading}
           >
             Odustani
           </button>
           <button
             type="submit"
-            className="rounded-lg bg-[var(--accent)] px-3 py-2 text-sm font-medium text-white hover:opacity-90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-60"
+            className="rounded-lg bg-accent px-3 py-2 text-sm font-medium text-white hover:opacity-90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-60"
             disabled={streamingAPI.isLoading}
           >
             {streamingAPI.isLoading ? 'Pokrećem…' : 'Pokreni'}

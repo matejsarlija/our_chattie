@@ -1,0 +1,87 @@
+/* ---------------------------------------------------------------------------
+   Design tokens — single source of truth.
+   Every value verified against WCAG 2.1 AA.
+   :root defines semantic CSS custom properties; @theme inline maps them to
+   Tailwind v4 utilities (bg-*, text-*, border-*, rounded-*).
+   --------------------------------------------------------------------------- */
+
+:root {
+  /* Surfaces */
+  --bg: #f8f9fa;               /* page background                      */
+  --surface: #ffffff;          /* card / panel                         */
+  --surface-muted: #eef0f3;    /* table header, nested tile, hover     */
+
+  /* Two-tier borders (WCAG 1.4.11) */
+  --line: #dde1e6;             /* decorative: cards, dividers   1.31:1 */
+  --line-control: #6b7280;     /* operable: inputs, selects     4.83:1 */
+
+  /* Typography ink */
+  --ink: #141821;              /* primary body text            17.76:1 */
+  --ink-muted: #4b5563;        /* secondary text                7.56:1 */
+
+  /* Single brand accent */
+  --accent: #1d4ed8;           /* text 6.70:1 · white-on-it 6.70:1     */
+
+  /* Calm semantic status pairs (always paired with glyph + label) */
+  --success: #166534;
+  --success-surface: #eefaf1;
+  --warning: #92600a;
+  --warning-surface: #fdf6e7;
+  --danger: #b3261e;
+  --danger-surface: #fdf0ef;
+  --info: #1d4ed8;
+  --info-surface: #eef2ff;
+
+  /* Centralized geometry */
+  --radius: 10px;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 10px;
+  --radius-full: 9999px;
+
+  /* Legacy aliases for unmigrated Wave 2/3 screens */
+  --text-size: 16px;
+  --border: var(--line);
+  --border-control: var(--line-control);
+  --text: var(--ink);
+  --text-muted: var(--ink-muted);
+  --error: var(--danger);
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-muted: var(--surface-muted);
+
+  --color-line: var(--line);
+  --color-line-control: var(--line-control);
+
+  --color-ink: var(--ink);
+  --color-ink-muted: var(--ink-muted);
+  --color-body: var(--ink);
+  --color-body-muted: var(--ink-muted);
+
+  --color-accent: var(--accent);
+
+  --color-success: var(--success);
+  --color-success-surface: var(--success-surface);
+  --color-warning: var(--warning);
+  --color-warning-surface: var(--warning-surface);
+  --color-danger: var(--danger);
+  --color-danger-surface: var(--danger-surface);
+  --color-info: var(--info);
+  --color-info-surface: var(--info-surface);
+
+  --radius-sm: var(--radius-sm);
+  --radius-md: var(--radius-md);
+  --radius-lg: var(--radius-lg);
+  --radius-full: var(--radius-full);
+
+  /* Type scale — six steps, hard floor at 11px */
+  --text-xs: 11px;   --text-xs--line-height: 1.4;
+  --text-sm: 13px;   --text-sm--line-height: 1.4;
+  --text-base: 15px; --text-base--line-height: 1.6;
+  --text-lg: 17px;   --text-lg--line-height: 1.6;
+  --text-xl: 21px;   --text-xl--line-height: 1.4;
+  --text-2xl: 27px;  --text-2xl--line-height: 1.4;
+}

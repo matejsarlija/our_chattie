@@ -6,7 +6,7 @@ import React from 'react';
 import { render, waitFor } from '@testing-library/react';
 import { useAnalysisRunStream } from '../useAnalysisRunStream';
 
-jest.mock('../../lib/apiClient', () => ({
+vi.mock('../../lib/apiClient', () => ({
   resolveApiUrl: (path) => path,
 }));
 
@@ -15,7 +15,7 @@ function makeSseStream(chunks) {
   let index = 0;
   return {
     getReader: () => ({
-      read: jest.fn(async () => {
+      read: vi.fn(async () => {
         if (index >= chunks.length) {
           return { done: true, value: undefined };
         }
@@ -23,7 +23,7 @@ function makeSseStream(chunks) {
         index += 1;
         return { done: false, value };
       }),
-      releaseLock: jest.fn(),
+      releaseLock: vi.fn(),
     }),
   };
 }
@@ -45,7 +45,7 @@ describe('useAnalysisRunStream', () => {
 
   afterEach(() => {
     global.fetch = originalFetch;
-    jest.restoreAllMocks();
+    vi.restoreAllMocks();
   });
 
   test('tracks highest received seq and passes ?afterSeq= on reconnect, resetting per runId', async () => {
@@ -59,14 +59,14 @@ describe('useAnalysisRunStream', () => {
       'id: 1\nevent: run.terminal\ndata: {"runId":"r2","seq":1,"status":"done","run":{"id":"r2","status":"done"}}\n\n',
     ]);
 
-    global.fetch = jest.fn()
+    global.fetch = vi.fn()
       .mockResolvedValueOnce({ ok: true, status: 200, body: firstStream })
       .mockResolvedValueOnce({ ok: true, status: 200, body: secondStream })
       .mockResolvedValueOnce({ ok: true, status: 200, body: thirdStream });
 
-    const onEventCreated = jest.fn();
-    const onTerminal = jest.fn();
-    const onError = jest.fn();
+    const onEventCreated = vi.fn();
+    const onTerminal = vi.fn();
+    const onError = vi.fn();
 
     const { rerender } = render(
       <StreamHarness

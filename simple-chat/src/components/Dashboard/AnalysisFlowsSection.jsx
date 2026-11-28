@@ -201,13 +201,15 @@ function CategoryChip({ children }) {
   return <span className="rounded border border-line px-1.5 py-0.5 text-xs text-ink-muted">{children}</span>;
 }
 
-function RecordDetails({ row, sourceDocumentsById }) {
+function RecordDetails({ row, sourceDocumentsById, onOpenEvidence }) {
   const descriptions = uniqueDescriptions(row);
   const sources = rowsForSources(row, sourceDocumentsById);
   const moneyEntries = row.moneyEntries;
   const propertyEntries = row.propertyEntries;
   const facts = [...moneyEntries, ...propertyEntries];
   const quotes = [...new Set(facts.map((entry) => String(entry?.quote || '').trim()).filter(Boolean))];
+  const chunkEntry = facts.find((entry) => entry?.sourceChunkId || entry?.chunkId);
+  const chunkDoc = chunkEntry ? sourceDocumentsById.get(chunkEntry.docId) : null;
 
   return (
     <div className="mt-3 space-y-3 border-l-2 border-line pl-3 text-xs leading-relaxed text-ink-muted">
@@ -223,6 +225,24 @@ function RecordDetails({ row, sourceDocumentsById }) {
         <div>
           <div className="eyebrow">Navod iz dokumenta</div>
           {quotes.map((quote) => <blockquote key={quote} className="mt-1 italic">„{quote}”</blockquote>)}
+        </div>
+      ) : null}
+      {onOpenEvidence && chunkEntry ? (
+        <div>
+          <button
+            type="button"
+            onClick={() => onOpenEvidence({
+              chunkId: chunkEntry.sourceChunkId || chunkEntry.chunkId,
+              docId: chunkEntry.docId,
+              quote: chunkEntry.quote,
+              fileName: chunkEntry.fileName || chunkDoc?.fileName,
+              pageNumbers: chunkEntry.sourcePages,
+              url: chunkDoc?.url,
+            })}
+            className="text-xs font-medium text-accent hover:underline"
+          >
+            Prikaži u kontekstu
+          </button>
         </div>
       ) : null}
       {moneyEntries.length > 0 ? (
@@ -285,7 +305,7 @@ function RecordDetails({ row, sourceDocumentsById }) {
   );
 }
 
-function EvidenceRow({ row, sourceDocumentsById }) {
+function EvidenceRow({ row, sourceDocumentsById, onOpenEvidence }) {
   const date = rowDate(row);
   const description = rowDescription(row);
   const figure = rowFigure(row);
@@ -344,7 +364,7 @@ function EvidenceRow({ row, sourceDocumentsById }) {
             {figure.source ? <div className="mt-0.5 text-xs text-ink-muted">izvorno {figure.source}</div> : null}
           </div>
         </summary>
-        <RecordDetails row={row} sourceDocumentsById={sourceDocumentsById} />
+        <RecordDetails row={row} sourceDocumentsById={sourceDocumentsById} onOpenEvidence={onOpenEvidence} />
       </details>
     </li>
   );
@@ -361,7 +381,7 @@ function matchesClaimHistory(change, search) {
   return text.includes(search);
 }
 
-export default function AnalysisFlowsSection({ flows, reconciliation, sourceDocuments = [] }) {
+export default function AnalysisFlowsSection({ flows, reconciliation, sourceDocuments = [], onOpenEvidence }) {
   const [activeView, setActiveView] = useState('all');
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(0);
@@ -444,7 +464,7 @@ export default function AnalysisFlowsSection({ flows, reconciliation, sourceDocu
                 type="button"
                 aria-pressed={activeView === view.id}
                 onClick={() => changeView(view.id)}
-                className={`rounded-md border px-3 py-1.5 text-xs font-medium transition-colors ${activeView === view.id ? 'border-[var(--text)] bg-[var(--text)] text-[var(--surface)]' : 'border-line-control text-ink hover:bg-surface-muted'}`}
+                className={`rounded-md border px-3 py-1.5 text-xs font-medium transition-colors ${activeView === view.id ? 'border-ink bg-ink text-surface' : 'border-line-control text-ink hover:bg-surface-muted'}`}
               >
                 {view.label} <span className="num opacity-80">{view.count}</span>
               </button>
@@ -474,7 +494,7 @@ export default function AnalysisFlowsSection({ flows, reconciliation, sourceDocu
           <>
             {visibleRows.length > 0 ? (
               <ul className="mt-3" data-testid="evidence-register-rows">
-                {visibleRows.map((row) => <EvidenceRow key={row.id} row={row} sourceDocumentsById={sourceDocumentsById} />)}
+                {visibleRows.map((row) => <EvidenceRow key={row.id} row={row} sourceDocumentsById={sourceDocumentsById} onOpenEvidence={onOpenEvidence} />)}
               </ul>
             ) : (
               <p className="mt-4 rounded-md border border-dashed border-line-control p-4 text-sm text-ink-muted">

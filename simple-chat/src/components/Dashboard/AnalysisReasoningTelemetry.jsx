@@ -2,11 +2,11 @@ import { useMemo, useState } from 'react';
 
 
 function StatChip({ label, value, active = false, onClick = null }) {
-  const activeClass = active ? ' bg-[var(--surface-muted)] ring-1 ring-[var(--accent)]' : '';
-  const baseClass = `inline-flex items-baseline gap-1 rounded-md border border-[var(--border)] px-2 py-0.5 text-xs text-[var(--text-muted)]${activeClass}`;
+  const activeClass = active ? ' bg-surface-muted ring-1 ring-accent' : '';
+  const baseClass = `inline-flex items-baseline gap-1 rounded-md border border-line px-2 py-0.5 text-xs text-ink-muted${activeClass}`;
   const content = (
     <>
-      <span className="font-semibold text-[var(--text)]">{value}</span>
+      <span className="font-semibold text-ink">{value}</span>
       <span>{label}</span>
     </>
   );
@@ -14,7 +14,7 @@ function StatChip({ label, value, active = false, onClick = null }) {
     return <span className={baseClass}>{content}</span>;
   }
   return (
-    <button type="button" onClick={onClick} aria-pressed={active} className={`${baseClass} cursor-pointer hover:bg-[var(--surface-muted)]`}>
+    <button type="button" onClick={onClick} aria-pressed={active} className={`${baseClass} cursor-pointer hover:bg-surface-muted`}>
       {content}
     </button>
   );
@@ -26,22 +26,22 @@ function MatchDetail({ match }) {
     ? match.snippet
     : (typeof match?.text === 'string' ? match.text : '');
   return (
-    <li className="rounded border border-[var(--border)] bg-[var(--surface)] px-2 py-1.5">
+    <li className="rounded border border-line bg-surface px-2 py-1.5">
       <div className="flex flex-wrap items-center gap-2">
         {typeof match?.score === 'number' ? (
-          <span className="font-mono font-semibold text-[var(--text)]">ocjena {match.score.toFixed(2)}</span>
+          <span className="font-mono font-semibold text-ink">ocjena {match.score.toFixed(2)}</span>
         ) : null}
-        {match?.fileName ? <span className="text-[var(--text)]">{match.fileName}</span> : null}
+        {match?.fileName ? <span className="text-ink">{match.fileName}</span> : null}
         {match?.sourceType ? (
-          <span className="rounded border border-[var(--border)] px-1 text-[10px] uppercase text-[var(--text-muted)]">{match.sourceType}</span>
+          <span className="rounded border border-line px-1 text-xs uppercase text-ink-muted">{match.sourceType}</span>
         ) : null}
       </div>
       {reasons.length > 0 ? (
-        <p className="mt-1 font-mono text-[11px] text-[var(--text-muted)]">{reasons.join(' · ')}</p>
+        <p className="mt-1 font-mono text-xs text-ink-muted">{reasons.join(' · ')}</p>
       ) : null}
-      {snippet ? <p className="mt-1 text-[var(--text)]">{snippet}</p> : null}
+      {snippet ? <p className="mt-1 text-ink">{snippet}</p> : null}
       {match?.sourceId ? (
-        <p className="mt-1 truncate font-mono text-[10px] text-[var(--text-muted)]">{match.sourceId}</p>
+        <p className="mt-1 truncate font-mono text-xs text-ink-muted">{match.sourceId}</p>
       ) : null}
     </li>
   );
@@ -111,9 +111,9 @@ export default function AnalysisReasoningTelemetry({ report, collapsible = false
 
   if (!hasAnything) {
     return (
-      <section className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-5">
-        <h2 className="mb-2 text-sm font-semibold text-[var(--text)]">Telemetrija zaključivanja</h2>
-        <p className="text-sm text-[var(--text-muted)]">
+      <section className="card p-5">
+        <h2 className="mb-2 text-sm font-semibold text-ink">Telemetrija zaključivanja</h2>
+        <p className="text-sm text-ink-muted">
           Telemetrija nije dostupna za ovu analizu (stariji zapis ili prekinuti tijek).
         </p>
       </section>
@@ -129,8 +129,8 @@ export default function AnalysisReasoningTelemetry({ report, collapsible = false
   const Heading = collapsible ? 'summary' : 'h2';
 
   return (
-    <Wrapper className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-5" data-testid="reasoning-telemetry">
-      <Heading className={`mb-3 text-sm font-semibold text-[var(--text)]${collapsible ? ' cursor-pointer' : ''}`}>Telemetrija zaključivanja</Heading>
+    <Wrapper className="card p-5" data-testid="reasoning-telemetry">
+      <Heading className={`mb-3 text-sm font-semibold text-ink${collapsible ? ' cursor-pointer' : ''}`}>Telemetrija zaključivanja</Heading>
 
       <div className="mb-3 flex flex-wrap items-center gap-2">
         <StatChip label="upita" value={queries.length} />
@@ -150,7 +150,7 @@ export default function AnalysisReasoningTelemetry({ report, collapsible = false
         ) : null}
       </div>
       {filter ? (
-        <p className="mb-2 text-xs text-[var(--text-muted)]">
+        <p className="mb-2 text-xs text-ink-muted">
           Filter aktivan: samo upiti s pogotkom tipa {filter.value} ({filteredRows.length}/{rows.length}).{' '}
           <button type="button" onClick={() => setFilter(null)} className="underline hover:no-underline">
             Poništi filter
@@ -160,9 +160,9 @@ export default function AnalysisReasoningTelemetry({ report, collapsible = false
 
 
       {rows.length > 0 ? (
-        <div className="overflow-hidden rounded-lg border border-[var(--border)]">
+        <div className="overflow-hidden rounded-lg border border-line">
           <table className="w-full text-left text-xs">
-            <thead className="bg-[var(--surface-raised, rgba(0,0,0,0.03))] text-[11px] uppercase tracking-wide text-[var(--text-muted)]">
+            <thead className="bg-surface-muted text-xs uppercase tracking-wide text-ink-muted">
               <tr>
                 <th className="px-3 py-1.5">Izvor</th>
                 <th className="px-3 py-1.5">Svrha</th>
@@ -175,19 +175,19 @@ export default function AnalysisReasoningTelemetry({ report, collapsible = false
                 const isOpen = expanded.has(row.key);
                 const matches = row.matches || [];
                 return (
-                  <tr key={row.key} className="border-t border-[var(--border)] align-top">
+                  <tr key={row.key} className="border-t border-line align-top">
                     <td className="px-3 py-1.5">
-                      <span className="inline-block rounded border border-[var(--border)] px-1.5 py-0.5 text-[10px] font-semibold text-[var(--text-muted)]">
+                      <span className="inline-block rounded border border-line px-1.5 py-0.5 text-xs font-semibold text-ink-muted">
                         PREDLOŽAK
                       </span>
                     </td>
-                    <td className="px-3 py-1.5 text-[var(--text-muted)]">{query?.purpose || '—'}</td>
+                    <td className="px-3 py-1.5 text-ink-muted">{query?.purpose || '—'}</td>
                     <td className="px-3 py-1.5">
                       <button
                         type="button"
                         onClick={() => toggleExpanded(row.key)}
                         aria-expanded={isOpen}
-                        className="text-left font-mono text-[var(--text)] hover:underline"
+                        className="text-left font-mono text-ink hover:underline"
                         title={matches.length > 0 ? 'Prikaži pogotke' : 'Nema spremljenih pogodaka'}
                       >
                         {query?.text} {matches.length > 0 ? (isOpen ? '▾' : `▸ (${matches.length})`) : ''}
@@ -195,7 +195,7 @@ export default function AnalysisReasoningTelemetry({ report, collapsible = false
                       {isOpen && (
                         <div className="mt-2">
                           {matches.length === 0 ? (
-                            <p className="text-[11px] text-[var(--text-muted)]">Nema spremljenih pogodaka za ovaj upit (stariji zapis).</p>
+                            <p className="text-xs text-ink-muted">Nema spremljenih pogodaka za ovaj upit (stariji zapis).</p>
                           ) : (
                             <ul className="space-y-1.5">
                               {matches.map((match, i) => (
@@ -212,7 +212,7 @@ export default function AnalysisReasoningTelemetry({ report, collapsible = false
             </tbody>
           </table>
           {filteredRows.length > 8 ? (
-            <p className="border-t border-[var(--border)] px-3 py-1.5 text-[11px] text-[var(--text-muted)]">
+            <p className="border-t border-line px-3 py-1.5 text-xs text-ink-muted">
               +{filteredRows.length - 8} upita nije prikazano.
             </p>
           ) : null}

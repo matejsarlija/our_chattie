@@ -9,10 +9,6 @@ const getTimelineText = (item) => {
   return '';
 };
 
-// TU-1 — latest procedural step: the max-date timeline entry. Dates come
-// from the deterministic timeline builder (ISO calendar days); unparseable
-// or missing dates are skipped, never guessed. Null when nothing orderable
-// exists — the timeline section below remains the full record.
 export default function LatestProceduralStep({ timeline }) {
   const latest = useMemo(() => {
     let best = null;
@@ -28,9 +24,9 @@ export default function LatestProceduralStep({ timeline }) {
 
   const text = getTimelineText(latest.item);
   return (
-    <section className="mb-5 rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4" data-testid="latest-step">
-      <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--text-muted)]">Najnoviji postupovni korak</p>
-      <p className="mt-1 text-sm font-medium text-[var(--text)]">
+    <section className="card mb-5 p-4" data-testid="latest-step">
+      <p className="text-xs font-semibold uppercase tracking-[0.14em] text-ink-muted">Najnoviji postupovni korak</p>
+      <p className="mt-1 text-sm font-medium text-ink">
         {String(latest.item.date)}{text ? ` — ${text}` : ''}
       </p>
     </section>

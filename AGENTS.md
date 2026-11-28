@@ -37,9 +37,7 @@ The frontend is a court-analysis dashboard (no chat surface — that was removed
 3.  **Defensive UI**: wrap unpredictable rendered content (the LLM-authored
     markdown narrative) in `ErrorBoundary` — see `AnalysisRunDetailPage.jsx`.
     A single malformed AI response should never crash the run detail page.
-4.  **Infrastructure Agnosticism**: maintain compatibility with modern build
-    tools (Vite) while supporting legacy infrastructure (CRA) during
-    transition periods. Always abstract environment variable access.
+4.  **Infrastructure Agnosticism**: `simple-chat/` runs on Vite + Vitest (CRA was retired). Always abstract environment variable access via `src/lib/env.js`.
 
 Solution must be coherent, cohesive with the existing codebase, and respect all existing codebase paradigms and practices.
 
@@ -53,6 +51,14 @@ Apply these durable findings from the UI audit and shipped redesign; treat old s
 - **Distinguish empty from unavailable.** “Nothing found” is different from “could not determine.” Render loading, genuinely empty, failed/unavailable, and populated states distinctly wherever the data contract supports them.
 - **Give the answer visual priority over telemetry.** On report pages, conclusions, scope/coverage, and source evidence should be easy to scan; pipeline and retrieval detail are supporting context. Keep source citations legible and keyboard-reachable, and do not duplicate structured findings or chronology in narrative prose. Disclosures must keep content available and indicate how much is hidden when counts are known.
 - **Treat design documents as historical evidence, not runtime truth.** Verify current code, persisted data contracts, and tests before applying older audit recommendations. Keep durable cross-screen UI rules here; do not recreate standalone HTML design audits, handoffs, or prototypes under `docs/` or `design-prototypes/` unless explicitly requested.
+
+### Design System & Token Map (For Agents)
+
+Every UI surface in `simple-chat/` uses one standardized **shadcn/ui Tailwind v4 (`@theme inline`) + Radix/CVA** design system:
+- **Single Token Source of Truth:** [simple-chat/src/styles/tokens.css](file:///home/oxioxi/proj/our_chattie/simple-chat/src/styles/tokens.css) (`:root` variables + `@theme inline` utilities: `bg-bg`, `bg-surface`, `bg-surface-muted`, `text-ink`, `text-ink-muted`, `border-line` decorative vs `border-line-control` `>= 3:1` operable, `accent`, calm status pairs `success`/`warning`/`danger`/`info`, centralized `10px` card radius).
+- **Owned Primitives (`simple-chat/src/components/ui/`):** Always reach for [Button.jsx](file:///home/oxioxi/proj/our_chattie/simple-chat/src/components/ui/Button.jsx), [Card.jsx](file:///home/oxioxi/proj/our_chattie/simple-chat/src/components/ui/Card.jsx), [Input.jsx](file:///home/oxioxi/proj/our_chattie/simple-chat/src/components/ui/Input.jsx), [Badge.jsx](file:///home/oxioxi/proj/our_chattie/simple-chat/src/components/ui/Badge.jsx), [StatusBadge.jsx](file:///home/oxioxi/proj/our_chattie/simple-chat/src/components/ui/StatusBadge.jsx), [Callout.jsx](file:///home/oxioxi/proj/our_chattie/simple-chat/src/components/ui/Callout.jsx), [Tabs.jsx](file:///home/oxioxi/proj/our_chattie/simple-chat/src/components/ui/Tabs.jsx), [Dialog.jsx](file:///home/oxioxi/proj/our_chattie/simple-chat/src/components/ui/Dialog.jsx), and [Sheet.jsx](file:///home/oxioxi/proj/our_chattie/simple-chat/src/components/ui/Sheet.jsx) instead of hand-rolling variants.
+- **Automated Token Enforcement:** [simple-chat/scripts/verify-design-tokens.mjs](file:///home/oxioxi/proj/our_chattie/simple-chat/scripts/verify-design-tokens.mjs) (`npm run verify:tokens` / `npm run verify:toolchain`) enforces `0` raw Tailwind color scales, `0` `var(--...)` bracket hacks, `0` off-scale card radii (`rounded-2xl`/`rounded-xl`), and `0` undefined semantic tokens across `100%` of `src/components/`.
+- **Live Interactive Catalog:** Inspect every token, typography step, and interactive primitive at `/dashboard/design-system` ([DesignSystemPage.jsx](file:///home/oxioxi/proj/our_chattie/simple-chat/src/components/DesignSystem/DesignSystemPage.jsx)).
 
 ## Project Structure
 
@@ -106,9 +112,10 @@ our_chattie/
   casually, CI-nightly only)
 
 ### Frontend (run from `simple-chat/` directory)
-- **Development**: `npm start` (Vite) or `npm run cra:start` (CRA)
-- **Build**: `npm run build` (Vite) or `npm run cra:build` (CRA)
-- **Testing**: `npm test` or `npm run test:unit`
+- **Development**: `npm start` (Vite)
+- **Build**: `npm run build` (Vite)
+- **Testing**: `npm test` (watch) or `npm run test:unit` (`vitest run`)
+- **Toolchain & Token Check**: `npm run verify:toolchain` / `npm run verify:tokens`
 
 ## Key Integration Points
 
@@ -116,6 +123,7 @@ our_chattie/
 - **SSE Streaming:** `backend/http/sse.js` builds events in `data: {...}\n\n` format for `useAnalysisRunStream.js`. `POST /api/court-analysis` returns plain `202 Accepted` JSON (`{ analysisId, status: 'queued' }`). `GET /api/analysis/runs/:id/stream` subscribes to lightweight in-process `runBus` SSE deltas with `?afterSeq=` reconnect, lane-scoped `stage.progress` counters (`download`, `preflight`, `ocr`, `extract`), and a single REST snapshot fetch on terminal/reconnect, while keeping client backoff polling fallback (`useAnalysisRunDetail.js`). `preflight_json` is persisted on the run so refresh/polling never loses the cost ballpark.
 - **Read-Side SQLite Endpoints & Run Control:** Keep `run_artifacts.result_json` strictly `< 500 KB` (strip both raw `individualAnalyses[].aiResult` and duplicate `clusterEvidencePackage.analyses[]` fact arrays / raw `factLedger[]`); serve paginated/searchable reads via `GET /api/analysis/runs/:id/facts`, `GET /api/analysis/runs/:id/chunks/:chunkId` / `?q=` (FTS5), and `GET /api/analysis/runs/:id/traces`. Persist `canonicalParties[]` and creditor/procedural digests on the run artifact, support `POST /api/analysis/runs/:id/cancel` (`status: 'canceled'`), and allow `POST /api/analysis/runs/:id/report` to pass `analysisStore` for FTS5 BM25 retrieval and overwrite `generationMode: 'deterministic_fallback'` reports (`partial` → `done`).
 - **Generated diagrams:** Mermaid and the visualizer role were removed. Do not reintroduce model-authored diagrams or graph libraries without explicit product approval and a grounded, accessible data contract.
+- **TypeSafe AI (`TYPESAFE_API_KEY`, `.agent/skills/typesafe-ai/SKILL.md`):** Strictly capped at a **€5 total project budget** — use only for low-volume calibrated judgments (e.g., visual blind-critic pass/fail gating or bounded Bench micro-experiments), never in unbounded loops or full-docket production fan-outs.
 
 ## Court-Analysis Pipeline Notes
 

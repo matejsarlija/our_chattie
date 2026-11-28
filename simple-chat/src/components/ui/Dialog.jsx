@@ -20,7 +20,7 @@ export default function Dialog({
         <DialogPrimitive.Overlay className="fixed inset-0 z-[120] bg-black/40 backdrop-blur-[3px]" />
         <DialogPrimitive.Content
           className={cn(
-            'fixed left-1/2 top-1/2 z-[121] flex max-h-[min(90vh,48rem)] w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 flex-col overflow-y-auto rounded-2xl border border-[var(--border-control)] bg-[var(--surface)] shadow-xl outline-none',
+            'fixed left-1/2 top-1/2 z-[121] flex max-h-[min(90vh,48rem)] w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 flex-col overflow-y-auto rounded-lg border border-line-control bg-surface shadow-xl outline-none',
             size === 'sm' ? 'max-w-md' : size === 'lg' ? 'max-w-xl' : 'max-w-lg',
             className,
           )}
@@ -39,13 +39,13 @@ export default function Dialog({
             }
           }}
         >
-          <header className="flex items-start justify-between gap-4 border-b border-[var(--border)] px-6 py-5">
+          <header className="flex items-start justify-between gap-4 border-b border-line px-6 py-5">
             <div className="min-w-0">
-              <DialogPrimitive.Title className="text-lg font-semibold leading-6 text-[var(--text)]">
+              <DialogPrimitive.Title className="text-lg font-semibold leading-6 text-ink">
                 {title}
               </DialogPrimitive.Title>
               {description ? (
-                <DialogPrimitive.Description className="mt-1 text-sm leading-5 text-[var(--text-muted)]">
+                <DialogPrimitive.Description className="mt-1 text-sm leading-5 text-ink-muted">
                   {description}
                 </DialogPrimitive.Description>
               ) : null}
@@ -54,7 +54,7 @@ export default function Dialog({
               <button
                 type="button"
                 aria-label="Zatvori dijalog"
-                className="-mr-2 -mt-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-lg leading-none text-[var(--text-muted)] transition-colors hover:bg-[var(--surface-muted)] hover:text-[var(--text)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
+                className="-mr-2 -mt-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-lg leading-none text-ink-muted transition-colors hover:bg-surface-muted hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
               >
                 ×
               </button>

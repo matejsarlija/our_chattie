@@ -17,7 +17,8 @@ export default function AnalysisCaseBrief({
   const steps = (Array.isArray(nextSteps) ? nextSteps : [])
     .map(getNextStepText)
     .filter(Boolean);
-  const text = typeof narrative === 'string' ? narrative.trim() : '';
+  const rawText = typeof narrative === 'string' ? narrative.trim() : '';
+  const text = rawText.replace(/^#{1,3}\s+Sažetak(?:\s+predmeta)?\s*(?:\r?\n)+/i, '').trim();
 
   return (
     <section

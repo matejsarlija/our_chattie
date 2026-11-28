@@ -7,7 +7,7 @@ import { render, screen } from '@testing-library/react';
 import PrivacyPolicy from '../PrivacyPolicy';
 import AboutUs from '../AboutUs';
 
-jest.mock('../Dashboard/DashboardShell', () => ({
+vi.mock('../Dashboard/DashboardShell', () => ({
   __esModule: true,
   default: ({ children }) => <div data-testid="dashboard-shell">{children}</div>,
 }));

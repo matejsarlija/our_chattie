@@ -17,19 +17,20 @@ class ErrorBoundary extends React.Component {
   render() {
     if (this.state.hasError) {
       return (
-        <div className="p-6 my-4 bg-red-50 border border-red-200 rounded-lg text-center">
-          <h2 className="text-lg font-semibold text-red-800 mb-2">Ups! Nešto je pošlo po zlu.</h2>
-          <p className="text-red-600 mb-4">Došlo je do greške prilikom prikaza ovog dijela aplikacije.</p>
+        <div className="my-4 rounded-lg border border-line bg-danger-surface p-6 text-center">
+          <h2 className="mb-2 text-lg font-semibold text-danger">Ups! Nešto je pošlo po zlu.</h2>
+          <p className="mb-4 text-ink-muted">Došlo je do greške prilikom prikaza ovog dijela aplikacije.</p>
           <button
+            type="button"
             onClick={() => this.setState({ hasError: false })}
-            className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 transition-colors"
+            className="rounded-md bg-danger px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90"
           >
             Pokušaj ponovno
           </button>
           {(import.meta.env?.MODE === 'development' || (typeof process !== 'undefined' && process.env.NODE_ENV === 'development')) && (
             <details className="mt-4 text-left">
-              <summary className="text-xs text-red-400 cursor-pointer">Detalji greške</summary>
-              <pre className="mt-2 text-xs text-red-500 overflow-auto max-h-40 p-2 bg-white rounded">
+              <summary className="cursor-pointer text-xs text-danger">Detalji greške</summary>
+              <pre className="mt-2 max-h-40 overflow-auto rounded bg-surface p-2 font-mono text-xs text-danger">
                 {this.state.error?.toString()}
               </pre>
             </details>

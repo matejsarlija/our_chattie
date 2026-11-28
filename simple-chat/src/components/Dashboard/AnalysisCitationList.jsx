@@ -21,25 +21,30 @@ const normalizeCitations = (citations) => {
   if (!Array.isArray(citations)) return [];
   return citations
     .filter(isObject)
-    .map((citation, index) => ({
-      key: `${citation.source || ''}-${citation.fileName || ''}-${index}`,
-      line: formatCitationLine(citation),
-      url: citation.url || citation.link || null,
-      retrievedBy: Array.isArray(citation.retrievedBy) ? citation.retrievedBy : [],
-    }))
+    .map((citation, index) => {
+      const page = citation.page || citation.pageNumber;
+      const pageNumbers = Array.isArray(citation.pageNumbers)
+        ? citation.pageNumbers
+        : Array.isArray(citation.sourcePages)
+          ? citation.sourcePages
+          : page
+            ? [page]
+            : [];
+      return {
+        key: `${citation.source || ''}-${citation.fileName || ''}-${index}`,
+        line: formatCitationLine(citation),
+        url: citation.url || citation.link || null,
+        chunkId: citation.chunkId || citation.sourceChunkId || null,
+        docId: citation.docId || null,
+        quote: citation.quote || null,
+        fileName: citation.fileName || null,
+        pageNumbers,
+        retrievedBy: Array.isArray(citation.retrievedBy) ? citation.retrievedBy : [],
+      };
+    })
     .filter((citation) => citation.line.length > 0);
 };
 
-/**
- * Why this document was retrieved, disclosed under the citation.
- *
- * The provenance detail is the reason the product exists — it is what
- * distinguishes "the model said so" from "this text was found". The old
- * rendering put it in an 11px button and a 10px mono line, the smallest and
- * faintest text on the page, behind a hover-free disclosure.
- *
- * It is now 13px, a real button, and a keyboard-reachable disclosure.
- */
 function RetrievalLinks({ links }) {
   const [open, setOpen] = useState(false);
   if (!Array.isArray(links) || links.length === 0) return null;
@@ -71,21 +76,14 @@ function RetrievalLinks({ links }) {
   );
 }
 
-/**
- * Citations are evidence, and evidence is the thing a lawyer checks in court.
- *
- * The audit found this rendered at 11px uppercase in `--text-muted`, with the
- * page reference at 10px mono — the smallest text on the analysis page, for the
- * most load-bearing content. It is now 13px, normal weight, with the source in
- * body ink and the locator in muted mono.
- */
-export default function AnalysisCitationList({ citations }) {
+export default function AnalysisCitationList({ citations, onOpenEvidence }) {
   const normalized = normalizeCitations(citations);
   if (normalized.length === 0) return null;
 
   return (
     <ul className="space-y-2" data-testid="citation-list">
       {normalized.map((citation, index) => {
+        const canOpenDrawer = Boolean(onOpenEvidence && citation.chunkId);
         const Body = (
           <>
             <span className="text-ink">{citation.line}</span>
@@ -97,9 +95,37 @@ export default function AnalysisCitationList({ citations }) {
 
         return (
           <li key={citation.key}>
-            <div className="flex items-baseline gap-2">
+            <div className="flex flex-wrap items-baseline gap-2">
               <span className="font-mono text-xs text-ink-muted">{index + 1}</span>
-              {citation.url ? (
+              {canOpenDrawer ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => onOpenEvidence({
+                      chunkId: citation.chunkId,
+                      docId: citation.docId,
+                      quote: citation.quote,
+                      fileName: citation.fileName,
+                      pageNumbers: citation.pageNumbers,
+                      url: citation.url,
+                    })}
+                    className="text-left text-sm text-ink hover:text-accent hover:underline"
+                  >
+                    <span>{citation.line}</span>
+                    <span className="ml-2 text-xs font-medium text-accent">Prikaži u kontekstu</span>
+                  </button>
+                  {citation.url ? (
+                    <a
+                      href={citation.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-xs text-ink-muted hover:text-accent hover:underline"
+                    >
+                      Otvori izvor
+                    </a>
+                  ) : null}
+                </>
+              ) : citation.url ? (
                 <a
                   href={citation.url}
                   target="_blank"

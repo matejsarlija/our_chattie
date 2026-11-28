@@ -8,24 +8,24 @@ import NewAnalysisModal from '../NewAnalysisModal';
 import { useCourtAnalysisStream } from '../../../hooks/useCourtAnalysisStream';
 import { useSettings } from '../../../hooks/useSettings';
 
-const mockNavigate = jest.fn();
-const mockStreamCourtAnalysis = jest.fn();
+const mockNavigate = vi.fn();
+const mockStreamCourtAnalysis = vi.fn();
 
-jest.mock('react-router-dom', () => ({
+vi.mock('react-router-dom', () => ({
   __esModule: true,
   useNavigate: () => mockNavigate,
 }));
 
-jest.mock('../../../hooks/useCourtAnalysisStream', () => ({
-  useCourtAnalysisStream: jest.fn(),
+vi.mock('../../../hooks/useCourtAnalysisStream', () => ({
+  useCourtAnalysisStream: vi.fn(),
 }));
-jest.mock('../../../hooks/useSettings', () => ({
-  useSettings: jest.fn(),
+vi.mock('../../../hooks/useSettings', () => ({
+  useSettings: vi.fn(),
 }));
 
 describe('NewAnalysisModal', () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
     useSettings.mockReturnValue({ settings: { defaultScanDepth: 'balanced' } });
     useCourtAnalysisStream.mockReturnValue({
       isLoading: false,
@@ -35,13 +35,13 @@ describe('NewAnalysisModal', () => {
 
   test('uses the saved scan depth when opening a new analysis', () => {
     useSettings.mockReturnValue({ settings: { defaultScanDepth: 'full' } });
-    render(<NewAnalysisModal isOpen onClose={jest.fn()} />);
+    render(<NewAnalysisModal isOpen onClose={vi.fn()} />);
 
     expect(screen.getByLabelText(/dubina pretrage/i)).toHaveValue('full');
   });
 
   test('blocks an empty query before submit', async () => {
-    render(<NewAnalysisModal isOpen onClose={jest.fn()} />);
+    render(<NewAnalysisModal isOpen onClose={vi.fn()} />);
 
     fireEvent.click(screen.getByRole('button', { name: /pokreni/i }));
 
@@ -53,7 +53,7 @@ describe('NewAnalysisModal', () => {
   });
 
   test('focuses the query field and closes with Escape', () => {
-    const onClose = jest.fn();
+    const onClose = vi.fn();
     render(
       <>
         <button type="button">Otvori analizu</button>
@@ -68,7 +68,7 @@ describe('NewAnalysisModal', () => {
 
 
   test('navigates to detail when the 202 response includes analysisId', async () => {
-    const onClose = jest.fn();
+    const onClose = vi.fn();
     mockStreamCourtAnalysis.mockResolvedValue({ analysisId: 'run-123', status: 'queued' });
 
     render(<NewAnalysisModal isOpen onClose={onClose} />);
@@ -87,7 +87,7 @@ describe('NewAnalysisModal', () => {
     'passes the query unchanged to streamCourtAnalysis: %s',
     async (query) => {
       mockStreamCourtAnalysis.mockResolvedValue(undefined);
-      render(<NewAnalysisModal isOpen onClose={jest.fn()} />);
+      render(<NewAnalysisModal isOpen onClose={vi.fn()} />);
 
       fireEvent.change(screen.getByLabelText('Upit'), { target: { value: query } });
       fireEvent.click(screen.getByRole('button', { name: /pokreni/i }));
@@ -103,7 +103,7 @@ describe('NewAnalysisModal', () => {
   test('threads the selected scan depth into the stream request', async () => {
     mockStreamCourtAnalysis.mockResolvedValue(undefined);
 
-    render(<NewAnalysisModal isOpen onClose={jest.fn()} />);
+    render(<NewAnalysisModal isOpen onClose={vi.fn()} />);
 
     fireEvent.change(screen.getByLabelText('Upit'), { target: { value: '12345678901' } });
     fireEvent.change(screen.getByLabelText(/dubina pretrage/i), { target: { value: 'full' } });
@@ -123,7 +123,7 @@ describe('NewAnalysisModal', () => {
       callbacks.onError('Neuspjelo pokretanje analize.', { status: 500 });
     });
 
-    render(<NewAnalysisModal isOpen onClose={jest.fn()} />);
+    render(<NewAnalysisModal isOpen onClose={vi.fn()} />);
 
     fireEvent.change(screen.getByLabelText('Upit'), { target: { value: '12345678901' } });
     fireEvent.click(screen.getByRole('button', { name: /pokreni/i }));

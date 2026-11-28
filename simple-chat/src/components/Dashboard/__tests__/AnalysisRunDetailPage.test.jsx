@@ -7,42 +7,64 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import AnalysisRunDetailPage from '../AnalysisRunDetailPage';
 import { useAnalysisRunDetail } from '../../../hooks/useAnalysisRunDetail';
 import { useAnalysisEvents } from '../../../hooks/useAnalysisEvents';
-import { apiFetch } from '../../../lib/apiClient';
+import { retryAnalysisReport } from '../../../lib/apiClient';
 
-jest.mock('../../../hooks/useAnalysisRunDetail', () => ({
-  useAnalysisRunDetail: jest.fn(),
+vi.mock('../../../hooks/useAnalysisRunDetail', () => ({
+  useAnalysisRunDetail: vi.fn(),
 }));
 
-jest.mock('../../../hooks/useAnalysisEvents', () => ({
-  useAnalysisEvents: jest.fn(),
+vi.mock('../../../hooks/useAnalysisEvents', () => ({
+  useAnalysisEvents: vi.fn(),
 }));
 
-jest.mock('../../../lib/env', () => ({
+vi.mock('../../../lib/env', () => ({
   env: {
     analysisDetailSseEnabled: false,
   },
 }));
 
-jest.mock('../../../lib/apiClient', () => ({
-  apiFetch: jest.fn(),
+vi.mock('../../../lib/apiClient', () => ({
+  apiFetch: vi.fn(),
+  retryAnalysisReport: vi.fn(),
+  cancelAnalysisRun: vi.fn(),
+  getRunChunk: vi.fn(),
+  searchRunChunks: vi.fn(),
+  getRunFacts: vi.fn().mockResolvedValue({ facts: [], total: 0 }),
+  listRunTraces: vi.fn().mockResolvedValue({ traces: [], total: 0 }),
+  getRunTrace: vi.fn(),
+  getChangeDetectionHistory: vi.fn().mockResolvedValue({ snapshots: [], diffs: [] }),
+  runChangeDetectionCheck: vi.fn(),
   resolveApiUrl: (url) => url,
 }));
 
-jest.mock('../DashboardShell', () => ({
+vi.mock('../DashboardShell', () => ({
   __esModule: true,
   default: ({ children }) => <div data-testid="dashboard-shell">{children}</div>,
 }));
 
 
-jest.mock('react-router-dom', () => ({
-  __esModule: true,
-  Link: ({ children, to }) => <a href={to}>{children}</a>,
-  useParams: () => ({ id: 'run-1' }),
-}));
+vi.mock('react-router-dom', async () => {
+  const ReactActual = await import('react');
+  return {
+    __esModule: true,
+    Link: ({ children, to }) => <a href={to}>{children}</a>,
+    useNavigate: () => vi.fn(),
+    useParams: () => ({ id: 'run-1' }),
+    useSearchParams: () => {
+      const [params, setParams] = ReactActual.useState(() => new URLSearchParams(globalThis.location.search));
+      const update = (next) => {
+        const resolved = typeof next === 'function' ? next(params) : next;
+        setParams(new URLSearchParams(resolved));
+      };
+      return [params, update];
+    },
+  };
+});
 
 describe('AnalysisRunDetailPage metadata modules', () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
+    window.history.replaceState({}, '', '/dashboard/runs/run-1');
 
     useAnalysisEvents.mockReturnValue({
       timeline: [],
@@ -76,13 +98,14 @@ describe('AnalysisRunDetailPage metadata modules', () => {
       isRunning: false,
       connectionMode: 'idle',
       lastUpdatedAt: '2026-02-27T12:00:00.000Z',
-      refresh: jest.fn(),
+      refresh: vi.fn(),
     });
   });
 
   test('renders per-entry metadata cards with naziv objave and broj predmeta', () => {
     render(<AnalysisRunDetailPage />);
 
+    fireEvent.click(screen.getByRole('tab', { name: /Kronologija i spisi/i }));
     fireEvent.click(screen.getByRole('button', { name: /Povezane objave/i }));
     expect(screen.getByText('Naziv objave')).toBeInTheDocument();
     expect(screen.getByText('Objava 14/2026 - Stecaj duznika')).toBeInTheDocument();
@@ -93,6 +116,7 @@ describe('AnalysisRunDetailPage metadata modules', () => {
   test('derives ID objave from detailLink when entryDisplayId is missing', () => {
     render(<AnalysisRunDetailPage />);
 
+    fireEvent.click(screen.getByRole('tab', { name: /Kronologija i spisi/i }));
     fireEvent.click(screen.getByRole('button', { name: /Povezane objave/i }));
     expect(screen.getByText('ID objave')).toBeInTheDocument();
     expect(screen.getByText('128734')).toBeInTheDocument();
@@ -125,16 +149,17 @@ describe('AnalysisRunDetailPage metadata modules', () => {
       isRunning: false,
       connectionMode: 'idle',
       lastUpdatedAt: '2026-02-27T12:00:00.000Z',
-      refresh: jest.fn(),
+      refresh: vi.fn(),
     });
 
     render(<AnalysisRunDetailPage />);
 
+    fireEvent.click(screen.getByRole('tab', { name: /Kronologija i spisi/i }));
     fireEvent.click(screen.getByRole('button', { name: /Povezane objave/i }));
     expect(screen.getByText('EXTERNAL-ID-42')).toBeInTheDocument();
   });
 
-  test('collapses docket metadata by default and renders it below the report annex', () => {
+  test('collapses docket metadata by default inside the timeline tab', () => {
     useAnalysisRunDetail.mockReturnValue({
       run: {
         id: 'run-1',
@@ -163,20 +188,19 @@ describe('AnalysisRunDetailPage metadata modules', () => {
       isRunning: false,
       connectionMode: 'idle',
       lastUpdatedAt: '2026-02-27T12:00:00.000Z',
-      refresh: jest.fn(),
+      refresh: vi.fn(),
     });
 
-    const { container } = render(<AnalysisRunDetailPage />);
+    render(<AnalysisRunDetailPage />);
+
+    // Overview tab shows Prilozi analize
+    expect(screen.getByText('Prilozi analize')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('tab', { name: /Kronologija i spisi/i }));
 
     // Collapsed: toggle visible, inner cards hidden.
     expect(screen.getByRole('button', { name: /Povezane objave/i })).toBeInTheDocument();
     expect(screen.queryByText('Objava 14/2026 - Stecaj duznika')).not.toBeInTheDocument();
-
-    // Below the synthesized report: metadata section comes after the annex.
-    const annexIndex = container.textContent.indexOf('Prilozi analize');
-    const metadataIndex = container.textContent.indexOf('Povezane objave');
-    expect(annexIndex).toBeGreaterThanOrEqual(0);
-    expect(metadataIndex).toBeGreaterThan(annexIndex);
 
     fireEvent.click(screen.getByRole('button', { name: /Povezane objave/i }));
     expect(screen.getByText('Objava 14/2026 - Stecaj duznika')).toBeInTheDocument();
@@ -205,7 +229,7 @@ describe('AnalysisRunDetailPage metadata modules', () => {
       isRunning: false,
       connectionMode: 'idle',
       lastUpdatedAt: '2026-02-27T12:00:00.000Z',
-      refresh: jest.fn(),
+      refresh: vi.fn(),
     });
 
     const { container } = render(<AnalysisRunDetailPage />);
@@ -267,21 +291,18 @@ describe('AnalysisRunDetailPage metadata modules', () => {
       isRunning: false,
       connectionMode: 'idle',
       lastUpdatedAt: '2026-02-27T12:00:00.000Z',
-      refresh: jest.fn(),
+      refresh: vi.fn(),
     });
 
     const { container } = render(<AnalysisRunDetailPage />);
     const text = container.textContent;
-    // Coverage and scope lead the answer column (the trust gate comes before
-    // the money); the reasoning trace now lives in the right rail, which in DOM
-    // order follows the whole answer column.
+    // Overview tab: coverage and scope lead the answer column; the reasoning
+    // trace lives in the right rail.
     const order = [
       'Sažetak predmeta',
       'Pokrivenost analize',
       'Opseg analize',
-      'Novčane stavke',
       'Konflikti i pitanja',
-      'Najnoviji postupovni korak',
       'Prilozi analize',
       'Telemetrija zaključivanja',
     ].map((heading) => ({ heading, index: text.indexOf(heading) }));
@@ -290,12 +311,19 @@ describe('AnalysisRunDetailPage metadata modules', () => {
     }
     const indexes = order.map((entry) => entry.index);
     expect([...indexes].sort((a, b) => a - b)).toEqual(indexes);
-    expect(screen.getByText('2026-06-23 — Najnoviji korak.')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Rješenje.pdf' })).toHaveAttribute(
       'href',
       'https://court.example.test/rjesenje.pdf',
     );
     expect(screen.getAllByText('Determinističko usklađivanje')).toHaveLength(2);
+
+    // Flows tab shows financial/property entries
+    fireEvent.click(screen.getByRole('tab', { name: /Tražbine i imovina/i }));
+    expect(screen.getAllByText('Novčane stavke').length).toBeGreaterThan(0);
+
+    // Timeline tab shows latest procedural step
+    fireEvent.click(screen.getByRole('tab', { name: /Kronologija i spisi/i }));
+    expect(screen.getByText('2026-06-23 — Najnoviji korak.')).toBeInTheDocument();
   });
 
   test('renders Predmet label for case-number query runs', () => {
@@ -316,7 +344,7 @@ describe('AnalysisRunDetailPage metadata modules', () => {
       isRunning: false,
       connectionMode: 'idle',
       lastUpdatedAt: '2026-02-27T12:00:00.000Z',
-      refresh: jest.fn(),
+      refresh: vi.fn(),
     });
 
     render(<AnalysisRunDetailPage />);
@@ -342,7 +370,7 @@ describe('AnalysisRunDetailPage metadata modules', () => {
       isRunning: false,
       connectionMode: 'idle',
       lastUpdatedAt: '2026-02-27T12:00:00.000Z',
-      refresh: jest.fn(),
+      refresh: vi.fn(),
     });
 
     render(<AnalysisRunDetailPage />);
@@ -368,7 +396,7 @@ describe('AnalysisRunDetailPage metadata modules', () => {
       isRunning: false,
       connectionMode: 'idle',
       lastUpdatedAt: '2026-02-27T12:00:00.000Z',
-      refresh: jest.fn(),
+      refresh: vi.fn(),
     });
 
     render(<AnalysisRunDetailPage />);
@@ -394,7 +422,7 @@ describe('AnalysisRunDetailPage metadata modules', () => {
       isRunning: false,
       connectionMode: 'idle',
       lastUpdatedAt: '2026-02-27T12:00:00.000Z',
-      refresh: jest.fn(),
+      refresh: vi.fn(),
     });
 
     render(<AnalysisRunDetailPage />);
@@ -432,23 +460,23 @@ describe('AnalysisRunDetailPage metadata modules', () => {
       isRunning: false,
       connectionMode: 'idle',
       lastUpdatedAt: '2026-02-27T12:00:00.000Z',
-      refresh: jest.fn(),
+      refresh: vi.fn(),
     });
 
     render(<AnalysisRunDetailPage />);
 
     expect(screen.getByText('Nalazi')).toBeInTheDocument();
     expect(screen.getByText('Utvrden je kontinuitet postupanja.')).toBeInTheDocument();
-    // Chronology is owned by CaseTimeline, NOT duplicated inside the annex.
-    expect(screen.getByTestId('case-timeline')).toBeInTheDocument();
-    expect(screen.queryByText('Vremenska crta')).not.toBeInTheDocument();
-    expect(screen.getByText('Otvoren postupak.')).toBeInTheDocument();
-    // CaseTimeline human-formats the ISO date-only string via the shared
-    // formatDate (hr-HR, dateStyle medium -> abbreviated month).
-    expect(screen.getByText('10. sij 2026.')).toBeInTheDocument();
     // TU-1: conflicts live in the merged severity-ranked risk list now.
     expect(screen.getByText('Konflikti i pitanja')).toBeInTheDocument();
     expect(screen.getByText('Nesklad u navodu o datumu dospijeca.')).toBeInTheDocument();
+
+    // Chronology is owned by CaseTimeline in the Kronologija i spisi tab.
+    fireEvent.click(screen.getByRole('tab', { name: /Kronologija i spisi/i }));
+    expect(screen.getByTestId('case-timeline')).toBeInTheDocument();
+    expect(screen.queryByText('Vremenska crta')).not.toBeInTheDocument();
+    expect(screen.getByText('Otvoren postupak.')).toBeInTheDocument();
+    expect(screen.getByText('10. sij 2026.')).toBeInTheDocument();
   });
 
   test('renders open questions section when report includes open_questions', () => {
@@ -474,7 +502,7 @@ describe('AnalysisRunDetailPage metadata modules', () => {
       isRunning: false,
       connectionMode: 'idle',
       lastUpdatedAt: '2026-02-27T12:00:00.000Z',
-      refresh: jest.fn(),
+      refresh: vi.fn(),
     });
 
     render(<AnalysisRunDetailPage />);
@@ -508,7 +536,7 @@ describe('AnalysisRunDetailPage metadata modules', () => {
       isRunning: false,
       connectionMode: 'idle',
       lastUpdatedAt: '2026-02-27T12:00:00.000Z',
-      refresh: jest.fn(),
+      refresh: vi.fn(),
     });
 
     render(<AnalysisRunDetailPage />);
@@ -535,7 +563,7 @@ describe('AnalysisRunDetailPage metadata modules', () => {
       isRunning: false,
       connectionMode: 'idle',
       lastUpdatedAt: '2026-02-27T12:00:00.000Z',
-      refresh: jest.fn(),
+      refresh: vi.fn(),
     });
 
     render(<AnalysisRunDetailPage />);
@@ -563,7 +591,7 @@ describe('AnalysisRunDetailPage metadata modules', () => {
       isRunning: false,
       connectionMode: 'idle',
       lastUpdatedAt: '2026-02-27T12:00:00.000Z',
-      refresh: jest.fn(),
+      refresh: vi.fn(),
     });
 
     render(<AnalysisRunDetailPage />);
@@ -617,20 +645,20 @@ describe('AnalysisRunDetailPage metadata modules', () => {
       isRunning: false,
       connectionMode: 'idle',
       lastUpdatedAt: '2026-02-27T12:00:00.000Z',
-      refresh: jest.fn(),
+      refresh: vi.fn(),
     });
 
     render(<AnalysisRunDetailPage />);
 
-    expect(screen.getAllByTestId('citation-list').length).toBeGreaterThanOrEqual(2);
+    expect(screen.getAllByTestId('citation-list').length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText('Stecajni spis | Rjesenje.pdf | str. 3')).toBeInTheDocument();
-    expect(screen.getByText('Objava | odlomak 2')).toBeInTheDocument();
     const sourceLink = screen.getByRole('link', { name: /Otvori izvor/ });
     expect(sourceLink).toHaveAttribute('href', 'https://example.com/rjesenje.pdf');
-    // the citation line is part of the link's accessible name, so a screen
-    // reader hears the source and the page, not just "open source"
     expect(sourceLink).toHaveAccessibleName(/Stecajni spis/);
     expect(sourceLink).toHaveAccessibleName(/str\. 3/);
+
+    fireEvent.click(screen.getByRole('tab', { name: /Kronologija i spisi/i }));
+    expect(screen.getByText('Objava | odlomak 2')).toBeInTheDocument();
   });
 
   test('handles invalid citation arrays safely', () => {
@@ -659,7 +687,7 @@ describe('AnalysisRunDetailPage metadata modules', () => {
       isRunning: false,
       connectionMode: 'idle',
       lastUpdatedAt: '2026-02-27T12:00:00.000Z',
-      refresh: jest.fn(),
+      refresh: vi.fn(),
     });
 
     render(<AnalysisRunDetailPage />);
@@ -709,7 +737,7 @@ describe('AnalysisRunDetailPage metadata modules', () => {
       isRunning: false,
       connectionMode: 'idle',
       lastUpdatedAt: '2026-02-27T12:00:00.000Z',
-      refresh: jest.fn(),
+      refresh: vi.fn(),
     });
 
     render(<AnalysisRunDetailPage />);
@@ -753,7 +781,7 @@ describe('AnalysisRunDetailPage metadata modules', () => {
       isRunning: false,
       connectionMode: 'idle',
       lastUpdatedAt: '2026-02-27T12:00:00.000Z',
-      refresh: jest.fn(),
+      refresh: vi.fn(),
     });
 
     render(<AnalysisRunDetailPage />);
@@ -794,7 +822,7 @@ describe('AnalysisRunDetailPage metadata modules', () => {
       isRunning: false,
       connectionMode: 'idle',
       lastUpdatedAt: '2026-02-27T12:00:00.000Z',
-      refresh: jest.fn(),
+      refresh: vi.fn(),
     });
 
     render(<AnalysisRunDetailPage />);
@@ -826,7 +854,7 @@ describe('AnalysisRunDetailPage metadata modules', () => {
       isRunning: false,
       connectionMode: 'idle',
       lastUpdatedAt: '2026-02-27T12:00:00.000Z',
-      refresh: jest.fn(),
+      refresh: vi.fn(),
     });
 
     render(<AnalysisRunDetailPage />);
@@ -853,7 +881,7 @@ describe('AnalysisRunDetailPage metadata modules', () => {
       isRunning: false,
       connectionMode: 'idle',
       lastUpdatedAt: '2026-02-27T12:00:00.000Z',
-      refresh: jest.fn(),
+      refresh: vi.fn(),
     });
 
     render(<AnalysisRunDetailPage />);
@@ -893,12 +921,13 @@ describe('AnalysisRunDetailPage metadata modules', () => {
       isRunning: false,
       connectionMode: 'idle',
       lastUpdatedAt: '2026-02-27T12:00:00.000Z',
-      refresh: jest.fn(),
+      refresh: vi.fn(),
     });
 
     render(<AnalysisRunDetailPage />);
 
     expect(screen.getByText(/Djelomični rezultati su sačuvani/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('tab', { name: /Kronologija i spisi/i }));
     fireEvent.click(screen.getByRole('button', { name: /Povezane objave/i }));
     expect(screen.getByText('Objava 14/2026 - Stecaj duznika')).toBeInTheDocument();
     expect(screen.getAllByText('St-357/2013').length).toBeGreaterThan(0);
@@ -921,7 +950,7 @@ describe('AnalysisRunDetailPage metadata modules', () => {
       isRunning: false,
       connectionMode: 'idle',
       lastUpdatedAt: '2026-02-27T12:00:00.000Z',
-      refresh: jest.fn(),
+      refresh: vi.fn(),
     });
 
     render(<AnalysisRunDetailPage />);
@@ -969,11 +998,12 @@ describe('AnalysisRunDetailPage metadata modules', () => {
       isRunning: false,
       connectionMode: 'idle',
       lastUpdatedAt: '2026-02-27T12:00:00.000Z',
-      refresh: jest.fn(),
+      refresh: vi.fn(),
     });
 
     render(<AnalysisRunDetailPage />);
 
+    fireEvent.click(screen.getByRole('tab', { name: /Kronologija i spisi/i }));
     expect(screen.getByText('Ostali pronađeni predmeti')).toBeInTheDocument();
     expect(screen.getByText('Povrv-297/2020')).toBeInTheDocument();
     expect(screen.getByText('P-170/2023')).toBeInTheDocument();
@@ -1006,11 +1036,12 @@ describe('AnalysisRunDetailPage metadata modules', () => {
       isRunning: false,
       connectionMode: 'idle',
       lastUpdatedAt: '2026-02-27T12:00:00.000Z',
-      refresh: jest.fn(),
+      refresh: vi.fn(),
     });
 
     render(<AnalysisRunDetailPage />);
 
+    fireEvent.click(screen.getByRole('tab', { name: /Kronologija i spisi/i }));
     expect(screen.getByText('Ostali pronađeni predmeti')).toBeInTheDocument();
     expect(screen.getByText('ST-200/2021')).toBeInTheDocument();
     expect(screen.queryByText('ST-100/2023')).not.toBeInTheDocument();
@@ -1044,7 +1075,7 @@ describe('AnalysisRunDetailPage metadata modules', () => {
       isRunning: false,
       connectionMode: 'idle',
       lastUpdatedAt: '2026-02-27T12:00:00.000Z',
-      refresh: jest.fn(),
+      refresh: vi.fn(),
     });
 
     render(<AnalysisRunDetailPage />);
@@ -1093,7 +1124,7 @@ describe('AnalysisRunDetailPage metadata modules', () => {
       isRunning: false,
       connectionMode: 'idle',
       lastUpdatedAt: '2026-02-27T12:00:00.000Z',
-      refresh: jest.fn(),
+      refresh: vi.fn(),
     });
 
     render(<AnalysisRunDetailPage />);
@@ -1124,7 +1155,7 @@ describe('AnalysisRunDetailPage metadata modules', () => {
       isRunning: false,
       connectionMode: 'idle',
       lastUpdatedAt: '2026-02-27T12:00:00.000Z',
-      refresh: jest.fn(),
+      refresh: vi.fn(),
     });
 
     render(<AnalysisRunDetailPage />);
@@ -1152,7 +1183,7 @@ describe('AnalysisRunDetailPage metadata modules', () => {
       isRunning: false,
       connectionMode: 'idle',
       lastUpdatedAt: '2026-02-27T12:00:00.000Z',
-      refresh: jest.fn(),
+      refresh: vi.fn(),
     });
 
     render(<AnalysisRunDetailPage />);
@@ -1176,7 +1207,7 @@ describe('AnalysisRunDetailPage report retry', () => {
   };
 
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
     useAnalysisEvents.mockReturnValue({
       timeline: [],
       stages: [],
@@ -1197,7 +1228,7 @@ describe('AnalysisRunDetailPage report retry', () => {
       isRunning,
       connectionMode: 'idle',
       lastUpdatedAt: '2026-02-27T12:00:00.000Z',
-      refresh: jest.fn(),
+      refresh: vi.fn(),
     });
   }
 
@@ -1226,8 +1257,8 @@ describe('AnalysisRunDetailPage report retry', () => {
   });
 
   test('posts to the retry endpoint and refreshes on success', async () => {
-    const refresh = jest.fn();
-    apiFetch.mockResolvedValue({ run: baseRun });
+    const refresh = vi.fn();
+    retryAnalysisReport.mockResolvedValue({ run: baseRun });
     useAnalysisRunDetail.mockReturnValue({
       run: baseRun,
       events: [],
@@ -1244,13 +1275,13 @@ describe('AnalysisRunDetailPage report retry', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Ponovi izradu izvještaja' }));
 
     await waitFor(() => {
-      expect(apiFetch).toHaveBeenCalledWith('/api/analysis/runs/run-1/report', { method: 'POST' });
+      expect(retryAnalysisReport).toHaveBeenCalledWith('run-1');
       expect(refresh).toHaveBeenCalled();
     });
   });
 
   test('shows the server error inline when the retry fails', async () => {
-    apiFetch.mockRejectedValue(new Error('Analiza nije uspjela.'));
+    retryAnalysisReport.mockRejectedValue(new Error('Analiza nije uspjela.'));
     mockDetail(baseRun);
     render(<AnalysisRunDetailPage />);
 
@@ -1259,5 +1290,48 @@ describe('AnalysisRunDetailPage report retry', () => {
     await waitFor(() => {
       expect(screen.getByText('Analiza nije uspjela.')).toBeInTheDocument();
     });
+  });
+
+  test('renders deterministic_fallback warning callout with primary AI upgrade button', async () => {
+    retryAnalysisReport.mockResolvedValue({ run: baseRun });
+    const fallbackRun = {
+      ...baseRun,
+      status: 'partial',
+      result_json: {
+        ...baseRun.result_json,
+        report: {
+          generationMode: 'deterministic_fallback',
+          fallbackReason: 'OpenRouter krediti su privremeno iscrpljeni (HTTP 402).',
+          narrative: 'Deterministički sažetak.',
+          findings: [],
+        },
+      },
+    };
+    mockDetail(fallbackRun);
+    render(<AnalysisRunDetailPage />);
+
+    expect(screen.getByText('Prikazan je deterministički sažetak ($0)')).toBeInTheDocument();
+    expect(screen.getByText('OpenRouter krediti su privremeno iscrpljeni (HTTP 402).')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Izradi potpuni AI izvještaj' }));
+    await waitFor(() => {
+      expect(retryAnalysisReport).toHaveBeenCalledWith('run-1');
+    });
+  });
+
+  test('supports 5-tab navigation, ?tab= deep link, and Ispis sažetka print action', () => {
+    window.history.replaceState({}, '', '/dashboard/runs/run-1?tab=search');
+    const printSpy = vi.spyOn(window, 'print').mockImplementation(() => {});
+    mockDetail(baseRun);
+
+    render(<AnalysisRunDetailPage />);
+    expect(screen.getByTestId('docket-search-panel')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Stranke i vjerovnici' }));
+    expect(screen.getByTestId('entities-explorer')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Ispis sažetka' }));
+    expect(printSpy).toHaveBeenCalledTimes(1);
+    printSpy.mockRestore();
   });
 });

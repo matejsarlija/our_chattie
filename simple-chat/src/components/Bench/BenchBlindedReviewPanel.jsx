@@ -1,5 +1,15 @@
 import { useState } from 'react';
+import Badge from '../ui/Badge';
+import Button from '../ui/Button';
 import Callout from '../ui/Callout';
+import Input from '../ui/Input';
+
+function countCandidateMetrics(text) {
+  const str = String(text || '');
+  const chars = str.length;
+  const lines = str ? str.split('\n').length : 0;
+  return { chars, lines };
+}
 
 export default function BenchBlindedReviewPanel({ review, onLoadReview, onSubmitVerdicts }) {
   const [verdicts, setVerdicts] = useState({});
@@ -33,23 +43,24 @@ export default function BenchBlindedReviewPanel({ review, onLoadReview, onSubmit
   };
 
   return (
-    <section aria-labelledby="blinded-review-heading" className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-5">
-      <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+    <section aria-labelledby="blinded-review-heading" className="card p-5">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 id="blinded-review-heading" className="text-base font-semibold text-[var(--text)]">
+          <h2 id="blinded-review-heading" className="text-base font-semibold text-ink">
             Slijepa JSON recenzija (Blinded Review)
           </h2>
-          <p className="text-xs text-[var(--text-muted)]">
+          <p className="text-xs text-ink-muted">
             Usporedba anonimiziranih izlaza bez oznaka modela.
           </p>
         </div>
-        <button
+        <Button
           type="button"
+          variant="secondary"
+          size="sm"
           onClick={() => onLoadReview?.(3, 7)}
-          className="rounded-lg border border-[var(--border-control)] px-3 py-1.5 text-sm font-medium text-[var(--text)] hover:bg-[var(--surface-muted)]"
         >
           Učitaj uzorak za recenziju
-        </button>
+        </Button>
       </div>
 
       {error ? <Callout tone="danger" alert title="Greška recenzije">{error}</Callout> : null}
@@ -60,62 +71,87 @@ export default function BenchBlindedReviewPanel({ review, onLoadReview, onSubmit
       ) : null}
 
       {!review ? (
-        <p className="text-sm text-[var(--text-muted)]">Kliknite gumb iznad za generiranje anonimiziranog uzorka.</p>
+        <p className="text-sm text-ink-muted">Kliknite gumb iznad za generiranje anonimiziranog uzorka.</p>
       ) : items.length === 0 ? (
-        <p className="text-sm text-[var(--text-muted)]">Nema kandidata za recenziju u ovom izvođenju.</p>
+        <p className="text-sm text-ink-muted">Nema kandidata za recenziju u ovom izvođenju.</p>
       ) : (
         <form onSubmit={handleSubmit} className="space-y-4">
           {items.map((item) => (
-            <div key={item.docId} className="rounded-lg border border-[var(--border)] p-4 space-y-3">
+            <div key={item.docId} className="space-y-3 rounded-lg border border-line p-4">
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <h3 className="text-sm font-semibold text-[var(--text)]">{item.title || item.docId}</h3>
-                <span className="text-xs text-[var(--text-muted)]">
-                  {(item.selectionReasons || []).join(' · ')}
-                </span>
+                <h3 className="text-sm font-semibold text-ink">{item.title || item.docId}</h3>
+                {Array.isArray(item.selectionReasons) && item.selectionReasons.length > 0 ? (
+                  <span className="text-xs text-ink-muted">
+                    {item.selectionReasons.join(' · ')}
+                  </span>
+                ) : null}
               </div>
+
               <div className="grid gap-3 md:grid-cols-2">
-                {(item.candidates || []).map((cand) => (
-                  <div key={cand.label} className="rounded border border-[var(--border)] bg-[var(--surface-muted)] p-3">
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-xs font-semibold text-[var(--text)]">Kandidat {cand.label}</span>
-                      <label className="inline-flex items-center gap-1.5 text-xs text-[var(--text)]">
-                        <input
-                          type="radio"
-                          name={`winner-${item.docId}`}
-                          value={cand.label}
-                          checked={verdicts[item.docId]?.winner === cand.label}
-                          onChange={() => handleSelect(item.docId, cand.label)}
-                        />
-                        Bolji izlaz
-                      </label>
+                {(item.candidates || []).map((cand) => {
+                  const metrics = countCandidateMetrics(cand.text);
+                  return (
+                    <div key={cand.label} className="rounded-md border border-line bg-surface-muted p-3">
+                      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-semibold text-ink">Kandidat {cand.label}</span>
+                          <Badge tone="neutral" className="px-2 py-0.5 font-mono text-xs tabular-nums">
+                            {metrics.chars} zn. · {metrics.lines} red.
+                          </Badge>
+                        </div>
+                        <label className="inline-flex items-center gap-1.5 text-xs text-ink">
+                          <input
+                            type="radio"
+                            name={`winner-${item.docId}`}
+                            value={cand.label}
+                            checked={verdicts[item.docId]?.winner === cand.label}
+                            onChange={() => handleSelect(item.docId, cand.label)}
+                          />
+                          Bolji izlaz
+                        </label>
+                      </div>
+                      <pre className="max-h-48 overflow-auto whitespace-pre-wrap font-mono text-xs text-ink-muted">
+                        {cand.text || '(prazno)'}
+                      </pre>
                     </div>
-                    <pre className="max-h-48 overflow-auto whitespace-pre-wrap text-xs text-[var(--text-muted)]">
-                      {cand.text || '(prazno)'}
-                    </pre>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
+
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-line bg-surface px-3 py-2">
+                <label className="inline-flex items-center gap-2 text-xs font-medium text-ink">
+                  <input
+                    type="radio"
+                    name={`winner-${item.docId}`}
+                    value="tie"
+                    checked={verdicts[item.docId]?.winner === 'tie'}
+                    onChange={() => handleSelect(item.docId, 'tie')}
+                  />
+                  Jednako / Neodlučno
+                </label>
+              </div>
+
               <div>
-                <label htmlFor={`note-${item.docId}`} className="block text-xs text-[var(--text-muted)] mb-1">
+                <label htmlFor={`note-${item.docId}`} className="mb-1 block text-xs text-ink-muted">
                   Napomena recenzenta
                 </label>
-                <input
+                <Input
                   id={`note-${item.docId}`}
                   type="text"
                   value={verdicts[item.docId]?.notes || ''}
                   onChange={(e) => handleNotes(item.docId, e.target.value)}
-                  className="w-full rounded border border-[var(--border-control)] bg-[var(--surface)] px-2.5 py-1.5 text-xs text-[var(--text)]"
+                  className="text-xs"
                 />
               </div>
             </div>
           ))}
-          <button
+          <Button
             type="submit"
+            variant="primary"
             disabled={submitting || Object.keys(verdicts).length === 0}
-            className="rounded-lg bg-[var(--accent)] px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
           >
             {submitting ? 'Spremam...' : 'Pošalji JSON recenziju'}
-          </button>
+          </Button>
         </form>
       )}
     </section>

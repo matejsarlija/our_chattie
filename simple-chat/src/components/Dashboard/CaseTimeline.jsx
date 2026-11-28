@@ -37,7 +37,7 @@ const getText = (item, keys) => {
   return '';
 };
 
-export default function CaseTimeline({ timeline }) {
+export default function CaseTimeline({ timeline, onOpenEvidence }) {
   const [page, setPage] = useState(0);
   const events = Array.isArray(timeline) ? timeline : [];
   if (events.length === 0) return null;
@@ -90,7 +90,7 @@ export default function CaseTimeline({ timeline }) {
                 </p>
                 {citations.length > 0 ? (
                   <div className="mt-1.5">
-                    <AnalysisCitationList citations={citations} />
+                    <AnalysisCitationList citations={citations} onOpenEvidence={onOpenEvidence} />
                   </div>
                 ) : null}
               </div>

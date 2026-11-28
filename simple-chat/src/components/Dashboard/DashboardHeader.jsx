@@ -1,9 +1,16 @@
-import { Link, useNavigate } from 'react-router-dom';
-import SettingsPopover from './SettingsPopover';
+import { Link, NavLink, useNavigate } from 'react-router-dom';
+import Button from '../ui/Button';
+import { cn } from '../../lib/utils';
+
+const navLinkClass = ({ isActive }) => cn(
+  'rounded-md px-2.5 py-1.5 text-sm font-medium transition-colors',
+  isActive
+    ? 'bg-surface-muted text-ink'
+    : 'text-ink-muted hover:bg-surface-muted/60 hover:text-ink',
+);
 
 export default function DashboardHeader({ onOpenNewAnalysis }) {
   const navigate = useNavigate();
-
 
   const handleNewAnalysis = () => {
     if (onOpenNewAnalysis) {
@@ -14,53 +21,43 @@ export default function DashboardHeader({ onOpenNewAnalysis }) {
   };
 
   return (
-    <>
-      <div className="border-b border-[var(--border)] bg-[var(--surface)]/95 p-4 backdrop-blur">
-        <div className="max-w-6xl mx-auto flex justify-between items-center">
-          <div className="flex items-center gap-4">
-            <h1 className="text-[var(--text)] text-xl font-semibold tracking-tight">
-              <Link to="/dashboard">
-                Pravni Asistent
-              </Link>
-            </h1>
+    <header className="border-b border-line bg-surface/95 backdrop-blur">
+      <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-2.5">
+        <div className="flex items-center gap-6">
+          <div className="text-lg font-semibold tracking-tight text-ink sm:text-xl">
+            <Link to="/dashboard" className="hover:text-accent transition-colors">
+              Pravni Asistent
+            </Link>
           </div>
 
-          <div className="hidden lg:flex items-center gap-6">
-            <Link to="/dashboard" className="text-[var(--text-muted)] hover:text-[var(--text)] transition-colors">
+          <nav aria-label="Glavna navigacija" className="hidden lg:flex items-center gap-1">
+            <NavLink to="/dashboard" end className={navLinkClass}>
               Dashboard
-            </Link>
-            <Link to="/dashboard/bench" className="text-[var(--text-muted)] hover:text-[var(--text)] transition-colors">
+            </NavLink>
+            <NavLink to="/dashboard/bench" className={navLinkClass}>
               Bench
-            </Link>
-            <button
-              type="button"
-              onClick={handleNewAnalysis}
-              className="rounded-lg bg-[var(--accent)] px-3 py-1.5 text-sm text-white hover:opacity-90"
-            >
-              + Nova analiza
-            </button>
-            <SettingsPopover />
-            <Link to="/pravila-privatnosti" className="text-[var(--text-muted)] hover:text-[var(--text)] transition-colors">
-              Pravila privatnosti
-            </Link>
-            <Link to="/o-nama" className="text-[var(--text-muted)] hover:text-[var(--text)] transition-colors">
-              O nama
-            </Link>
-          </div>
+            </NavLink>
+          </nav>
+        </div>
 
-          <div className="lg:hidden ml-auto flex items-center gap-3">
-            <SettingsPopover />
-            <button
-              type="button"
-              onClick={handleNewAnalysis}
-              className="rounded-lg bg-[var(--accent)] px-3 py-1.5 text-sm text-white hover:opacity-90"
-            >
-              + Nova analiza
-            </button>
-          </div>
+        <div className="flex items-center gap-2">
+          <Button variant="primary" size="sm" onClick={handleNewAnalysis}>
+            + Nova analiza
+          </Button>
         </div>
       </div>
 
-    </>
+      <nav
+        aria-label="Mobilna navigacija"
+        className="flex items-center gap-1 border-t border-line px-4 py-1.5 lg:hidden"
+      >
+        <NavLink to="/dashboard" end className={navLinkClass}>
+          Dashboard
+        </NavLink>
+        <NavLink to="/dashboard/bench" className={navLinkClass}>
+          Bench
+        </NavLink>
+      </nav>
+    </header>
   );
 }

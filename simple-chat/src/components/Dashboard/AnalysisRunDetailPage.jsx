@@ -1,9 +1,11 @@
 import { useMemo, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useParams, useSearchParams } from "react-router-dom";
 
 import StatusBadge from "../ui/StatusBadge";
 import PipelinePhases from "../ui/PipelinePhases";
 import Callout from "../ui/Callout";
+import Button from "../ui/Button";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "../ui/Tabs";
 import RunEventTimeline from "./RunEventTimeline";
 import AnalysisActivityLog from "./AnalysisActivityLog";
 import AnalysisReportAnnex from './AnalysisReportAnnex';
@@ -14,18 +16,26 @@ import CaseTimeline from "./CaseTimeline";
 import AnalysisReasoningTelemetry from "./AnalysisReasoningTelemetry";
 import AnalysisCoverageBanner from "./AnalysisCoverageBanner";
 import AnalysisScopeCard from "./AnalysisScopeCard";
-import AnalysisDocumentParties from "./AnalysisDocumentParties";
+import AnalysisEntitiesExplorer from "./AnalysisEntitiesExplorer";
 import AnalysisFlowsSection from "./AnalysisFlowsSection";
 import AnalysisUsageSummary from "./AnalysisUsageSummary";
 import SecondaryClustersSection from "./SecondaryClustersSection";
+import DocketSearchPanel from "./DocketSearchPanel";
+import EvidenceDrawer from "./EvidenceDrawer";
+import ChangeDetectionControl, { ChangeDetectionNotice } from "./ChangeDetectionControl";
+import LiveRunControlBar from "./LiveRunControlBar";
+import RunTracesDrawer from "./RunTracesDrawer";
 import DashboardShell from "./DashboardShell";
 import { useAnalysisRunDetail } from "../../hooks/useAnalysisRunDetail";
 import { useAnalysisEvents } from "../../hooks/useAnalysisEvents";
-import { apiFetch } from "../../lib/apiClient";
+import { useEvidenceDrawer } from "../../hooks/useEvidenceDrawer";
+import { useChangeDetection } from "../../hooks/useChangeDetection";
+import { retryAnalysisReport } from "../../lib/apiClient";
 import { env } from "../../lib/env";
 import { formatDateTime } from "../ui/format";
 
 const METADATA_PAGE_SIZE = 10;
+const VALID_TABS = new Set(["overview", "parties", "flows", "timeline", "search"]);
 
 const parseMaybeJson = (value) => {
   if (!value) return null;
@@ -104,10 +114,25 @@ const getQueryLabel = (queryType) => {
 
 export default function AnalysisRunDetailPage() {
   const { id } = useParams();
-  const [showFullTimeline, setShowFullTimeline] = useState(false);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [showFullTimeline] = useState(false);
   const [showMetadata, setShowMetadata] = useState(false);
   const [metadataPage, setMetadataPage] = useState(0);
   const [retryState, setRetryState] = useState({ loading: false, error: "" });
+  const [tracesOpen, setTracesOpen] = useState(false);
+
+  const rawTab = searchParams.get("tab");
+  const activeTab = VALID_TABS.has(rawTab) ? rawTab : "overview";
+
+  const handleTabChange = (nextTab) => {
+    const next = new URLSearchParams(searchParams);
+    if (nextTab === "overview") {
+      next.delete("tab");
+    } else {
+      next.set("tab", nextTab);
+    }
+    setSearchParams(next, { replace: true });
+  };
 
   const {
     run,
@@ -116,15 +141,15 @@ export default function AnalysisRunDetailPage() {
     eventsLoading,
     error,
     isRunning,
-    connectionMode,
-    lastUpdatedAt,
     refresh,
   } = useAnalysisRunDetail({
     runId: id,
     streamEnabled: env.analysisDetailSseEnabled,
   });
 
-  const { timeline, stages, activity, isErrored, headerCounter, counterKnown } =
+  const evidenceDrawer = useEvidenceDrawer(id);
+
+  const { timeline, stages, activity, isErrored, headerCounter, counterKnown, lanes } =
     useAnalysisEvents(events);
   const timelineToRender = showFullTimeline ? timeline : timeline.slice(-2);
 
@@ -175,6 +200,8 @@ export default function AnalysisRunDetailPage() {
       reconciliation: pkg?.reconciliation || null,
     };
   }, [parsedResult]);
+  const flowEntryCount = Array.isArray(flows?.flows?.entries) ? flows.flows.entries.length : 0;
+  const hasFlowData = flowEntryCount > 0 || (Array.isArray(flows?.reconciliation?.valueChanges) && flows.reconciliation.valueChanges.length > 0);
   const sourceDocuments = useMemo(() => {
     const pkg = parsedResult?.clusterEvidencePackage;
     const analyses = Array.isArray(pkg?.analyses) ? pkg.analyses : [];
@@ -198,11 +225,24 @@ export default function AnalysisRunDetailPage() {
         };
       });
   }, [parsedResult]);
+  const legacyAnalyses = useMemo(
+    () => (Array.isArray(parsedResult?.clusterEvidencePackage?.analyses) ? parsedResult.clusterEvidencePackage.analyses : []),
+    [parsedResult],
+  );
+  const canonicalParties = useMemo(
+    () => (Array.isArray(parsedResult?.canonicalParties) ? parsedResult.canonicalParties : []),
+    [parsedResult?.canonicalParties],
+  );
+  const creditorDigest = useMemo(
+    () => parsedResult?.creditorDigest || report?.meta?.creditorDigest || null,
+    [parsedResult?.creditorDigest, report?.meta?.creditorDigest],
+  );
   const secondaryClusters = useMemo(
     () => getSecondaryClusters(parsedResult, run),
     [parsedResult, run],
   );
   const hasEvidencePackage = Boolean(parsedResult?.clusterEvidencePackage);
+  const isDeterministicFallback = !isRunning && report?.generationMode === "deterministic_fallback";
   const canRetryReport =
     !isRunning
     && !loading
@@ -213,7 +253,7 @@ export default function AnalysisRunDetailPage() {
     if (!canRetryReport || retryState.loading) return;
     setRetryState({ loading: true, error: "" });
     try {
-      await apiFetch(`/api/analysis/runs/${id}/report`, { method: "POST" });
+      await retryAnalysisReport(id);
       await refresh();
       setRetryState({ loading: false, error: "" });
     } catch (err) {
@@ -231,6 +271,12 @@ export default function AnalysisRunDetailPage() {
     () => run?.query_value || run?.oib || id,
     [run?.query_value, run?.oib, id],
   );
+  const changeDetection = useChangeDetection({
+    queryType: run?.query_type,
+    queryValue,
+    status: run?.status,
+    enabled: Boolean(run && !isRunning),
+  });
   const metadataEntries = useMemo(() => {
     const processedCases = getProcessedCasesFromParsedResult(parsedResult, run);
     return processedCases.map((processedCase, index) => {
@@ -251,51 +297,62 @@ export default function AnalysisRunDetailPage() {
 
   return (
     <DashboardShell>
-      <main className="mx-auto max-w-[1400px] px-6 py-8">
-        <div className="mb-6">
+      <main className="mx-auto max-w-[1400px] px-4 py-6 sm:px-6 sm:py-8">
+        {/* Persistent Executive Header */}
+        <header className="mb-5 border-b border-line pb-4 sm:mb-6 sm:pb-5">
           <div className="text-sm text-ink-muted">
             <Link to="/dashboard" className="hover:underline">
               Dashboard
             </Link>{" "}
             / detalj analize
           </div>
-          <div className="mt-1 flex items-end justify-between gap-4 flex-wrap">
-            <h1 className="text-2xl font-semibold tracking-tight text-ink">
-              Analiza {run?.oib || id}
-            </h1>
-            <div className="flex items-center gap-3">
-              <StatusBadge status={run?.status} />
-              <span className="text-sm tabular-nums text-ink-muted">
-                {formatDateTime(run?.created_at)}
-              </span>
-              {isRunning && (
-                <button
-                  type="button"
-                  onClick={refresh}
-                  className="rounded-md border border-line-control px-3 py-1.5 text-sm text-ink hover:bg-surface-muted"
-                >
+          <div className="mt-1.5 flex flex-wrap items-start justify-between gap-3 sm:items-center sm:gap-4">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2.5">
+                <h1 className="text-2xl font-semibold tracking-tight text-ink">
+                  Analiza {run?.oib || id}
+                </h1>
+                <StatusBadge status={run?.status} />
+              </div>
+              <p className="mt-1 text-sm text-ink-muted">
+                Upit: <span className="font-mono">{queryLabel} {queryValue}</span>
+                {metadataEntries[0]?.caseNumber &&
+                metadataEntries[0].caseNumber !== "-" ? (
+                  <>
+                    {" "}
+                    · predmet{" "}
+                    <span className="font-mono">
+                      {metadataEntries[0].caseNumber}
+                    </span>
+                  </>
+                ) : null}
+                {run?.created_at ? (
+                  <>
+                    {" "}
+                    · <span className="tabular-nums">{formatDateTime(run.created_at)}</span>
+                  </>
+                ) : null}
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2 print:hidden">
+              <ChangeDetectionControl hookState={changeDetection} inlineNotice={false} />
+              {isRunning ? (
+                <Button variant="secondary" size="sm" onClick={refresh}>
                   Osvježi
-                </button>
-              )}
+                </Button>
+              ) : null}
+              <Button variant="secondary" size="sm" onClick={() => window.print()}>
+                Ispis sažetka
+              </Button>
             </div>
           </div>
-          <p className="mt-1 text-sm text-ink-muted">
-            {/* Label and value live in ONE token. As sibling spans with no
-                separating space they rendered as "OIB12345678901" — a
-                run-together word that copies and screen-reads wrongly. */}
-            Upit: <span className="font-mono">{queryLabel} {queryValue}</span>
-            {metadataEntries[0]?.caseNumber &&
-            metadataEntries[0].caseNumber !== "-" ? (
-              <>
-                {" "}
-                · predmet{" "}
-                <span className="font-mono">
-                  {metadataEntries[0].caseNumber}
-                </span>
-              </>
-            ) : null}
-          </p>
-        </div>
+          <LiveRunControlBar run={run} lanes={lanes} isRunning={isRunning} onRefresh={refresh} />
+        </header>
+
+        <ChangeDetectionNotice
+          latestCheck={changeDetection.latestCheck}
+          error={changeDetection.error}
+        />
 
         {error ? (
           <Callout
@@ -328,178 +385,247 @@ export default function AnalysisRunDetailPage() {
             Analiza nije pronađena.
           </div>
         ) : (
-          <>
-          <nav aria-label="Sadržaj analize" className="sticky top-0 z-30 mb-4 flex gap-1 overflow-x-auto rounded-lg bg-surface/95 px-2 py-1.5 text-sm shadow-sm backdrop-blur">
-            {[
-              ['case-brief', 'Sažetak'],
-              ['analysis-coverage', 'Pokrivenost'],
-              ['analysis-scope', 'Opseg'],
-              ['analysis-flows', 'Tražbine i imovina'],
-              ['analysis-risks', 'Rizici'],
-              ['case-timeline', 'Kronologija'],
-              ['analysis-findings', 'Nalazi izvještaja'],
-            ].map(([target, label]) => (
-              <a key={target} href={`#${target}`} className="shrink-0 rounded-md px-2.5 py-1.5 text-ink-muted hover:bg-surface-muted hover:text-ink">
-                {label}
-              </a>
-            ))}
-          </nav>
           <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-[minmax(0,1fr)_21rem]">
-            {/* ══ LEFT: THE ANSWER ══ */}
-            <div className="min-w-0 space-y-4" id="answer-column">
-              <AnalysisCaseBrief
-                narrative={reportNarrative || (!report ? resultMarkdown : '')}
-                nextSteps={nextSteps}
-                fallback={!reportNarrative && (report || !resultMarkdown)
-                  ? (isRunning
-                    ? 'Analiza je u tijeku; sažetak će biti prikazan po završetku.'
-                    : run?.status === 'error'
-                      ? 'Rezultat analize nije dostupan jer obrada nije uspješno dovršena. Djelomični podaci prikazani su niže.'
-                      : 'Sažetak izvještaja nije dostupan.')
-                  : null}
-                retryAction={canRetryReport ? (
-                  <div className="flex flex-col items-end gap-1">
-                    <button
-                      type="button"
-                      onClick={handleRetryReport}
-                      disabled={retryState.loading}
-                      className="rounded-md border border-line-control px-3 py-1.5 text-xs font-medium text-ink hover:bg-surface-muted disabled:opacity-60"
+            {/* ══ LEFT: 5-TAB WORKSPACE ══ */}
+            <div className="min-w-0" id="answer-column">
+              <Tabs value={activeTab} onValueChange={handleTabChange}>
+                <TabsList aria-label="Odjeljci analize" className="print:hidden">
+                  <TabsTrigger value="overview">Pregled</TabsTrigger>
+                  <TabsTrigger value="parties">
+                    Stranke i vjerovnici
+                    {canonicalParties.length > 0 ? (
+                      <span className="ml-1.5 rounded-full bg-surface-muted px-1.5 py-0.5 text-xs tabular-nums text-ink-muted">
+                        {canonicalParties.length}
+                      </span>
+                    ) : null}
+                  </TabsTrigger>
+                  <TabsTrigger value="flows">
+                    Tražbine i imovina
+                    {flowEntryCount > 0 ? (
+                      <span className="ml-1.5 rounded-full bg-surface-muted px-1.5 py-0.5 text-xs tabular-nums text-ink-muted">
+                        {flowEntryCount}
+                      </span>
+                    ) : null}
+                  </TabsTrigger>
+                  <TabsTrigger value="timeline">Kronologija i spisi</TabsTrigger>
+                  <TabsTrigger value="search">Pretraga spisa</TabsTrigger>
+                </TabsList>
+
+                <TabsContent value="overview" className="space-y-4">
+                  {isDeterministicFallback ? (
+                    <Callout
+                      tone="warning"
+                      title="Prikazan je deterministički sažetak ($0)"
+                      action={(
+                        <div className="flex flex-col items-end gap-1">
+                          <Button
+                            variant="primary"
+                            size="sm"
+                            onClick={handleRetryReport}
+                            disabled={retryState.loading}
+                          >
+                            {retryState.loading ? 'Izrađujem izvještaj…' : 'Izradi potpuni AI izvještaj'}
+                          </Button>
+                          {retryState.error ? (
+                            <span className="text-xs text-danger" role="alert">{retryState.error}</span>
+                          ) : null}
+                        </div>
+                      )}
                     >
-                      {retryState.loading ? 'Izrađujem izvještaj…' : 'Ponovi izradu izvještaja'}
-                    </button>
-                    {retryState.error ? <span className="text-xs text-danger" role="alert">{retryState.error}</span> : null}
-                  </div>
-                ) : null}
-              />
+                      <p>
+                        {report?.fallbackReason || run?.partial_reason || 'AI sinteza nije provedena; prikazani su deterministički izdvojeni podaci iz spisa.'}
+                      </p>
+                    </Callout>
+                  ) : null}
 
-              <AnalysisCoverageBanner coverage={coverage} status={run.status} />
-
-              <AnalysisScopeCard scope={scope} />
-              <AnalysisDocumentParties
-                analyses={parsedResult?.clusterEvidencePackage?.analyses || []}
-                sourceDocuments={sourceDocuments}
-              />
-
-              <AnalysisFlowsSection
-                flows={flows.flows}
-                reconciliation={flows.reconciliation}
-                sourceDocuments={sourceDocuments}
-              />
-
-              <AnalysisRiskList
-                conflicts={conflicts}
-                openQuestions={openQuestions}
-                sourceDocuments={sourceDocuments}
-                hasStructuredReport={Boolean(report)}
-              />
-
-              <LatestProceduralStep timeline={reportTimeline} />
-
-              <CaseTimeline timeline={reportTimeline} />
-
-              <AnalysisReportAnnex
-                findings={findings}
-                timeline={reportTimeline}
-                hasStructuredReport={Boolean(report)}
-              />
-
-              <SecondaryClustersSection clusters={secondaryClusters} />
-
-              {/* Activity stays in the answer column while a run is live: it is the
-                only place progress is visible, and burying it in a rail is how
-                the old page ended up with a 14-card scroll. Once finished it
-                collapses into the rail's event list. */}
-              {isRunning ? (
-                <AnalysisActivityLog
-                  activity={activity}
-                  isRunning={isRunning}
-                  headerCounter={headerCounter}
-                  counterKnown={counterKnown}
-                />
-              ) : null}
-
-              {metadataEntries.length > 0 && (
-                <section className="card p-4">
-                  <button
-                    type="button"
-                    onClick={() => setShowMetadata((prev) => !prev)}
-                    aria-expanded={showMetadata}
-                    className="flex w-full items-center justify-between gap-3 text-left"
-                  >
-                    <h2 className="sec-title">
-                      Povezane objave i metapodaci predmeta
-                    </h2>
-                    <span className="pill">
-                      {metadataEntries.length} {showMetadata ? "▾" : "▸"}
-                    </span>
-                  </button>
-                  {showMetadata && (
-                    <div className="mt-3 space-y-3">
-                      {visibleMetadataEntries.map((entry) => (
-                        <article
-                          key={entry.key}
-                          className="rounded-lg border border-line bg-surface p-4"
+                  <AnalysisCaseBrief
+                    narrative={reportNarrative || (!report ? resultMarkdown : '')}
+                    nextSteps={nextSteps}
+                    fallback={!reportNarrative && (report || !resultMarkdown)
+                      ? (isRunning
+                        ? 'Analiza je u tijeku; sažetak će biti prikazan po završetku.'
+                        : run?.status === 'error'
+                          ? 'Rezultat analize nije dostupan jer obrada nije uspješno dovršena. Djelomični podaci prikazani su niže.'
+                          : 'Sažetak izvještaja nije dostupan.')
+                      : null}
+                    retryAction={canRetryReport ? (
+                      <div className="flex flex-col items-end gap-1">
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          onClick={handleRetryReport}
+                          disabled={retryState.loading}
                         >
-                          <div className="grid gap-2 sm:grid-cols-3">
-                            <div className="rounded-md border border-line bg-surface-muted px-3 py-2">
-                              <p className="eyebrow">Naziv objave</p>
-                              <p className="mt-0.5 text-sm font-medium text-ink">
-                                {entry.title}
-                              </p>
+                          {retryState.loading ? 'Izrađujem izvještaj…' : 'Ponovi izradu izvještaja'}
+                        </Button>
+                        {retryState.error ? <span className="text-xs text-danger" role="alert">{retryState.error}</span> : null}
+                      </div>
+                    ) : null}
+                  />
+
+                  <AnalysisCoverageBanner coverage={coverage} status={run.status} />
+
+                  <AnalysisScopeCard scope={scope} />
+
+                  <AnalysisRiskList
+                    conflicts={conflicts}
+                    openQuestions={openQuestions}
+                    sourceDocuments={sourceDocuments}
+                    hasStructuredReport={Boolean(report)}
+                    onOpenEvidence={evidenceDrawer.openEvidence}
+                  />
+
+                  <AnalysisReportAnnex
+                    findings={findings}
+                    timeline={reportTimeline}
+                    hasStructuredReport={Boolean(report)}
+                    onOpenEvidence={evidenceDrawer.openEvidence}
+                  />
+
+                  {isRunning ? (
+                    <AnalysisActivityLog
+                      activity={activity}
+                      isRunning={isRunning}
+                      headerCounter={headerCounter}
+                      counterKnown={counterKnown}
+                    />
+                  ) : null}
+                </TabsContent>
+
+                <TabsContent value="parties" className="space-y-4">
+                  <AnalysisEntitiesExplorer
+                    runId={id}
+                    canonicalParties={canonicalParties}
+                    creditorDigest={creditorDigest}
+                    legacyAnalyses={legacyAnalyses}
+                    sourceDocuments={sourceDocuments}
+                    onOpenEvidence={evidenceDrawer.openEvidence}
+                  />
+                </TabsContent>
+
+                <TabsContent value="flows" className="space-y-4">
+                  {hasFlowData ? (
+                    <AnalysisFlowsSection
+                      flows={flows.flows}
+                      reconciliation={flows.reconciliation}
+                      sourceDocuments={sourceDocuments}
+                      onOpenEvidence={evidenceDrawer.openEvidence}
+                    />
+                  ) : (
+                    <section className="card p-5" data-testid="flows-empty-placeholder">
+                      <h2 className="sec-title">Tražbine i imovina</h2>
+                      <p className="mt-1 text-sm text-ink-muted">
+                        U ovoj analizi nisu zabilježene financijske ni imovinske stavke.
+                      </p>
+                    </section>
+                  )}
+                </TabsContent>
+
+                <TabsContent value="timeline" className="space-y-4">
+                  <LatestProceduralStep timeline={reportTimeline} />
+
+                  <CaseTimeline
+                    timeline={reportTimeline}
+                    onOpenEvidence={evidenceDrawer.openEvidence}
+                  />
+
+                  <SecondaryClustersSection clusters={secondaryClusters} />
+
+                  {metadataEntries.length > 0 ? (
+                    <section className="card p-4">
+                      <button
+                        type="button"
+                        onClick={() => setShowMetadata((prev) => !prev)}
+                        aria-expanded={showMetadata}
+                        className="flex w-full items-center justify-between gap-3 text-left"
+                      >
+                        <h2 className="sec-title">
+                          Povezane objave i metapodaci predmeta
+                        </h2>
+                        <span className="pill">
+                          {metadataEntries.length} {showMetadata ? "▾" : "▸"}
+                        </span>
+                      </button>
+                      {showMetadata ? (
+                        <div className="mt-3 space-y-3">
+                          {visibleMetadataEntries.map((entry) => (
+                            <article
+                              key={entry.key}
+                              className="rounded-lg border border-line bg-surface p-4"
+                            >
+                              <div className="grid gap-2 sm:grid-cols-3">
+                                <div className="rounded-md border border-line bg-surface-muted px-3 py-2">
+                                  <p className="eyebrow">Naziv objave</p>
+                                  <p className="mt-0.5 text-sm font-medium text-ink">
+                                    {entry.title}
+                                  </p>
+                                </div>
+                                <div className="rounded-md border border-line bg-surface-muted px-3 py-2">
+                                  <p className="eyebrow">Broj predmeta</p>
+                                  <p className="mt-0.5 text-sm font-medium text-ink">
+                                    {entry.caseNumber}
+                                  </p>
+                                </div>
+                                <div className="rounded-md border border-line bg-surface-muted px-3 py-2">
+                                  <p className="eyebrow">ID objave</p>
+                                  <p className="mt-0.5 text-sm font-medium text-ink">
+                                    {entry.entryDisplayId || "-"}
+                                  </p>
+                                </div>
+                              </div>
+                              {entry.detailLink ? (
+                                <div className="mt-3 border-t border-line pt-3">
+                                  <a
+                                    href={entry.detailLink}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="text-xs text-accent hover:underline"
+                                  >
+                                    Vidi izvornu objavu
+                                  </a>
+                                </div>
+                              ) : null}
+                            </article>
+                          ))}
+                          {metadataEntries.length > METADATA_PAGE_SIZE ? (
+                            <div className="flex items-center justify-between gap-3 border-t border-line pt-3 text-xs text-ink-muted">
+                              <span>Prikaz {metadataStart + 1}–{metadataStart + visibleMetadataEntries.length} od {metadataEntries.length} objava</span>
+                              <div className="flex gap-2">
+                                <Button
+                                  variant="secondary"
+                                  size="sm"
+                                  onClick={() => setMetadataPage((page) => page - 1)}
+                                  disabled={metadataPage === 0}
+                                >
+                                  Prethodna
+                                </Button>
+                                <Button
+                                  variant="secondary"
+                                  size="sm"
+                                  onClick={() => setMetadataPage((page) => page + 1)}
+                                  disabled={metadataStart + visibleMetadataEntries.length >= metadataEntries.length}
+                                >
+                                  Sljedeća
+                                </Button>
+                              </div>
                             </div>
-                            <div className="rounded-md border border-line bg-surface-muted px-3 py-2">
-                              <p className="eyebrow">Broj predmeta</p>
-                              <p className="mt-0.5 text-sm font-medium text-ink">
-                                {entry.caseNumber}
-                              </p>
-                            </div>
-                            <div className="rounded-md border border-line bg-surface-muted px-3 py-2">
-                              <p className="eyebrow">ID objave</p>
-                              <p className="mt-0.5 text-sm font-medium text-ink">
-                                {entry.entryDisplayId || "-"}
-                              </p>
-                            </div>
-                          </div>
-                          {entry.detailLink && (
-                            <div className="mt-3 border-t border-line pt-3">
-                              <a
-                                href={entry.detailLink}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="text-xs text-accent hover:underline"
-                              >
-                                Vidi izvornu objavu
-                              </a>
-                            </div>
-                          )}
-                        </article>
-                      ))}
-                      {metadataEntries.length > METADATA_PAGE_SIZE ? (
-                        <div className="flex items-center justify-between gap-3 border-t border-line pt-3 text-xs text-ink-muted">
-                          <span>Prikaz {metadataStart + 1}–{metadataStart + visibleMetadataEntries.length} od {metadataEntries.length} objava</span>
-                          <div className="flex gap-2">
-                            <button type="button" onClick={() => setMetadataPage((page) => page - 1)} disabled={metadataPage === 0} className="rounded-md border border-line-control px-2.5 py-1.5 text-ink disabled:opacity-50">Prethodna</button>
-                            <button type="button" onClick={() => setMetadataPage((page) => page + 1)} disabled={metadataStart + visibleMetadataEntries.length >= metadataEntries.length} className="rounded-md border border-line-control px-2.5 py-1.5 text-ink disabled:opacity-50">Sljedeća</button>
-                          </div>
+                          ) : null}
                         </div>
                       ) : null}
-                    </div>
-                  )}
-                </section>
-              )}
+                    </section>
+                  ) : null}
+                </TabsContent>
+
+                <TabsContent value="search">
+                  <DocketSearchPanel
+                    runId={id}
+                    onOpenEvidence={evidenceDrawer.openEvidence}
+                  />
+                </TabsContent>
+              </Tabs>
             </div>
 
-            {/* ══ RIGHT: THE TRACE ══
-                Telemetry moves out of the scrolling stack and becomes a sticky
-                rail, so it is never something you scroll past to reach the
-                answer, and never more than a glance away when you need it.
-
-                Rendered ONCE. The grid is `grid-cols-1` below `lg`, so on a
-                narrow screen this aside simply becomes the second grid row and
-                lands AFTER the answer — which is exactly the intended mobile
-                behaviour. An earlier version duplicated the whole rail behind a
-                `lg:hidden` disclosure, which put every trace heading and testid
-                in the DOM twice. */}
+            {/* ══ RIGHT: THE TRACE ══ */}
             <aside aria-label="Trag obrade" className="lg:sticky lg:top-4 lg:max-h-[calc(100vh-2rem)] lg:overflow-y-auto lg:pr-1">
               <div className="space-y-3">
                 <h2 className="eyebrow">Trag obrade</h2>
@@ -515,7 +641,11 @@ export default function AnalysisRunDetailPage() {
 
                 <AnalysisReasoningTelemetry report={report} collapsible />
 
-                <AnalysisUsageSummary usage={usage} isRunning={isRunning} />
+                <AnalysisUsageSummary
+                  usage={usage}
+                  isRunning={isRunning}
+                  onOpenTraces={id ? () => setTracesOpen(true) : null}
+                />
 
                 <RunEventTimeline
                   timeline={timelineToRender}
@@ -526,9 +656,23 @@ export default function AnalysisRunDetailPage() {
               </div>
             </aside>
           </div>
-          </>
         )}
       </main>
+
+      <EvidenceDrawer
+        isOpen={evidenceDrawer.isOpen}
+        onClose={evidenceDrawer.closeEvidence}
+        activeContext={evidenceDrawer.activeContext}
+        chunk={evidenceDrawer.chunk}
+        loading={evidenceDrawer.loading}
+        error={evidenceDrawer.error}
+      />
+
+      <RunTracesDrawer
+        runId={id}
+        isOpen={tracesOpen}
+        onClose={() => setTracesOpen(false)}
+      />
     </DashboardShell>
   );
 }

@@ -12,6 +12,26 @@ const QUERY_TYPE_LABEL = {
   text: 'Tekst',
 };
 
+const SCAN_DEPTH_LABEL = {
+  balanced: 'Uravnoteženo',
+  uravnotezeno: 'Uravnoteženo',
+  'uravnoteženo': 'Uravnoteženo',
+  full: 'Sve',
+  all: 'Sve',
+  sve: 'Sve',
+};
+
+function formatScanDepth(depth) {
+  if (!depth) return null;
+  const key = String(depth).trim().toLowerCase();
+  return SCAN_DEPTH_LABEL[key] || String(depth);
+}
+
+function formatCostUsd(costUsd) {
+  if (typeof costUsd !== 'number' || !Number.isFinite(costUsd)) return null;
+  return `$${costUsd.toFixed(2)}`;
+}
+
 function QueryMarker({ type }) {
   const label = QUERY_TYPE_LABEL[type];
   if (!label) return null;
@@ -69,21 +89,17 @@ export default function RunsTable({ runs, onOpenRun }) {
             const oib = run.oib || summary?.queryValue || null;
             const party = summary?.participantNames?.[0] || null;
             const court = summary?.court || null;
+            const scanDepth = formatScanDepth(summary?.scanDepth);
+            const costUsd = formatCostUsd(summary?.costUsd);
             const isQueued = run.status === 'queued';
             const isRunning = run.status === 'running';
-            const isErrored = run.status === 'error' || run.status === 'failed';
+            const isCanceled = run.status === 'canceled' || run.status === 'cancelled';
+            const isErrored = run.status === 'error' || run.status === 'failed' || run.status === 'interrupted';
+            const statusNote = (isErrored || run.status === 'partial')
+              ? (run.error || summary?.partialReason || null)
+              : null;
 
             return (
-              // Whole row is clickable, but NOT via an onClick/tabIndex on the
-              // <tr> — that destroys the table's semantics and, when paired with
-              // an aria-label, hides the row's own content from screen readers.
-              // Instead the real <Link> in the first cell is STRETCHED over the
-              // whole row with an ::after overlay, so:
-              //   · the pointer target is the entire row,
-              //   · the accessible element is still a genuine link,
-              //   · the table still exposes cells, headers and scope.
-              // `focus-within` on the row carries the focus ring, so keyboard
-              // users see which row they are on.
               <tr
                 key={run.id}
                 className={`group relative transition-colors hover:bg-surface-muted/60 focus-within:bg-surface-muted/60 focus-within:outline focus-within:outline-2 focus-within:outline-offset-[-2px] focus-within:outline-accent${isRunning ? ' bg-info-surface/25' : isQueued ? ' bg-surface-muted/40' : ''}`}
@@ -94,16 +110,21 @@ export default function RunsTable({ runs, onOpenRun }) {
                     className="block after:absolute after:inset-0 after:content-[''] focus-visible:outline-none"
                   >
                     <span className="block text-base font-medium text-ink group-hover:text-accent">
-                      {caseNumber || (isQueued ? 'Analiza čeka u redu' : isRunning ? 'Analiza u tijeku' : 'Predmet bez broja')}
+                      {caseNumber || (isQueued ? 'Analiza čeka u redu' : isRunning ? 'Analiza u tijeku' : isCanceled ? 'Analiza otkazana' : 'Predmet bez broja')}
                     </span>
                     {party || court ? (
                       <span className="mt-0.5 block text-sm text-ink-muted">
                         {[party, court].filter(Boolean).join(' · ')}
                       </span>
                     ) : null}
-                    <span className="mt-1.5 flex items-center gap-1.5 text-xs text-ink-muted">
+                    <span className="mt-1.5 flex flex-wrap items-center gap-1.5 text-xs text-ink-muted">
                       <QueryMarker type={summary?.queryType || run.query_type} />
                       {oib ? <span className="font-mono text-[11px]">{oib}</span> : null}
+                      {scanDepth ? (
+                        <span className="rounded border border-line bg-surface-muted px-1.5 py-0.5 text-[11px] text-ink-muted">
+                          {scanDepth}
+                        </span>
+                      ) : null}
                     </span>
                   </Link>
                 </td>
@@ -114,17 +135,18 @@ export default function RunsTable({ runs, onOpenRun }) {
 
                 <td className="px-4 py-3.5 align-top">
                   <StatusBadge status={run.status} />
-                  {/* Why it failed, in one clamped line. The glyph says the run
-                      failed; this says whether it is worth retrying. */}
-                  {isErrored && run.error ? (
-                    <span className="mt-1 block max-w-[16rem] truncate text-xs text-ink-muted" title={run.error}>
-                      {run.error}
+                  {statusNote ? (
+                    <span className="mt-1 block max-w-[16rem] truncate text-xs text-ink-muted" title={statusNote}>
+                      {statusNote}
                     </span>
                   ) : null}
                 </td>
 
                 <td className="px-4 py-3.5 align-top text-sm whitespace-nowrap tabular-nums text-ink-muted">
-                  {formatDateTime(run.created_at)}
+                  <div>{formatDateTime(run.created_at)}</div>
+                  {costUsd ? (
+                    <div className="mt-0.5 text-xs tabular-nums text-ink-muted">{costUsd}</div>
+                  ) : null}
                 </td>
 
                 <td className="px-4 py-3.5 align-top">

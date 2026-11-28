@@ -236,6 +236,48 @@ describe('RunsTable — faithfulness to the approved prototype', () => {
     expect(note.className).toContain('truncate');
     expect(note.className).toContain('max-w-[16rem]');
   });
+
+  test('handles interrupted, partial, canceled, queued states and surfaces scanDepth + costUsd', () => {
+    const runs = [
+      {
+        id: 'i1',
+        status: 'interrupted',
+        oib: '11111111111',
+        created_at: '2026-09-30T10:00:00.000Z',
+        error: 'Veza je prekinuta',
+        summary: { scanDepth: 'balanced', costUsd: 0.123 },
+      },
+      {
+        id: 'p1',
+        status: 'partial',
+        oib: '22222222222',
+        created_at: '2026-09-30T10:05:00.000Z',
+        summary: { scanDepth: 'full', costUsd: 0.5, partialReason: 'Nedostupni krediti (402)' },
+      },
+      {
+        id: 'c1',
+        status: 'canceled',
+        oib: '33333333333',
+        created_at: '2026-09-30T10:10:00.000Z',
+      },
+      {
+        id: 'q1',
+        status: 'queued',
+        oib: '44444444444',
+        created_at: '2026-09-30T10:15:00.000Z',
+      },
+    ];
+    render(<RunsTable runs={runs} onOpenRun={() => {}} />);
+
+    expect(screen.getByText('Veza je prekinuta')).toBeInTheDocument();
+    expect(screen.getByText('Nedostupni krediti (402)')).toBeInTheDocument();
+    expect(screen.getByText('Uravnoteženo')).toBeInTheDocument();
+    expect(screen.getByText('Sve')).toBeInTheDocument();
+    expect(screen.getByText('$0.12')).toBeInTheDocument();
+    expect(screen.getByText('$0.50')).toBeInTheDocument();
+    expect(screen.getByText('Analiza otkazana')).toBeInTheDocument();
+    expect(screen.getByText('Analiza čeka u redu')).toBeInTheDocument();
+  });
 });
 
 describe('RunsTable — whole row is the click target', () => {

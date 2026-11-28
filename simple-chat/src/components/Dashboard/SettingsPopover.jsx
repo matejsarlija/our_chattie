@@ -1,30 +1,31 @@
 import * as Popover from '@radix-ui/react-popover';
-import { useSettings } from '../../hooks/useSettings';
-import ScanDepthSelect from './ScanDepthSelect';
+import { Link } from 'react-router-dom';
 
 function GearIcon() {
   return (
     <svg
       viewBox="0 0 24 24"
-      width="18"
-      height="18"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
+      width="20"
+      height="20"
+      fill="currentColor"
       aria-hidden="true"
     >
-      <circle cx="12" cy="12" r="3" />
-      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
+      <path
+        fillRule="evenodd"
+        clipRule="evenodd"
+        d="M10.4 2.2h3.2l.45 2.3a7.7 7.7 0 0 1 1.85.77l1.9-1.33 2.26 2.26-1.33 1.9c.33.58.59 1.2.77 1.85l2.3.45v3.2l-2.3.45a7.7 7.7 0 0 1-.77 1.85l1.33 1.9-2.26 2.26-1.9-1.33a7.7 7.7 0 0 1-1.85.77l-.45 2.3h-3.2l-.45-2.3a7.7 7.7 0 0 1-1.85-.77l-1.9 1.33-2.26-2.26 1.33-1.9a7.7 7.7 0 0 1-.77-1.85l-2.3-.45v-3.2l2.3-.45c.18-.65.44-1.27.77-1.85l-1.33-1.9 2.26-2.26 1.9 1.33c.58-.33 1.2-.59 1.85-.77l.45-2.3ZM12 15.25a3.25 3.25 0 1 0 0-6.5 3.25 3.25 0 0 0 0 6.5Z"
+      />
     </svg>
   );
 }
 
-export default function SettingsPopover() {
-  const { settings, loading, saving, error, saveSettings } = useSettings();
-  const defaultScanDepth = settings.defaultScanDepth || 'balanced';
+const POPOVER_LINKS = [
+  { to: '/dashboard/design-system', label: 'Design System' },
+  { to: '/pravila-privatnosti', label: 'Pravila privatnosti' },
+  { to: '/o-nama', label: 'O nama' },
+];
 
+export default function SettingsPopover() {
   return (
     <Popover.Root>
       <Popover.Trigger asChild>
@@ -32,7 +33,7 @@ export default function SettingsPopover() {
           type="button"
           aria-label="Postavke"
           title="Postavke"
-          className="flex h-10 w-10 items-center justify-center rounded-lg text-[var(--text-muted)] transition-colors hover:bg-[var(--surface-muted)] hover:text-[var(--text)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
+          className="flex h-10 w-10 items-center justify-center rounded-full text-line-control transition-all hover:bg-surface-muted hover:text-ink-muted hover:shadow-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
         >
           <GearIcon />
         </button>
@@ -40,27 +41,24 @@ export default function SettingsPopover() {
       <Popover.Portal>
         <Popover.Content
           align="end"
-          side="bottom"
+          side="top"
           sideOffset={8}
           collisionPadding={12}
-          aria-labelledby="settings-popover-title"
-          className="z-[130] w-[min(24rem,calc(100vw-2rem))] rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4 text-[var(--text)] shadow-lg outline-none"
+          aria-label="Dodatne stranice"
+          className="z-[130] w-52 rounded-lg border border-line bg-surface p-1.5 text-ink shadow-lg outline-none"
         >
-          <div className="mb-4">
-            <h2 id="settings-popover-title" className="text-sm font-semibold">
-              Postavke
-            </h2>
-            <p className="mt-1 text-xs leading-5 text-[var(--text-muted)]">
-              Zadana dubina pretrage za nove analize.
-            </p>
-          </div>
-          <ScanDepthSelect
-            value={defaultScanDepth}
-            disabled={loading || saving}
-            onChange={(value) => saveSettings({ defaultScanDepth: value }).catch(() => {})}
-          />
-          {saving ? <p role="status" className="mt-2 text-xs text-[var(--text-muted)]">Spremanje…</p> : null}
-          {error ? <p role="alert" className="mt-2 text-xs text-[var(--error)]">{error}</p> : null}
+          <nav aria-label="Dodatne stranice" className="flex flex-col gap-0.5">
+            {POPOVER_LINKS.map((item) => (
+              <Popover.Close asChild key={item.to}>
+                <Link
+                  to={item.to}
+                  className="rounded-md px-2.5 py-1.5 text-sm text-ink-muted transition-colors hover:bg-surface-muted hover:text-ink"
+                >
+                  {item.label}
+                </Link>
+              </Popover.Close>
+            ))}
+          </nav>
         </Popover.Content>
       </Popover.Portal>
     </Popover.Root>

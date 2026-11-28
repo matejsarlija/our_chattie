@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   cancelBenchJob,
+  getBenchJob,
   getSettings,
   launchBenchRun,
   listBenchCandidates,
@@ -28,16 +29,55 @@ export function useBenchWorkspace() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const streamRef = useRef(null);
+  const pollTimerRef = useRef(null);
+
+  const stopPolling = useCallback(() => {
+    if (pollTimerRef.current) {
+      clearInterval(pollTimerRef.current);
+      pollTimerRef.current = null;
+    }
+  }, []);
+
+  const startPollingFallback = useCallback((jobId) => {
+    if (!jobId || pollTimerRef.current) return;
+    const poll = async () => {
+      try {
+        const job = await getBenchJob(jobId);
+        if (!job) return;
+        if (job.progress) setJobProgress(job.progress);
+        if (job.output) {
+          const lines = String(job.output).split('\n').filter(Boolean).slice(-100);
+          if (lines.length > 0) setJobLogs(lines);
+        }
+        if (['done', 'failed', 'canceled'].includes(job.state)) {
+          stopPolling();
+          setJobStatus(job.state);
+          setActiveJobId(null);
+          if (job.state === 'done') {
+            listBenchRuns().then((res) => setRuns(res?.runs || [])).catch(() => {});
+          }
+        }
+      } catch {
+        // Keep polling until job reaches terminal state or unmounts.
+      }
+    };
+    poll();
+    pollTimerRef.current = setInterval(poll, 3000);
+  }, [stopPolling]);
 
   const attachJobStream = useCallback((jobId) => {
     if (!jobId) return;
+    stopPolling();
     if (streamRef.current) {
       streamRef.current.close();
       streamRef.current = null;
     }
     setActiveJobId(jobId);
     setJobStatus('running');
-    if (typeof EventSource === 'undefined') return;
+    if (typeof EventSource === 'undefined') {
+      startPollingFallback(jobId);
+      return;
+    }
     const es = new EventSource(resolveApiUrl(`/api/bench/jobs/${encodeURIComponent(jobId)}/stream`));
     streamRef.current = es;
 
@@ -57,6 +97,7 @@ export function useBenchWorkspace() {
       }
     });
     es.addEventListener('job.done', () => {
+      stopPolling();
       setJobStatus('done');
       setActiveJobId(null);
       es.close();
@@ -64,6 +105,7 @@ export function useBenchWorkspace() {
       listBenchRuns().then((res) => setRuns(res?.runs || [])).catch(() => {});
     });
     es.addEventListener('job.error', (ev) => {
+      stopPolling();
       try {
         const parsed = JSON.parse(ev.data);
         setJobStatus(parsed?.canceled ? 'canceled' : 'failed');
@@ -74,7 +116,12 @@ export function useBenchWorkspace() {
       es.close();
       streamRef.current = null;
     });
-  }, []);
+    es.onerror = () => {
+      es.close();
+      streamRef.current = null;
+      startPollingFallback(jobId);
+    };
+  }, [stopPolling, startPollingFallback]);
 
   const reload = useCallback(async () => {
     setLoading(true);
@@ -106,12 +153,13 @@ export function useBenchWorkspace() {
   useEffect(() => {
     reload();
     return () => {
+      stopPolling();
       if (streamRef.current) {
         streamRef.current.close();
         streamRef.current = null;
       }
     };
-  }, [reload]);
+  }, [reload, stopPolling]);
 
   const startRun = useCallback(async (payload) => {
     setError(null);
@@ -133,6 +181,7 @@ export function useBenchWorkspace() {
 
   const cancelActiveJob = useCallback(async () => {
     if (!activeJobId) return;
+    stopPolling();
     await cancelBenchJob(activeJobId);
     setJobStatus('canceled');
     setActiveJobId(null);
@@ -140,7 +189,7 @@ export function useBenchWorkspace() {
       streamRef.current.close();
       streamRef.current = null;
     }
-  }, [activeJobId]);
+  }, [activeJobId, stopPolling]);
 
   const seedCandidates = useCallback(async () => {
     const res = await seedBenchCandidates();

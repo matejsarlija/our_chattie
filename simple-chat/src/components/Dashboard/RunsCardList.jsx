@@ -9,6 +9,26 @@ const QUERY_TYPE_LABEL = {
   text: 'Tekst',
 };
 
+const SCAN_DEPTH_LABEL = {
+  balanced: 'Uravnoteženo',
+  uravnotezeno: 'Uravnoteženo',
+  'uravnoteženo': 'Uravnoteženo',
+  full: 'Sve',
+  all: 'Sve',
+  sve: 'Sve',
+};
+
+function formatScanDepth(depth) {
+  if (!depth) return null;
+  const key = String(depth).trim().toLowerCase();
+  return SCAN_DEPTH_LABEL[key] || String(depth);
+}
+
+function formatCostUsd(costUsd) {
+  if (typeof costUsd !== 'number' || !Number.isFinite(costUsd)) return null;
+  return `$${costUsd.toFixed(2)}`;
+}
+
 /**
  * Mobile counterpart to RunsTable. The desktop table is horizontally dense and
  * would need squinting below `md`, so the same data is stacked per card here.
@@ -27,21 +47,29 @@ export default function RunsCardList({ runs }) {
         const court = summary?.court || null;
         const oib = run.oib || summary?.queryValue || null;
         const typeLabel = QUERY_TYPE_LABEL[summary?.queryType || run.query_type];
+        const scanDepth = formatScanDepth(summary?.scanDepth);
+        const costUsd = formatCostUsd(summary?.costUsd);
+        const isQueued = run.status === 'queued';
         const isRunning = run.status === 'running';
+        const isCanceled = run.status === 'canceled' || run.status === 'cancelled';
+        const isErrored = run.status === 'error' || run.status === 'failed' || run.status === 'interrupted';
+        const statusNote = (isErrored || run.status === 'partial')
+          ? (run.error || summary?.partialReason || null)
+          : null;
 
         return (
           <li key={run.id}>
             <Link
               to={`/dashboard/runs/${run.id}`}
-              className="block rounded-lg border border-line bg-surface p-4 transition-colors hover:bg-surface-muted/60"
+              className="block rounded-lg border border-line bg-surface p-3.5 transition-colors hover:bg-surface-muted/60"
             >
-              <div className="flex items-start justify-between gap-3">
+              <div className="flex items-start justify-between gap-2.5">
                 <div className="min-w-0">
                   <span className="block text-base font-medium text-ink">
-                    {caseNumber || (isRunning ? 'Analiza u tijeku' : 'Predmet bez broja')}
+                    {caseNumber || (isQueued ? 'Analiza čeka u redu' : isRunning ? 'Analiza u tijeku' : isCanceled ? 'Analiza otkazana' : 'Predmet bez broja')}
                   </span>
                   {party || court ? (
-                    <span className="mt-0.5 block text-sm text-ink-muted">
+                    <span className="mt-0.5 block truncate text-sm text-ink-muted">
                       {[party, court].filter(Boolean).join(' · ')}
                     </span>
                   ) : null}
@@ -49,9 +77,15 @@ export default function RunsCardList({ runs }) {
                 <StatusBadge status={run.status} className="shrink-0" />
               </div>
 
-              <div className="mt-3 flex items-end justify-between gap-3">
+              {statusNote ? (
+                <p className="mt-1.5 truncate text-xs text-ink-muted" title={statusNote}>
+                  {statusNote}
+                </p>
+              ) : null}
+
+              <div className="mt-2.5 flex items-end justify-between gap-3">
                 <div>
-                  <span className="block text-[11px] uppercase tracking-wide text-ink-muted">
+                  <span className="eyebrow block">
                     Pokrivenost
                   </span>
                   <div className="mt-0.5">
@@ -60,14 +94,22 @@ export default function RunsCardList({ runs }) {
                 </div>
               </div>
 
-              <div className="mt-3 flex items-center justify-between gap-2 border-t border-line pt-3 text-xs text-ink-muted">
-                <span className="flex items-center gap-1.5">
+              <div className="mt-2.5 flex flex-wrap items-center justify-between gap-2 border-t border-line pt-2.5 text-xs text-ink-muted">
+                <span className="flex flex-wrap items-center gap-1.5">
                   {typeLabel ? (
                     <span className="rounded border border-line px-1.5 py-0.5 font-medium">{typeLabel}</span>
                   ) : null}
                   {oib ? <span className="font-mono text-[11px]">{oib}</span> : null}
+                  {scanDepth ? (
+                    <span className="rounded border border-line bg-surface-muted px-1.5 py-0.5 text-[11px]">
+                      {scanDepth}
+                    </span>
+                  ) : null}
                 </span>
-                <span className="whitespace-nowrap tabular-nums">{formatDateTime(run.created_at)}</span>
+                <span className="flex items-center gap-2 whitespace-nowrap tabular-nums">
+                  {costUsd ? <span>{costUsd}</span> : null}
+                  <span>{formatDateTime(run.created_at)}</span>
+                </span>
               </div>
             </Link>
           </li>

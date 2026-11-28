@@ -1,43 +1,39 @@
-// jest-dom adds custom jest matchers for asserting on DOM nodes.
-// allows you to do things like:
-// expect(element).toHaveTextContent(/react/i)
-// learn more: https://github.com/testing-library/jest-dom
-import '@testing-library/jest-dom';
+import '@testing-library/jest-dom/vitest';
+import React from 'react';
+import { vi } from 'vitest';
+import { TextEncoder, TextDecoder } from 'util';
 
-// Polyfill for TextEncoder/TextDecoder for Node.js environment
-const { TextEncoder, TextDecoder } = require('util');
-global.TextEncoder = TextEncoder;
-global.TextDecoder = TextDecoder;
+if (!globalThis.TextEncoder) globalThis.TextEncoder = TextEncoder;
+if (!globalThis.TextDecoder) globalThis.TextDecoder = TextDecoder;
+globalThis.jest = vi;
 
-jest.mock('react-markdown', () => ({
-  __esModule: true,
-  default: ({ children }) => <div data-testid="react-markdown">{children}</div>,
+vi.mock('react-markdown', () => ({
+  default: ({ children }) => React.createElement('div', { 'data-testid': 'react-markdown' }, children),
 }));
 
-jest.mock(
-  'react-router-dom',
-  () => ({
-    __esModule: true,
-    BrowserRouter: ({ children }) => <div data-testid="browser-router">{children}</div>,
-    Routes: ({ children }) => <>{children}</>,
-    Route: ({ element }) => element || null,
-    useNavigate: () => jest.fn(),
-    useParams: () => ({}),
-    useSearchParams: () => [new URLSearchParams(), jest.fn()],
-    // Forward className and any other props. The previous mock silently
-    // DROPPED className, so a test asserting on a Link's classes (e.g. the runs
-    // table's stretched link) saw an empty string and could not tell a real
-    // regression from a mock artefact.
-    Link: ({ children, to, ...rest }) => <a href={to} {...rest}>{children}</a>,
-  }),
-  { virtual: true }
-);
+vi.mock('react-router-dom', () => ({
+  BrowserRouter: ({ children }) => React.createElement('div', { 'data-testid': 'browser-router' }, children),
+  Routes: ({ children }) => React.createElement(React.Fragment, null, children),
+  Route: ({ element }) => element || null,
+  useNavigate: () => vi.fn(),
+  useParams: () => ({}),
+  useSearchParams: () => [new URLSearchParams(), vi.fn()],
+  Link: ({ children, to, ...rest }) => React.createElement('a', { href: to, ...rest }, children),
+  NavLink: ({ children, to, className, end, ...rest }) => React.createElement(
+    'a',
+    {
+      href: to,
+      className: typeof className === 'function' ? className({ isActive: false }) : className,
+      ...rest,
+    },
+    children,
+  ),
+}));
 
-jest.mock('./components/ErrorBoundary', () => ({
-  __esModule: true,
-  default: ({ children }) => <div data-testid="error-boundary">{children}</div>,
+vi.mock('./components/ErrorBoundary', () => ({
+  default: ({ children }) => React.createElement('div', { 'data-testid': 'error-boundary' }, children),
 }));
 
 if (!HTMLElement.prototype.scrollIntoView) {
-  HTMLElement.prototype.scrollIntoView = jest.fn();
+  HTMLElement.prototype.scrollIntoView = vi.fn();
 }

@@ -18,7 +18,7 @@ export default function ScanDepthSelect({ value = 'balanced', onChange, disabled
 
   return (
     <div className="w-full">
-      <label htmlFor={id} className="block text-sm text-[var(--text-muted)]">
+      <label htmlFor={id} className="block text-sm text-ink-muted">
         Dubina pretrage
       </label>
       <select
@@ -30,7 +30,7 @@ export default function ScanDepthSelect({ value = 'balanced', onChange, disabled
           const next = event.target.value;
           if (SCAN_DEPTHS.includes(next) && next !== currentValue) onChange?.(next);
         }}
-        className="mt-1 w-full cursor-pointer rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-sm text-[var(--text)] outline-none focus:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-60"
+        className="mt-1 w-full cursor-pointer rounded-lg border border-line-control bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-accent disabled:cursor-not-allowed disabled:opacity-60"
       >
         {SCAN_DEPTHS.map((depth) => (
           <option key={depth} value={depth}>
@@ -38,7 +38,7 @@ export default function ScanDepthSelect({ value = 'balanced', onChange, disabled
           </option>
         ))}
       </select>
-      <p className="mt-1 text-xs text-[var(--text-muted)]" aria-live="polite">
+      <p className="mt-1 text-xs text-ink-muted" aria-live="polite">
         {HELPERS[currentValue]}
       </p>
     </div>

@@ -21,8 +21,8 @@ function ActivityLine({ item }) {
   if (item.kind === 'heartbeat') {
     const counts = [item.done, item.total].every((v) => v != null) ? `${item.done}/${item.total}` : null;
     return (
-      <div className="flex items-start gap-2 text-xs text-[var(--text-muted)]">
-        <span aria-hidden className="select-none text-[var(--text-muted)]">·</span>
+      <div className="flex items-start gap-2 text-xs text-ink-muted">
+        <span aria-hidden className="select-none text-ink-muted">·</span>
         <span className="font-mono">
           [{time}] još aktivan{counts ? ` — ${counts} analizirano` : ''}{item.currentFile ? ` (trenutno: ${item.currentFile})` : ''}
         </span>
@@ -33,14 +33,14 @@ function ActivityLine({ item }) {
   const ok = item.status === 'ok';
   return (
     <div className="flex items-start gap-2 text-xs">
-      <span aria-hidden className={`select-none font-mono ${ok ? 'text-emerald-600' : 'text-rose-600'}`}>{ok ? '✓' : '✗'}</span>
-      <span className="font-mono text-[var(--text-muted)]">
+      <span aria-hidden className={`select-none font-mono ${ok ? 'text-success' : 'text-danger'}`}>{ok ? '✓' : '✗'}</span>
+      <span className="font-mono text-ink-muted">
         [{time}]{' '}
-        {item.retried && <span title="ponovljeni pokušaj" className="text-amber-600">↻ </span>}
-        <span className={ok ? 'text-[var(--text)]' : 'text-[var(--text)]'}>{item.fileName || item.message}</span>
+        {item.retried && <span title="ponovljeni pokušaj" className="text-warning">↻ </span>}
+        <span className="text-ink">{item.fileName || item.message}</span>
         {duration && <span> · {duration}</span>}
         {!ok && (item.reason || item.error) && (
-          <span className="text-rose-600"> — {item.reason || item.error}</span>
+          <span className="text-danger"> — {item.reason || item.error}</span>
         )}
       </span>
     </div>
@@ -88,21 +88,21 @@ export default function AnalysisActivityLog({ activity = [], isRunning = false, 
     : null;
 
   return (
-    <section className="mb-5 rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4" data-testid="analysis-activity-log">
+    <section className="card mb-5 p-4" data-testid="analysis-activity-log">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-        <h3 className="text-sm font-semibold text-[var(--text)]">Aktivnost obrade dokumenata</h3>
+        <h3 className="text-sm font-semibold text-ink">Aktivnost obrade dokumenata</h3>
         <div className="flex items-center gap-2">
           {latestCounts.total != null && (
-            <span className="rounded-full border border-[var(--border)] bg-[var(--surface-muted)] px-2.5 py-1 font-mono text-xs text-[var(--text-muted)]">
+            <span className="rounded-full border border-line bg-surface-muted px-2.5 py-1 font-mono text-xs text-ink-muted">
               {latestCounts.done ?? 0}/{latestCounts.total}
             </span>
           )}
           {isRunning && liveness && (
             <span
-              className={`rounded-full px-2.5 py-1 text-xs ${
+              className={`rounded-full border px-2.5 py-1 text-xs ${
                 liveness.stalled
-                  ? 'border border-amber-300 bg-amber-50 text-amber-700'
-                  : 'border border-emerald-200 bg-emerald-50 text-emerald-700'
+                  ? 'border-line bg-warning-surface text-warning'
+                  : 'border-line bg-success-surface text-success'
               }`}
             >
               {liveness.stalled
@@ -114,7 +114,7 @@ export default function AnalysisActivityLog({ activity = [], isRunning = false, 
             <button
               type="button"
               onClick={() => setExpanded((prev) => !prev)}
-              className="rounded-lg border border-[var(--border)] px-3 py-1.5 text-xs font-medium text-[var(--text)] hover:bg-[var(--surface-muted)]"
+              className="rounded-md border border-line-control px-3 py-1.5 text-xs font-medium text-ink hover:bg-surface-muted"
             >
               {expanded ? 'Prikaži zadnje retke' : `Prikaži cijeli zapis (${activity.length})`}
             </button>
@@ -123,9 +123,9 @@ export default function AnalysisActivityLog({ activity = [], isRunning = false, 
       </div>
       {showCounterHeader && (
         <div className="mb-3">
-          <p className="mb-1.5 text-sm font-medium text-[var(--text)]">{counterLine}</p>
+          <p className="mb-1.5 text-sm font-medium text-ink">{counterLine}</p>
           <div
-            className="h-2 overflow-hidden rounded-full bg-[var(--surface-muted)]"
+            className="h-2 overflow-hidden rounded-full bg-surface-muted"
             role="progressbar"
             aria-label="Napredak obrade"
             {...(counterKnownValue
@@ -133,7 +133,7 @@ export default function AnalysisActivityLog({ activity = [], isRunning = false, 
               : {})}
           >
             <div
-              className={`h-full rounded-full bg-[var(--accent)] ${counterKnownValue ? '' : 'activity-indeterminate-bar'}`}
+              className={`h-full rounded-full bg-accent ${counterKnownValue ? '' : 'activity-indeterminate-bar'}`}
               style={counterKnownValue ? { width: `${counterPercent}%` } : undefined}
             />
           </div>

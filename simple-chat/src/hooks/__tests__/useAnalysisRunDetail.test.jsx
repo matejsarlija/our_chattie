@@ -8,12 +8,12 @@ import { useAnalysisRunDetail } from '../useAnalysisRunDetail';
 import { apiFetch } from '../../lib/apiClient';
 import { useAnalysisRunStream } from '../useAnalysisRunStream';
 
-jest.mock('../../lib/apiClient', () => ({
-  apiFetch: jest.fn(),
+vi.mock('../../lib/apiClient', () => ({
+  apiFetch: vi.fn(),
 }));
 
-jest.mock('../useAnalysisRunStream', () => ({
-  useAnalysisRunStream: jest.fn(),
+vi.mock('../useAnalysisRunStream', () => ({
+  useAnalysisRunStream: vi.fn(),
 }));
 
 function Harness({
@@ -44,11 +44,11 @@ describe('useAnalysisRunDetail polling', () => {
   let visibilitySpy;
 
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
     useAnalysisRunStream.mockImplementation(() => ({ connected: false, lastEventAt: null }));
-    randomSpy = jest.spyOn(Math, 'random').mockReturnValue(0);
-    visibilitySpy = jest.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible');
-    consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation((...args) => {
+    randomSpy = vi.spyOn(Math, 'random').mockReturnValue(0);
+    visibilitySpy = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible');
+    consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation((...args) => {
       const message = String(args[0] || '');
       if (message.includes('not wrapped in act')) {
         return;

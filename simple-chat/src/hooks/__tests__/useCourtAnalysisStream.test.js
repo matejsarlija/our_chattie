@@ -2,7 +2,7 @@ import React, { useEffect } from 'react';
 import { render, waitFor } from '@testing-library/react';
 import { buildCourtAnalysisPayload, useCourtAnalysisStream } from '../useCourtAnalysisStream';
 
-jest.mock('../../lib/env', () => ({
+vi.mock('../../lib/env', () => ({
   env: {
     courtAnalysisUrl: '/api/court-analysis',
   },
@@ -11,7 +11,7 @@ jest.mock('../../lib/env', () => ({
 
 describe('useCourtAnalysisStream request builder', () => {
   beforeEach(() => {
-    global.fetch = jest.fn(() =>
+    global.fetch = vi.fn(() =>
       Promise.resolve({
         ok: true,
         status: 202,
@@ -34,7 +34,7 @@ describe('useCourtAnalysisStream request builder', () => {
       return null;
     }
 
-    render(<Harness />);
+    render(React.createElement(Harness));
 
     await waitFor(() => {
       expect(global.fetch).toHaveBeenCalled();
@@ -66,7 +66,7 @@ describe('useCourtAnalysisStream request builder', () => {
       return null;
     }
 
-    render(<Harness />);
+    render(React.createElement(Harness));
 
     await waitFor(() => {
       expect(global.fetch).toHaveBeenCalled();
@@ -93,7 +93,7 @@ describe('useCourtAnalysisStream request builder', () => {
       return null;
     }
 
-    render(<Harness />);
+    render(React.createElement(Harness));
 
     await waitFor(() => {
       expect(global.fetch).toHaveBeenCalled();
@@ -128,7 +128,7 @@ describe('useCourtAnalysisStream request builder', () => {
     }
 
     try {
-      render(<Harness />);
+      render(React.createElement(Harness));
 
       await waitFor(() => {
         expect(global.fetch).toHaveBeenCalled();
@@ -156,7 +156,7 @@ describe('useCourtAnalysisStream request builder', () => {
       return null;
     }
 
-    render(<Harness />);
+    render(React.createElement(Harness));
 
     await waitFor(() => {
       expect(global.fetch).toHaveBeenCalled();
@@ -179,7 +179,7 @@ describe('useCourtAnalysisStream request builder', () => {
       return null;
     }
 
-    render(<Harness />);
+    render(React.createElement(Harness));
 
     await waitFor(() => {
       expect(global.fetch).toHaveBeenCalled();
@@ -197,7 +197,7 @@ describe('useCourtAnalysisStream request builder', () => {
   });
 
   test('consumes the 202 queued response JSON instead of opening an SSE body', async () => {
-    const onAccepted = jest.fn();
+    const onAccepted = vi.fn();
     function Harness() {
       const api = useCourtAnalysisStream();
       useEffect(() => {
@@ -206,7 +206,7 @@ describe('useCourtAnalysisStream request builder', () => {
       return null;
     }
 
-    render(<Harness />);
+    render(React.createElement(Harness));
     await waitFor(() => {
       expect(onAccepted).toHaveBeenCalledWith({ analysisId: 'run-123', status: 'queued' });
     });

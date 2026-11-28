@@ -7,8 +7,8 @@ import { act, render, waitFor } from '@testing-library/react';
 import { useAnalysisRuns } from '../useAnalysisRuns';
 import { apiFetch } from '../../lib/apiClient';
 
-jest.mock('../../lib/apiClient', () => ({
-  apiFetch: jest.fn(),
+vi.mock('../../lib/apiClient', () => ({
+  apiFetch: vi.fn(),
 }));
 
 function Harness({ enabled = true, onValue }) {
@@ -23,7 +23,7 @@ function Harness({ enabled = true, onValue }) {
 
 describe('useAnalysisRuns', () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
   });
 
   test('loads first page and supports explicit page loading', async () => {

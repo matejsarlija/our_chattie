@@ -20,6 +20,8 @@ const STAGE_LABELS = {
   discovering: 'Pronalaženje',
   grouping: 'Grupiranje',
   downloading: 'Preuzimanje',
+  preflight: 'Priprema dokumenata',
+  ocr: 'OCR transkripcija',
   extracting: 'Obrada dokumenata',
   chunking: 'Segmentiranje',
   retrieving: 'Dohvat dokaza',
@@ -28,6 +30,8 @@ const STAGE_LABELS = {
   complete: 'Završeno',
   error: 'Greška',
 };
+
+const EXTRA_CANONICAL_STAGES = new Set(['preflight', 'ocr']);
 
 const LEGACY_TO_CANONICAL = {
   fetching: 'downloading',
@@ -44,7 +48,9 @@ const LEGACY_TO_CANONICAL = {
 
 const normalizeEventType = (event) => {
   const eventType = String(event?.event_type || '').toLowerCase();
-  if (STEP_ORDER.includes(eventType) || eventType === 'error') return eventType;
+  if (STEP_ORDER.includes(eventType) || EXTRA_CANONICAL_STAGES.has(eventType) || eventType === 'error') {
+    return eventType;
+  }
   if (LEGACY_TO_CANONICAL[eventType]) return LEGACY_TO_CANONICAL[eventType];
 
   const message = String(event?.message || '').toLowerCase();
@@ -129,6 +135,20 @@ export function useAnalysisEvents(events) {
       };
     });
 
+    let lanes = null;
+    for (let i = all.length - 1; i >= 0; i -= 1) {
+      const candidate = all[i]?.metadata?.lanes;
+      if (candidate && typeof candidate === 'object') {
+        lanes = {
+          download: candidate.download || null,
+          preflight: candidate.preflight || null,
+          ocr: candidate.ocr || null,
+          extract: candidate.extract || null,
+        };
+        break;
+      }
+    }
+
     return {
       timeline: normalized,
       stages,
@@ -137,6 +157,7 @@ export function useAnalysisEvents(events) {
       isErrored: normalized.some((event) => event.stage === 'error'),
       headerCounter,
       counterKnown: Boolean(headerCounter) && Number.isFinite(headerCounter.total),
+      lanes,
     };
   }, [events]);
 }

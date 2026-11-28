@@ -22,7 +22,7 @@ function StatefulScanDepthSelect({ value: initialValue, onChange, ...props }) {
 
 describe('ScanDepthSelect', () => {
   test('renders exactly the two depth options with balanced selected by default', () => {
-    render(<ScanDepthSelect value="balanced" onChange={jest.fn()} />);
+    render(<ScanDepthSelect value="balanced" onChange={vi.fn()} />);
 
     const combo = screen.getByLabelText(/dubina pretrage/i);
     expect(combo).toHaveValue('balanced');
@@ -33,7 +33,7 @@ describe('ScanDepthSelect', () => {
   });
 
   test('selecting an option emits and renders the depth value', () => {
-    const onChange = jest.fn();
+    const onChange = vi.fn();
     render(<StatefulScanDepthSelect value="balanced" onChange={onChange} />);
 
     fireEvent.change(screen.getByLabelText(/dubina pretrage/i), { target: { value: 'full' } });
@@ -44,14 +44,14 @@ describe('ScanDepthSelect', () => {
   });
 
   test('falls back to balanced for an invalid value', () => {
-    render(<ScanDepthSelect value="deep" onChange={jest.fn()} />);
+    render(<ScanDepthSelect value="deep" onChange={vi.fn()} />);
 
     expect(screen.getByLabelText(/dubina pretrage/i)).toHaveValue('balanced');
     expect(screen.getByText(/najnovije i najstarije/i)).toBeInTheDocument();
   });
 
   test('does not emit when disabled', () => {
-    const onChange = jest.fn();
+    const onChange = vi.fn();
     render(<ScanDepthSelect value="balanced" onChange={onChange} disabled />);
 
     const combo = screen.getByLabelText(/dubina pretrage/i);

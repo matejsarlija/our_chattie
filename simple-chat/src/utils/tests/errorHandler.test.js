@@ -14,8 +14,8 @@ import {
 
 describe('errorHandler utilities', () => {
     beforeEach(() => {
-        jest.clearAllMocks();
-        console.error = jest.fn();
+        vi.clearAllMocks();
+        console.error = vi.fn();
     });
 
     describe('Error Classes', () => {
@@ -140,7 +140,7 @@ describe('errorHandler utilities', () => {
 
     describe('handleAsyncError', () => {
         test('should return result when async function succeeds', async () => {
-            const successFn = jest.fn().mockResolvedValue('success');
+            const successFn = vi.fn().mockResolvedValue('success');
             const result = await handleAsyncError(successFn);
 
             expect(result).toBe('success');
@@ -148,15 +148,15 @@ describe('errorHandler utilities', () => {
         });
 
         test('should log error when async function fails', async () => {
-            const errorFn = jest.fn().mockRejectedValue(new Error('Async error'));
+            const errorFn = vi.fn().mockRejectedValue(new Error('Async error'));
             
             await expect(handleAsyncError(errorFn)).rejects.toThrow('Async error');
             expect(console.error).toHaveBeenCalledWith('Async error:', expect.any(Error));
         });
 
         test('should return fallback when provided and async function fails', async () => {
-            const errorFn = jest.fn().mockRejectedValue(new Error('Async error'));
-            const fallbackFn = jest.fn().mockReturnValue('fallback');
+            const errorFn = vi.fn().mockRejectedValue(new Error('Async error'));
+            const fallbackFn = vi.fn().mockReturnValue('fallback');
 
             const result = await handleAsyncError(errorFn, fallbackFn);
 
@@ -167,14 +167,14 @@ describe('errorHandler utilities', () => {
 
     describe('createErrorHandler', () => {
         test('should create error handler function', () => {
-            const setError = jest.fn();
+            const setError = vi.fn();
             const errorHandler = createErrorHandler(setError, { component: 'Test' });
 
             expect(typeof errorHandler).toBe('function');
         });
 
         test('should handle error and set user message', () => {
-            const setError = jest.fn();
+            const setError = vi.fn();
             const errorHandler = createErrorHandler(setError, { component: 'Test' });
             const error = new NetworkError('Connection failed', 'server_error');
 
@@ -199,9 +199,9 @@ describe('errorHandler utilities', () => {
         test('should track analytics in production', () => {
             const originalEnv = process.env.NODE_ENV;
             process.env.NODE_ENV = 'production';
-            window.gtag = jest.fn();
+            window.gtag = vi.fn();
 
-            const setError = jest.fn();
+            const setError = vi.fn();
             const errorHandler = createErrorHandler(setError);
             const error = new Error('Test error');
 
@@ -244,7 +244,7 @@ describe('errorHandler utilities', () => {
 
     describe('retryOperation', () => {
         test('should succeed on first attempt', async () => {
-            const operation = jest.fn().mockResolvedValue('success');
+            const operation = vi.fn().mockResolvedValue('success');
             const result = await retryOperation(operation);
 
             expect(result).toBe('success');
@@ -252,7 +252,7 @@ describe('errorHandler utilities', () => {
         });
 
         test('should retry on failure and eventually succeed', async () => {
-            const operation = jest.fn()
+            const operation = vi.fn()
                 .mockRejectedValueOnce(new Error('First failure'))
                 .mockRejectedValueOnce(new Error('Second failure'))
                 .mockResolvedValue('success');
@@ -264,7 +264,7 @@ describe('errorHandler utilities', () => {
         });
 
         test('should fail after max retries', async () => {
-            const operation = jest.fn().mockRejectedValue(new Error('Always fails'));
+            const operation = vi.fn().mockRejectedValue(new Error('Always fails'));
 
             await expect(retryOperation(operation, 2, 100))
                 .rejects.toThrow('Always fails');
@@ -274,7 +274,7 @@ describe('errorHandler utilities', () => {
 
         test('should not retry on validation errors', async () => {
             const validationError = new ValidationError('Invalid data');
-            const operation = jest.fn().mockRejectedValue(validationError);
+            const operation = vi.fn().mockRejectedValue(validationError);
 
             await expect(retryOperation(operation, 3, 100))
                 .rejects.toThrow('Invalid data');
@@ -285,7 +285,7 @@ describe('errorHandler utilities', () => {
         test('should not retry on AbortError', async () => {
             const abortError = new Error('Request aborted');
             abortError.name = 'AbortError';
-            const operation = jest.fn().mockRejectedValue(abortError);
+            const operation = vi.fn().mockRejectedValue(abortError);
 
             await expect(retryOperation(operation, 3, 100))
                 .rejects.toThrow('Request aborted');
@@ -295,7 +295,7 @@ describe('errorHandler utilities', () => {
 
         test('should use exponential backoff', async () => {
             const startTime = Date.now();
-            const operation = jest.fn()
+            const operation = vi.fn()
                 .mockRejectedValueOnce(new Error('First failure'))
                 .mockRejectedValueOnce(new Error('Second failure'))
                 .mockResolvedValue('success');

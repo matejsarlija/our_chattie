@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import Button from '../ui/Button';
 import StatusBadge from '../ui/StatusBadge';
 
 export default function BenchCandidatesPanel({
@@ -26,27 +27,24 @@ export default function BenchCandidatesPanel({
   };
 
   return (
-    <section aria-labelledby="bench-candidates-heading" className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-5">
-      <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+    <section aria-labelledby="bench-candidates-heading" className="card p-5">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 id="bench-candidates-heading" className="text-base font-semibold text-[var(--text)]">
+          <p className="eyebrow">02 · Anomalije iz produkcije</p>
+          <h2 id="bench-candidates-heading" className="mt-1 text-lg font-semibold text-ink">
             Kandidati iz produkcije (bench_candidates)
           </h2>
-          <p className="text-xs text-[var(--text-muted)]">
+          <p className="text-xs text-ink-muted">
             Anomalije i segmenti s greškama za referentno-slobodni mikro-bench.
           </p>
         </div>
-        <button
-          type="button"
-          onClick={onSeed}
-          className="rounded-lg border border-[var(--border-control)] px-3 py-1.5 text-sm font-medium text-[var(--text)] hover:bg-[var(--surface-muted)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--accent)]"
-        >
+        <Button type="button" variant="secondary" size="sm" onClick={onSeed}>
           Seed Kerum uzorke
-        </button>
+        </Button>
       </div>
 
       {lastResult ? (
-        <div className="mb-3 rounded-lg border border-[var(--border)] bg-[var(--surface-muted)] p-3 text-xs text-[var(--text)]">
+        <div className="mb-3 rounded-md border border-line bg-surface-muted p-3 text-xs text-ink">
           <strong>Zadnji mikro-bench:</strong> {lastResult.docName} ({lastResult.model}) —{' '}
           {lastResult.dryRun
             ? `Procjena $${lastResult.estimatedCostUsd}`
@@ -55,12 +53,12 @@ export default function BenchCandidatesPanel({
       ) : null}
 
       {candidates.length === 0 ? (
-        <p className="text-sm text-[var(--text-muted)]">Nema zabilježenih kandidata.</p>
+        <p className="text-sm text-ink-muted">Nema zabilježenih kandidata.</p>
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm">
             <thead>
-              <tr className="border-b border-[var(--border)] text-xs text-[var(--text-muted)]">
+              <tr className="border-b border-line text-xs text-ink-muted">
                 <th className="py-2 pr-3">Dokument</th>
                 <th className="py-2 pr-3">Razlozi</th>
                 <th className="py-2 pr-3">Status</th>
@@ -69,31 +67,33 @@ export default function BenchCandidatesPanel({
             </thead>
             <tbody>
               {candidates.map((c) => (
-                <tr key={c.id} className="border-b border-[var(--border)]/60">
-                  <td className="py-2 pr-3 font-medium text-[var(--text)]">{c.docName}</td>
-                  <td className="py-2 pr-3 text-xs text-[var(--text-muted)]">
+                <tr key={c.id} className="border-b border-line">
+                  <td className="py-2 pr-3 font-medium text-ink">{c.docName}</td>
+                  <td className="py-2 pr-3 text-xs text-ink-muted">
                     {(c.triggerReasons || []).join(', ') || '—'}
                   </td>
                   <td className="py-2 pr-3">
                     <StatusBadge status={c.status === 'evaluated' ? 'done' : 'queued'} />
                   </td>
-                  <td className="py-2 text-right space-x-2">
-                    <button
+                  <td className="space-x-2 py-2 text-right">
+                    <Button
                       type="button"
+                      variant="secondary"
+                      size="sm"
                       disabled={busyId === c.id}
                       onClick={() => handleMicroBench(c.id, true)}
-                      className="rounded border border-[var(--border-control)] px-2 py-1 text-xs text-[var(--text)] hover:bg-[var(--surface-muted)] disabled:opacity-50"
                     >
                       Dry-run
-                    </button>
-                    <button
+                    </Button>
+                    <Button
                       type="button"
+                      variant="primary"
+                      size="sm"
                       disabled={busyId === c.id}
                       onClick={() => handleMicroBench(c.id, false)}
-                      className="rounded bg-[var(--accent)] px-2 py-1 text-xs text-white hover:opacity-90 disabled:opacity-50"
                     >
                       Mikro-bench
-                    </button>
+                    </Button>
                   </td>
                 </tr>
               ))}

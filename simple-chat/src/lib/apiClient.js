@@ -136,3 +136,58 @@ export const suggestBenchGold = (body) => apiFetch('/api/bench/gold/suggest', { 
 export const getBenchGoldPageUrl = (set, file, page) => resolveApiUrl(
   `/api/bench/gold/page?set=${encodeURIComponent(set)}&file=${encodeURIComponent(file)}&page=${encodeURIComponent(page)}`
 );
+
+const buildQueryString = (params = {}) => {
+  const search = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (value === undefined || value === null || value === '') continue;
+    search.set(key, String(value));
+  }
+  const qs = search.toString();
+  return qs ? `?${qs}` : '';
+};
+
+// Section 4.10 Analysis Run Read-Side, Control & Change-Detection Helpers
+export const getRunFacts = (runId, { kind, partyId, grounded, q, limit, offset } = {}, { signal } = {}) => apiFetch(
+  `/api/analysis/runs/${encodeURIComponent(runId)}/facts${buildQueryString({ kind, partyId, grounded, q, limit, offset })}`,
+  { signal },
+);
+
+export const searchRunChunks = (runId, { q, limit, offset } = {}, { signal } = {}) => apiFetch(
+  `/api/analysis/runs/${encodeURIComponent(runId)}/chunks${buildQueryString({ q, limit, offset })}`,
+  { signal },
+);
+
+export const getRunChunk = (runId, chunkId, { signal } = {}) => apiFetch(
+  `/api/analysis/runs/${encodeURIComponent(runId)}/chunks/${encodeURIComponent(chunkId)}`,
+  { signal },
+);
+
+export const listRunTraces = (runId, { limit, offset } = {}, { signal } = {}) => apiFetch(
+  `/api/analysis/runs/${encodeURIComponent(runId)}/traces${buildQueryString({ limit, offset })}`,
+  { signal },
+);
+
+export const getRunTrace = (runId, traceId, { signal } = {}) => apiFetch(
+  `/api/analysis/runs/${encodeURIComponent(runId)}/traces/${encodeURIComponent(traceId)}`,
+  { signal },
+);
+
+export const cancelAnalysisRun = (runId) => apiFetch(
+  `/api/analysis/runs/${encodeURIComponent(runId)}/cancel`,
+  { method: 'POST', body: {} }
+);
+
+export const retryAnalysisReport = (runId) => apiFetch(
+  `/api/analysis/runs/${encodeURIComponent(runId)}/report`,
+  { method: 'POST', body: {} }
+);
+
+export const getChangeDetectionHistory = (queryValue) => apiFetch(
+  `/api/change-detection/history${buildQueryString({ queryValue })}`
+);
+
+export const runChangeDetectionCheck = (query) => apiFetch(
+  '/api/change-detection/check',
+  { method: 'POST', body: { query } }
+);

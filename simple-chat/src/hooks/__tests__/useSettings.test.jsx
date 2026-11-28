@@ -7,9 +7,9 @@ import { act, render, waitFor } from '@testing-library/react';
 import { useSettings } from '../useSettings';
 import { getSettings, updateSettings } from '../../lib/apiClient';
 
-jest.mock('../../lib/apiClient', () => ({
-  getSettings: jest.fn(),
-  updateSettings: jest.fn(),
+vi.mock('../../lib/apiClient', () => ({
+  getSettings: vi.fn(),
+  updateSettings: vi.fn(),
 }));
 
 function Harness({ onValue }) {
@@ -24,7 +24,7 @@ function Harness({ onValue }) {
 
 describe('useSettings', () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
   });
 
   test('loads the persisted default scan depth on mount', async () => {

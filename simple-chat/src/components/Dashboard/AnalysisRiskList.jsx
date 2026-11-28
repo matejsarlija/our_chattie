@@ -74,7 +74,13 @@ function orderRiskItems(conflicts, openQuestions) {
   ];
 }
 
-export default function AnalysisRiskList({ conflicts, openQuestions, sourceDocuments = [], hasStructuredReport = false }) {
+export default function AnalysisRiskList({
+  conflicts,
+  openQuestions,
+  sourceDocuments = [],
+  hasStructuredReport = false,
+  onOpenEvidence,
+}) {
   const [visibleCount, setVisibleCount] = useState(10);
   const ranked = useMemo(() => orderRiskItems(conflicts, openQuestions), [conflicts, openQuestions]);
   const sourceDocumentsById = useMemo(
@@ -131,6 +137,22 @@ export default function AnalysisRiskList({ conflicts, openQuestions, sourceDocum
               <AmountChips item={wrapped.item} />
               <div className="mt-2 text-xs text-ink-muted">
                 <p><span className="font-medium text-ink">Porijeklo u izvještaju:</span> {sourceLabel(wrapped.item)}</p>
+                {onOpenEvidence && (wrapped.item?.chunkId || wrapped.item?.sourceChunkId) ? (
+                  <button
+                    type="button"
+                    onClick={() => onOpenEvidence({
+                      chunkId: wrapped.item.chunkId || wrapped.item.sourceChunkId,
+                      docId: wrapped.item.docId,
+                      quote: wrapped.item.quote || wrapped.text,
+                      fileName: documents[0]?.fileName || wrapped.item.fileName,
+                      pageNumbers: wrapped.item.sourcePages,
+                      url: documents[0]?.url,
+                    })}
+                    className="mt-1 text-xs font-medium text-accent hover:underline"
+                  >
+                    Prikaži u kontekstu
+                  </button>
+                ) : null}
                 {ids.length === 0 ? (
                   <p className="mt-1">Poveznica na izvorni dokument nije spremljena uz ovu stavku.</p>
                 ) : documents.length > 0 ? (

@@ -1,32 +1,9 @@
-/**
- * @jest-environment jsdom
- */
-
 import React from 'react';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import SettingsPopover from '../SettingsPopover';
-import { useSettings } from '../../../hooks/useSettings';
-
-jest.mock('../../../hooks/useSettings', () => ({
-  useSettings: jest.fn(),
-}));
 
 describe('SettingsPopover', () => {
-  const saveSettings = jest.fn();
-
-  beforeEach(() => {
-    jest.clearAllMocks();
-    saveSettings.mockResolvedValue({});
-    useSettings.mockReturnValue({
-      settings: { defaultScanDepth: 'balanced' },
-      loading: false,
-      saving: false,
-      error: '',
-      saveSettings,
-    });
-  });
-
-  test('exposes only the lawyer-facing default scan-depth preference', async () => {
+  test('opens on click and displays Design System, Pravila privatnosti, and O nama links', async () => {
     render(<SettingsPopover />);
 
     const trigger = screen.getByRole('button', { name: 'Postavke' });
@@ -34,18 +11,11 @@ describe('SettingsPopover', () => {
     fireEvent.click(trigger);
 
     expect(await screen.findByRole('dialog')).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Postavke' })).toBeInTheDocument();
-    expect(screen.getByLabelText('Dubina pretrage')).toHaveValue('balanced');
-    expect(screen.queryByText(/zaključivanja|rerank|model routing/i)).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Design System' })).toHaveAttribute('href', '/dashboard/design-system');
+    expect(screen.getByRole('link', { name: 'Pravila privatnosti' })).toHaveAttribute('href', '/pravila-privatnosti');
+    expect(screen.getByRole('link', { name: 'O nama' })).toHaveAttribute('href', '/o-nama');
+    expect(screen.queryByLabelText('Dubina pretrage')).not.toBeInTheDocument();
     expect(trigger).toHaveAttribute('aria-expanded', 'true');
-  });
-
-  test('persists the selected default scan depth', async () => {
-    render(<SettingsPopover />);
-    fireEvent.click(screen.getByRole('button', { name: 'Postavke' }));
-
-    fireEvent.change(await screen.findByLabelText('Dubina pretrage'), { target: { value: 'full' } });
-    expect(saveSettings).toHaveBeenCalledWith({ defaultScanDepth: 'full' });
   });
 
   test('closes on Escape and restores focus to the gear trigger', async () => {
