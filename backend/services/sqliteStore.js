@@ -1174,6 +1174,12 @@ function createSqliteStore(options = {}) {
         );
       return id;
     },
+    pruneOldLlmTraces({ retentionDays = 30 } = {}) {
+      const days = Math.max(1, Number(retentionDays) || 30);
+      const cutoff = new Date(Date.now() - days * 86400 * 1000).toISOString();
+      const result = db.prepare('DELETE FROM llm_traces WHERE created_at < ?').run(cutoff);
+      return result.changes || 0;
+    },
     getLatestSnapshot(queryId) {
       const row = db.prepare('SELECT payload_json FROM change_snapshots WHERE query_id = ?').get(queryId);
       return row ? parseJson(row.payload_json) : null;

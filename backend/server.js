@@ -15,8 +15,6 @@ const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const rateLimiter = require('./http/rateLimiter');
 const { createSqliteStore } = require('./services/sqliteStore');
-const { createAnalysisLabStore } = require('./services/analysisLabStore');
-const { createAnalysisLabRouter } = require('./court-analysis/reasoning/analysisLab/api');
 const { createChangeCheckService } = require('./change-detection/service');
 const { createCourtAnalysisRouter } = require('./routes/courtAnalysis');
 const { createAnalysisRunsRouter } = require('./routes/analysisRuns');
@@ -26,15 +24,48 @@ const path = require('node:path');
 const { createRunAbortRegistry } = require('./http/runAbortRegistry');
 const { recoverServerState, installShutdownHandlers } = require('./http/serverLifecycle');
 const { createRunBus } = require('./http/runBus');
-async function startServer() {
-  const { default: PQueue } = await import('p-queue');
-  logger.agent.log('p-queue module loaded successfully.');
+function createBoundedQueue(concurrency = 2) {
+  let active = 0;
+  const waiting = [];
+  const idleWaiters = [];
+  const drainIdle = () => {
+    if (active === 0 && waiting.length === 0) {
+      while (idleWaiters.length) idleWaiters.shift()();
+    }
+  };
+  const next = () => {
+    while (active < concurrency && waiting.length > 0) {
+      const { fn, resolve, reject } = waiting.shift();
+      active += 1;
+      Promise.resolve().then(fn).then(resolve, reject).finally(() => {
+        active -= 1;
+        next();
+        drainIdle();
+      });
+    }
+  };
+  return {
+    add(fn) {
+      return new Promise((resolve, reject) => {
+        waiting.push({ fn, resolve, reject });
+        next();
+      });
+    },
+    get size() { return waiting.length; },
+    get pending() { return active; },
+    onIdle() {
+      if (active === 0 && waiting.length === 0) return Promise.resolve();
+      return new Promise((resolve) => idleWaiters.push(resolve));
+    },
+  };
+}
 
+async function startServer() {
   const app = express();
   app.set('trust proxy', 1);
   const port = Number(process.env.PORT) || 3001;
   const host = '0.0.0.0';
-  const courtAnalysisQueue = new PQueue({ concurrency: 2 });
+  const courtAnalysisQueue = createBoundedQueue(2);
   const analysisStore = createSqliteStore();
   const runBus = createRunBus({ analysisStore });
   const runAbortRegistry = createRunAbortRegistry();
@@ -43,7 +74,6 @@ async function startServer() {
     uploadsDir: path.join(__dirname, 'uploads'),
   });
   logger.agent.log(`[Startup] Interrupted ${recovery.interruptedRuns} stale run(s); removed ${recovery.removedUploadEntries} upload item(s).`);
-  const analysisLabStore = createAnalysisLabStore();
   const changeCheckService = createChangeCheckService({ store: analysisStore });
 
   app.use(helmet());
@@ -66,7 +96,6 @@ async function startServer() {
   app.use('/api/analysis', createAnalysisRunsRouter({
     analysisStore, readLimiter: analysisReadIpLimiter, writeLimiter: analysisWriteIpLimiter, runAbortRegistry, runBus,
   }));
-  app.use('/api/analysis-lab', createAnalysisLabRouter({ labStore: analysisLabStore, analysisStore, readLimiter: analysisReadIpLimiter, writeLimiter: analysisWriteIpLimiter }));
   app.use('/api/bench', createBenchRouter({
     analysisStore,
     readLimiter: analysisReadIpLimiter,

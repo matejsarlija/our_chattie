@@ -5,7 +5,7 @@ const { trackUsageInvoke } = require("../../../llm/usage");
 const { createOpenRouterRoleClient, outputCapWarning } = require("../../../llm/openrouterConfig");
 const { createTaskRouter } = require("../../../llm/taskRouter");
 const { createCreditExhaustedLatch } = require("../../../llm/creditLatch");
-const { extractJsonBlock, extractJsonArray, modelContentToText } = require("../../../helpers/jsonExtract");
+const { extractJsonBlock, extractJsonArray, modelContentToText } = require("../../../llm/jsonExtract");
 const logger = require("../../../services/logger");
 const { isPoorDocumentCoverage, hasPartialDocumentCoverage, coverageOpenQuestion, applyCoverageConfidenceGuard } = require('../ledger/coverageGuard');
 

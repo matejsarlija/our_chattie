@@ -3,7 +3,7 @@
 const fs = require('fs');
 const { buildPdfMessage, requestChat, extractAssistantText } = require('./openrouter-client');
 const { fetchModelMetadata, capabilitiesFromMetadata } = require('./capabilities');
-const { extractJsonBlock } = require('../../helpers/jsonExtract');
+const { extractJsonBlock } = require('../../llm/jsonExtract');
 const { normalizeGoldFacts, GOLD_CATEGORIES, GOLD_OUTCOMES } = require('./gold-editor');
 
 const DEFAULT_GOLD_MODEL = 'google/gemini-3.7-flash';

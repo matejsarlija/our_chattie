@@ -1,4 +1,4 @@
-// court-analysis/reasoning/analysisLab/evidenceIdentity.js
+// services/canonicalJson.js
 //
 // LA-0 — canonical identity for frozen Lab evidence packages.
 //

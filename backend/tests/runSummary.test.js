@@ -16,7 +16,7 @@
 
 const { buildRunSummary } = require('../court-analysis/utils/runSummary');
 const { collectFlows } = require('../court-analysis/reasoning/ledger/flow');
-const LAB_FIXTURE = require('./fixtures/replays/analysis-lab/kerum-lab.json');
+const LAB_FIXTURE = require('./fixtures/replays/kerum-lab.json');
 const LAB_PKG = { ...LAB_FIXTURE, flows: collectFlows(LAB_FIXTURE.analyses.slice(0, 1)) };
 
 // ── real production run shape (e7139609-dd9f-42a6-b3b6-b9e29fb9c92d) ────────

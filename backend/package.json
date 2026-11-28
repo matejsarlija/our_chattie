@@ -41,7 +41,6 @@
     "helmet": "^7.2.0",
     "mammoth": "^1.9.1",
     "mime-types": "^2.1.35",
-    "p-queue": "^7.3.0",
     "pdf-lib": "^1.17.1",
     "pdfjs-dist": "^3.11.174",
     "puppeteer-core": "^24.11.2",

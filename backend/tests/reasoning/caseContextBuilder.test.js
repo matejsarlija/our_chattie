@@ -7,9 +7,9 @@ const {
     stableStringify,
     evidencePackageDigest,
     cloneEvidencePackage,
-} = require('../../court-analysis/reasoning/analysisLab/evidenceIdentity');
+} = require('../../services/canonicalJson');
 
-const LAB_FIXTURE = require('../fixtures/replays/analysis-lab/kerum-lab.json');
+const LAB_FIXTURE = require('../fixtures/replays/kerum-lab.json');
 
 function buildFromFixture() {
     return buildCaseContext(cloneEvidencePackage(LAB_FIXTURE));

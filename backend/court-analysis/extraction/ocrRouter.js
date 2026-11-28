@@ -8,7 +8,7 @@ const logger = require('../../services/logger');
 const { createOpenRouterClient } = require('../../llm/openrouterClient');
 const { trackUsageInvoke } = require('../../llm/usage');
 const { withGeminiRetry, withGeminiTimeout } = require('../../llm/retry');
-const { modelContentToText } = require('../../helpers/jsonExtract');
+const { modelContentToText } = require('../../llm/jsonExtract');
 const { buildStageCounterEvent } = require('../../http/analysisStage');
 const {
     EXTRACTION_ERROR_CODES,

@@ -3,7 +3,6 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import PrivacyPolicy from './components/PrivacyPolicy';
 import AboutUs from './components/AboutUs';
 import { DashboardPage, AnalysisRunDetailPage } from './components/Dashboard';
-import { AnalysisLabPage, LabExperimentDetailPage } from './components/Dashboard/AnalysisLab';
 import { BenchPage, BenchRunDetailPage, BenchGoldEditorPage } from './components/Bench';
 
 function App() {
@@ -16,8 +15,6 @@ function App() {
         <Route path="/dashboard/bench" element={<BenchPage />} />
         <Route path="/dashboard/bench/runs/:runId" element={<BenchRunDetailPage />} />
         <Route path="/dashboard/bench/gold" element={<BenchGoldEditorPage />} />
-        <Route path="/dashboard/lab" element={<AnalysisLabPage />} />
-        <Route path="/dashboard/lab/experiments/:id" element={<LabExperimentDetailPage />} />
         <Route path="/pravila-privatnosti" element={<PrivacyPolicy />} />
         <Route path="/o-nama" element={<AboutUs />} />
       </Routes>

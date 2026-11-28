@@ -48,7 +48,7 @@ const {
 const usageModule = require('../../llm/usage');
 const { trackUsageInvoke } = usageModule;
 const { withGeminiRetry, withGeminiTimeout } = require('../../llm/retry');
-const { extractJsonBlock, modelContentToText } = require('../../helpers/jsonExtract');
+const { extractJsonBlock, modelContentToText } = require('../../llm/jsonExtract');
 const { classifyFileFailure, classifyFileFailureDetailed } = require('../../http/friendlyAnalysisError');
 const { buildStageCounterEvent } = require('../../http/analysisStage');
 

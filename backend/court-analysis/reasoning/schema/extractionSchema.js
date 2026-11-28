@@ -588,7 +588,7 @@ function hasReceivableAssignmentCue(sourceText) {
 }
 
 function parseFieldRepairResponse(content, field) {
-    const { extractJsonBlock } = require('../../../helpers/jsonExtract');
+    const { extractJsonBlock } = require('../../../llm/jsonExtract');
     const parsed = extractJsonBlock(content);
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
         return { ok: false, reason: 'repair response is not a JSON object' };

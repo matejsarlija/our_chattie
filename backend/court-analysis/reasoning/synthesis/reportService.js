@@ -4,7 +4,6 @@ const { retrieveEvidence } = require('../retrieval/retriever');
 const { annotateFindingsWithRetrieval } = require('../retrieval/findingProvenance');
 const { buildScopeContract } = require('../ledger/scopeContract');
 const { buildSynthesisInput } = require('./synthesisInputBuilder');
-const { buildProfileReportInput } = require('../contextReportAdapter');
 const logger = require('../../../services/logger');
 
 
@@ -27,30 +26,7 @@ async function generateClusterReport(clusterEvidencePackage, options = {}) {
         sourceTypes: retrieval?.metrics?.sourceTypeCounts || null,
     });
 
-    const labProfile = options.labProfile || null;
-    let reasoningEvidence;
-    let contextTrace = null;
-    if (labProfile) {
-        const adapted = await buildProfileReportInput({
-            evidencePackage: clusterEvidencePackage,
-            retrieval,
-            profileId: labProfile,
-            summarizeLlm: options.summarizeLlm || null,
-            tracker: options.tracker,
-            onUsage: options.onUsage,
-        });
-        reasoningEvidence = adapted.input;
-        contextTrace = adapted.trace;
-        logger.info('reportService.context', 'Context report input built', {
-            runId,
-            profile: labProfile,
-            rootId: contextTrace?.rootId || null,
-            branchClaims: contextTrace?.claims?.branch ?? 0,
-            derivedClaims: contextTrace?.claims?.derived ?? 0,
-        });
-    } else {
-        reasoningEvidence = buildSynthesisInput(clusterEvidencePackage, retrieval);
-    }
+    const reasoningEvidence = buildSynthesisInput(clusterEvidencePackage, retrieval);
     logger.info('reportService.synthesize', 'Synthesis input built', {
         runId,
         timeline: Array.isArray(reasoningEvidence?.timeline) ? reasoningEvidence.timeline.length : 0,
@@ -138,8 +114,6 @@ async function generateClusterReport(clusterEvidencePackage, options = {}) {
             },
             retrieval: stripRetrievalText(retrieval),
             scope,
-            // Lab-only: context profiles persist their bounded trace.
-            ...(contextTrace ? { contextTrace } : {}),
         }
     };
 }

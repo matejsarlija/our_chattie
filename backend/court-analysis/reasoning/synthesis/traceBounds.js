@@ -1,4 +1,4 @@
-// backend/court-analysis/reasoning/analysisLab/traceBounds.js
+// backend/court-analysis/reasoning/synthesis/traceBounds.js
 //
 // LQ-2 — trace-size, redaction, and failure-mode guards (spec §9).
 //

@@ -1,4 +1,4 @@
-const { extractJsonBlock, extractJsonArray, extractJsonArrayAtKey, stripCodeFences, modelContentToText } = require('../helpers/jsonExtract');
+const { extractJsonBlock, extractJsonArray, extractJsonArrayAtKey, stripCodeFences, modelContentToText } = require('../llm/jsonExtract');
 
 describe('extractJsonBlock', () => {
     const object = { caseNumber: 'St-2/2013', summary: 'Otvoren stečaj.' };
