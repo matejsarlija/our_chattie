@@ -8,7 +8,7 @@ For backend setup, OpenRouter LLM configuration, and end-to-end QA instructions,
 
 - `/` redirects to `/dashboard`.
 - `/dashboard` lists analysis runs and opens the new-analysis dialog, which includes a "Dubina pretrage" scan-depth selector (`ScanDepthSelect`): `Uravnoteženo` (default; up to 100 stratified key entries with all attached documents; legacy `Standardno` removed in Phase 0/1) and `Sve` (`Sve dostupne`, full primary-cluster coverage).
-- `/dashboard/runs/:id` shows one run, including its live `runBus` SSE progress stream (with polling fallback), status (`Završeno`, `Djelomično`, `Prekinuto`, `Greška`), financial/property flows, coverage scorecard, and structured report.
+- `/dashboard/runs/:id` shows one run, including its live `runBus` SSE progress stream (`run.preflight` cost ballpark, lane-scoped progress counters, `?afterSeq=` reconnect replay, and polling fallback), status (`Završeno`, `Djelomično`, `Prekinuto`, `Otkazano`, `Greška`), run cancellation (`POST /cancel`), report retry/upgrade (`POST /report` including `deterministic_fallback` upgrades in `[R100-025]`), financial/property flows, coverage scorecard, structured report, and thin SQLite read endpoints (`/facts`, `/chunks`, `/traces`) for evidence inspection.
 - `/dashboard/bench` (replacing legacy `/dashboard/lab` in `[R100-028]`–`[R100-029]`) hosts the integrated PDF-engine & Stage-2 benchmark launcher, scorecards, and gold fact editor.
 
 ## Development

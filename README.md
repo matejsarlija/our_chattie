@@ -4,7 +4,7 @@ This tool discovers, downloads, and analyzes Croatian court entries (`objave`) f
 
 It is a full-stack, single-tenant court-analysis dashboard: a user submits an OIB, case number, or free-text search, and the backend pipeline discovers the primary case cluster, processes its attachments, and generates a structured Croatian legal report with live SSE progress updates and deterministic financial/property reconciliation.
 
-> **Active Architecture Migration (Road to 100 Entries):** The repository is currently executing the upgrade documented in [docs/road-to-100-entries-plan.md](file:///home/oxioxi/proj/our_chattie/docs/road-to-100-entries-plan.md) and [docs/road-to-100-entries-ticket-breakdown.md](file:///home/oxioxi/proj/our_chattie/docs/road-to-100-entries-ticket-breakdown.md) (`[R100-001]`–`[R100-030]`): migrating 100% to OpenRouter (`OPENROUTER_API_KEY` only), consolidating local JSON stores into `better-sqlite3` (+ FTS5), scaling `Uravnoteženo` to **100 court entries** (with all attachments), integrating `/dashboard/bench`, and retiring Analysis Lab.
+> **Active Architecture Migration (Road to 100 Entries):** Epics 0–3 (`[R100-001]`–`[R100-020]`) are complete and verified — 100% OpenRouter routing (`OPENROUTER_API_KEY` only), unified `better-sqlite3` (+ FTS5) persistence, `runBus` SSE streaming with `?afterSeq=` replay, `Uravnoteženo` (100-entry) `ScanDepthPolicy`, and `worker_threads` `Stage T0`/`T0.5`/`T`/`A` extraction. Remaining Epics 4–5 (`[R100-021]`–`[R100-030]`) harden deterministic reconciliation/synthesis and integrate `/dashboard/bench`. See [docs/road-to-100-entries-plan.md](file:///home/oxioxi/proj/our_chattie/docs/road-to-100-entries-plan.md) and [docs/road-to-100-entries-ticket-breakdown.md](file:///home/oxioxi/proj/our_chattie/docs/road-to-100-entries-ticket-breakdown.md).
 
 ## About the project
 
@@ -23,16 +23,16 @@ This project is GPLv3 licensed ([LICENSE.md](file:///home/oxioxi/proj/our_chatti
 - **Primary CSV Discovery + Puppeteer Fallback:** Fetches complete e-Oglasna search exports in a single HTTP GET, with batched Puppeteer fallback when CSV export is unavailable.
 - **Automated Document & Archive Processing:** Downloads, safely extracts nested `.zip` archives, and classifies digital vs. scanned vs. hybrid PDFs.
 - **Grounded Extraction & Deterministic Reconciliation:** Verifies verbatim quotes against source text, resolves Croatian HRK/EUR conversions at the statutory fixed rate, and tracks receivable cession lifecycles (`prijava -> ustup -> namirenje`).
-- **Live Progress & Analysis History:** Persists runs, events, OCR transcripts, checkpoints, and traces locally (`backend/data/analysis/`, migrating from JSON files to SQLite `analysis.db`) with live SSE streaming and polling fallback.
+- **Live Progress & Analysis History:** Persists runs, events, OCR transcripts, checkpoints, FTS5 chunks, and LLM traces in SQLite (`backend/data/analysis/analysis.db`) with live `runBus` SSE streaming and polling fallback.
 - **Programmatic Bench (`/dashboard/bench`):** Integrated benchmark & gold-fact workspace replacing legacy Analysis Lab (`[R100-027]`–`[R100-029]`).
 
 ## Tech Stack
 
 - **Frontend:** React, Tailwind CSS, React Router, Radix UI, react-markdown (`simple-chat/`)
 - **Backend:** Node.js, Express.js (`backend/`)
-- **Persistence:** Local storage under `backend/data/analysis/` (JSON files transitioning to `better-sqlite3` + FTS5 in Phase 2 `[R100-011]`)
-- **Discovery & PDF ETL:** e-Oglasna CSV export, Puppeteer / Browserless.io, `pdfjs-dist`, `pdf-lib`, `adm-zip`
-- **AI & OCR:** OpenRouter (`z-ai/glm-5.3-flash`, `or-mistral-ocr`, `google/gemma-4-31b-it`, `google/gemini-2.5-flash` — transitioning off legacy `GOOGLE_API_KEY` / `@langchain/google-genai` in Phase 0 `[R100-002]`)
+- **Persistence:** SQLite via `better-sqlite3` + FTS5 (`backend/data/analysis/analysis.db`, WAL mode)
+- **Discovery & PDF ETL:** e-Oglasna CSV export, Puppeteer / Browserless.io, `pdfjs-dist`, `pdf-lib`, `adm-zip`, `node:worker_threads`
+- **AI & OCR:** 100% OpenRouter (`z-ai/glm-5.3-flash`, `or-mistral-ocr`, `google/gemma-4-31b-it`, `google/gemini-2.5-flash`)
 
 ## Getting Started
 
@@ -59,12 +59,11 @@ This project is GPLv3 licensed ([LICENSE.md](file:///home/oxioxi/proj/our_chatti
    Copy `backend/.env.example` to `backend/.env` and configure your API key:
    ```ini
    # .env in /backend
-   OPENROUTER_API_KEY="your_openrouter_api_key" # Required once [R100-002] lands (100% OpenRouter routing)
-   # GOOGLE_API_KEY="..."                     # Legacy pre-[R100-002] startup requirement only; removed in Phase 0
+   OPENROUTER_API_KEY="your_openrouter_api_key" # Required sole LLM & OCR API key (100% OpenRouter)
    CORS_ORIGIN="http://localhost:3000"        # Optional; frontend dev origin
    PORT=3001                                  # Optional; backend port
    BROWSERLESS_TOKEN="your_browserless_token" # Optional; remote Puppeteer fallback
-   # ANALYSIS_DATA_DIR=/absolute/path/to/data # Optional; custom persistence path
+   # ANALYSIS_DATA_DIR=/absolute/path/to/data # Optional; custom SQLite data directory
    ```
    The frontend dev server (Vite, port 3000) proxies `/api` to the backend on port 3001, so no frontend env vars are required locally. Override with `simple-chat/.env.local` if needed:
    ```ini

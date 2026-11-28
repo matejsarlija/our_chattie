@@ -176,4 +176,18 @@ describe('sqliteStore', () => {
         expect(history.diffs).toHaveLength(3);
         expect(history.diffs.map((d) => d.addedCount)).toEqual([1, 2, 3]);
     });
+
+    test('supports :memory: dbPath without creating a literal file on disk', () => {
+        const cwdMemoryFile = path.resolve(':memory:');
+        const existedBefore = fs.existsSync(cwdMemoryFile);
+        const memStore = createSqliteStore({ dbPath: ':memory:', dataDir });
+        try {
+            expect(memStore.dbPath).toBe(':memory:');
+            if (!existedBefore) {
+                expect(fs.existsSync(cwdMemoryFile)).toBe(false);
+            }
+        } finally {
+            memStore.close();
+        }
+    });
 });

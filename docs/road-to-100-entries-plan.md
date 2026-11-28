@@ -1,7 +1,7 @@
 # Road to 100 Court Entries — Master Architecture, Hardening & Consolidation Plan
 
-**Status:** Final Actionable Architecture Blueprint (Consolidated — Ready for Ticket Breakdown)  
-**Date:** 2026-11-24  
+**Status:** Active Architecture Blueprint — Epics 0–3 Landed & Verified (Next: `[R100-021]` live smoke + Epics 4–5)  
+**Date:** 2026-11-26  
 **Target Scope:** Reliably process **100 court entries (`Uravnoteženo`)** with all attached documents (and full-docket **`Sve`**), migrate persistence to **`better-sqlite3` (+ FTS5 + `llm_traces`)**, standardize **100% on OpenRouter (`OPENROUTER_API_KEY` only — zero Google/LangChain SDKs)** across **`z-ai/glm-5.3-flash`**, **`or-mistral-ocr`**, **`google/gemma-4-31b-it`**, and **`google/gemini-2.5-flash`**, offload PDF/ZIP/raster CPU work to **`node:worker_threads`**, adopt an **RLM Symbolic Case Environment** for Stage-2 synthesis, integrate **`Bench`** directly into the app at `/dashboard/bench` (with a closed Production → Bench anomaly loop), and cleanly **sunset Analysis Lab**.
 
 **Authoritative References:**
@@ -10,6 +10,7 @@
 - [EPIC3-PRODUCTION-MIGRATION-TICKET-BREAKDOWN.md](file:///home/oxioxi/proj/our_chattie/backend/data/pdf-engine-bench/EPIC3-PRODUCTION-MIGRATION-TICKET-BREAKDOWN.md) (Proposed `[PROD-201]`–`[PROD-205]` specs subsumed here)
 - Linear Document: *PDF Engine Benchmark Synthesis & Production Migration Plan (Epics 1–3)* (`49cca207-d4d1-4436-96c4-3cd26228e830`, [Linear URL](https://linear.app/chattie/document/pdf-engine-benchmark-synthesis-and-production-migration-plan-epics-1-3-21f5b6283ae1))
 - [road-to-100-entries-plan-review.md](file:///home/oxioxi/proj/our_chattie/docs/road-to-100-entries-plan-review.md) (Architectural review & tracked changes subsumed into this final blueprint)
+- [road-to-100-entries-frontend-contract-review.md](file:///home/oxioxi/proj/our_chattie/docs/road-to-100-entries-frontend-contract-review.md) (Frontend & design-engineering read-side wire-contract review subsumed into this blueprint)
 - [AGENTS.md](file:///home/oxioxi/proj/our_chattie/AGENTS.md) (Repository invariants & conventions)
 
 ---
@@ -278,22 +279,24 @@ CREATE TABLE runs (
   query_type TEXT,
   query_value TEXT,
   scan_depth TEXT NOT NULL DEFAULT 'balanced',
-  status TEXT NOT NULL,           -- queued | running | done | partial | error | interrupted
+  status TEXT NOT NULL,           -- queued | running | done | partial | error | interrupted | canceled
+  partial_reason TEXT,            -- e.g. 'provider-credits-exhausted' | 'ocr-page-cap'
+  preflight_json TEXT,            -- Durable Stage T0 manifest & cost ballpark (survives refresh/polling)
   result_format TEXT DEFAULT 'markdown',
-  summary_json TEXT,              -- Projected RunSummary (~1-2 KB)
+  summary_json TEXT,              -- Projected RunSummary incl. scanDepth, costUsd, partialReason, scorecard (~1-2 KB)
   scorecard_json TEXT,            -- Deterministic run quality scorecard (~1 KB)
-  token_usage_json TEXT,
+  token_usage_json TEXT,          -- Enriched usage: costUsd, byStage, cachedTokens, reasoningTokens, cacheHitDocs, modelsUsed
   error_message TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   completed_at TEXT
 );
 
--- 2. Heavy report & evidence artifacts separated from runs list rows
+-- 2. Bounded report & evidence artifacts separated from runs list rows (< 500 KB; no duplicate aiResult, factLedger, or raw analyses[] blobs)
 CREATE TABLE run_artifacts (
   run_id TEXT PRIMARY KEY REFERENCES runs(id) ON DELETE CASCADE,
   result_text TEXT,
-  result_json TEXT                -- Bounded report + canonical flows + reconciliation + scopeContract
+  result_json TEXT                -- Bounded report + slim analyses[] metadata + canonicalParties + creditorDigest + canonical flows + reconciliation + scopeContract
 );
 
 -- 3. O(1) append-only SSE/polling event stream
@@ -497,23 +500,28 @@ CREATE TABLE IF NOT EXISTS model_pricing_cache (
 -- 13. Change-detection snapshots & diffs (folds change-detection/store.js into the single DB)
 CREATE TABLE IF NOT EXISTS change_snapshots (
   query_id TEXT PRIMARY KEY,
+  query_value TEXT,               -- Normalized OIB / case number for one-click lookup from runs
   snapshot_id TEXT NOT NULL,
   payload_json TEXT NOT NULL,
   captured_at TEXT NOT NULL
 );
+CREATE INDEX IF NOT EXISTS idx_change_snapshots_query_value ON change_snapshots(query_value);
 
 CREATE TABLE IF NOT EXISTS change_diffs (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   query_id TEXT NOT NULL,
+  query_value TEXT,
   snapshot_id TEXT NOT NULL,
   diff_json TEXT NOT NULL,
   created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_change_diffs_query ON change_diffs(query_id, id DESC);
+CREATE INDEX IF NOT EXISTS idx_change_diffs_query_value ON change_diffs(query_value, id DESC);
 ```
 
-*Notes on status contract & raw binary files:*
-- Keep `done` as the completed terminal status (alongside `queued | running | partial | error | interrupted`) so existing dashboard/test expectations stay consistent, and update [StatusBadge.jsx](file:///home/oxioxi/proj/our_chattie/simple-chat/src/components/ui/StatusBadge.jsx), [RunStatusBadge.jsx](file:///home/oxioxi/proj/our_chattie/simple-chat/src/components/Dashboard/RunStatusBadge.jsx), [useAnalysisRunDetail.js](file:///home/oxioxi/proj/our_chattie/simple-chat/src/hooks/useAnalysisRunDetail.js), and [analysisStream.js](file:///home/oxioxi/proj/our_chattie/backend/helpers/analysisStream.js) to render and treat **`partial`** (HTTP 402 / degraded synthesis) and **`interrupted`** (unclean restart recovery) explicitly with distinct labels and glyphs per [AGENTS.md](file:///home/oxioxi/proj/our_chattie/AGENTS.md).
+*Notes on status contract, `< 500 KB` initial payload & raw binary files:*
+- Keep `done` as the completed terminal status (alongside `queued | running | partial | error | interrupted | canceled`) so existing dashboard/test expectations stay consistent, and update [StatusBadge.jsx](file:///home/oxioxi/proj/our_chattie/simple-chat/src/components/ui/StatusBadge.jsx), [RunStatusBadge.jsx](file:///home/oxioxi/proj/our_chattie/simple-chat/src/components/Dashboard/RunStatusBadge.jsx), [useAnalysisRunDetail.js](file:///home/oxioxi/proj/our_chattie/simple-chat/src/hooks/useAnalysisRunDetail.js), [PipelinePhases.jsx#L78–84](file:///home/oxioxi/proj/our_chattie/simple-chat/src/components/ui/PipelinePhases.jsx#L78-L84), [CoverageCell.jsx#L24](file:///home/oxioxi/proj/our_chattie/simple-chat/src/components/ui/CoverageCell.jsx#L24), [RunsTable.jsx#L72–73](file:///home/oxioxi/proj/our_chattie/simple-chat/src/components/Dashboard/RunsTable.jsx#L72-L73), and [analysisStream.js](file:///home/oxioxi/proj/our_chattie/backend/helpers/analysisStream.js) to handle **`partial`**, **`interrupted`**, **`canceled`**, and **`queued`** explicitly with distinct labels and glyphs per [AGENTS.md](file:///home/oxioxi/proj/our_chattie/AGENTS.md).
+- Stop duplicating raw `processedCases[].analysis.individualAnalyses[].aiResult` inside `run_artifacts.result_json` so initial run detail loads stay `< 500 KB`; granular facts, FTS5 chunks, and raw traces are served on demand via the thin SQLite read endpoints in Section 4.10.
 - Raw PDF and ZIP downloads stay on the filesystem inside [downloadCache.js](file:///home/oxioxi/proj/our_chattie/backend/helpers/downloadCache.js) (binary blobs belong on disk, not inside SQLite); **every JSON/JSONL metadata store** (`localStore.js`, `ocrPageStore.js`, `change-detection/store.js`, `capabilities.json` pricing metadata, and extraction checkpoints/traces) consolidates into `analysis.db`.
 
 ---
@@ -551,17 +559,17 @@ Cutting accidental complexity **before** building new features halves the surfac
 Scaling from 30–40 entries to 100 entries shifts runtime behavior from "a handful of API calls" to a **sustained distributed I/O workload** routed **100% through OpenRouter (`OPENROUTER_API_KEY` only — zero `GOOGLE_API_KEY` fallbacks)**:
 
 1. **Eliminate the Multiplicative Concurrency Bug (`ProviderPoolRegistry`):**
-   - Replace independent nested loops (`courtAnalysisQueue(2)` × `ANALYSIS_FILE_CONCURRENCY(3)` × `ANALYSIS_CHUNK_CONCURRENCY(2)` = `12` parallel calls) with **one singleton `ProviderPoolRegistry`** (`p-queue` instances keyed by OpenRouter route):
-     - `openrouter:z-ai`: `concurrency = 3` (configurable via `ZAI_MAX_CONCURRENCY`).
-     - `openrouter:mistral-ocr`: `concurrency = 3`.
-     - `openrouter:gemma`: `concurrency = 4`.
-     - `openrouter:gemini`: `concurrency = 4`.
+   - Replace independent nested loops (`courtAnalysisQueue(2)` × `ANALYSIS_FILE_CONCURRENCY(3)` × `ANALYSIS_CHUNK_CONCURRENCY(2)` = `12` parallel calls) with **one singleton `ProviderPoolRegistry`** (lightweight native CommonJS bounded queues in `backend/llm/providerPool.js`, keyed by OpenRouter route, retiring unused ESM-only `p-queue` in Phase 5):
+     - `openrouter:z-ai`: `concurrency = 3` (configurable via `OPENROUTER_POOL_Z_AI`).
+     - `openrouter:mistral-ocr`: `concurrency = 3` (`OPENROUTER_POOL_MISTRAL_OCR`).
+     - `openrouter:gemma`: `concurrency = 4` (`OPENROUTER_POOL_GEMMA`).
+     - `openrouter:gemini`: `concurrency = 4` (`OPENROUTER_POOL_GEMINI`).
 2. **Two-Tier OpenRouter Resilience (`openrouterClient.js`):**
    - **Tier 1 — Intra-Model Multi-Provider Ordering + Quantization Guard + Retry `ignore` Rotation:** Never pin a single provider with `allow_fallbacks: false` (which turned a 300s `Z.AI` hang in `d114ea5e` into a total stop). Pin 2–3 vetted providers per model with strict quantization floors so OIBs/amounts never silently degrade to `int4`, and on retry after a `60s` idle timeout or `5xx`, push the stalled `actual_provider` into `provider.ignore`:
-     - `z-ai/glm-5.3-flash`: `order: ['Z.AI', 'Parasail', 'Fireworks', 'Together']`, `allow_fallbacks: true`, `require_parameters: true`, `data_collection: 'deny'`, `quantizations: ['bf16', 'fp16', 'fp8']`.
+     - `z-ai/glm-5.3-flash`: `order: ['Z.AI', 'Novita', 'DeepInfra']`, `allow_fallbacks: true`, `require_parameters: true`, `data_collection: 'deny'`, `quantizations: ['bf16', 'fp16', 'fp8']`.
      - `google/gemini-2.5-flash`: `order: ['Google AI Studio', 'Google Vertex']`, `allow_fallbacks: true`, `require_parameters: true`, `data_collection: 'deny'`.
      - `google/gemma-4-31b-it`: `order: ['DeepInfra', 'Parasail', 'Together']`, `allow_fallbacks: true`, `require_parameters: true`, `data_collection: 'deny'`, `quantizations: ['bf16', 'fp16', 'fp8']`.
-   - **Tier 2 — SSE Streaming + 60s Idle Watchdog + Cross-Model Circuit Breaker:** Use `stream: true` (`stream_options: { include_usage: true }`) with a **`60,000 ms` idle-chunk watchdog** alongside the `240,000 ms` hard wall-clock cap. If `z-ai/glm-5.3-flash` fails across its provider pool (`>= 5` consecutive transport hangs / `5xx` errors in a sliding window), trip the run's circuit breaker and route remaining segments to `google/gemini-2.5-flash` on OpenRouter.
+   - **Tier 2 — SSE Streaming + 60s Idle Watchdog + Cross-Model Circuit Breaker:** Use `stream: true` together with `stream_options: { include_usage: true }` (so OpenAI-compatible upstream hosts always emit trailing token/cost frames) and a **`60,000 ms` idle-chunk watchdog** alongside the `240,000 ms` hard wall-clock cap; populate `prompt_registry` across Extraction, Synthesis, and Verify (`[R100-021]`/`[R100-025]`/`[R100-026]`). If `z-ai/glm-5.3-flash` fails across its provider pool (`>= 5` consecutive transport hangs / `5xx` errors in a sliding window), trip the run's circuit breaker and route remaining segments to `google/gemini-2.5-flash` on OpenRouter.
 3. **Declarative `<Task>` Routing (`backend/llm/taskRouter.js`):**
    Elevate routing from module names to typed **`<Task>` envelopes** selected by `(taskType × inputProfile × policy)`:
 
@@ -582,10 +590,14 @@ Scaling from 30–40 entries to 100 entries shifts runtime behavior from "a hand
    - Drop mid-run `MAX_RUN_COST_USD` / `MAX_RUN_OCR_PAGES` production cutoffs (keep `--max-cost` strictly in Bench).
    - Once `Stage T0` completes (~2s), emit an upfront cost ballpark (`{ estimatedMinUsd, estimatedExpectedUsd, cachedHits, ocrPages, segments }`) via `runBus`.
    - If any OpenRouter call returns **`HTTP 402` (Insufficient Credits)**: **never retry**. Trip a run-scoped `CreditExhaustedLatch`, skip queued unstarted network calls (while still resolving `\$0` SQLite cache hits), preserve 100% of committed `ocr_transcripts` and `segment_checkpoints`, tag unstarted files `reasonCode: 'provider-credits-exhausted'`, and if Stage 2 synthesis hits `HTTP 402`, generate a **`\$0` Deterministic Fallback Report** from `factLedger`, `flows`, `reconciliation`, `timeline`, and `scopeContract` (`status: 'partial'`). Top up credits + rerun = 100% `\$0` replay of completed documents.
-6. **Startup, Key-Check, Crash Hygiene & Lightweight `runBus` SSE:**
+6. **Startup, Key-Check, Crash Hygiene, Cancellation & Lightweight `runBus` SSE:**
    - Replace `assertGeminiConfig()` in [server.js#L9–14](file:///home/oxioxi/proj/our_chattie/backend/server.js#L9-L14) with **`assertOpenRouterConfig()`** validating `OPENROUTER_API_KEY` alone.
-   - Sweep orphaned temporary files in `backend/uploads/` on boot, reconcile stale `'running'` runs to `'interrupted'`, and drain active streams cleanly on `SIGINT`/`SIGTERM`.
-   - Replace 1.5s `getAnalysisRunFull` DB polling ([analysisStreamHandler.js#L97–132](file:///home/oxioxi/proj/our_chattie/backend/helpers/analysisStreamHandler.js#L97-L132)) and multi-MB long-lived `POST /api/court-analysis` `finalPayload` streaming ([server.js#L117–295](file:///home/oxioxi/proj/our_chattie/backend/server.js#L117-L295)) with: (a) fast `POST /api/court-analysis` handoff returning `analysisId` immediately (matching [NewAnalysisModal.jsx#L42–46](file:///home/oxioxi/proj/our_chattie/simple-chat/src/components/Dashboard/NewAnalysisModal.jsx#L42-L46)), (b) typed in-process `EventEmitter` (`runBus`) SSE deltas (`run.preflight`, `stage.progress`, `document.status`, `usage.delta`, `run.terminal`) on **`GET /api/analysis/runs/:id/stream`**, and (c) a single REST `GET /api/analysis/runs/:id/full` fetch on completion/reconnect (keeping bounded polling fallback in [useAnalysisRunDetail.js](file:///home/oxioxi/proj/our_chattie/simple-chat/src/hooks/useAnalysisRunDetail.js) per [AGENTS.md](file:///home/oxioxi/proj/our_chattie/AGENTS.md)).
+   - Sweep orphaned temporary files in `backend/uploads/` on boot, reconcile stale `'running'`/`'queued'` runs to `'interrupted'`, maintain per-run `AbortController` handles for `SIGINT`/`SIGTERM` drain and **`POST /api/analysis/runs/:id/cancel`** (aborting in-flight calls, preserving committed SQLite `ocr_transcripts`/`segment_checkpoints`, setting `status: 'canceled'`, and emitting `run.terminal`).
+   - Replace 1.5s `getAnalysisRunFull` DB polling ([analysisStreamHandler.js#L97–132](file:///home/oxioxi/proj/our_chattie/backend/helpers/analysisStreamHandler.js#L97-L132)) and multi-MB long-lived `POST /api/court-analysis` `finalPayload` streaming ([server.js#L117–295](file:///home/oxioxi/proj/our_chattie/backend/server.js#L117-L295)) with:
+     - (a) **`POST /api/court-analysis` returning plain `202 Accepted` JSON (`{ analysisId, status: 'queued' }`)** (updating `useCourtAnalysisStream.js` + `NewAnalysisModal.jsx`),
+     - (b) typed in-process `EventEmitter` (`runBus`) SSE deltas (`run.preflight`, `stage.progress` with lane-scoped `lanes: { download, preflight, ocr, extract }`, `document.status`, `usage.delta`, `run.terminal`) on **`GET /api/analysis/runs/:id/stream?afterSeq=N`** (with `Last-Event-ID` reconnect replay and `preflight` + `ocr` added to `analysisStage.js`),
+     - (c) persisting `runs.preflight_json` durably on the run so page refreshes and polling fallback see the upfront cost ballpark, and
+     - (d) a single REST `GET /api/analysis/runs/:id/full` fetch on completion/reconnect (keeping bounded polling fallback in [useAnalysisRunDetail.js](file:///home/oxioxi/proj/our_chattie/simple-chat/src/hooks/useAnalysisRunDetail.js) per [AGENTS.md](file:///home/oxioxi/proj/our_chattie/AGENTS.md)).
    - Back `enrichParticipants` in [enricher.js#L120–234](file:///home/oxioxi/proj/our_chattie/backend/court-registry/enricher.js#L120-L234) with SQLite `registry_cache` (`24h` TTL), bounded lookup concurrency, and structured `logger.js`.
 
 ---
@@ -617,7 +629,7 @@ Scaling from 30–40 entries to 100 entries shifts runtime behavior from "a hand
 Research into [`alexzhang13/harness-cg`](https://github.com/alexzhang13/harness-cg) / [`alexzhang13/rlm`](https://github.com/alexzhang13/rlm), [Tavily's Context Management in RL](https://huggingface.co/blog/Tavily/understanding-the-role-of-context-management-in-rl), and `Context-Folding` directly matches our empirical findings: stuffing 100 filings or 600 flat prose claims causes attention rot, whereas naive upfront LLM node summaries (`contextNodeSummary.js`, `0/4` valid) lose exact numbers.
 - **SQLite as External RLM Symbolic Environment:** `Stage A` workers act as **Context-Folding workers** (folding `3,500`-char slices into typed rows + quote offsets in `run_facts`, then discarding raw working tokens).
 - **Pre-Aggregated Digests & High-Density Markdown Pipe Tables (`synthesizer.js` + `synthesisInputBuilder.js`):**
-  - Pipe `proceduralFlow`, `decisionOutcome`, `documentParties`, pre-computed `reconciliation.conflicts` / `openQuestions`, and pre-aggregated creditor digests (top creditors, recovery % by `isplatniRed`, cession chains, milestone rulings) *into* `createReasoningEvidenceFromPackage` / `synthesizeReport` under strict `response_format: { type: 'json_object' }`.
+  - Pipe `proceduralFlow`, `decisionOutcome`, `documentParties`, pre-computed `reconciliation.conflicts` / `openQuestions`, and pre-aggregated creditor digests (top creditors, recovery % by `isplatniRed`, cession chains, milestone rulings) *into* `createReasoningEvidenceFromPackage` / `synthesizeReport` under strict `response_format: { type: 'json_object' }`, routing both `synthesizer.js` (`SynthesizeCase`) and `verifier.js` (`VerifyReport`) through `TaskRouter` + `ProviderPoolRegistry` + `CreditExhaustedLatch` + threaded `AbortSignal` + `llm_traces`.
   - Drop mechanical `document-*` inventory items (`synthesisInputBuilder.js#L131`) and replace verbose repetitive prose (`Financijski iznos ... (Confidence: medium)`) with **Markdown Pipe Tables** (procedural spine, creditor/asset threads, conflicts) + **Tagged Source Excerpt Blocks (`### [C80] Diobeni popis.pdf (str. 4)`)**, packing **~3× more verified facts** per token while keeping `[C<N>]` citation handles intact (with an optional bounded `inspect_chunks` lookup if needed on unresolved conflicts).
   - Partition the `64,000`-char synthesis budget with **guaranteed slices**: **25% protected floor** for ledger-driven FTS5 BM25 ground-truth excerpts (never evicted), **35%** thread rollups + pre-computed conflicts + outcomes/parties, **25%** chronological unthreaded claims (`spreadItems`), **15%** bounded milestone `timeline`.
   - Fix remaining `synthesizer.js`/`synthesisInputBuilder.js`/`chunker.js`/`indexer.js`/`findingProvenance.js` bugs: stop hardcoding `grounded: true` on `propertyValueChangeClaims` (`synthesizer.js#L562`), localize `'Undated'`/`'Unknown'`/`'Untitled Finding'` (`L123, L127, L184, L417`), stop shipping duplicated `finalReport.claims` bloat (`L233`), fix `isClaimCited` bare `fileName` collision (`synthesisInputBuilder.js#L82`), fix `totalChars()` accounting (`L161`), guard `chunker.js#L148–152` `limit === 1` division-by-zero, index 1–2 digit `redni broj` + `decisionOutcome` / `proceduralEvents` in `indexer.js`, and anchor `findingProvenance.js` joins by `docId`/`sourceEntryIndex` instead of bare `fileName`.
@@ -671,12 +683,12 @@ flowchart LR
 
 Retire standalone [serve-pdf-bench-lab.js](file:///home/oxioxi/proj/our_chattie/backend/scripts/serve-pdf-bench-lab.js) (`541` LOC on port `4178`) and raw HTML/CSS (`pdf-bench-lab.html`, `pdf-bench-gold.html`, `pdf-bench-lab.css`) once React parity is verified:
 
-- **Backend (`backend/bench/` + Express `/api/bench`):**
+- **Backend (`backend/bench/` + Express `/api/bench` — 100% Pure JSON + Typed SSE, Zero HTML):**
   - Extract reusable services (corpus loader + `bench_candidates`, job runner with `EventEmitter` SSE + `AbortController`/`SIGINT` cancel, artifact reader with `enrichReportWithTranscriptSources`, gold template store + PDF page renderer, blinded review generator/scorer, `gbench` capability/latency profiler, Stage-2 Report Bench). Keep CLI scripts (`benchmark-pdf-engines.js`, etc.) as thin wrappers importing `backend/bench/`.
-  - Enforce & tighten safety invariants from `serve-pdf-bench-lab.js`: path-traversal allowlists (`ALLOWED_RUNS`, `ALLOWED_MODELS`, `DATA_ROOT`), `OPENROUTER_API_KEY` redaction (`48,000`-char tail cap), **`409 Conflict` consistently on single active live job lock** (fixing `createJob`'s current `400`), explicit `approved: true` spend gate, strict **`maxCost > 0`** for non-dry runs (tightening current `>= 0`), and real-time **SSE job streaming** (`GET /api/bench/jobs/:id/stream`) + cancel (`POST /api/bench/jobs/:id/cancel`) replacing `900 ms` polling.
-- **Frontend (`simple-chat/src/components/Bench/`):**
+  - Enforce & tighten safety invariants from `serve-pdf-bench-lab.js`: path-traversal allowlists (`ALLOWED_RUNS`, `ALLOWED_MODELS`, `DATA_ROOT`), `OPENROUTER_API_KEY` redaction (`48,000`-char tail cap), **`409 Conflict` returning `{ activeJobId }` on single active live job lock** (fixing `createJob`'s current `400` and letting UI attach directly), explicit `approved: true` spend gate, strict **`maxCost > 0`** for non-dry runs (tightening current `>= 0`), real-time **SSE job streaming** (`GET /api/bench/jobs/:id/stream` emitting structured `job.progress`, `job.log`, `job.done`, `job.error`) + cancel (`POST /api/bench/jobs/:id/cancel`), JSON blinded review (`GET`/`POST /api/bench/runs/:runId/review` — replacing `review.html`), `GET /api/bench/models` (backed by `model_pricing_cache` + `gbench` smoke status), and `ETag` / `Cache-Control` / `X-Total-Pages` headers on `GET /api/bench/gold/page`.
+- **Frontend (`simple-chat/src/components/Bench/` — Lean Functional Parity Ahead of FE Sprint):**
   - Update [DashboardHeader.jsx](file:///home/oxioxi/proj/our_chattie/simple-chat/src/components/Dashboard/DashboardHeader.jsx#L32-L34) to replace `"Laboratorij"` (`/dashboard/lab`) with **`Bench`** (`/dashboard/bench`).
-  - Update [App.jsx](file:///home/oxioxi/proj/our_chattie/simple-chat/src/App.jsx#L15-L16) with native React routes styled with app tokens, Radix `Dialog`, and WCAG AA compliance: `/dashboard/bench` (Launcher, `bench_candidates` queue, live SSE console, run history), `/dashboard/bench/runs/:runId` (Scorecards, Stage T source provenance, per-doc diff, blinded review panel), and `/dashboard/bench/gold` (Side-by-side PDF preview, structured editor, AI draft assist).
+  - Update [App.jsx](file:///home/oxioxi/proj/our_chattie/simple-chat/src/App.jsx#L15-L16) with native React routes built cleanly over existing `DashboardShell`, `Dialog`, `StatusBadge`, and `Callout` primitives (avoiding throwaway visual styling before the dedicated frontend/design-engineering sprint): `/dashboard/bench` (Launcher, `bench_candidates` queue, `activeTaskRoutingOverrides`, live SSE console, run history), `/dashboard/bench/runs/:runId` (Scorecards, Stage T source provenance, per-doc diff, JSON blinded review panel), and `/dashboard/bench/gold` (Side-by-side PDF preview, structured editor, AI draft assist).
 
 #### C. Sunsetting Analysis Lab (Verified Complete Removal Checklist)
 
@@ -717,8 +729,8 @@ Beyond scaling bugs, `backend/` currently suffers from organic file sprawl (`31,
 backend/
 ├── server.js                      (~100-line Express/lifecycle bootstrapper)
 ├── routes/                        (courtAnalysis.js, analysisRuns.js, bench.js, changeDetection.js)
-├── http/                          (sse.js, runBus.js, analysisStreamHandler.js, rateLimiter.js, pagination.js, sanitize.js)
-├── llm/                           (openrouterClient.js, openrouterConfig.js, taskRouter.js, providerPool.js, tokenBudgetPolicy.js, retry.js, usage.js)
+├── http/                          (sse.js, runBus.js, analysisStreamHandler.js, analysisReportRetry.js, rateLimiter.js, pagination.js, sanitize.js)
+├── llm/                           (openrouterClient.js, openrouterConfig.js, taskRouter.js, providerPool.js, creditLatch.js, tokenBudgetPolicy.js, jsonExtract.js [Phase 5 move], retry.js, usage.js)
 ├── services/                      (sqliteStore.js, canonicalJson.js, logger.js)
 ├── scraper/                       (discoveryClient.js, csvExportClient.js, csvExportParser.js, courtSearchPuppeteer.js)
 ├── court-registry/                (apiClient.js, enricher.js — backed by sqliteStore registry_cache)
@@ -726,14 +738,15 @@ backend/
 ├── bench/                         (corpus, runner, goldEditor, review, metrics, gbench shared by /api/bench & CLI wrappers)
 └── court-analysis/
     ├── pipeline.js                (< 600-line state-transition orchestrator)
-    ├── acquisition/               (downloader.js, archiveExtractor.js, downloadCache.js)
-    ├── extraction/                (workerPool.js, pdfPreflight.js, pdfText.js, ocrRouter.js, prompts.js, chunkMerge.js, documentAnalyzer.js)
+    ├── discoveryStage.js          (grouping, cluster scoring & stratified selection)
+    ├── acquisition/               (downloader.js, archiveExtractor.js, downloadCache.js, clusterAcquisition.js)
+    ├── extraction/                (workerPool.js, pdfPreflight.js, adminFastPath.js, pdfText.js, ocrRouter.js, prompts.js, chunkMerge.js, documentAnalyzer.js)
     ├── utils/                     (scanDepth.js, stratify.js, caseNumber.js, normalizeText.js, primaryCaseSelector.js, queryClassifier.js, runSummary.js, ...)
     └── reasoning/
         ├── schema/                (extractionSchema.js, schema.js)
         ├── ledger/                (factLedger.js, partyRegistry.js, flow.js, propertyFlow.js, reconciliation.js, caseContextBuilder.js, contextNode.js, citationGraph.js, ...)
         ├── retrieval/             (chunker.js, indexer.js, retriever.js, findingProvenance.js)
-        └── synthesis/             (synthesisInputBuilder.js, synthesizer.js, verifier.js, reportService.js, timelineBuilder.js)
+        └── synthesis/             (synthesisInputBuilder.js, synthesizer.js, verifier.js, reportService.js, fallbackReportBuilder.js, timelineBuilder.js)
 ```
 
 3. **Node.js Runtime Workarounds at 100 Entries (`worker_threads` + Memory Bounds):**
@@ -769,7 +782,33 @@ backend/
    - `OCR_MAX_PAGES = 20` was a Gemini JPEG-packing artifact. Separate **transport batch window (`OCR_BATCH_WINDOW_PAGES = 15`)** from **per-document page coverage (`MAX_DOC_OCR_PAGES = 60`)**.
    - Slice a 36-page scan (or scanned hybrid subset) via `pdf-lib` into `15 + 15 + 6`-page windows, transcribe all 3 via `or-mistral-ocr` (`\$0.072`), and merge pages `1..36` so closing financial recapitulations and signature pages are never amputated at page 20.
    - On extreme `> 60`-page annexes, transcribe **head (`40p`) + tail (`20p`)** and record the skipped middle span explicitly in `AnalysisCoverageBanner`.
-4. **Layout-Aware `table_dense` Tagging + Pre-Flight Manifest:** Extract `table_dense` from `pdf.js` `item.transform` (`x, y`) geometry in the same pass, emit the upfront workload + cost ballpark manifest via `runBus`, and dispatch `digital_text` to `Stage A` immediately at `t ≈ 2s` while `Stage T` OCR runs concurrently.
+4. **Layout-Aware `table_dense` Tagging + Pre-Flight Manifest:** Extract `table_dense` from `pdf.js` `item.transform` (`x, y`) geometry in the same pass, persist the upfront workload + cost ballpark manifest in `runs.preflight_json` and emit it via `runBus`, and dispatch `digital_text` to `Stage A` immediately at `t ≈ 2s` while `Stage T` OCR runs concurrently.
+
+---
+
+### 4.10 Frontend Read-Side Wire Contracts & UI Compatibility Fixes
+
+Because a dedicated frontend / design-engineering sprint follows this backend push, locking in thin SQLite read APIs, structured provenance IDs, and existing UI compatibility fixes during Epics 0–5 prevents an `8–15 MB` `result_json` bottleneck on first paint and keeps all current views unbroken:
+
+1. **Thin SQLite Read Endpoints (`< 500 KB` Initial Run Detail Load):**
+   - Stop duplicating raw `processedCases[].analysis.individualAnalyses[].aiResult`, duplicate `clusterEvidencePackage.analyses[]` raw fact arrays (`amounts[]`/`propertyFlow[]`/`documentParties[]`/`proceduralEvents[]`/`parties[]`), or raw `clusterEvidencePackage.factLedger[]` inside `run_artifacts.result_json`. Instead expose three paginated/indexed endpoints over `analysis.db` (and rehydrate `factLedger` from `run_facts` when retrying reports):
+     - **`GET /api/analysis/runs/:id/facts`** (query params: `kind`, `partyId`, `grounded`, `q`, `limit`, `offset`) returning `{ facts: [...], total, limit, offset }`.
+     - **`GET /api/analysis/runs/:id/chunks/:chunkId`** & **`GET /api/analysis/runs/:id/chunks?q=...`** (backed by `run_chunks` + `run_chunks_fts` BM25) enabling an in-app quote-in-context evidence drawer and docket-wide search.
+     - **`GET /api/analysis/runs/:id/traces`** (summary list) & **`GET /api/analysis/runs/:id/traces/:traceId`** (raw forensic payload) without bloating normal run responses.
+2. **Persist `partyRegistry` & Pre-Aggregated Digests on the Run Artifact:**
+   - Persist `canonicalParties[]`, `creditorDigest`, and `proceduralOutcomes` on `run_artifacts.result_json` (rather than trapping them inside the Stage-2 prompt string) so the Entities & Creditors UI never walks 80+ repeated per-document party lists client-side.
+3. **Frozen Structured Wire Contracts (Zero Bare-Filename Joins):**
+   - **Canonical `flows` contract:** Freeze `{ id, kind, canonicalPartyId, amountEur, sourceAmount, sourceCurrency, sourcePages, sourceChunkId, docId, grounded, crossCategoryFactId, valueChanges }` before updating `AnalysisFlowsSection.jsx` / `LifecycleTimeline.jsx`.
+   - **`sourceDocuments[]`, `coverage.failedFiles[]`, `coverage.partialFiles[]`:** Always attach stable `docId`, `sourceEntryIndex`, `entryDisplayId`, `entryDate`, `entryTitle`, `pageCount`, `docClass` (`digital_text | scanned_full | hybrid_mixed | empty_or_corrupt`), `ocrEngine`, `fromCache`, `adminFastPath`, `skippedPageRanges`, enum `reasonCode`, and Croatian `reason`.
+   - **`report.findings[]` & `citations[]`:** Include explicit `verificationStatus` (`'verified_deterministic' | 'verified_llm' | 'unverified' | 'not_checked'`) + `verificationNote`, and attach `docId`, `chunkId`, `sourcePages[]`, `sourceEntryIndex`, and `url` on every citation.
+   - **Enriched `token_usage` & `runs.summary_json`:** Expose `costUsd` (+ `byStage`), `cachedTokens`, `reasoningTokens`, `cacheHitDocs`, `adminFastPathDocs`, and `modelsUsed[]` on `token_usage`; project `scanDepth`, `costUsd`, `partialReason`, and key `scorecard` fields (`criticalFailedDocuments`, `verificationStatus`) into `runs.summary_json` for `RunsTable`.
+   - **Change-detection linkability:** Index `change_snapshots` / `change_diffs` by normalized `query_value` so any completed run supports one-click *"Provjeri nove objave"*.
+4. **Verified Existing-Code Breakages Fixed:**
+   - **Fallback report retry blocked by `409 Conflict` ([analysisReportRetry.js#L37–48](file:///home/oxioxi/proj/our_chattie/backend/http/analysisReportRetry.js#L37-L48), [AnalysisRunDetailPage.jsx#L210–211](file:///home/oxioxi/proj/our_chattie/simple-chat/src/components/Dashboard/AnalysisRunDetailPage.jsx#L210-L211)):** Add `report.generationMode: 'llm' | 'deterministic_fallback'` + `report.fallbackReason` + canonical `run.partial_reason` (`'provider-credits-exhausted'`); allow `POST /api/analysis/runs/:id/report` to overwrite a `deterministic_fallback` report, pass `analysisStore` (+ rehydrated `factLedger`) into `regenerate(...)` so `run_chunks_fts` BM25 excerpts survive `chunks` stripping, and transition `runs.status` from `'partial'` → `'done'` (updating `summary_json` and `scorecard_json`).
+   - **`partial` / `interrupted` / `canceled` / `queued` status handling:** Update [PipelinePhases.jsx#L78–84](file:///home/oxioxi/proj/our_chattie/simple-chat/src/components/ui/PipelinePhases.jsx#L78-L84), [CoverageCell.jsx#L24](file:///home/oxioxi/proj/our_chattie/simple-chat/src/components/ui/CoverageCell.jsx#L24), and [RunsTable.jsx#L72–73](file:///home/oxioxi/proj/our_chattie/simple-chat/src/components/Dashboard/RunsTable.jsx#L72-L73) alongside `StatusBadge.jsx` / `RunStatusBadge.jsx` / `useAnalysisRunDetail.js`.
+   - **Duplicate React keys on `Podnesak.pdf` ([AnalysisCoverageBanner.jsx#L91, #L113](file:///home/oxioxi/proj/our_chattie/simple-chat/src/components/Dashboard/AnalysisCoverageBanner.jsx#L91)):** Key `failedFiles` / `partialFiles` by `docId` (index fallback for legacy fixtures) and display `entryDate` / `entryDisplayId`.
+   - **OIB-only modal validation ([NewAnalysisModal.jsx#L8–11](file:///home/oxioxi/proj/our_chattie/simple-chat/src/components/Dashboard/NewAnalysisModal.jsx#L8-L11)):** Align validation with `queryClassifier.js` (`oib | case_number | text`).
+   - **`SettingsPopover` boundary:** Keep [SettingsPopover.jsx](file:///home/oxioxi/proj/our_chattie/simple-chat/src/components/Dashboard/SettingsPopover.jsx) restricted to lawyer-facing preferences (`defaultScanDepth`, `uiPreferences`); route `activeTaskRoutingOverrides` to `/dashboard/bench`.
 
 ---
 
@@ -841,7 +880,8 @@ Every credible way a 100-entry run can break in production gets an engineered de
 | **Deduplication** | Whitespace/newline drift inside 350-char overlap double-counts 5M EUR claim | Span-anchored whitespace-normalized overlap matching + `(kind, value, currency, span/registry)` identity + 4-kind `factLedger` dedup | Inject newline-shifted duplicate quote + `description` variation inside overlap window; assert 1 merged claim |
 | **Reconciliation & DAG** | 168 creditors collide in `flowGroupKey` or `L236` parses OIB as currency; Tier-3 Cartesian product + `st-2/2013` creates 194k links (`b109f471`) | `partyRegistry` + identity-scoped `flowGroupKey` (no `split('::')[0]`), strip root case numbers from Tier 1/2/3, zero cross-kind `traceLinks`, `O(N)` normalized `citationGraph` | Feed 168 distinct creditors + 500-fact root-case fixture; assert zero cross-creditor collisions, valid currency labels, and `< 1,000` links |
 | **Synthesis & Verifier** | `document-*` evicts 100% of BM25 chunks; `decisionOutcome` dropped; `verifier.js` timeline-first eviction drops findings & leaks English | Pipe full signals + conflicts upfront as Markdown Pipe Tables + `[C<N>]` Excerpts (25% BM25 floor); `$0` pre-verify → `{"verdicts": [...]}` `json_object` with Croatian `unverified` retention | Replay 100-entry / 400-flow fixture with 300-line timeline; assert protected BM25 chunks, visible `unverified` items, zero silent drops, zero English strings |
-| **SSE Delivery** | `1.5s` `getAnalysisRunFull` polling + `6–10 MB` POST blob saturates event loop & browser | Fast POST handoff + lightweight `runBus` SSE deltas on `GET /api/analysis/runs/:id/stream` + single REST fetch on completion/reconnect | Emit 200 progress events on a `10 MB` mock run; assert SSE frames stay `< 2 KB` delta-only without full-run re-reads |
+| **SSE Delivery & Cancellation** | `1.5s` `getAnalysisRunFull` polling + `6–10 MB` POST blob saturates event loop & browser; no backend run cancel | `POST /api/court-analysis` returns `202 Accepted` JSON; lightweight `runBus` SSE deltas on `GET /api/analysis/runs/:id/stream?afterSeq=N` (lane-scoped counters, durable `preflight_json`); `POST /api/analysis/runs/:id/cancel` | Emit 200 progress events on a `10 MB` mock run + reconnect with `?afterSeq=100` + cancel mid-run; assert SSE frames `< 2 KB`, exact replay, and `status: 'canceled'` |
+| **Read Wire Contract & Retry** | `8–15 MB` `result_json` blocks first paint; `409 Conflict` blocks retrying a `\$0` `deterministic_fallback` report after credit top-up | Strip duplicate `individualAnalyses[].aiResult`; serve `/facts`, `/chunks`, `/traces` from SQLite (`< 500 KB` initial detail); allow `POST /report` to overwrite `deterministic_fallback` (`partial` → `done`) | Request run detail, `/facts?kind=amount`, `/chunks?q=98`, and retry `deterministic_fallback` report; assert initial JSON `< 500 KB` and `partial -> done` transition |
 
 ---
 
@@ -882,25 +922,26 @@ Execution splits into **Track A (Core 100-Entry Pipeline: Phases 0 → 4)** and 
 - **Exit Criteria:** Simplified, 100%-OpenRouter-ready pipeline passes all retained unit, `pdf-benchmark-*.test.js`, and `kerumReplay.test.js` suites with zero Google/LangChain SDKs and zero Lab runtime dependencies in core.
 
 ### Phase 1 — Declarative `ScanDepthPolicy` (`Uravnoteženo` = 100, `Sve`) & Acquisition Hardening
-- **Objective:** Ship the 2-option `Dubina pretrage` abstraction with proportional stratification, unified CSV + Puppeteer pool harvesting, collision-free parallel downloads, and `worker_threads` isolated archive extraction.
-- **Key Files:** `backend/court-analysis/utils/{scanDepth,stratify,runSummary}.js`, `backend/scraper/{csvExportClient,courtSearchPuppeteer}.js`, `backend/court-analysis/pipeline.js`, `backend/court-analysis/acquisition/{downloader,archiveExtractor,downloadCache}.js`, `backend/server.js`, `simple-chat/src/components/Dashboard/ScanDepthSelect.jsx`.
+- **Objective:** Ship the 2-option `Dubina pretrage` abstraction with proportional stratification, unified CSV + Puppeteer pool harvesting, collision-free parallel downloads, `worker_threads` isolated archive extraction, and aligned modal query validation.
+- **Key Files:** `backend/court-analysis/utils/{scanDepth,stratify,runSummary}.js`, `backend/scraper/{csvExportClient,courtSearchPuppeteer}.js`, `backend/court-analysis/pipeline.js`, `backend/court-analysis/acquisition/{downloader,archiveExtractor,downloadCache}.js`, `backend/server.js`, `simple-chat/src/components/Dashboard/{ScanDepthSelect,NewAnalysisModal}.jsx`.
 - **Actions:**
   1. Implement declarative `SCAN_DEPTH_POLICIES` (`balanced` = 100 entries with all attachments; `full` = `all-clusters`, `allocation: 'all'`); fix `csvExportClient.js#L219–262` `'full'` mode global-slice bug; thread `scanDepth` cleanly across `server.js`, `sqliteStore`/`localStore`, `pipeline.js#L1398`, and `runSummary.js`.
   2. Replace Puppeteer's broken `80 + 20` magic window in `courtSearchPuppeteer.js` with batched HTML pool harvesting feeding the **exact same `stratifyClusterEntries`** allocator used by CSV.
   3. Replace hardcoded 40-entry stratification quotas in `stratify.js` with proportional `computeStratificationQuotas(budget)` and stride-sampled `exploratory` reserve.
-  4. Update `ScanDepthSelect.jsx` to 2 options (`Uravnoteženo` and `Sve`).
+  4. Update `ScanDepthSelect.jsx` to 2 options (`Uravnoteženo` and `Sve`) and align `NewAnalysisModal.jsx#L8–11` validation with `queryClassifier.js` (`oib | case_number | text`).
   5. Rename `download-agent.js` + `extract-tool.js` into `acquisition/{downloader,archiveExtractor}.js`, parallelize downloads (`concurrency = 5`), fix `Date.now()` temp filename collisions, offload archive extraction to `worker_threads` into isolated `uploads/extracted/<archiveId>/` with zip-bomb caps, 1-level nested `.zip` support, and parent `sourceEntryIndex` / `sourceDocumentLinkId` / `entryDate` propagation, and redirect `courtSearchPuppeteer.js#L793` debug PNGs to `backend/data/debug/` (deleting stale root PNGs).
-- **Exit Criteria:** `scanDepth.test.js`, `stratify.test.js`, `csvExportClient.test.js`, Puppeteer pool fallback tests, `ScanDepthSelect.test.jsx`, and download/isolated-unzip hardening tests pass.
+- **Exit Criteria:** `scanDepth.test.js`, `stratify.test.js`, `csvExportClient.test.js`, Puppeteer pool fallback tests, `ScanDepthSelect.test.jsx`, `NewAnalysisModal.test.jsx`, and download/isolated-unzip hardening tests pass.
 
-### Phase 2 — Unified `better-sqlite3` Persistence, `runBus` SSE, Registry Cache & FTS5 Engine
-- **Objective:** Replace all JSON/JSONL persistence stores (`localStore`, `ocrPageStore`, `change-detection/store`), 1.5s SSE polling, and uncached registry HTTP latency with one durable `better-sqlite3` (+ FTS5 + `llm_traces`) store and lightweight `runBus` SSE deltas.
-- **Key Files:** `backend/package.json`, `backend/services/sqliteStore.js` (new), `backend/court-analysis/reasoning/retrieval/{chunker,retriever}.js`, `backend/court-registry/enricher.js`, `backend/http/{runBus,analysisStreamHandler,analysisStream}.js`, `backend/routes/{courtAnalysis,analysisRuns}.js`, `backend/server.js`, `simple-chat/src/components/{ui/StatusBadge,Dashboard/RunStatusBadge}.jsx`, `simple-chat/src/hooks/useAnalysisRunDetail.js`.
+### Phase 2 — Unified `better-sqlite3` Persistence, `runBus` SSE, Cancellation, Thin Read APIs & FTS5 Engine
+- **Objective:** Replace all JSON/JSONL persistence stores (`localStore`, `ocrPageStore`, `change-detection/store`), 1.5s SSE polling, and multi-MB `result_json` reads with one durable `better-sqlite3` (+ FTS5 + `llm_traces`) store, thin `/facts` `/chunks` `/traces` read endpoints, `POST /cancel`, and lightweight `runBus` SSE deltas.
+- **Key Files:** `backend/package.json`, `backend/services/sqliteStore.js` (new), `backend/court-analysis/reasoning/retrieval/{chunker,retriever}.js`, `backend/court-registry/enricher.js`, `backend/http/{runBus,analysisStreamHandler,analysisStream,analysisStage}.js`, `backend/routes/{courtAnalysis,analysisRuns,changeDetection}.js`, `backend/server.js`, `simple-chat/src/components/{ui/StatusBadge,ui/PipelinePhases,ui/CoverageCell,Dashboard/RunStatusBadge,Dashboard/RunsTable}.jsx`, `simple-chat/src/hooks/{useAnalysisRunDetail,useCourtAnalysisStream}.js`.
 - **Actions:**
-  1. Add `better-sqlite3` and create `sqliteStore.js` with mandatory connection pragmas (`WAL`, **`PRAGMA foreign_keys = ON`**, `busy_timeout = 5000`), schema migrations, **`run_chunks_fts` `INSERT`/`DELETE`/`UPDATE` sync triggers**, separated `segment_checkpoints` vs. `llm_traces` + `prompt_registry` + `bench_candidates` + `model_pricing_cache`, 4-kind `run_facts`, `registry_cache`, `change_snapshots`/`change_diffs`, pruned `settings`, and `db.transaction(...)` batching.
-  2. Separate list queries from `run_artifacts`; add startup crash recovery (`running -> interrupted`), orphaned `uploads/` temp sweep, `SIGINT`/`SIGTERM` drain, and `partial`/`interrupted` UI/hook status handling (`StatusBadge.jsx`, `RunStatusBadge.jsx`, `useAnalysisRunDetail.js`, `analysisStream.js`).
-  3. Replace 1.5s polling + long-lived POST `finalPayload` with fast `POST /api/court-analysis` handoff, lightweight `runBus` SSE deltas on `GET /api/analysis/runs/:id/stream`, and single REST snapshot fetch on completion/reconnect; wire `enricher.js` to `registry_cache` (`24h` TTL) with bounded concurrency.
-  4. Remove the 8-chunk cap in `chunker.js` (fixing `limit === 1` divide-by-zero) and wire `retriever.js` to deterministic **ledger-driven FTS5 BM25 queries** (+ OIB/filing-ref boosts) on `run_chunks_fts`.
-- **Exit Criteria:** Store/cascade/FTS5/`registry_cache`/`change-detection`/`runBus` tests pass; 1,000-event + 500-fact transaction benchmark commits in `< 25 ms` without event-loop blocking.
+  1. Add `better-sqlite3` and create `sqliteStore.js` with mandatory connection pragmas (`WAL`, **`PRAGMA foreign_keys = ON`**, `busy_timeout = 5000`), schema migrations, **`run_chunks_fts` `INSERT`/`DELETE`/`UPDATE` sync triggers**, separated `segment_checkpoints` vs. `llm_traces` + `prompt_registry` + `bench_candidates` + `model_pricing_cache`, `preflight_json`/`partial_reason` on `runs`, 4-kind `run_facts`, `registry_cache`, `change_snapshots`/`change_diffs` (indexed by `query_value`), pruned `settings` (`defaultScanDepth`, `uiPreferences`), and `db.transaction(...)` batching.
+  2. Strip duplicate `individualAnalyses[].aiResult` from `run_artifacts.result_json` (`< 500 KB` detail payload) and add thin read endpoints (`GET /api/analysis/runs/:id/facts`, `GET /api/analysis/runs/:id/chunks/:chunkId` + `?q=`, `GET /api/analysis/runs/:id/traces` + `/:traceId`).
+  3. Add per-run `AbortController` handles, startup crash recovery (`running`/`queued` -> `interrupted`), orphaned `uploads/` temp sweep, `SIGINT`/`SIGTERM` drain, **`POST /api/analysis/runs/:id/cancel`**, and `partial`/`interrupted`/`canceled`/`queued` handling across `StatusBadge.jsx`, `RunStatusBadge.jsx`, `PipelinePhases.jsx`, `CoverageCell.jsx`, `RunsTable.jsx`, `useAnalysisRunDetail.js`, and `analysisStream.js`.
+  4. Replace 1.5s polling + long-lived POST SSE with **`POST /api/court-analysis` `202 Accepted` JSON**, lightweight `runBus` SSE deltas (`GET /api/analysis/runs/:id/stream?afterSeq=N`, lane-scoped counters, `preflight` + `ocr` stages in `analysisStage.js`), single REST snapshot fetch on completion/reconnect, and `enricher.js` `registry_cache` (`24h` TTL).
+  5. Remove the 8-chunk cap in `chunker.js` (fixing `limit === 1` divide-by-zero) and wire `retriever.js` to deterministic **ledger-driven FTS5 BM25 queries** (+ OIB/filing-ref boosts) on `run_chunks_fts`.
+- **Exit Criteria:** Store/cascade/FTS5/read-API/`registry_cache`/`change-detection`/`runBus`/`cancel` tests pass; initial run detail `< 500 KB`; 1,000-event + 500-fact transaction benchmark commits in `< 25 ms`.
 
 ### Phase 3 — Hardened `Stage T0` / `T0.5` / `T` / `A` Migration (`worker_threads`, OpenRouter Resilience, `gemma-4-31b-it` & `tableRows[]`)
 - **Objective:** Replace multi-read routing with `worker_threads` `Stage T0` preflight + `Stage T0.5` admin fast-path, split `analysis-agent.js` (`1,619` lines) cleanly into `extraction/` + `backend/llm/`, deploy `z-ai/glm-5.3-flash` + `or-mistral-ocr` + `google/gemma-4-31b-it` raster fallback (`15p`/`60p` windows) via 100% OpenRouter, and ship `tableRows[]` + Page-1 roster + `HTTP 402` resilience.
@@ -915,30 +956,39 @@ Execution splits into **Track A (Core 100-Entry Pipeline: Phases 0 → 4)** and 
 - **Exit Criteria:** All `[PROD-201]`–`[PROD-205]`, `Stage T0`/`T0.5`, `15p`/`60p` OCR, prompt–repair lockstep, `HTTP 402` latch, and transport chaos tests pass; one controlled 100-entry live smoke run verifies cost (`~\$0.40–\$1.50`), grounding, and zero hung sockets.
 
 ### Phase 4 — Deterministic Core, RLM Symbolic Case Environment & Stage-2 Synthesis Hardening
-- **Objective:** Fix every mid/late-pipeline collation flaw and deploy the RLM Symbolic Case Environment + `$0` pre-verification so 100-entry reports are accurate, non-colliding, grounded, and Croatian-clean.
-- **Key Files:** `backend/court-analysis/reasoning/ledger/{factLedger,partyRegistry,evidencePackage,flow,propertyFlow,reconciliation,caseContextBuilder,citationGraph,runScorecard}.js`, `backend/court-analysis/reasoning/retrieval/{indexer,findingProvenance}.js`, `backend/court-analysis/reasoning/synthesis/{synthesisInputBuilder,synthesizer,verifier}.js`.
+- **Objective:** Fix every mid/late-pipeline collation flaw, persist structured entity/digest/verification contracts for the UI, allow retrying `deterministic_fallback` reports, and deploy the RLM Symbolic Case Environment + `$0` pre-verification.
+- **Key Files:** `backend/court-analysis/reasoning/ledger/{factLedger,partyRegistry,evidencePackage,flow,propertyFlow,reconciliation,caseContextBuilder,citationGraph,runScorecard}.js`, `backend/court-analysis/reasoning/retrieval/{indexer,findingProvenance}.js`, `backend/court-analysis/reasoning/synthesis/{synthesisInputBuilder,synthesizer,verifier,fallbackReportBuilder}.js`, `backend/http/analysisReportRetry.js`, `simple-chat/src/components/Dashboard/{AnalysisRunDetailPage,AnalysisCoverageBanner,AnalysisReportAnnex,AnalysisUsageSummary}.jsx`.
 - **Actions:**
   1. Expand `factLedger.js` to 4 kinds (`amount | property | party | procedural_outcome`), assign deterministic `row.id`s, preserve `sourcePages`/`sourceChunkId`/offsets/`amountHrk`/`valueHrk`/OIBs, expand `ledgerRowKey`, and fix `filingRef` mismatch with `flow.js`.
-  2. Add `partyRegistry.js` canonical entity resolution; fix `evidencePackage.js#L333` dropping `decisionOutcome`.
+  2. Add `partyRegistry.js` canonical entity resolution (`canonicalParties[]` persisted on run artifact); fix `evidencePackage.js#L333` dropping `decisionOutcome`.
   3. Scope `reconciliation.js` `flowGroupKey` by identity hierarchy, fix the `L236` `groupKey.split('::')[0]` coupling trap and `L238–242` empty/`min === 0` guards, and clean up `propertyFlow.js#L225–228, L318–320` + `flow.js#L400`.
   4. Fix `caseContextBuilder.js` (strip bare root case numbers from Tier 1/2/3, eliminate Tier-3 Cartesian fact-to-fact join, stop cross-kind `traceLinks`, fix `L321` & `L128–138`); normalize `citationGraph.js` in `O(N)` with self-edge & multi-attachment guards; fix `indexer.js` `<3`-char `redni broj` indexing and `findingProvenance.js` `docId` joins.
-  5. Upgrade `synthesisInputBuilder.js` & `synthesizer.js` to the RLM Symbolic Case Environment (**Markdown Pipe Tables** + **Tagged `[C<N>]` Excerpt Blocks** + pre-aggregated creditor/procedural digests + 25% protected BM25 floor), pipe full signals + conflicts upfront under `json_object`, fix `L562` `grounded: true` + English strings + `claims` payload bloat.
-  6. Add `$0` deterministic pre-verification and harden `verifier.js` (`{"verdicts": [...]}` `json_object`, cited snippets packed first, fix `isVerifiableFinding` metadata strip & `finding.citations` pollution, retain Croatian `unverified` visibly).
-  7. Persist `runScorecard` (`runs.scorecard_json`) and surface coverage/quality cleanly in the UI.
-- **Exit Criteria:** 168-creditor fixture + 500-fact synthetic Kerum replay pass with zero creditor collisions, linear `O(N)` DAG links, protected BM25 chunks, visible `unverified` handling, and `kerumReplay.test.js` green.
+  5. Upgrade `synthesisInputBuilder.js` & `synthesizer.js` to the RLM Symbolic Case Environment (**Markdown Pipe Tables** + **Tagged `[C<N>]` Excerpt Blocks** + pre-aggregated `creditorDigest` & `proceduralOutcomes` persisted on run artifact + 25% protected BM25 floor), pipe full signals + conflicts upfront under `json_object`, fix `L562` `grounded: true` + English strings + `claims` payload bloat, and add `fallbackReportBuilder.js` (`report.generationMode: 'llm' | 'deterministic_fallback'`, `report.fallbackReason`) while fixing `analysisReportRetry.js#L37–39` & `AnalysisRunDetailPage.jsx#L210–211` so `POST /report` can upgrade a fallback report (`partial` → `done`).
+  6. Add `$0` deterministic pre-verification and harden `verifier.js` (`{"verdicts": [...]}` `json_object`, cited snippets packed first, fix `isVerifiableFinding` metadata strip & `finding.citations` pollution, explicit `verificationStatus` enum + `verificationNote`, structured `docId`/`chunkId`/`sourcePages[]`/`sourceEntryIndex`/`url` on citations, enriched `token_usage` with `costUsd`/`byStage`/`cachedTokens`/`reasoningTokens`/`modelsUsed[]`).
+  7. Compute/persist `runScorecard` (`runs.scorecard_json` + key summary fields in `runs.summary_json`) and key `AnalysisCoverageBanner.jsx#L91, L113` by `docId`.
+- **Exit Criteria:** 168-creditor fixture + 500-fact synthetic Kerum replay pass with zero creditor collisions, linear `O(N)` DAG links, protected BM25 chunks, visible `unverified` handling, `deterministic_fallback` retry (`partial` → `done`), and `kerumReplay.test.js` green.
+
+> [!NOTE]
+> **Empirical Calibration Note (100-Entry Kerum Cold + Warm Live Smoke Post-Mortem — `[R100-026b]`):**
+> Executing the first live `balanced` (`100`-entry) Kerum run (`66124057408`) across `temp/r100-021-smoke-data/analysis.db` validated core unit economics and grounding (**`161` docs analyzed, `4,853 / 4,880` = `99.4%` grounded claims, `760` `canonicalParties`, Stage A cold `\$1.06`, Stage 2 `\$0.0157`, Verify `\$0.0105`, warm rerun `\$0.17` across `117` calls**) while uncovering 5 high-leverage production gaps scheduled in `[R100-026b]` before Phase 5:
+> 1. **`runPdfPreflight is not a function` silently disabled `Stage T0`, `Stage T0.5`, and `or-mistral-ocr`:** `documentAnalyzer.js#L32` imported `runPdfPreflight` instead of `preflightClusterDocuments`, causing every run to fall back to per-file `extractTextViaOCR` (`adminFastPathDocs: 0`, `preflight_json` counter-only, and all `230` OCR pages routed through `gemma-4-31b-it` raster instead of `or-mistral-ocr`).
+> 2. **`96.4 MB` `run_artifacts.result_json` bloat:** `clusterEvidencePackage.proceduralFlow` (`33.1 MB`), `flows` (`9.4 MB`), `reconciliation` (`3.4 MB`), and duplicated `report.meta` (`46.8 MB`) exceeded the `< 500 KB` target by `~190×` despite slimming `individualAnalyses[].aiResult`.
+> 3. **OCR invisible in `llm_traces` & missing `stageTimings` waterfall:** `ocrRouter.js` called `createOpenRouterClient` without `traceStore`/`usageTracker` (`0` `TranscribePage` traces; `byStage.ocr.calls = 0`), and `runs.scorecard_json` lacked a stage duration/cache waterfall.
+> 4. **`2h 40m` cold / `54 min` warm latency:** `openrouter:z-ai = 3` + `ANALYSIS_FILE_CONCURRENCY = 4` serialized `731` calls onto slow `Z.AI` (`22.6s` avg vs **`8.1s` on `Novita`**), while `segment_checkpoints` only cached 0-gap chunks (leaving `63` table chunks + `24` Gemini repairs uncached on warm rerun). Raising concurrency, sorting by throughput/`Novita`, caching usable repaired checkpoints, and sizing `table_dense` to `~3,500` chars cuts cold/warm runtime by `~4–6×`.
+> 5. **Calibration tuning:** Audit `< 5%` distribution-list revision noise in `382` `report.conflicts`, inspect `0`-hit `$0` deterministic pre-verification (`verified_deterministic: 0/12`), and preserve real Kerum `16384`-token truncation cases (`Završni račun.pdf:table-21/32/35`, `Ugovor o ustupu:table-8`, `Kerum oglas Sl Dalm 16052025.pdf` OCR timeout) into Phase 5 Bench/chaos fixtures.
 
 ### Phase 5 — Integrated `Bench` App Route, `backend/scripts/` Hygiene, Analysis Lab Sunset & Chaos Suite
-- **Objective:** Make `Bench` a native feature replacing `Laboratorij` with a live Production → Bench loop, clean `backend/scripts/` (`33` items) + `backend/temp/`, delete Analysis Lab completely, and finalize the chaos suite.
+- **Objective:** Make `Bench` a native feature replacing `Laboratorij` with a pure-JSON/SSE `/api/bench` API and live Production → Bench loop, clean `backend/scripts/` (`33` items) + `backend/temp/`, delete Analysis Lab completely, and finalize the chaos suite.
 - **Key Files:** `backend/bench/` (new) + `backend/routes/bench.js`, `backend/scripts/` (thin CLI wrappers + cleanup), `backend/server.js`, `simple-chat/src/components/Bench/` (new), `simple-chat/src/components/Dashboard/DashboardHeader.jsx`, `simple-chat/src/App.jsx`, `simple-chat/src/lib/apiClient.js`, `backend/tests/resilience/` (new), and deletion of `analysisLab/` + `AnalysisLab/`.
 - **Actions:**
-  1. Refactor `serve-pdf-bench-lab.js` into `backend/bench/` + `/api/bench` Express router with `409 Conflict` active-job lock, `maxCost > 0` + `approved: true` gates, SSE job streaming + cancel, secret redaction, `bench_candidates` queue + reference-free automatic micro-benching, Stage-2 Report Bench Mode, `gbench` Croatian legal smoke gate + tail-latency profiler, and dynamic OpenRouter `/api/v1/models` pricing sync; retire `pdf-bench-*.html`/`.css`.
-  2. Build `simple-chat/src/components/Bench/` UI (`/dashboard/bench`, `/dashboard/bench/runs/:runId`, `/dashboard/bench/gold`) using native design tokens and Radix dialogs, and rename `"Laboratorij"` → `"Bench"` in `DashboardHeader.jsx`.
-  3. Execute the full verified Analysis Lab deletion checklist (Section 4.7.C — including relocating `kerum-lab.json` for `runSummary.test.js`, deleting `analysisLabKerumReplay.test.js`, deleting `apiClient.js#L98–112`, and removing 427 MB `experiments.json` + `experiments/`), delete the duplicate `backend/scripts/FINAL-BENCH-SYNTHESIS-AND-MIGRATION-REPORT.md`, prune superseded phase markdowns, and clear `backend/temp/`.
-  4. Finalize `backend/tests/resilience/` chaos suite and full lockstep/scale tests.
-- **Exit Criteria:** Full backend `npm run test:unit` and frontend `npm test` + `npm run build` pass cleanly; `/dashboard/bench` launches dry-runs/live runs, triages `bench_candidates`, inspects scorecards/provenance, edits gold, and submits blinded verdicts; zero Analysis Lab dead imports or routes remain.
+  1. Refactor `serve-pdf-bench-lab.js` into `backend/bench/` + `/api/bench` pure-JSON/SSE Express router (zero HTML responses: JSON blinded review, `409 Conflict` with `{ activeJobId }`, `maxCost > 0` + `approved: true` gates, structured `job.progress`/`job.log`/`job.done`/`job.error` SSE + cancel, `GET /api/bench/models`, gold page `ETag`/`X-Total-Pages`, `bench_candidates` reference-free micro-benching, Stage-2 Report Bench, `gbench` Croatian smoke gate + tail-latency profiler, `/api/v1/models` sync); retire `pdf-bench-*.html`/`.css`.
+  2. Build lean, functional `simple-chat/src/components/Bench/` UI (`/dashboard/bench`, `/dashboard/bench/runs/:runId`, `/dashboard/bench/gold`, hosting `activeTaskRoutingOverrides`) using existing `DashboardShell`, `Dialog`, `StatusBadge`, and `Callout` primitives, and rename `"Laboratorij"` → `"Bench"` in `DashboardHeader.jsx`.
+  3. Execute the full verified Analysis Lab deletion checklist (Section 4.7.C — including relocating `kerum-lab.json` for `runSummary.test.js`, deleting `analysisLabKerumReplay.test.js`, deleting `apiClient.js#L98–112`, and removing 427 MB `experiments.json` + `experiments/`), move remaining `backend/helpers/jsonExtract.js` into `backend/llm/jsonExtract.js`, drop unused `p-queue` from `backend/package.json`, add `pruneOldLlmTraces` retention (`llm_traces`), delete the duplicate `backend/scripts/FINAL-BENCH-SYNTHESIS-AND-MIGRATION-REPORT.md`, prune superseded phase markdowns, and clear `backend/temp/`.
+  4. Finalize `backend/tests/resilience/` chaos suite (covering `/facts`, `/chunks`, `/traces`, `POST /cancel`, `?afterSeq=N`, `deterministic_fallback` retry) and full lockstep/scale tests.
+- **Exit Criteria:** Full backend `npm run test:unit` and frontend `npm test` + `npm run build` pass cleanly; `/dashboard/bench` launches dry-runs/live runs, triages `bench_candidates`, inspects scorecards/provenance, edits gold, and submits JSON blinded verdicts; zero Analysis Lab dead imports or routes remain.
 
 ---
 
 ## Next Step
 
-This blueprint is consolidated and verified against the codebase. The immediate next step is generating the dependency-ordered **Ticket Breakdown** covering **Phases 0 through 5** with exact file edits, acceptance criteria, and verification commands per ticket.
+Epics 0–3 (`[R100-001]`–`[R100-020]`, plus Epic 2 review fixes) are implemented and verified. See [docs/road-to-100-entries-ticket-breakdown.md](file:///home/oxioxi/proj/our_chattie/docs/road-to-100-entries-ticket-breakdown.md) for the remaining execution queue starting with **`[R100-021]`** (controlled 100-entry live smoke validation) and **Epics 4–5 (`[R100-022]`–`[R100-030]`)**.

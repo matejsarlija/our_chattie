@@ -295,8 +295,11 @@ function hydrateRun(row) {
 
 function createSqliteStore(options = {}) {
   const dataDir = path.resolve(options.dataDir || process.env.ANALYSIS_DATA_DIR || DEFAULT_DATA_DIR);
-  const dbPath = path.resolve(options.dbPath || path.join(dataDir, 'analysis.db'));
-  fs.mkdirSync(path.dirname(dbPath), { recursive: true });
+  const isMemoryDb = options.dbPath === ':memory:';
+  const dbPath = isMemoryDb ? ':memory:' : path.resolve(options.dbPath || path.join(dataDir, 'analysis.db'));
+  if (!isMemoryDb) {
+    fs.mkdirSync(path.dirname(dbPath), { recursive: true });
+  }
 
   const db = new Database(dbPath, options.databaseOptions);
   db.pragma('journal_mode = WAL');

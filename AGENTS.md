@@ -4,19 +4,19 @@ This repository is a full-stack monorepo for an AI-powered legal assistant that 
 
 ## What This App Actually Is
 
-Despite the repo name (`our_chattie`) and some legacy naming in the backend (`server.js`, historical references to a "chat" concept), **there is no chat surface in this app anymore.** The original conversational/TipTap-editor chat feature (`ChatContext`, `useStreamingAPI`, `MessageList.jsx`, `backend/chatAgent.js`, `backend/db.js`, a `cron/` scheduler) was removed entirely. The product today is a single-purpose **court-analysis dashboard**: a user submits an OIB/case-number/text query, the backend pipeline (`backend/court-analysis/`) discovers and analyzes Croatian court filings via OpenRouter LLMs/OCR (`z-ai/glm-5.3-flash`, `or-mistral-ocr`, `google/gemma-4-31b-it`, `google/gemini-2.5-flash` — migrating off legacy direct Gemini/LangChain SDKs in `[R100-002]`), and the frontend (`simple-chat/`, name unchanged from the chat era) renders the run list, detailed run reports, and the integrated PDF-engine benchmark workspace. If you find a reference to chat-specific code elsewhere in the codebase, treat it as stale and flag it for removal rather than assuming it is still live.
+Despite the repo name (`our_chattie`) and some legacy naming in the backend (`server.js`, historical references to a "chat" concept), **there is no chat surface in this app anymore.** The original conversational/TipTap-editor chat feature (`ChatContext`, `useStreamingAPI`, `MessageList.jsx`, `backend/chatAgent.js`, `backend/db.js`, a `cron/` scheduler) was removed entirely. The product today is a single-purpose **court-analysis dashboard**: a user submits an OIB/case-number/text query, the backend pipeline (`backend/court-analysis/`) discovers and analyzes Croatian court filings via 100% OpenRouter LLMs/OCR (`z-ai/glm-5.3-flash`, `or-mistral-ocr`, `google/gemma-4-31b-it`, `google/gemini-2.5-flash`), and the frontend (`simple-chat/`, name unchanged from the chat era) renders the run list, detailed run reports, and (in Phase 5) the integrated PDF-engine benchmark workspace. If you find a reference to chat-specific code elsewhere in the codebase, treat it as stale and flag it for removal rather than assuming it is still live.
 
 ## Active Roadmap & Migration Authority
 
-This repository is actively executing the **Road to 100 Court Entries** architecture & hardening migration (`[R100-001]`–`[R100-030]`):
+This repository is actively executing the **Road to 100 Court Entries** architecture & hardening migration (`[R100-001]`–`[R100-030]`; Epics 0–3 / `[R100-001]`–`[R100-020]` are complete and verified, with `[R100-021]` and Epics 4–5 upcoming):
 - **Master Blueprint:** [docs/road-to-100-entries-plan.md](file:///home/oxioxi/proj/our_chattie/docs/road-to-100-entries-plan.md)
 - **Ticket Breakdown:** [docs/road-to-100-entries-ticket-breakdown.md](file:///home/oxioxi/proj/our_chattie/docs/road-to-100-entries-ticket-breakdown.md)
 
 Key directional invariants binding all work:
-1. **100% OpenRouter (`OPENROUTER_API_KEY` only):** Phase 0 (`[R100-002]`) removes `@google/genai`, `@langchain/google-genai`, `@langchain/core`, and `GOOGLE_API_KEY` fallbacks. Do not reintroduce direct Google SDKs or LangChain `Tool`/`HumanMessage` wrappers.
-2. **Unified Persistence (`better-sqlite3` + FTS5 + `llm_traces`):** Phase 2 (`[R100-011]`) consolidates `localStore.js`, `ocrPageStore.js`, `change-detection/store.js`, and extraction checkpoints/traces into `backend/data/analysis/analysis.db` (WAL mode, `PRAGMA foreign_keys = ON`, `run_chunks_fts` sync triggers).
+1. **100% OpenRouter (`OPENROUTER_API_KEY` only):** Phase 0 (`[R100-002]`) removed `@google/genai`, `@langchain/google-genai`, `@langchain/core`, and `GOOGLE_API_KEY` fallbacks. Never reintroduce direct Google SDKs or LangChain `Tool`/`HumanMessage` wrappers.
+2. **Unified Persistence (`better-sqlite3` + FTS5 + `llm_traces`):** Phase 2 (`[R100-011]`) consolidated `localStore.js`, `ocrPageStore.js`, `change-detection/store.js`, and extraction checkpoints/traces into `backend/data/analysis/analysis.db` (WAL mode, `PRAGMA foreign_keys = ON`, `run_chunks_fts` sync triggers).
 3. **100-Entry `ScanDepthPolicy` & Worker Offload:** `Uravnoteženo` budgets `100` court entries (keeping 100% of attached documents) and `Sve` covers the full primary pool (`'standard'` is retired); `Stage T0` (`pdf.js`), `adm-zip`, and JPEG rasterization run in `node:worker_threads`.
-4. **Authorized Phase 0–5 Deletions vs. Do-Not-Delete Traps:** Agents executing tickets `[R100-001]`–`[R100-030]` are explicitly authorized to delete retired modules, legacy adapters, and obsolete tests specified in the ticket breakdown (`moneyFlow.js`, `prop-N` shims, 5 pruned reasoning LLM micro-passes, `'standard'` scan depth, `runs.json` store, Analysis Lab). **Two explicit do-not-delete traps:**
+4. **Authorized Phase 0–5 Deletions vs. Do-Not-Delete Traps:** Agents executing tickets `[R100-001]`–`[R100-030]` are explicitly authorized to delete retired modules, legacy adapters, and obsolete tests specified in the ticket breakdown (`moneyFlow.js`, `prop-N` shims, 5 pruned reasoning LLM micro-passes, `'standard'` scan depth, `runs.json` store, `agents/analysis-agent.js`, Analysis Lab). **Two explicit do-not-delete traps:**
    - **Keep `contextNode.js`:** [caseContextBuilder.js#L22](file:///home/oxioxi/proj/our_chattie/backend/court-analysis/reasoning/caseContextBuilder.js#L22) directly imports `createContextNode` and `validateContextGraph`. Remove only its unused `L15` `analysisLab/evidenceIdentity` import.
    - **Keep `propertyFlow.js#L58–391` lifecycle engine:** [reconciliation.js#L26](file:///home/oxioxi/proj/our_chattie/backend/court-analysis/reasoning/reconciliation.js#L26) directly imports `reconcileTrazbinaLifecycle` and `formatValue`. Delete only `moneyFlow.js` and the two legacy wrapper functions (`collectPropertyFlows`, `reconcilePropertyFlows`) + `prop-N` shims.
 
@@ -56,19 +56,20 @@ Apply these durable findings from the UI audit and shipped redesign; treat old s
 
 ## Project Structure
 
-*(Reflects the active Phase 0–5 target layout; during early tickets some files still sit under legacy `helpers/`, `agents/`, and `reasoning/` before their Phase 0/1/3 moves.)*
+*(Reflects Epics 0–3 landed layout plus Phase 4–5 targets; `analysisLab/` / `AnalysisLab/` remain until `[R100-029]`.)*
 
 ```
 our_chattie/
 ├── backend/          # Node.js/Express API server (CommonJS)
-│   ├── server.js              # Express/lifecycle bootstrapper (shrinking to ~100 LOC in Phase 0)
+│   ├── server.js              # Express/lifecycle bootstrapper (~100 LOC)
 │   ├── routes/                # Express routers (courtAnalysis, analysisRuns, bench, changeDetection)
 │   ├── http/                  # SSE, runBus, analysisStreamHandler, rateLimiter, pagination, validation
-│   ├── llm/                   # OpenRouter client, taskRouter, providerPool, tokenBudgetPolicy, retry, usage
-│   ├── bench/                 # Shared programmatic PDF/Stage-2 bench services (used by /api/bench & CLI)
+│   ├── llm/                   # openrouterClient, openrouterConfig, taskRouter, providerPool, creditLatch, tokenBudgetPolicy, retry, usage
+│   ├── bench/                 # Shared programmatic PDF/Stage-2 bench services (used by /api/bench & CLI in Phase 5)
 │   ├── court-analysis/        # Analysis pipeline
-│   │   ├── pipeline.js        # State -> StageReducer -> NextState orchestrator
-│   │   ├── acquisition/       # downloader, archiveExtractor, downloadCache (from agents/)
+│   │   ├── pipeline.js        # State -> StageReducer -> NextState orchestrator (< 600 LOC)
+│   │   ├── discoveryStage.js  # Grouping, cluster scoring & stratified selection
+│   │   ├── acquisition/       # downloader, archiveExtractor, downloadCache, clusterAcquisition
 │   │   ├── extraction/        # workerPool, pdfPreflight (T0), adminFastPath (T0.5), ocrRouter (T),
 │   │   │                      # prompts (EXTRACTION_SIGNATURE_V5), chunkMerge, documentAnalyzer (A)
 │   │   ├── reasoning/         # Organized into schema/, ledger/ (factLedger, partyRegistry, flow,
@@ -111,8 +112,9 @@ our_chattie/
 
 ## Key Integration Points
 
-- **LLM & OCR Provider Routing (100% OpenRouter):** All models and roles route through OpenRouter (`OPENROUTER_API_KEY` only) — migrating off legacy `geminiConfig.js` / `@langchain/google-genai` in Phase 0 (`[R100-002]`) to `backend/llm/` (`openrouterClient.js`, `taskRouter.js`, `providerPool.js`, `tokenBudgetPolicy.js`). Primary model assignments: `z-ai/glm-5.3-flash` (Stage A extraction), `or-mistral-ocr` → `google/gemma-4-31b-it` raster → `google/gemini-2.5-flash` (Stage T OCR), `google/gemini-2.5-flash` (Stage 2 synthesis), and deterministic `$0` pre-verification → `google/gemma-4-31b-it` / `google/gemini-2.5-flash` (verify). Always use 2–3 vetted providers per model with quantization guards (`['bf16', 'fp16', 'fp8']`), `stream: true` + `60s` idle watchdogs, and graceful `HTTP 402` degradation.
-- **SSE Streaming:** `backend/http/sse.js` (migrated from `helpers/sse.js`) builds events; must use `data: {...}\n\n` format cleanly for the frontend parser (`useAnalysisRunStream.js`). Phase 2 (`[R100-014]`) moves `GET /api/analysis/runs/:id/stream` from 1.5s DB polling onto lightweight in-process `runBus` SSE deltas with a single REST snapshot fetch on terminal/reconnect, while keeping client backoff polling fallback (`useAnalysisRunDetail.js`).
+- **LLM & OCR Provider Routing (100% OpenRouter):** All models and roles route through OpenRouter (`OPENROUTER_API_KEY` only) via `backend/llm/` (`openrouterClient.js`, `taskRouter.js`, `providerPool.js`, `creditLatch.js`, `tokenBudgetPolicy.js`). Primary model assignments: `z-ai/glm-5.3-flash` (Stage A extraction), `or-mistral-ocr` → `google/gemma-4-31b-it` raster → `google/gemini-2.5-flash` (Stage T OCR), `google/gemini-2.5-flash` (Stage 2 synthesis), and deterministic `$0` pre-verification → `google/gemma-4-31b-it` / `google/gemini-2.5-flash` (verify). Always use 2–3 vetted providers per model with quantization guards (`['bf16', 'fp16', 'fp8']`), `stream: true` (`stream_options: { include_usage: true }`) + `60s` idle watchdogs, and graceful `HTTP 402` degradation (`'provider-credits-exhausted'`).
+- **SSE Streaming:** `backend/http/sse.js` builds events in `data: {...}\n\n` format for `useAnalysisRunStream.js`. `POST /api/court-analysis` returns plain `202 Accepted` JSON (`{ analysisId, status: 'queued' }`). `GET /api/analysis/runs/:id/stream` subscribes to lightweight in-process `runBus` SSE deltas with `?afterSeq=` reconnect, lane-scoped `stage.progress` counters (`download`, `preflight`, `ocr`, `extract`), and a single REST snapshot fetch on terminal/reconnect, while keeping client backoff polling fallback (`useAnalysisRunDetail.js`). `preflight_json` is persisted on the run so refresh/polling never loses the cost ballpark.
+- **Read-Side SQLite Endpoints & Run Control:** Keep `run_artifacts.result_json` strictly `< 500 KB` (strip both raw `individualAnalyses[].aiResult` and duplicate `clusterEvidencePackage.analyses[]` fact arrays / raw `factLedger[]`); serve paginated/searchable reads via `GET /api/analysis/runs/:id/facts`, `GET /api/analysis/runs/:id/chunks/:chunkId` / `?q=` (FTS5), and `GET /api/analysis/runs/:id/traces`. Persist `canonicalParties[]` and creditor/procedural digests on the run artifact, support `POST /api/analysis/runs/:id/cancel` (`status: 'canceled'`), and allow `POST /api/analysis/runs/:id/report` to pass `analysisStore` for FTS5 BM25 retrieval and overwrite `generationMode: 'deterministic_fallback'` reports (`partial` → `done`).
 - **Generated diagrams:** Mermaid and the visualizer role were removed. Do not reintroduce model-authored diagrams or graph libraries without explicit product approval and a grounded, accessible data contract.
 
 ## Court-Analysis Pipeline Notes
