@@ -5,7 +5,7 @@ const os = require('os');
 const path = require('path');
 const vm = require('vm');
 const { execute, extractTranscriptProvider } = require('../scripts/benchmark-pdf-engines');
-const { enrichReportWithTranscriptSources } = require('../scripts/serve-pdf-bench-lab');
+const { enrichReportWithTranscriptSources } = require('../bench/corpus');
 
 function extractLabUiHelpers() {
     const html = fs.readFileSync(path.resolve(__dirname, '../scripts/pdf-bench-lab.html'), 'utf8');

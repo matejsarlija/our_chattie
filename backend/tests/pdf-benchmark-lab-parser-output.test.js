@@ -4,7 +4,7 @@ const crypto = require('crypto');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { readParserOutput } = require('../scripts/serve-pdf-bench-lab');
+const { readParserOutput } = require('../bench/corpus');
 
 const runId = '2026-11-06T09-18-45-676Z-f030de05';
 const sample = { docId: '1:Podnesak.pdf', arm: 'or-cloudflare', model: 'z-ai/glm-5.3-flash', repeat: 2 };

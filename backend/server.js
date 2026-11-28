@@ -21,6 +21,7 @@ const { createChangeCheckService } = require('./change-detection/service');
 const { createCourtAnalysisRouter } = require('./routes/courtAnalysis');
 const { createAnalysisRunsRouter } = require('./routes/analysisRuns');
 const { createChangeDetectionRouter } = require('./routes/changeDetection');
+const { createBenchRouter } = require('./routes/bench');
 const path = require('node:path');
 const { createRunAbortRegistry } = require('./http/runAbortRegistry');
 const { recoverServerState, installShutdownHandlers } = require('./http/serverLifecycle');
@@ -66,6 +67,11 @@ async function startServer() {
     analysisStore, readLimiter: analysisReadIpLimiter, writeLimiter: analysisWriteIpLimiter, runAbortRegistry, runBus,
   }));
   app.use('/api/analysis-lab', createAnalysisLabRouter({ labStore: analysisLabStore, analysisStore, readLimiter: analysisReadIpLimiter, writeLimiter: analysisWriteIpLimiter }));
+  app.use('/api/bench', createBenchRouter({
+    analysisStore,
+    readLimiter: analysisReadIpLimiter,
+    writeLimiter: analysisWriteIpLimiter,
+  }));
 
 
   app.get('/health', (req, res) => {
